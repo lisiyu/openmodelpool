@@ -293,7 +293,7 @@ var presetProviders = []Provider{
 		ID: "sider", Name: "Sider.ai (网页版)", Type: "sider",
 		BaseURL: "https://sider.ai",
 		Priority: 2,
-		Description: "Sider.ai 网页版 - 需登录获取 Token",
+		Description: "Sider.ai 网页版聚合平台。API Key 填写浏览器扩展登录后的 Session Token（F12→Cookies→token字段）",
 		Icon: "sider",
 		APIKeyURL: "https://sider.ai",
 		Models: []ModelDef{
@@ -323,7 +323,8 @@ var presetProviders = []Provider{
 		ID: "coze", Name: "扣子 (Coze)", Type: "coze",
 		BaseURL: "https://api.coze.cn",
 		Priority: 1,
-		Description: "扣子智能体平台（专有 API，模型为 coze-{bot_id} 格式）",
+		Description: "扣子智能体平台（专有 API，模型为 coze-{bot_id} 格式）。API Key 填写 PAT 个人访问令牌",
+		APIKeyURL:  "https://www.coze.cn",
 		Icon: "coze",
 		Models: []ModelDef{},
 	},
@@ -355,7 +356,7 @@ var presetProviders = []Provider{
 		ID: "anthropic", Name: "Anthropic Claude", Type: "anthropic",
 		BaseURL:    "https://api.anthropic.com",
 		Priority:   2,
-		Description: "Claude 系列模型，推理与编程能力顶尖（需专用 API 适配）",
+		Description: "Claude 系列模型（专有 Messages API，系统自动适配）。API Key 填写 Anthropic API Key（sk-ant-xxx）",
 		Icon:        "anthropic",
 		APIKeyURL:   "https://console.anthropic.com/",
 		Models: []ModelDef{

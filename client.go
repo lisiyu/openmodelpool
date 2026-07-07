@@ -390,9 +390,12 @@ func siderStream(p Provider, model string, messages []ChatMessage, w io.Writer) 
 // ============================================================
 
 func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
-	token := cfg.Get("coze_api_token", "")
+	token := p.APIKey
 	if token == "" {
-		return nil, fmt.Errorf("coze API token not configured")
+		token = cfg.Get("coze_api_token", "")
+	}
+	if token == "" {
+		return nil, fmt.Errorf("coze API token not configured (set API Key in provider config)")
 	}
 	botID := model
 	if strings.HasPrefix(botID, "coze-") {
@@ -529,9 +532,12 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 }
 
 func cozeStream(p Provider, model string, messages []ChatMessage, w io.Writer) error {
-	token := cfg.Get("coze_api_token", "")
+	token := p.APIKey
 	if token == "" {
-		writeSSEError(w, model, "coze API token not configured")
+		token = cfg.Get("coze_api_token", "")
+	}
+	if token == "" {
+		writeSSEError(w, model, "coze API token not configured (set API Key in provider config)")
 		return nil
 	}
 	botID := model
@@ -850,9 +856,12 @@ func strPtr(s string) *string { return &s }
 func testConnection(p Provider) map[string]any {
 	switch p.Type {
 	case "coze":
-		token := cfg.Get("coze_api_token", "")
+		token := p.APIKey
 		if token == "" {
-			return map[string]any{"success": false, "error": "Coze PAT not configured"}
+			token = cfg.Get("coze_api_token", "")
+		}
+		if token == "" {
+			return map[string]any{"success": false, "error": "Coze PAT not configured (set API Key in provider config)"}
 		}
 		baseURL := p.BaseURL
 		if baseURL == "" {

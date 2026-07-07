@@ -811,7 +811,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("fallback", "model", model, "to", p.Name, "idx", idx, "mode", routingMode)
 		}
 
-		if p.APIKey == "" && p.Type != "coze" {
+		if p.APIKey == "" {
 			lastErr = fmt.Errorf("provider '%s' has no API key", p.Name)
 			continue
 		}
@@ -898,14 +898,17 @@ func (s *streamWriter) Write(p []byte) (n int, err error) {
 }
 
 func handleCozeRequest(w http.ResponseWriter, r *http.Request, model string, messages []ChatMessage, stream bool, extra map[string]any) {
-	token := cfg.Get("coze_api_token", "")
-	if token == "" {
-		writeError(w, 500, "Coze API token not configured")
-		return
-	}
-
 	// Get coze provider or use a synthetic one
 	p, _ := pm.GetRaw("coze")
+
+	// Use provider's API Key, fall back to global config for backward compatibility
+	if p.APIKey == "" {
+		p.APIKey = cfg.Get("coze_api_token", "")
+	}
+	if p.APIKey == "" {
+		writeError(w, 500, "Coze API token not configured (set API Key in provider config)")
+		return
+	}
 
 	if stream {
 		w.Header().Set("Content-Type", "text/event-stream")

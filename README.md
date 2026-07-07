@@ -515,6 +515,61 @@ modelmux/
 
 ---
 
+
+## 🔑 非 OpenAI 兼容平台配置指南
+
+以下 3 个平台使用专有 API，不走标准 `Authorization: Bearer` + OpenAI 格式，需特殊配置。所有非标平台的 API Key/Token 均统一在 **Provider 编辑界面** 填写。
+
+---
+
+### 🎯 扣子 (Coze)
+
+**API 类型：** 专有 Chat API（`/v3/chat` + 轮询）  
+**API Key 格式：** Personal Access Token (PAT)，格式 `pat_xxxxxxxxxxxx`
+
+**获取方式：**
+1. 登录 [扣子开放平台](https://www.coze.cn)
+2. 右上角头像 → **API 令牌** → **创建令牌**
+3. 命名后复制令牌（仅创建时显示一次）
+
+**配置方式：** 在 Provider 编辑界面的 **API Key** 字段填入 PAT 令牌  
+**调用方式：** 模型名格式 `coze-{bot_id}`
+```bash
+curl -d '{"model": "coze-7xxxxxxxxxx0", "messages": [...]}'
+```
+
+**工作原理：** 发起聊天 → 轮询状态 → 获取回复，完整 OpenAI 格式转换。
+
+---
+
+### 🌐 Sider.ai（网页版）
+
+**API 类型：** 网页版私有 API（`/api/v3/completion/text`）  
+**API Key 格式：** 浏览器扩展 Session Token
+
+**获取方式：**
+1. 安装 [Sider.ai Chrome 扩展](https://sider.ai/) 并登录
+2. F12 → **Application** → **Cookies** → `sider.ai` → 复制 `token` 字段值（`Bearer ` 后面部分）
+
+**配置方式：** 在 Provider 编辑界面的 **API Key** 字段填入 Token  
+**注意事项：** Token 会过期，需定期更新；内置健康检测自动标记过期状态
+
+---
+
+### 🟠 Anthropic Claude
+
+**API 类型：** Messages API（`/v1/messages`）  
+**API Key 格式：** `sk-ant-xxxxx`（x-api-key 头认证）
+
+**获取方式：**
+1. 登录 [Anthropic Console](https://console.anthropic.com/)
+2. **API Keys** → **Create Key** → 复制
+
+**配置方式：** 在 Provider 编辑界面的 **API Key** 字段填入 API Key  
+**自动适配：** system 消息独立提取、专有认证头、SSE 事件自动转换
+
+---
+
 ## 📜 License
 
 MIT
