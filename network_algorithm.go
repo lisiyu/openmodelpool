@@ -31,21 +31,31 @@ import (
 
 // AlgorithmParams holds the tunable parameters for the network.
 type AlgorithmParams struct {
-	OpenKeyRatio         float64 `json:"open_key_ratio"`          // fraction of total network resources reserved for open keys (default 0.3)
-	TrustWeight          float64 `json:"trust_weight"`            // weight of reputation in user quota calculation
-	ContribWeight        float64 `json:"contrib_weight"`          // weight of contribution in user quota calculation
-	TrialQuotaMultiplier float64 `json:"trial_quota_multiplier"`  // multiplier applied to trial quota
-	UnlockThresholdCoef  float64 `json:"unlock_threshold_coef"`   // coefficient for unlock threshold calculation
+	OpenKeyRatio              float64 `json:"open_key_ratio"`                // fraction of total network resources reserved for open keys (default 0.3)
+	TrustWeight               float64 `json:"trust_weight"`                  // weight of reputation in user quota calculation
+	ContribWeight             float64 `json:"contrib_weight"`                // weight of contribution in user quota calculation
+	TrialQuotaMultiplier      float64 `json:"trial_quota_multiplier"`        // multiplier applied to trial quota
+	UnlockThresholdCoef       float64 `json:"unlock_threshold_coef"`         // coefficient for unlock threshold calculation
+
+	// Phase 4: Global Pool Parameters
+	GlobalPoolAvailabilityRatio float64 `json:"global_pool_availability_ratio"` // fraction of pool available for use (default 0.8)
+	GlobalPoolRoutingLoadWeight float64 `json:"global_pool_routing_load_weight"` // weight of load in routing score (default 0.3)
+	GlobalPoolRoutingRepWeight  float64 `json:"global_pool_routing_rep_weight"`  // weight of reputation in routing score (default 0.3)
+	GlobalKeyMinContribution    int64   `json:"global_key_min_contribution"`    // minimum contribution to sign global keys
 }
 
 // DefaultAlgorithmParams returns the genesis parameter set.
 func DefaultAlgorithmParams() AlgorithmParams {
 	return AlgorithmParams{
-		OpenKeyRatio:         0.3,
-		TrustWeight:          0.4,
-		ContribWeight:        0.6,
-		TrialQuotaMultiplier: 2.0,
-		UnlockThresholdCoef:  0.3,
+		OpenKeyRatio:                  0.3,
+		TrustWeight:                   0.4,
+		ContribWeight:                 0.6,
+		TrialQuotaMultiplier:          2.0,
+		UnlockThresholdCoef:           0.3,
+		GlobalPoolAvailabilityRatio:   0.8,
+		GlobalPoolRoutingLoadWeight:   0.3,
+		GlobalPoolRoutingRepWeight:    0.3,
+		GlobalKeyMinContribution:      5000,
 	}
 }
 
@@ -336,6 +346,19 @@ func (c *AlgorithmChain) ProposeChange(proposer string, params AlgorithmParams) 
 	}
 	if params.UnlockThresholdCoef < 0 || params.UnlockThresholdCoef > 1 {
 		return nil, fmt.Errorf("unlock_threshold_coef must be between 0 and 1")
+	}
+	// Phase 4: Global pool parameter validation
+	if params.GlobalPoolAvailabilityRatio < 0 || params.GlobalPoolAvailabilityRatio > 1 {
+		return nil, fmt.Errorf("global_pool_availability_ratio must be between 0 and 1")
+	}
+	if params.GlobalPoolRoutingLoadWeight < 0 || params.GlobalPoolRoutingLoadWeight > 1 {
+		return nil, fmt.Errorf("global_pool_routing_load_weight must be between 0 and 1")
+	}
+	if params.GlobalPoolRoutingRepWeight < 0 || params.GlobalPoolRoutingRepWeight > 1 {
+		return nil, fmt.Errorf("global_pool_routing_rep_weight must be between 0 and 1")
+	}
+	if params.GlobalKeyMinContribution < 0 {
+		return nil, fmt.Errorf("global_key_min_contribution must be >= 0")
 	}
 
 	proposal := &AlgorithmProposal{

@@ -992,6 +992,51 @@ select.form-input{appearance:none;cursor:pointer}
         <button class="btn btn-secondary btn-sm" onclick="loadQuotaInfo()">🔄 刷新额度</button>
       </div>
 
+      <!-- 全球算力池 (Phase 4) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🌍 全球算力池 (Global Pool)</div>
+        <div class="section-note" style="margin-bottom:12px">
+          全网节点贡献的算力汇聚成一个统一资源池。加入全局池后可签发 Global Key，一个 Key 访问全网所有 AI 能力。
+        </div>
+        <div id="netGlobalPoolInfo" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:12px">
+          <!-- Filled by JS -->
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="joinGlobalPool()">🚀 加入全局池</button>
+          <button class="btn btn-secondary btn-sm" onclick="contributeToGlobalPool()">💎 贡献额度</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadGlobalPoolStatus()">🔄 刷新</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadGlobalPoolNodes()">📋 参与节点</button>
+          <button class="btn btn-secondary btn-sm" onclick="issueGlobalKey()">🔑 签发 Global Key</button>
+        </div>
+        <div id="netGlobalPoolNodes" style="font-size:12px;color:var(--text-muted);margin-bottom:8px">加载中...</div>
+        <div id="netGlobalPoolKeys" style="font-size:12px;color:var(--text-muted)">暂无 Global Key</div>
+      </div>
+
+      <!-- 动态负载均衡 (Phase 4) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">⚖️ 动态负载均衡</div>
+        <div class="section-note" style="margin-bottom:12px">
+          基于延迟、负载、错误率、公平性和信誉的多维度节点评分系统，智能选择最优路由节点。
+        </div>
+        <div id="netLBStatus" style="margin-bottom:12px"></div>
+        <div id="netLBNodes" style="margin-bottom:12px;font-size:12px;color:var(--text-muted)">暂无节点评分数据</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <button class="btn btn-secondary btn-sm" onclick="loadLBData()">🔄 刷新负载数据</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleLBConfigEditor()">⚙️ 调整权重</button>
+        </div>
+        <div id="netLBConfigEditor" style="display:none;margin-top:8px;padding:12px;background:var(--bg-secondary);border-radius:8px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:8px">评分权重配置（总和=1.0）</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <label style="font-size:11px">延迟权重 <input type="number" id="lbLatencyW" step="0.05" min="0" max="1" value="0.35" style="width:60px;margin-left:4px"></label>
+            <label style="font-size:11px">负载权重 <input type="number" id="lbLoadW" step="0.05" min="0" max="1" value="0.25" style="width:60px;margin-left:4px"></label>
+            <label style="font-size:11px">错误率权重 <input type="number" id="lbErrorW" step="0.05" min="0" max="1" value="0.20" style="width:60px;margin-left:4px"></label>
+            <label style="font-size:11px">公平性权重 <input type="number" id="lbFairW" step="0.05" min="0" max="1" value="0.10" style="width:60px;margin-left:4px"></label>
+            <label style="font-size:11px">信誉权重 <input type="number" id="lbRepW" step="0.05" min="0" max="1" value="0.10" style="width:60px;margin-left:4px"></label>
+          </div>
+          <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="saveLBConfig()">💾 保存配置</button>
+        </div>
+      </div>
+
       <!-- 节点心跳状态 (Phase 2) -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px">💓 节点心跳状态</div>
@@ -3445,8 +3490,129 @@ if (authToken) {
       if (netActive && netActive.style.display !== 'none') {
         loadAlgorithmParams();
         loadQuotaInfo();
+        loadGlobalPoolStatus();
       }
     };
+
+    // Phase 4: Global Pool UI
+    async function loadGlobalPoolStatus() {
+      try {
+        const r = await fetch('/api/network/global-pool');
+        const d = await r.json();
+        const el = document.getElementById('netGlobalPoolInfo');
+        if (!d.enabled) {
+          el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">全局池未启用</div>';
+          return;
+        }
+        const util = d.utilization ? (d.utilization * 100).toFixed(1) + '%' : '0%';
+        el.innerHTML = `
+          <div style="background:var(--bg-secondary);padding:8px 12px;border-radius:8px">
+            <div style="font-size:11px;color:var(--text-muted)">总贡献</div>
+            <div style="font-size:16px;font-weight:600">${(d.total_contributed||0).toLocaleString()}</div>
+          </div>
+          <div style="background:var(--bg-secondary);padding:8px 12px;border-radius:8px">
+            <div style="font-size:11px;color:var(--text-muted)">已消费</div>
+            <div style="font-size:16px;font-weight:600">${(d.total_consumed||0).toLocaleString()}</div>
+          </div>
+          <div style="background:var(--bg-secondary);padding:8px 12px;border-radius:8px">
+            <div style="font-size:11px;color:var(--text-muted)">可用额度</div>
+            <div style="font-size:16px;font-weight:600;color:var(--accent)">${(d.available_quota||0).toLocaleString()}</div>
+          </div>
+          <div style="background:var(--bg-secondary);padding:8px 12px;border-radius:8px">
+            <div style="font-size:11px;color:var(--text-muted)">参与节点</div>
+            <div style="font-size:16px;font-weight:600">${d.participant_count||0} <span style="font-size:11px;color:var(--text-muted)">(${d.active_count||0} 活跃)</span></div>
+          </div>
+          <div style="background:var(--bg-secondary);padding:8px 12px;border-radius:8px">
+            <div style="font-size:11px;color:var(--text-muted)">利用率</div>
+            <div style="font-size:16px;font-weight:600">${util}</div>
+          </div>
+        `;
+      } catch(e) {
+        console.error('loadGlobalPoolStatus error:', e);
+      }
+    }
+
+    async function loadGlobalPoolNodes() {
+      try {
+        const [poolR, keysR] = await Promise.all([
+          fetch('/api/network/global-pool/nodes'),
+          fetch('/api/network/global-keys').then(r => r.ok ? r.json() : {keys:[]})
+        ]);
+        const d = await poolR.json();
+        const el = document.getElementById('netGlobalPoolNodes');
+        if (!d.nodes || d.nodes.length === 0) {
+          el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">暂无参与节点</div>';
+        } else {
+          let html = '<div style="display:grid;gap:4px">';
+          d.nodes.forEach(n => {
+            const statusColor = n.status === 'active' ? 'var(--accent)' : n.status === 'degraded' ? '#f0ad4e' : '#999';
+            html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:var(--bg-secondary);border-radius:6px;font-size:11px">
+              <span><span style="color:${statusColor}">●</span> ${n.node_id.substring(0,12)}... (${n.region||'unknown'})</span>
+              <span>贡献:${n.contributed} 消费:${n.consumed} 比:${n.ratio.toFixed(2)}</span>
+            </div>`;
+          });
+          html += '</div>';
+          el.innerHTML = html;
+        }
+        // Global keys
+        const keysEl = document.getElementById('netGlobalPoolKeys');
+        if (keysR.keys && keysR.keys.length > 0) {
+          let html = '<div style="font-size:11px;font-weight:600;margin-bottom:4px">Global Keys:</div>';
+          keysR.keys.forEach(k => {
+            html += `<div style="padding:2px 0;color:var(--text-muted)">${k.key.substring(0,40)}... quota:${k.quota} used:${k.used}</div>`;
+          });
+          keysEl.innerHTML = html;
+        } else {
+          keysEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">暂无 Global Key</div>';
+        }
+      } catch(e) {
+        console.error('loadGlobalPoolNodes error:', e);
+      }
+    }
+
+    async function joinGlobalPool() {
+      const amount = prompt('输入初始贡献额度（最低 10000）:', '10000');
+      if (!amount) return;
+      const region = prompt('输入区域（如 cn-east, us-west）:', 'cn-east');
+      try {
+        const r = await authFetch('/api/network/global-pool/join', {
+          method: 'POST',
+          body: JSON.stringify({ amount: parseInt(amount), region: region || 'cn-east' })
+        });
+        const d = await r.json();
+        if (r.ok) { alert('✅ 已加入全局池！'); loadGlobalPoolStatus(); }
+        else { alert('❌ ' + (d.message || d.error || '加入失败')); }
+      } catch(e) { alert('请求失败: ' + e.message); }
+    }
+
+    async function contributeToGlobalPool() {
+      const amount = prompt('输入贡献额度:', '5000');
+      if (!amount) return;
+      try {
+        const r = await authFetch('/api/network/global-pool/contribute', {
+          method: 'POST',
+          body: JSON.stringify({ amount: parseInt(amount) })
+        });
+        const d = await r.json();
+        if (r.ok) { alert('✅ 贡献成功！'); loadGlobalPoolStatus(); }
+        else { alert('❌ ' + (d.message || d.error || '贡献失败')); }
+      } catch(e) { alert('请求失败: ' + e.message); }
+    }
+
+    async function issueGlobalKey() {
+      const quota = prompt('输入 Global Key 额度（默认 50000）:', '50000');
+      try {
+        const r = await authFetch('/api/network/global-keys/issue', {
+          method: 'POST',
+          body: JSON.stringify({ quota: parseInt(quota) || 50000 })
+        });
+        const d = await r.json();
+        if (r.ok) {
+          alert('✅ Global Key 已签发！\n\n' + d.key);
+          loadGlobalPoolNodes();
+        } else { alert('❌ ' + (d.message || d.error || '签发失败')); }
+      } catch(e) { alert('请求失败: ' + e.message); }
+    }
 
     // Load network status on page load
     setTimeout(() => loadNetworkStatus(), 300);

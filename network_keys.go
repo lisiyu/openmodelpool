@@ -303,6 +303,16 @@ func ValidateKey(mkKey string) (*KeyPayload, error) {
 		consumerID = "open_bound_" + parts[0]
 		return validateKeyParts(consumerID, parts[1], parts[2])
 
+	case KeyTypeGlobal:
+		// Format: mk_open_global_{node_id}_{random}.{payload_b64}.{sig_hex}
+		rest = mkKey[15:] // strip "mk_open_global_"
+		parts := strings.SplitN(rest, ".", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid global key format")
+		}
+		consumerID = "global_" + parts[0]
+		return validateKeyParts(consumerID, parts[1], parts[2])
+
 	default:
 		// Standard: mk_{consumer_id}.{payload_b64}.{signature_hex}
 		rest = mkKey[3:] // strip "mk_"
@@ -624,10 +634,11 @@ func handleNetworkContributions(w http.ResponseWriter, r *http.Request) {
 type KeyType string
 
 const (
-	KeyTypeStandard     KeyType = "standard"      // Standard consumer key (mk_{consumer_id}...)
-	KeyTypeTrial        KeyType = "trial"          // Trial pool key (mk_trial_{node_id}_{ts})
-	KeyTypeOpenUnbound  KeyType = "open_unbound"   // Open unbound key (mk_open_xxxxx)
-	KeyTypeOpenBound    KeyType = "open_bound"     // Open bound key (mk_open_{node_id}_xxxxx)
+	KeyTypeStandard     KeyType = "standard"       // Standard consumer key (mk_{consumer_id}...)
+	KeyTypeTrial        KeyType = "trial"           // Trial pool key (mk_trial_{node_id}_{ts})
+	KeyTypeOpenUnbound  KeyType = "open_unbound"    // Open unbound key (mk_open_xxxxx)
+	KeyTypeOpenBound    KeyType = "open_bound"      // Open bound key (mk_open_{node_id}_xxxxx)
+	KeyTypeGlobal       KeyType = "global"          // Global pool key (mk_open_global_{node_id}_xxxxx)
 )
 
 // Default trial quota (tokens)
@@ -1036,6 +1047,9 @@ func CalculateOpenKeyQuota(nodeID string) int64 {
 func ClassifyKey(mkKey string) KeyType {
 	if strings.HasPrefix(mkKey, "mk_trial_") {
 		return KeyTypeTrial
+	}
+	if strings.HasPrefix(mkKey, "mk_open_global_") {
+		return KeyTypeGlobal
 	}
 	if strings.HasPrefix(mkKey, "mk_open_") {
 		// Check if it contains a node_id (bound) or not (unbound)

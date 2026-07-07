@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ============================================================
@@ -104,6 +105,13 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 					writeError(w, 403, "node not yet unlocked — must contribute first to access network resources")
 					return
 				}
+			}
+		} else if keyType == KeyTypeGlobal {
+			// Global keys: can route to ANY node in the global pool
+			// No restriction on target node — global pool handles routing
+			if globalPool == nil {
+				writeError(w, 503, "global pool not available")
+				return
 			}
 		}
 	} else if strings.HasPrefix(authHeader, "Bearer mk_") {
@@ -309,6 +317,43 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 			r.Header.Set("X-MK-Issuer", payload.Iss)
 			r.Header.Set("X-MK-KeyType", "open_bound")
 
+		case KeyTypeGlobal:
+			// Global key: validate and record consumption against global pool
+			payload, err := ValidateKey(mkKey)
+			if err != nil {
+				slog.Warn("global key validation failed", "error", err)
+				writeError(w, 401, fmt.Sprintf("global key invalid: %v", err))
+				return
+			}
+			// Verify issuer is a global pool participant
+			if globalPool != nil && payload.Iss != "" {
+				_, contrib, _ := globalPool.CanSignGlobalKey(payload.Iss)
+				if contrib <= 0 {
+					slog.Warn("global key issuer not in pool", "issuer", payload.Iss)
+					writeError(w, 403, "global key issuer not in pool")
+					return
+				}
+			}
+			// Record usage in global key store
+			if globalKeys != nil {
+				for _, gk := range globalKeys.GetActiveGlobalKeys() {
+					if gk.Key == mkKey {
+						gk.Used++
+						break
+					}
+				}
+			}
+			// Record consumption in global pool
+			if globalPool != nil {
+				globalPool.RecordConsumption(payload.Iss, 1)
+			}
+			slog.Info("global key validated", "consumer_id", payload.Sub, "issuer", payload.Iss, "model", model)
+
+			r.Header.Del("Authorization")
+			r.Header.Set("X-MK-Consumer", payload.Sub)
+			r.Header.Set("X-MK-Issuer", payload.Iss)
+			r.Header.Set("X-MK-KeyType", "global")
+
 		default:
 			// Standard signed key
 			payload, err := ValidateKey(mkKey)
@@ -422,6 +467,8 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 
 	relayFrom := netMgr.GetNodeID()
 
+	relayStart := time.Now()
+
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = target.Scheme
@@ -441,10 +488,19 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 		ErrorHandler: func(w2 http.ResponseWriter, r2 *http.Request, err error) {
 			slog.Error("relay to remote failed", "target", entry.NodeID, "addr", targetAddr, "error", err)
 			netMgr.RecordRelayResult(false)
+			// Phase 4: Record failed request in load balancer
+			if lbInstance != nil {
+				lbInstance.RecordRequest(entry.NodeID, time.Since(relayStart), false)
+			}
 			writeError(w2, 502, fmt.Sprintf("relay to %s failed: %v", entry.NodeID, err))
 		},
 		ModifyResponse: func(resp *http.Response) error {
-			netMgr.RecordRelayResult(resp.StatusCode < 400)
+			success := resp.StatusCode < 400
+			netMgr.RecordRelayResult(success)
+			// Phase 4: Record relay outcome in load balancer metrics
+			if lbInstance != nil {
+				lbInstance.RecordRequest(entry.NodeID, time.Since(relayStart), success)
+			}
 			return nil
 		},
 	}

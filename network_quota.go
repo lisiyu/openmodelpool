@@ -274,6 +274,62 @@ func (m *OpenKeyQuotaManager) startAutoRefresh() {
 }
 
 // ============================================================
+// Phase 4: Global Pool Quota Calculation
+// ============================================================
+
+// CalculateGlobalPoolQuota computes the effective quota available through the global pool.
+// This takes into account:
+//   - Total contributions across all nodes
+//   - Total consumptions
+//   - The globalPoolAvailabilityRatio (default 0.8 — keep 20% reserve)
+func CalculateGlobalPoolQuota() int64 {
+	if globalPool == nil {
+		return 0
+	}
+	globalPool.mu.RLock()
+	defer globalPool.mu.RUnlock()
+
+	available := globalPool.AvailableQuota
+	if available <= 0 {
+		return 0
+	}
+
+	// Apply availability ratio to keep a reserve
+	ratio := 0.8
+	if algoChain != nil {
+		params := algoChain.GetCurrentParams()
+		if params.GlobalPoolAvailabilityRatio > 0 {
+			ratio = params.GlobalPoolAvailabilityRatio
+		}
+	}
+
+	return int64(float64(available) * ratio)
+}
+
+// CalculateNodeGlobalPoolShare calculates a specific node's effective share in the global pool.
+// share = nodeContribution / totalContribution * globalPoolQuota
+func CalculateNodeGlobalPoolShare(nodeID string) int64 {
+	if globalPool == nil {
+		return 0
+	}
+	globalPool.mu.RLock()
+	defer globalPool.mu.RUnlock()
+
+	if globalPool.TotalContributed <= 0 {
+		return 0
+	}
+
+	nodeContrib := globalPool.NodeContributions[nodeID]
+	if nodeContrib <= 0 {
+		return 0
+	}
+
+	totalQuota := CalculateGlobalPoolQuota()
+	share := float64(nodeContrib) / float64(globalPool.TotalContributed) * float64(totalQuota)
+	return int64(share)
+}
+
+// ============================================================
 // API Handlers
 // ============================================================
 

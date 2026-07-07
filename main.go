@@ -99,8 +99,23 @@ func main() {
 	initAlgorithmChain("data")
 	initQuotaManager(algoChain)
 
+	// Initialize global pool & global key store (Phase 4)
+	initGlobalPool("data")
+	initGlobalKeyStore("data")
+
+	// Initialize Phase 4: Region manager & Balance engine
+	initRegionManager()
+	initBalanceEngine()
+
 	// Start heartbeat loop (Phase 2)
 	startHeartbeatLoop()
+
+	// Initialize dynamic load balancer (Phase 4)
+	initLoadBalancer(context.Background())
+
+	// Start Phase 4: Region sync & Balance loops
+	startRegionSyncLoop()
+	StartBalanceLoop(context.Background())
 
 	// Register with bootstrap nodes (Phase 2)
 	go func() {
@@ -330,6 +345,34 @@ func main() {
 	mux.HandleFunc("GET /api/network/algorithm/validate", handleAlgorithmValidate)
 	mux.HandleFunc("GET /api/network/open-key-quota", handleOpenKeyQuota)
 	mux.HandleFunc("GET /api/network/open-key-quota/all", handleOpenKeyQuotaAll)
+
+	// Global Pool & Global Keys (Phase 4)
+	mux.HandleFunc("GET /api/network/global-pool", handleGlobalPoolStatus)
+	mux.HandleFunc("POST /api/network/global-pool/join", withAuth(handleGlobalPoolJoin))
+	mux.HandleFunc("POST /api/network/global-pool/contribute", withAuth(handleGlobalPoolContribute))
+	mux.HandleFunc("GET /api/network/global-pool/nodes", handleGlobalPoolNodes)
+	mux.HandleFunc("GET /api/network/global-pool/stats", handleGlobalPoolStats)
+	mux.HandleFunc("POST /api/network/global-keys/issue", withAuth(handleGlobalKeyIssue))
+	mux.HandleFunc("GET /api/network/global-keys", withAuth(handleGlobalKeyList))
+	mux.HandleFunc("DELETE /api/network/global-keys/{index}", withAuth(handleGlobalKeyRevoke))
+
+	// Dynamic Load Balancer (Phase 4)
+	mux.HandleFunc("GET /api/network/loadbalancer/status", handleLBStatus)
+	mux.HandleFunc("GET /api/network/loadbalancer/nodes", withAuth(handleLBNodes))
+	mux.HandleFunc("GET /api/network/loadbalancer/metrics/{node_id}", withAuth(handleLBNodeMetrics))
+	mux.HandleFunc("PUT /api/network/loadbalancer/config", withAuth(handleLBConfigUpdate))
+	mux.HandleFunc("GET /api/network/heartbeat/ping", handleHeartbeatPing)
+
+	// Cross-Region Routing (Phase 4)
+	mux.HandleFunc("GET /api/network/regions", handleNetworkRegions)
+	mux.HandleFunc("GET /api/network/regions/{region}/nodes", handleNetworkRegionNodes)
+	mux.HandleFunc("PUT /api/network/regions/config", withAuth(handleNetworkRegionConfigUpdate))
+
+	// Dynamic Balance Engine (Phase 4)
+	mux.HandleFunc("GET /api/network/balance/status", handleBalanceStatus)
+	mux.HandleFunc("GET /api/network/balance/nodes", handleBalanceNodes)
+	mux.HandleFunc("GET /api/network/balance/adjustments", handleBalanceAdjustments)
+	mux.HandleFunc("POST /api/network/balance/recalculate", withAuth(handleBalanceRecalculate))
 
 	// P2P Relay: /network/{node_id}/{rest...} — any shared node can relay
 	// Register per-method to avoid conflict with GET / admin page handler

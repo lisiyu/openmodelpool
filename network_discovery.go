@@ -26,13 +26,14 @@ const (
 
 // HeartbeatPayload is sent/received in heartbeat requests.
 type HeartbeatPayload struct {
-	NodeID    string   `json:"node_id"`
-	NodeName  string   `json:"node_name"`
-	Addresses []string `json:"addresses"`
-	Models    []string `json:"models"`
-	Uptime    int64    `json:"uptime"`
-	Version   string   `json:"version,omitempty"`
-	Timestamp int64    `json:"timestamp"`
+	NodeID    string              `json:"node_id"`
+	NodeName  string              `json:"node_name"`
+	Addresses []string            `json:"addresses"`
+	Models    []string            `json:"models"`
+	Uptime    int64               `json:"uptime"`
+	Version   string              `json:"version,omitempty"`
+	Timestamp int64               `json:"timestamp"`
+	Region    *HeartbeatRegionInfo `json:"region_info,omitempty"` // Phase 4: optional region info
 }
 
 // HeartbeatResponse is returned by the heartbeat endpoint.
@@ -72,6 +73,11 @@ func startHeartbeatLoop() {
 			}
 			sendHeartbeats()
 			checkPeerHealth()
+
+			// Phase 4: Update global pool heartbeat for self
+			if globalPool != nil && netMgr.GetNodeID() != "" {
+				globalPool.Heartbeat(netMgr.GetNodeID())
+			}
 		}
 	}()
 }
@@ -97,6 +103,19 @@ func sendHeartbeats() {
 		Uptime:    uptime,
 		Version:   AppVersion,
 		Timestamp: time.Now().Unix(),
+	}
+
+	// Phase 4: Attach region info to heartbeat
+	if regionMgr != nil {
+		selfRegion := regionMgr.GetNodeRegion(netMgr.GetNodeID())
+		if selfRegion != nil {
+			hb.Region = &HeartbeatRegionInfo{
+				Region:    string(selfRegion.Region),
+				SubRegion: selfRegion.SubRegion,
+				Latitude:  selfRegion.Latitude,
+				Longitude: selfRegion.Longitude,
+			}
+		}
 	}
 
 	body, _ := json.Marshal(hb)
@@ -296,6 +315,11 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 		routeTable.Put(hb.NodeID, hb.NodeName, hb.Addresses)
 	}
 
+	// Phase 4: Process region information
+	if regionMgr != nil {
+		regionMgr.ProcessHeartbeatRegion(hb.NodeID, hb.Region, extractRemoteIP(r))
+	}
+
 	// Update or add the peer
 	existingPeer := false
 	netMgr.mu.Lock()
@@ -448,6 +472,14 @@ func RecordContribution(fromNodeID string, tokensUsed int64) {
 		points = 1
 	}
 	netMgr.config.ContribPoints += points
+
+	// Phase 4: Record contribution to balance engine
+	if balanceEngine != nil {
+		balanceEngine.RecordContributionBalance(netMgr.config.NodeID, tokensUsed)
+		if fromNodeID != "" {
+			balanceEngine.RecordConsumptionBalance(fromNodeID, tokensUsed)
+		}
+	}
 
 	// Phase 2: Track contribution for unlock state
 	if netMgr.config.NodeUnlockStates == nil {
