@@ -3522,6 +3522,129 @@ if (authToken) {
       } catch(e) { console.warn('load quota info failed', e); }
     }
 
+    // ============================================================
+    // Phase 4: Region & Balance UI
+    // ============================================================
+
+    async function loadRegionData() {
+      try {
+        const res = await authFetch('/api/network/regions');
+        if (!res.ok) return;
+        const data = await res.json();
+        const summaryEl = document.getElementById('netRegionSummary');
+        if (summaryEl && data.regions) {
+          const regionNames = {ap: '🌏 亚太', americas: '🌎 美洲', eu: '🌍 欧洲', unknown: '❓ 未知'};
+          let html = '';
+          for (const [region, count] of Object.entries(data.regions)) {
+            const name = regionNames[region] || region;
+            const color = region === 'ap' ? '#3b82f6' : region === 'americas' ? '#22c55e' : region === 'eu' ? '#f59e0b' : '#6a6a8a';
+            html += '<div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:12px;text-align:center">';
+            html += '<div style="font-size:18px;font-weight:700;color:' + color + '">' + count + '</div>';
+            html += '<div style="font-size:11px;color:var(--text-muted)">' + name + '</div></div>';
+          }
+          summaryEl.innerHTML = html || '<span style="color:var(--text-muted)">暂无区域数据</span>';
+        }
+        if (data.config) {
+          const pl = document.getElementById('regionPreferLocal');
+          const ct = document.getElementById('regionCrossThreshold');
+          if (pl) pl.checked = data.config.prefer_local !== false;
+          if (ct) ct.value = data.config.cross_region_threshold || 2.0;
+        }
+        const detailEl = document.getElementById('netRegionDetail');
+        if (detailEl && data.nodes_by_region) {
+          let html = '';
+          for (const [region, nodes] of Object.entries(data.nodes_by_region)) {
+            if (!nodes || nodes.length === 0) continue;
+            html += '<div style="margin-bottom:8px"><div style="font-weight:500;margin-bottom:4px">' + region + ' (' + nodes.length + ' nodes)</div>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+            for (const n of nodes) {
+              const sub = n.sub_region ? ' [' + n.sub_region + ']' : '';
+              const src = n.source === 'self_report' ? ' 📝' : ' 🌐';
+              html += '<span style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;padding:2px 8px;font-size:11px" title="' + n.node_id + '">' + (n.node_id || '').substring(0, 12) + '...' + sub + src + '</span>';
+            }
+            html += '</div></div>';
+          }
+          detailEl.innerHTML = html || '<span style="color:var(--text-muted)">暂无节点区域数据</span>';
+        }
+      } catch(e) { console.warn('loadRegionData failed', e); }
+    }
+
+    async function updateRegionConfig() {
+      try {
+        const pl = document.getElementById('regionPreferLocal');
+        const ct = document.getElementById('regionCrossThreshold');
+        const cfg = {prefer_local: pl ? pl.checked : true, cross_region_threshold: ct ? parseFloat(ct.value) || 2.0 : 2.0, region_weights: {ap: 1.0, americas: 1.0, eu: 1.0, unknown: 0.5}};
+        await authFetch('/api/network/regions/config', {method: 'PUT', body: JSON.stringify(cfg)});
+      } catch(e) { console.warn('updateRegionConfig failed', e); }
+    }
+
+    async function loadBalanceData() {
+      try {
+        const [statusRes, nodesRes, adjRes] = await Promise.all([
+          authFetch('/api/network/balance/status'),
+          authFetch('/api/network/balance/nodes'),
+          authFetch('/api/network/balance/adjustments')
+        ]);
+        if (statusRes.ok) {
+          const s = await statusRes.json();
+          const el = document.getElementById('netBalanceGlobal');
+          if (el && s.global) {
+            const g = s.global;
+            const items = [
+              {l:'全网贡献', v:(g.total_network_contribution||0).toLocaleString(), c:'#22c55e'},
+              {l:'全网消费', v:(g.total_network_consumption||0).toLocaleString(), c:'#3b82f6'},
+              {l:'贡献/消费比', v:(g.network_balance_ratio||0).toFixed(2), c:'#f59e0b'},
+              {l:'平均平衡度', v:(g.average_node_balance||0).toFixed(2), c:(g.average_node_balance||0)>=0.5&&(g.average_node_balance||0)<=3?'#22c55e':'#ef4444'},
+              {l:'失衡节点', v:g.imbalance_nodes||0, c:(g.imbalance_nodes||0)>0?'#ef4444':'#22c55e'}
+            ];
+            el.innerHTML = items.map(i => '<div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:12px;text-align:center"><div style="font-size:18px;font-weight:700;color:'+i.c+'">'+i.v+'</div><div style="font-size:11px;color:var(--text-muted)">'+i.l+'</div></div>').join('');
+          }
+        }
+        if (nodesRes.ok) {
+          const nd = await nodesRes.json();
+          const el = document.getElementById('netBalanceNodes');
+          if (el) {
+            if (!nd.nodes || nd.nodes.length===0) { el.innerHTML='<span style="color:var(--text-muted)">暂无节点平衡数据</span>'; }
+            else {
+              let h='<table style="width:100%;border-collapse:collapse"><thead><tr style="border-bottom:1px solid var(--border-color)"><th style="text-align:left;padding:6px 4px;color:var(--text-muted);font-size:11px">节点</th><th style="text-align:right;padding:6px 4px;color:var(--text-muted);font-size:11px">贡献</th><th style="text-align:right;padding:6px 4px;color:var(--text-muted);font-size:11px">消费</th><th style="text-align:right;padding:6px 4px;color:var(--text-muted);font-size:11px">平衡度</th><th style="text-align:center;padding:6px 4px;color:var(--text-muted);font-size:11px">状态</th></tr></thead><tbody>';
+              for (const n of nd.nodes) {
+                const r=n.balance||0;
+                let badge,bc;
+                if(r<0.5){badge='⚠️ 过度消费';bc='#ef4444';}else if(r>3){badge='🌟 高贡献';bc='#22c55e';}else{badge='✅ 平衡';bc='#3b82f6';}
+                h+='<tr style="border-bottom:1px solid rgba(42,42,74,.3)"><td style="padding:6px 4px;font-size:11px">'+(n.node_id||'').substring(0,16)+'...</td><td style="text-align:right;padding:6px 4px;font-size:11px">'+(n.total_contributed||0).toLocaleString()+'</td><td style="text-align:right;padding:6px 4px;font-size:11px">'+(n.total_consumed||0).toLocaleString()+'</td><td style="text-align:right;padding:6px 4px;font-size:11px;font-weight:600;color:'+bc+'">'+r.toFixed(2)+'</td><td style="text-align:center;padding:6px 4px;font-size:11px">'+badge+'</td></tr>';
+              }
+              h+='</tbody></table>';
+              el.innerHTML=h;
+            }
+          }
+        }
+        if (adjRes.ok) {
+          const ad = await adjRes.json();
+          const el = document.getElementById('netBalanceAdjustments');
+          if (el) {
+            if (!ad.adjustments || ad.adjustments.length===0) { el.innerHTML='<span style="color:var(--text-muted)">暂无调节方案</span>'; }
+            else {
+              let h='';
+              for (const a of ad.adjustments) {
+                const icon=a.type==='reduce_priority'?'🔻':a.type==='boost_priority'?'🔺':'✅';
+                const color=a.type==='reduce_priority'?'#ef4444':a.type==='boost_priority'?'#22c55e':'#3b82f6';
+                h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;margin-bottom:4px"><span>'+icon+'</span><span style="flex:1;font-size:11px">'+(a.node_id||'').substring(0,16)+'...</span><span style="font-size:11px;color:'+color+'">'+(a.type||'balanced')+'</span><span style="font-size:10px;color:var(--text-muted)">权重:'+(a.routing_weight_multiplier||1).toFixed(2)+'x</span>'+(a.suggestion?'<span style="font-size:10px;color:var(--text-muted)" title="'+a.suggestion+'">💡</span>':'')+'</div>';
+              }
+              el.innerHTML=h;
+            }
+          }
+        }
+      } catch(e) { console.warn('loadBalanceData failed', e); }
+    }
+
+    async function recalculateBalance() {
+      try {
+        const res = await authFetch('/api/network/balance/recalculate', {method: 'POST'});
+        if (res.ok) { toast('平衡计算完成', 'success'); loadBalanceData(); }
+        else { toast('计算失败', 'error'); }
+      } catch(e) { console.warn('recalculateBalance failed', e); toast('计算请求失败', 'error'); }
+    }
+
     // Load algorithm params when network status loads
     const _origLoadNetworkStatus = loadNetworkStatus;
     loadNetworkStatus = async function() {
@@ -3532,6 +3655,8 @@ if (authToken) {
         loadAlgorithmParams();
         loadQuotaInfo();
         loadGlobalPoolStatus();
+        loadRegionData();
+        loadBalanceData();
       }
     };
 
