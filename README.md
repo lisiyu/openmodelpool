@@ -1,11 +1,45 @@
 # ModelMux
 
-**轻量级多平台 AI 模型统一代理管理系统** — 将 34+ AI 平台封装为 OpenAI 兼容 API，智能路由，一键部署。
+**去中心化 AI 能力共享网络** — 让大模型的能力像信息一样自由流动。
 
-> 单二进制，零依赖，极致性能。
+> 网络无边界，模型能力也不应该有边界。
 
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+---
+
+## 🌍 我们的信念
+
+互联网最伟大的创造，是打破了信息的边界。
+
+当年，BitTorrent 让知识不再被服务器垄断；IPFS 让存储不再依赖单一节点；Tor 让通信不再受地域束缚。
+
+**ModelMux 要做的是同一件事——但共享的不是文件，而是 AI 的能力。**
+
+我们相信，一个身处纽约的开发者手中的 Claude API，和北京程序员手中的一样有价值。当全球的 AI 能力通过一个去中心化网络汇聚在一起，任何人都可以平等地获取最强大的智能——无论他在哪里。
+
+这不是商业产品，这是互联网精神的延续：**共享、开放、无边界。**
+
+---
+
+## 🧭 项目愿景
+
+ModelMux 从一个轻量级 AI API 代理起步，正在演化为一个 **P2P AI 能力共享网络**：
+
+```
+  今天                          未来
+┌──────────┐            ┌─────────────────────────┐
+│ 单节点代理 │    →→→     │  全球节点互联的共享网络    │
+│ 手动配置   │            │  自动发现 · 信誉驱动      │
+│ 本地路由   │            │  多跳中继 · 端到端加密    │
+│ 个人使用   │            │  贡献激励 · 社区共建      │
+└──────────┘            └─────────────────────────┘
+```
+
+- **Phase 1** ✅ 单节点智能代理（当前） — 34+ 平台统一接入，4 维路由，多用户管理
+- **Phase 2** 🔜 联邦共享网络 — 节点自动发现，邀请链信任传递，跨节点路由
+- **Phase 3** 🌐 全球能力共享 — 去中心化组网，多跳中继，贡献积分，AI 能力无国界
 
 ---
 
@@ -576,9 +610,54 @@ ModelMux 的诞生离不开以下优秀的开源项目和技术：
 
 感谢开源社区的持续贡献，让 AI 工具生态更加繁荣。
 
+**精神先驱** — 以下项目证明了去中心化共享的力量，ModelMux 沿袭同样的信念：
+
+- [**BitTorrent**](https://www.bittorrent.com/) — 让知识不再被服务器垄断，P2P 文件共享的先驱
+- [**IPFS**](https://ipfs.tech/) — 内容寻址、去中心化存储，让数据属于所有人
+- [**Tor**](https://www.torproject.org/) — 洋葱路由，让通信自由不受地域束缚
+
 ---
 
 ## 📋 更新日志
+
+### v3.3.0 (2026-07)
+
+**🔴 Critical 安全修复**
+- **API Key 脱敏** — `/api/share/info` 和 `/api/config/export` 接口不再明文暴露 Proxy API Key
+- **Consumer Key 加密** — Consumer API Key 使用 AES-256-GCM 加密存储，不再明文落盘
+
+**🟠 安全加固**
+- **CORS 收紧** — 移除通配符 `*`，默认仅允许 localhost + 隧道 URL
+- **文件权限** — 所有数据文件权限从 0644 收紧至 0600
+- **错误脱敏** — 代理错误消息不再泄露内部 IP 地址
+- **JWT 安全** — admin.html 移除 localStorage 存 token，改用 HttpOnly Cookie
+- **Cookie 增强** — 添加 Secure + SameSite=Lax 标志
+- **端点认证** — `/metrics` 和 `/events` 端点新增认证保护（401）
+- **联邦鉴权** — 联邦端点限制为已知节点/管理员访问
+
+**🟢 其他改进**
+- **密码强度** — 最低密码长度从 6 位提升至 8 位
+- **Reset Token** — 复用未过期令牌，防止并发竞争
+- **匿名回退** — 在有 Consumer 注册时禁用匿名回退
+- **Consumer 权限** — handleTestProvider 添加 Consumer 权限检查，防止越权
+
+**⚡ 性能优化**
+- **Config 写入 debounce** — 3 秒聚合写入，减少磁盘 I/O
+- **HTTP 连接池** — 全局 MaxIdleConns=100，复用 TCP 连接
+- **异步写入** — Config.save() 改为异步，不阻塞请求
+- **Tracker 优化** — Record() 释放锁后再刷盘，减少锁竞争
+
+**🐛 Bug 修复**
+- 空 records 返回 `[]` 而非 `null`（前端兼容性）
+- Login cookie 不再重复 Set-Cookie
+- MarkAsRead 不存在时返回 404（此前静默成功）
+- round1/round4 负数归零处理
+- 分享功能脱敏显示 API Key
+
+**🆕 新功能**
+- **TokenHub 企业版兼容** — 健康检查 `/models` 返回 404 时自动降级为 `/chat/completions` 探测
+- **Provider 自定义健康端点** — 新增 `health_check_endpoint` 字段
+- **一键域名绑定** — Cloudflare API Token 方案，全自动创建隧道 + DNS 配置
 
 ### v3.2.0 (2026-07)
 
