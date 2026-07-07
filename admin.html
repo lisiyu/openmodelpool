@@ -825,8 +825,6 @@ async function loadProxyApiKey() {
   } catch(e) {}
 }
 
-}
-
 // ===== SMTP =====
 async function loadSmtp() {
   try { const r = await authFetch('/api/smtp/config'); const d = await r.json(); document.getElementById('smtpHost').value = d.host||''; document.getElementById('smtpPort').value = d.port||'587'; document.getElementById('smtpUser').value = d.username||''; document.getElementById('smtpFrom').value = d.from_email||''; document.getElementById('smtpTls').checked = d.use_tls!==false; } catch(e) {}
