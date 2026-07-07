@@ -96,8 +96,65 @@ func handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct{ Email string `json:"email"` }
 	readJSON(r, &body)
-	// Always return success to prevent email enumeration
-	writeJSON(w, 200, map[string]any{"success": true, "message": "if the email exists, a reset link has been sent"})
+
+	// Verify email matches admin email
+	if body.Email == "" || body.Email != auth.GetEmail() {
+		// Always return success to prevent email enumeration
+		writeJSON(w, 200, map[string]any{"success": true, "message": "如果邮箱已配置，重置链接已发送"})
+		return
+	}
+
+	// Check if SMTP is configured
+	if !auth.IsSMTPConfigured() {
+		writeError(w, 400, "邮件服务未配置，无法发送重置链接。请使用「重置密码」功能（通过 Proxy API Key）")
+		return
+	}
+
+	// Generate reset token
+	token := auth.CreateResetToken()
+
+	// Send email with reset link
+	s := auth.GetSMTP()
+	adminEmail := auth.GetEmail()
+
+	// Build reset URL from request
+	scheme := "https"
+	if r.TLS == nil {
+		scheme = "http"
+	}
+	resetURL := fmt.Sprintf("%s://%s/forgot-password?token=%s", scheme, r.Host, token)
+
+	subject := "ModelMux 密码重置"
+	msgBody := fmt.Sprintf("Subject: %s\r\nFrom: %s\r\nTo: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n"+
+		"<h3>ModelMux 密码重置</h3>"+
+		"<p>点击下方链接重置密码（30 分钟内有效）：</p>"+
+		`<p><a href="%s" style="padding:10px 20px;background:#6c63ff;color:white;text-decoration:none;border-radius:6px;">重置密码</a></p>`+
+		"<p>如果按钮无法点击，请手动复制以下链接：</p>"+
+		"<p style='word-break:break-all;color:#666;'>%s</p>"+
+		"<p style='color:#999;font-size:12px;'>如非本人操作，请忽略此邮件。</p>",
+		subject, s.FromEmail, adminEmail, resetURL, resetURL)
+
+	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+	var smtpAuth smtp.Auth
+	if s.Username != "" {
+		smtpAuth = smtp.PlainAuth("", s.Username, s.Password, s.Host)
+	}
+
+	var err error
+	if s.UseTLS && s.Port == 465 {
+		err = sendMailTLS(addr, smtpAuth, s.FromEmail, []string{adminEmail}, []byte(msgBody))
+	} else {
+		err = smtp.SendMail(addr, smtpAuth, s.FromEmail, []string{adminEmail}, []byte(msgBody))
+	}
+
+	if err != nil {
+		slog.Error("failed to send reset email", "error", err)
+		writeError(w, 500, "发送重置邮件失败: "+err.Error())
+		return
+	}
+
+	slog.Info("password reset email sent", "email", adminEmail)
+	writeJSON(w, 200, map[string]any{"success": true, "message": "重置链接已发送到你的邮箱"})
 }
 
 func handleResetPassword(w http.ResponseWriter, r *http.Request) {
