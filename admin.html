@@ -132,6 +132,13 @@ select.form-input{appearance:none;cursor:pointer}
   <div class="card">
     <div class="card-title"><span class="icon">🔑</span> API 访问认证</div>
     <div class="section-note">设置后，外部应用调用 /v1/* 接口需携带 <code>Authorization: Bearer &lt;your-key&gt;</code>；留空则不校验（仅适合内网使用）</div>
+    <div class="form-group">
+      <label class="form-label">API 接口地址</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="form-input" id="proxyApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制到剪贴板')">
+        <button class="btn btn-secondary btn-sm" onclick="copyApiUrl()">📋 复制</button>
+      </div>
+    </div>
     <div class="form-group"><label class="form-label">Proxy API Key</label>
       <div style="display:flex;gap:8px">
         <input class="form-input" id="proxyApiKey" placeholder="留空表示不启用认证" style="flex:1">
@@ -774,6 +781,22 @@ function getIcon(id) {
 }
 
 // ===== Coze Config =====
+// ===== Proxy API URL =====
+function initProxyApiUrl() {
+  const urlEl = document.getElementById('proxyApiUrl');
+  if (urlEl) {
+    urlEl.value = window.location.origin + '/v1';
+  }
+}
+function copyApiUrl() {
+  const urlEl = document.getElementById('proxyApiUrl');
+  if (urlEl) {
+    urlEl.select();
+    document.execCommand('copy');
+    toast('已复制到剪贴板');
+  }
+}
+
 // ===== Proxy API Key =====
 function generateApiKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -783,16 +806,34 @@ function generateApiKey() {
 }
 async function saveProxyApiKey() {
   const key = document.getElementById('proxyApiKey').value.trim();
-  await authFetch('/api/config', { method: 'POST', body: JSON.stringify({ proxy_api_key: key }) });
-  toast(key ? '✅ API Key 认证已启用' : '已关闭 API Key 认证');
+  if (key) {
+    await authFetch('/api/config', { method: 'POST', body: JSON.stringify({ proxy_api_key: key }) });
+    toast('✅ API Key 认证已启用');
+  } else {
+    toast('请输入 API Key');
+    return;
+  }
+  document.getElementById('proxyApiKey').value = '';
+  await loadProxyApiKey();
 }
 async function clearProxyApiKey() {
-  document.getElementById('proxyApiKey').value = '';
   await authFetch('/api/config', { method: 'POST', body: JSON.stringify({ proxy_api_key: '' }) });
+  document.getElementById('proxyApiKey').value = '';
+  document.getElementById('proxyApiKey').placeholder = '留空表示不启用认证';
   toast('已关闭 API Key 认证');
 }
 async function loadProxyApiKey() {
-  try { const r = await authFetch('/api/config'); const d = await r.json(); document.getElementById('proxyApiKey').value = d.proxy_api_key_masked && d.proxy_api_key_masked !== '未配置' ? d.proxy_api_key_masked : ''; document.getElementById('proxyApiKey').placeholder = d.proxy_api_key_masked && d.proxy_api_key_masked !== '未配置' ? `当前: ${d.proxy_api_key_masked}（输入新值覆盖）` : '留空表示不启用认证'; } catch(e) {}
+  try {
+    const r = await authFetch('/api/config');
+    const d = await r.json();
+    const el = document.getElementById('proxyApiKey');
+    el.value = '';
+    if (d.proxy_api_key_masked && d.proxy_api_key_masked !== '未配置') {
+      el.placeholder = `当前: ${d.proxy_api_key_masked}（输入新值覆盖）`;
+    } else {
+      el.placeholder = '留空表示不启用认证';
+    }
+  } catch(e) {}
 }
 
 // ===== Coze Config =====
@@ -832,7 +873,10 @@ async function updateEmail() { const e = document.getElementById('adminEmail').v
 async function changePassword() { const o = document.getElementById('oldPass').value; const n = document.getElementById('newPass').value; if (!o||!n) return toast('请填写密码','error'); try { const r = await authFetch('/api/admin/change-password', {method:'POST', body:JSON.stringify({old_password:o,new_password:n})}); const d = await r.json(); toast(d.success?'✅ 密码已修改':'❌ '+d.detail, d.success?'success':'error'); document.getElementById('oldPass').value=''; document.getElementById('newPass').value=''; } catch(e) { toast(e.message,'error'); } }
 
 // ===== Start =====
-init().then(() => { loadProxyApiKey(); loadCozeConfig(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); });
+init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadCozeConfig(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); });
+
+// Auto-refresh status and usage every 30 seconds
+setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
 </script>
 </body>
 </html>

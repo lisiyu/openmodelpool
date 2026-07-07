@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // ============================================================
@@ -157,6 +158,23 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := body["coze_bot_id"]; ok && v != "" {
 		update["coze_bot_id"] = v
+	}
+	if v, ok := body["proxy_api_key"]; ok {
+		if v == "" {
+			// Clear the proxy API key
+			cfg.mu.Lock()
+			delete(cfg.data, "proxy_api_key")
+			cfg.data["updated_at"] = time.Now().Format(time.RFC3339)
+			cfg.mu.Unlock()
+			cfg.save()
+		} else {
+			update["proxy_api_key"] = v
+		}
+	}
+	if len(update) == 0 && body["proxy_api_key"] == "" {
+		// Only proxy_api_key clear was sent, already handled
+		writeJSON(w, 200, cfg.Masked())
+		return
 	}
 	if len(update) == 0 {
 		writeError(w, 400, "at least one config field required")
