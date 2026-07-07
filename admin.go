@@ -438,15 +438,9 @@ func handleAdminPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
-	token := extractToken(r)
-	if token == "" {
-		http.Redirect(w, r, "/login", http.StatusFound)
-		return
-	}
-	if _, err := auth.VerifyToken(token); err != nil {
-		http.Redirect(w, r, "/login", http.StatusFound)
-		return
-	}
+	// No server-side auth check — admin.html uses client-side auth
+	// via authFetch() with Bearer token from localStorage.
+	// This avoids redirect loops when cookies don't persist (e.g. behind tunnels).
 	http.ServeFile(w, r, "admin.html")
 }
 

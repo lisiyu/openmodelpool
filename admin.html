@@ -292,6 +292,9 @@ function logout() { localStorage.removeItem('admin_token'); location.href = '/lo
 function toast(msg, type = 'success') { const t = document.createElement('div'); t.className = `toast ${type}`; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
 
 // ===== Init =====
+// Auth guard — redirect to login if no token
+if (!authToken) { location.href = '/login'; }
+
 let presets = [];
 async function init() {
   try { await loadStatus(); await loadProviders(); } catch(e) { console.error(e); }
