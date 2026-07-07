@@ -298,11 +298,16 @@ body {
 
 <script>
 // Check if not initialized yet
+let isRedirecting = false;
+
 document.addEventListener('DOMContentLoaded', async () => {
+  if (isRedirecting) return;
+  
   try {
     const resp = await fetch('/api/setup/status');
     const data = await resp.json();
     if (!data.initialized) {
+      isRedirecting = true;
       window.location.href = '/setup';
       return;
     }
@@ -314,7 +319,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (verifyResp.ok) {
-        window.location.href = '/admin';
+        isRedirecting = true;
+        setTimeout(() => {
+          window.location.href = '/admin';
+        }, 100);
       } else {
         localStorage.removeItem('admin_token');
       }

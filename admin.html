@@ -962,6 +962,36 @@ select.form-input{appearance:none;cursor:pointer}
         <div id="netOpenKeysList" style="font-size:12px;color:var(--text-muted)">暂无开放密钥</div>
       </div>
 
+      <!-- 算法参数链 (Phase 3) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">⚙️ 去中心化算法参数</div>
+        <div class="section-note" style="margin-bottom:12px">
+          算法参数存储在链式结构中，不可篡改。修改需要 2/3 节点投票同意（24 小时投票期）。
+        </div>
+        <div id="netAlgoParams" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:12px">
+          <!-- Filled by JS -->
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="showProposeAlgoModal()">📝 提议调整参数</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadAlgorithmParams()">🔄 刷新</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadAlgorithmHistory()">📜 查看历史</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadPendingProposals()">🗳️ 待投票</button>
+        </div>
+        <div id="netAlgoChainInfo" style="font-size:11px;color:var(--text-muted)">加载中...</div>
+      </div>
+
+      <!-- 开放 Key 额度 (Phase 3) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">💰 开放 Key 动态额度</div>
+        <div class="section-note" style="margin-bottom:12px">
+          开放 Key 额度由全网资源动态决定：全局额度 = 网络总资源 × openKeyRatio。用户额度 = 全局额度 × (信誉权重 × 信誉占比 + 贡献权重 × 贡献占比)。
+        </div>
+        <div id="netQuotaInfo" style="margin-bottom:12px">
+          <!-- Filled by JS -->
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="loadQuotaInfo()">🔄 刷新额度</button>
+      </div>
+
       <!-- 节点心跳状态 (Phase 2) -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px">💓 节点心跳状态</div>
@@ -1034,23 +1064,30 @@ select.form-input{appearance:none;cursor:pointer}
 // ================================================================
 // Module: CoreAuth - Authentication, utilities, and initialization
 // ================================================================
-let authToken = '' || '';
+let authToken = localStorage.getItem('admin_token') || '';
 async function authFetch(url, opts = {}) {
   opts.headers = { ...opts.headers, 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' };
   const r = await fetch(url, opts);
-  if (r.status === 401) { logout(); throw new Error('未登录'); }
+  if (r.status === 401) {
+    localStorage.removeItem('admin_token');
+    toast('登录已过期，请重新登录', 'error');
+    setTimeout(() => { location.href = '/login'; }, 1500);
+    throw new Error('未登录');
+  }
   return r;
 }
-function logout() { document.cookie='admin_token=;path=/;max-age=0'; location.href = '/login'; }
+function logout() { localStorage.removeItem('admin_token'); location.href = '/login'; }
 function toast(msg, type = 'success') { const t = document.createElement('div'); t.className = `toast ${type}`; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
 
 // ===== Init =====
-// Auth guard — redirect to login if no token
+// Auth guard — show message instead of immediate redirect to prevent loops
 
 // ================================================================
 // Module: Dashboard - Status overview and usage statistics
 // ================================================================
-if (!authToken) { location.href = '/login'; }
+if (!authToken) {
+  document.body.innerHTML = '<div style="text-align:center;padding:80px 20px;font-family:sans-serif"><h2 style="color:#e8e8f0;margin-bottom:16px">未登录</h2><p style="color:#a0a0b8;margin-bottom:24px">请先登录管理面板</p><a href="/login" style="display:inline-block;padding:10px 28px;background:linear-gradient(135deg,#6c63ff,#b24bf3);color:#fff;border-radius:8px;text-decoration:none;font-size:14px">前往登录 →</a></div>';
+}
 
 let presets = [];
 async function init() {
@@ -2357,11 +2394,24 @@ async function createCollabInviteCode() {
   } catch(e) { toast('创建失败: ' + e.message, 'error'); }
 }
 
-// ===== Start =====
-init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); checkFederationDoc(); loadShareInfo(); });
+// ===== Start (only if authenticated) =====
+if (authToken) {
+  init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); checkFederationDoc(); loadShareInfo(); });
 
-// Auto-refresh status and usage every 30 seconds
-setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
+  // Auto-refresh status and usage every 30 seconds with error handling
+  let _pollTimer = setInterval(async () => {
+    try { await loadStatus(); await refreshUsage(); } catch(e) {
+      console.error('状态刷新失败:', e);
+      clearInterval(_pollTimer); _pollTimer = null;
+    }
+  }, 30000);
+
+  // Pause polling when tab is hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; } }
+    else { if (!_pollTimer) { _pollTimer = setInterval(async () => { try { await loadStatus(); await refreshUsage(); } catch(e) { clearInterval(_pollTimer); _pollTimer = null; } }, 30000); } }
+  });
+}
 
 // ================================================================
 // Module: RealtimeEvents - SSE connection for live updates
@@ -3061,10 +3111,212 @@ setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
       if (el) el.textContent = val;
     }
 
+    // ============================================================
+    // Phase 3: Algorithm Chain & Quota UI
+    // ============================================================
+
+    async function loadAlgorithmParams() {
+      try {
+        const r = await fetch('/api/network/algorithm/current');
+        const d = await r.json();
+        const el = document.getElementById('netAlgoParams');
+        if (!el) return;
+        const p = d.parameters || {};
+        el.innerHTML = [
+          { label: '开放 Key 比例', value: ((p.open_key_ratio || 0) * 100).toFixed(1) + '%', icon: '🔓' },
+          { label: '信誉权重', value: ((p.trust_weight || 0) * 100).toFixed(0) + '%', icon: '⭐' },
+          { label: '贡献权重', value: ((p.contrib_weight || 0) * 100).toFixed(0) + '%', icon: '🏆' },
+          { label: '试用额度倍数', value: (p.trial_quota_multiplier || 0).toFixed(1) + 'x', icon: '🎁' },
+          { label: '解锁阈值系数', value: ((p.unlock_threshold_coef || 0) * 100).toFixed(0) + '%', icon: '🔑' }
+        ].map(item =>
+          '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px 12px">' +
+          '<div style="font-size:11px;color:var(--text-muted)">' + item.icon + ' ' + item.label + '</div>' +
+          '<div style="font-size:16px;font-weight:600;margin-top:4px">' + item.value + '</div>' +
+          '</div>'
+        ).join('');
+
+        const infoEl = document.getElementById('netAlgoChainInfo');
+        if (infoEl) {
+          infoEl.textContent = '版本: v' + (d.version || 0) + ' | Hash: ' + ((d.hash || '').substring(0, 16)) + '... | 更新者: ' + (d.updated_by || '-') + ' | ' + (d.timestamp || '');
+        }
+      } catch(e) { console.warn('load algo params failed', e); }
+    }
+
+    async function loadAlgorithmHistory() {
+      try {
+        const r = await fetch('/api/network/algorithm/history');
+        const d = await r.json();
+        const blocks = d.blocks || [];
+        const infoEl = document.getElementById('netAlgoChainInfo');
+        if (infoEl) {
+          infoEl.innerHTML = '链高度: ' + blocks.length + ' 块 | 完整性: ' + (d.valid ? '<span style="color:#22c55e">✓ 有效</span>' : '<span style="color:#ef4444">✗ 异常</span>');
+          if (d.chain_errors && d.chain_errors.length > 0) {
+            infoEl.innerHTML += '<br><span style="color:#ef4444">错误: ' + d.chain_errors.join(', ') + '</span>';
+          }
+        }
+      } catch(e) { console.warn('load algo history failed', e); }
+    }
+
+    async function loadPendingProposals() {
+      try {
+        const r = await fetch('/api/network/algorithm/proposals?pending=true');
+        const d = await r.json();
+        const proposals = d.proposals || [];
+        const infoEl = document.getElementById('netAlgoChainInfo');
+        if (proposals.length === 0) {
+          if (infoEl) infoEl.textContent += ' | 待投票: 无';
+          return;
+        }
+        let html = '<div style="margin-top:8px;font-size:12px;font-weight:600">待投票提案:</div>';
+        html += '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">';
+        proposals.forEach(p => {
+          const voteCount = Object.keys(p.votes || {}).length;
+          const agreeCount = Object.values(p.votes || {}).filter(v => v).length;
+          const expires = new Date(p.expires_at);
+          html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px 12px">';
+          html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+          html += '<div>';
+          html += '<div style="font-weight:500;font-size:12px">提案: ' + (p.id || '').substring(0, 12) + '...</div>';
+          html += '<div style="color:var(--text-muted);font-size:11px">提议者: ' + (p.proposer || '-') + ' | 投票: ' + agreeCount + '/' + voteCount + ' | 截止: ' + expires.toLocaleString() + '</div>';
+          html += '</div>';
+          html += '<div style="display:flex;gap:6px">';
+          html += '<button class="btn btn-success btn-sm" onclick="voteProposal(\'' + p.id + '\', true)">✓ 同意</button>';
+          html += '<button class="btn btn-danger btn-sm" onclick="voteProposal(\'' + p.id + '\', false)">✗ 反对</button>';
+          html += '</div></div></div>';
+        });
+        html += '</div>';
+        if (infoEl) infoEl.innerHTML += html;
+      } catch(e) { console.warn('load proposals failed', e); }
+    }
+
+    function showProposeAlgoModal() {
+      fetch('/api/network/algorithm/current').then(r => r.json()).then(d => {
+        const p = d.parameters || {};
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay open';
+        modal.id = 'proposeAlgoModal';
+        modal.innerHTML = '<div class="modal" style="max-width:500px">' +
+          '<div class="modal-title"><span>📝 提议算法参数调整</span><button class="modal-close" onclick="closeProposeAlgoModal()">✕</button></div>' +
+          '<div class="form-group"><label class="form-label">开放 Key 比例 (0-1)</label><input class="form-input" id="propOpenKeyRatio" type="number" step="0.01" min="0" max="1" value="' + (p.open_key_ratio || 0.3) + '"></div>' +
+          '<div class="form-group"><label class="form-label">信誉权重 (0-1)</label><input class="form-input" id="propTrustWeight" type="number" step="0.01" min="0" max="1" value="' + (p.trust_weight || 0.4) + '"></div>' +
+          '<div class="form-group"><label class="form-label">贡献权重 (0-1)</label><input class="form-input" id="propContribWeight" type="number" step="0.01" min="0" max="1" value="' + (p.contrib_weight || 0.6) + '"></div>' +
+          '<div class="form-group"><label class="form-label">试用额度倍数</label><input class="form-input" id="propTrialMultiplier" type="number" step="0.1" min="0" value="' + (p.trial_quota_multiplier || 2.0) + '"></div>' +
+          '<div class="form-group"><label class="form-label">解锁阈值系数 (0-1)</label><input class="form-input" id="propUnlockCoef" type="number" step="0.01" min="0" max="1" value="' + (p.unlock_threshold_coef || 0.3) + '"></div>' +
+          '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">' +
+          '<button class="btn btn-secondary" onclick="closeProposeAlgoModal()">取消</button>' +
+          '<button class="btn btn-primary" onclick="submitProposal()">提交提案</button>' +
+          '</div></div>';
+        document.body.appendChild(modal);
+      }).catch(e => toast('Failed to load current params', 'error'));
+    }
+
+    function closeProposeAlgoModal() {
+      const modal = document.getElementById('proposeAlgoModal');
+      if (modal) modal.remove();
+    }
+
+    async function submitProposal() {
+      const params = {
+        open_key_ratio: parseFloat(document.getElementById('propOpenKeyRatio').value),
+        trust_weight: parseFloat(document.getElementById('propTrustWeight').value),
+        contrib_weight: parseFloat(document.getElementById('propContribWeight').value),
+        trial_quota_multiplier: parseFloat(document.getElementById('propTrialMultiplier').value),
+        unlock_threshold_coef: parseFloat(document.getElementById('propUnlockCoef').value)
+      };
+      try {
+        const r = await authFetch('/api/network/algorithm/propose', {
+          method: 'POST',
+          body: JSON.stringify({ parameters: params })
+        });
+        const d = await r.json();
+        if (!r.ok) { toast('Propose failed: ' + (d.error || 'unknown'), 'error'); return; }
+        toast('提案已提交: ' + d.proposal_id, 'success');
+        closeProposeAlgoModal();
+        loadAlgorithmParams();
+        loadPendingProposals();
+      } catch(e) { toast('Propose failed: ' + e.message, 'error'); }
+    }
+
+    async function voteProposal(proposalId, agree) {
+      try {
+        const r = await authFetch('/api/network/algorithm/vote', {
+          method: 'POST',
+          body: JSON.stringify({ proposal_id: proposalId, agree: agree })
+        });
+        const d = await r.json();
+        if (!r.ok) { toast('Vote failed: ' + (d.error || 'unknown'), 'error'); return; }
+        toast('投票成功: ' + (agree ? '同意' : '反对') + ' (' + d.current_votes + '/' + d.required_votes + ')', 'success');
+        loadPendingProposals();
+        if (d.proposal_status === 'approved') {
+          toast('提案已通过并应用！', 'success');
+          loadAlgorithmParams();
+        }
+      } catch(e) { toast('Vote failed: ' + e.message, 'error'); }
+    }
+
+    async function loadQuotaInfo() {
+      try {
+        const r = await authFetch('/api/network/open-key-quota/all');
+        const d = await r.json();
+        const el = document.getElementById('netQuotaInfo');
+        if (!el) return;
+
+        const globalQuota = d.global_quota || 0;
+        const quotas = d.quotas || [];
+
+        let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px">';
+        html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px 12px">';
+        html += '<div style="font-size:11px;color:var(--text-muted)">🌐 全局额度</div>';
+        html += '<div style="font-size:18px;font-weight:700">' + globalQuota.toLocaleString() + ' tokens</div>';
+        html += '</div>';
+        html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px 12px">';
+        html += '<div style="font-size:11px;color:var(--text-muted)">📊 网络节点数</div>';
+        html += '<div style="font-size:18px;font-weight:700">' + quotas.length + '</div>';
+        html += '</div>';
+        html += '</div>';
+
+        if (quotas.length > 0) {
+          html += '<div style="font-size:12px;font-weight:600;margin-bottom:6px">节点额度分配:</div>';
+          html += '<div style="display:flex;flex-direction:column;gap:4px">';
+          quotas.forEach(q => {
+            const pct = globalQuota > 0 ? ((q.user_quota / globalQuota) * 100).toFixed(1) : '0';
+            html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center">';
+            html += '<div>';
+            html += '<div style="font-weight:500;font-size:12px">' + (q.node_id || '-') + '</div>';
+            html += '<div style="color:var(--text-muted);font-size:11px">信誉占比: ' + ((q.reputation_share || 0) * 100).toFixed(1) + '% | 贡献占比: ' + ((q.contribution_share || 0) * 100).toFixed(1) + '%</div>';
+            html += '</div>';
+            html += '<div style="text-align:right">';
+            html += '<div style="font-weight:600;font-size:13px">' + (q.user_quota || 0).toLocaleString() + '</div>';
+            html += '<div style="color:var(--text-muted);font-size:11px">' + pct + '%</div>';
+            html += '</div></div>';
+          });
+          html += '</div>';
+        }
+        el.innerHTML = html;
+      } catch(e) { console.warn('load quota info failed', e); }
+    }
+
+    // Load algorithm params when network status loads
+    const _origLoadNetworkStatus = loadNetworkStatus;
+    loadNetworkStatus = async function() {
+      await _origLoadNetworkStatus();
+      // Also load Phase 3 data when network is active
+      const netActive = document.getElementById('networkActive');
+      if (netActive && netActive.style.display !== 'none') {
+        loadAlgorithmParams();
+        loadQuotaInfo();
+      }
+    };
+
     // Load network status on page load
     setTimeout(() => loadNetworkStatus(), 300);
-    // Refresh every 30 seconds
-    setInterval(() => loadNetworkStatus(), 30000);
+    // Refresh every 30 seconds with error handling
+    let _netPollTimer = setInterval(async () => {
+      try { await loadNetworkStatus(); } catch(e) {
+        console.error('网络状态刷新失败:', e);
+        clearInterval(_netPollTimer); _netPollTimer = null;
+      }
+    }, 30000);
 
 
 </script>
