@@ -80,6 +80,7 @@ func main() {
 	mux.HandleFunc("GET /api/smtp/status", handleSMTPStatus)
 	mux.HandleFunc("GET /api/smtp/config", withAuth(handleGetSMTPConfig))
 	mux.HandleFunc("POST /api/smtp/config", withAuth(handleSaveSMTPConfig))
+	mux.HandleFunc("POST /api/smtp/test", withAuth(handleSMTPTest))
 
 	// Logs (protected)
 	mux.HandleFunc("GET /api/logs", withAuth(handleLogs))
