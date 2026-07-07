@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const AppVersion = "3.0.0"
+
 func main() {
 	// Initialize all components
 	os.MkdirAll("data", 0755)
@@ -326,7 +328,7 @@ func readJSON(r *http.Request, v any) error {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	status := map[string]any{
 		"status":           "ok",
-		"version":          "3.0.0",
+		"version":          AppVersion,
 		"providers_enabled": len(pm.Enabled()),
 		"models_available": len(pm.AllModels()),
 	}
@@ -424,6 +426,10 @@ func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 		"federation_registry_repo": cfg.Get("federation_registry_repo", "lisiyu/modelmux"),
 		"gossip_interval_s":        cfg.Get("gossip_interval_s", "30"),
 		"heartbeat_interval_s":     cfg.Get("heartbeat_interval_s", "60"),
+		"tunnel_enabled":           cfg.Get("tunnel_enabled", "false"),
+		"tunnel_mode":              cfg.Get("tunnel_mode", "quick"), // quick | named
+		"tunnel_domain":            cfg.Get("tunnel_domain", ""),     // custom domain e.g. mux.example.com
+		"tunnel_url":               cfg.Get("tunnel_url", ""),        // current quick tunnel URL
 	})
 }
 
@@ -439,6 +445,7 @@ func handleSaveFederationConfig(w http.ResponseWriter, r *http.Request) {
 		"federation_enabled", "federation_relay_enabled",
 		"federation_registry_url", "federation_registry_repo",
 		"gossip_interval_s", "heartbeat_interval_s",
+		"tunnel_enabled", "tunnel_mode", "tunnel_domain", "tunnel_url",
 	} {
 		if v, ok := body[key]; ok {
 			cfg.Set(key, v)

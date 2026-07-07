@@ -406,6 +406,40 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
     </div>
 
+    <!-- 内网穿透与域名 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+      <div class="card-title" style="font-size:14px"><span class="icon">🌍</span> 公网访问（Cloudflare Tunnel）</div>
+      <div class="section-note" style="margin-bottom:12px">默认使用 Cloudflare Quick Tunnel（免费、无需域名），自动生成公网地址。如需绑定自定义域名，请切换为「指定域名」模式。</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">启用公网访问</label>
+          <select class="form-input" id="tunnelEnabled">
+            <option value="false">关闭</option>
+            <option value="true">开启</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">隧道模式</label>
+          <select class="form-input" id="tunnelMode" onchange="toggleDomainInput()">
+            <option value="quick">Quick Tunnel（自动分配，无需域名）</option>
+            <option value="named">指定域名（需已有 Cloudflare 托管的域名）</option>
+          </select>
+        </div>
+        <div class="form-group" id="domainInputGroup" style="display:none;grid-column:1/-1">
+          <label class="form-label">自定义域名</label>
+          <input class="form-input" id="tunnelDomain" placeholder="mux.example.com">
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">域名需在 Cloudflare 账户中托管，安装时会自动创建 DNS 记录和 TLS 证书</div>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">当前公网地址</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="tunnelUrl" readonly placeholder="启动后自动生成" style="background:var(--bg-secondary);color:var(--text-muted)">
+            <button class="btn btn-secondary btn-sm" onclick="copyTunnelUrl()" style="flex-shrink:0">📋 复制</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- GitHub 绑定 -->
     <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
       <div class="card-title" style="font-size:14px"><span class="icon">🔗</span> GitHub 身份绑定</div>
@@ -1320,6 +1354,20 @@ function refreshFederation() {
   loadFederationStatus();
   loadFederationConfig();
   toast('已刷新', 'info');
+}
+
+function toggleDomainInput() {
+  const mode = document.getElementById('tunnelMode').value;
+  document.getElementById('domainInputGroup').style.display = mode === 'named' ? 'block' : 'none';
+}
+
+function copyTunnelUrl() {
+  const input = document.getElementById('tunnelUrl');
+  if (input.value) {
+    navigator.clipboard.writeText(input.value).then(() => toast('已复制公网地址', 'success'));
+  } else {
+    toast('暂无公网地址，请先启用隧道', 'error');
+  }
 }
 
 async function showInbox() {

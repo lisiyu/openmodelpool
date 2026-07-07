@@ -213,7 +213,7 @@ func (n *NodeIdentity) GetInfo() NodeInfo {
 		Status:          "active",
 		SeedNode:        cfg.Get("federation_seed", "false") == "true",
 		Reputation:      0,
-		Version:         "3.0.0",
+		Version:         AppVersion,
 	}
 }
 

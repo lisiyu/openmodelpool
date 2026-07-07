@@ -728,7 +728,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"status":  "running",
-		"version": "1.0.0",
+		"version": AppVersion,
 		"providers": map[string]any{
 			"enabled": enabled,
 			"total":   len(all),
