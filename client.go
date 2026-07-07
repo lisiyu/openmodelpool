@@ -934,20 +934,44 @@ func testConnection(p Provider) map[string]any {
 		if p.APIKey == "" {
 			return map[string]any{"success": false, "error": "API key not configured"}
 		}
+		client := proxyHTTPClient(p, 15 * time.Second)
+		// Try /models first
 		req, _ := http.NewRequest("GET", strings.TrimRight(p.BaseURL, "/")+"/models", nil)
 		req.Header.Set("Authorization", "Bearer "+p.APIKey)
-		client := proxyHTTPClient(p, 15 * time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}
 		}
-		defer resp.Body.Close()
 		if resp.StatusCode == 200 {
 			var data struct {
 				Data []any `json:"data"`
 			}
 			json.NewDecoder(resp.Body).Decode(&data)
+			resp.Body.Close()
 			return map[string]any{"success": true, "message": fmt.Sprintf("Connected, %d models", len(data.Data))}
+		}
+		resp.Body.Close()
+		// If /models returns 404 (endpoint not supported), fall back to a lightweight chat request
+		if resp.StatusCode == 404 {
+			testPayload := map[string]any{
+				"model":      "auto",
+				"max_tokens": 1,
+				"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+			}
+			testBody, _ := json.Marshal(testPayload)
+			testReq, _ := http.NewRequest("POST", strings.TrimRight(p.BaseURL, "/")+"/chat/completions", bytes.NewReader(testBody))
+			testReq.Header.Set("Authorization", "Bearer "+p.APIKey)
+			testReq.Header.Set("Content-Type", "application/json")
+			testResp, err := client.Do(testReq)
+			if err != nil {
+				return map[string]any{"success": false, "error": err.Error()}
+			}
+			defer testResp.Body.Close()
+			if testResp.StatusCode == 200 {
+				return map[string]any{"success": true, "message": "Connected (chat verified)"}
+			}
+			b, _ := io.ReadAll(testResp.Body)
+			return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", testResp.StatusCode, truncate(string(b), 200))}
 		}
 		b, _ := io.ReadAll(resp.Body)
 		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", resp.StatusCode, truncate(string(b), 200))}

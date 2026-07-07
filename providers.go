@@ -77,7 +77,7 @@ var presetProviders = []Provider{
 	},
 	{
 		ID: "tokenhub-enterprise", Name: "腾讯 TokenHub 企业版", Type: "openai_compatible",
-		BaseURL: "https://api.lkeap.cloud.tencent.com/plan/v3",
+		BaseURL: "https://tokenhub.tencentmaas.com/plan/v3",
 		Priority: 3,
 		Description: "腾讯 TokenPlan 企业版（积分制，多 Key 配额管理，团队共享）",
 		Icon: "hunyuan",
