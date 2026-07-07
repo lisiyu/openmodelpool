@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ModelMux — 去中心化 AI 模型联邦管理平台</title>
+    <meta name="description" content="一个 API 地址代理 34+ AI 平台，智能路由，去中心化联邦网络。">
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-card: #111827;
+            --bg-card-hover: #1a2332;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --accent-cyan: #06b6d4;
+            --accent-green: #10b981;
+            --border-color: #1e293b;
+            --gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* 背景粒子效果 */
+        .bg-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                radial-gradient(circle at 25% 25%, rgba(59, 130, 246, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 75% 75%, rgba(139, 92, 246, 0.05) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 32px 20px 48px;
+        }
+
+        /* Hero 区域 */
+        .hero {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .logo {
+            width: 72px;
+            height: 72px;
+            background: var(--gradient);
+            border-radius: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            font-weight: 800;
+            color: white;
+            margin-bottom: 16px;
+            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.3);
+        }
+
+        .hero h1 {
+            font-size: 28px;
+            font-weight: 800;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .hero .tagline {
+            font-size: 15px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+
+        .version-badge {
+            display: inline-block;
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent-blue);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        /* 特性卡片 */
+        .features {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 32px;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .feature-card:hover {
+            background: var(--bg-card-hover);
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .feature-icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .feature-title {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+
+        .feature-desc {
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        /* 平台标签 */
+        .platforms {
+            margin-bottom: 32px;
+            text-align: center;
+        }
+
+        .platforms h3 {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            font-weight: 500;
+        }
+
+        .platform-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+        }
+
+        .platform-tag {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        /* 邀请链接区 */
+        .invite-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .invite-section h3 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .invite-url-box {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .invite-url-input {
+            flex: 1;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: var(--text-primary);
+            font-size: 13px;
+            outline: none;
+        }
+
+        .invite-url-input:focus {
+            border-color: var(--accent-blue);
+        }
+
+        .copy-btn {
+            background: var(--gradient);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        .copy-btn:hover {
+            opacity: 0.9;
+            transform: scale(1.02);
+        }
+
+        .copy-btn.copied {
+            background: var(--accent-green);
+        }
+
+        /* 二维码 */
+        .qr-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        #qrcode {
+            background: white;
+            padding: 12px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+        }
+
+        .qr-hint {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* 分享按钮 */
+        .share-section {
+            margin-bottom: 32px;
+        }
+
+        .share-section h3 {
+            font-size: 14px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 12px;
+            font-weight: 500;
+        }
+
+        .share-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .share-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            color: white;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+
+        .share-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        }
+
+        .share-btn.wechat {
+            background: #07c160;
+        }
+
+        .share-btn.twitter {
+            background: #1d9bf0;
+        }
+
+        .share-btn.telegram {
+            background: #2aabee;
+        }
+
+        .share-btn.reddit {
+            background: #ff4500;
+        }
+
+        .share-btn .icon {
+            font-size: 18px;
+        }
+
+        /* GitHub CTA */
+        .github-cta {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .github-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .github-btn:hover {
+            border-color: var(--accent-blue);
+            background: var(--bg-card-hover);
+        }
+
+        /* Toast 提示 */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--accent-green);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+            opacity: 0.6;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        /* 响应式 */
+        @media (min-width: 600px) {
+            .container {
+                max-width: 560px;
+                padding: 48px 32px 64px;
+            }
+
+            .hero h1 {
+                font-size: 36px;
+            }
+
+            .features {
+                grid-template-columns: repeat(4, 1fr);
+            }
+
+            .share-buttons {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+
+    <div class="container">
+        <!-- Hero -->
+        <div class="hero">
+            <div class="logo">M</div>
+            <h1>ModelMux</h1>
+            <p class="tagline">去中心化 AI 模型联邦管理平台<br>一个 API 地址，代理 34+ AI 平台</p>
+            <span class="version-badge">v3.1.0 · 开源 · MIT</span>
+        </div>
+
+        <!-- 核心特性 -->
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🔌</div>
+                <div class="feature-title">34+ 平台</div>
+                <div class="feature-desc">OpenAI / Claude / Gemini / 千帆 / Coze / NIM 等</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <div class="feature-title">智能路由</div>
+                <div class="feature-desc">优先级 / 成本 / 速度 / 权重 四种模式</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🌐</div>
+                <div class="feature-title">联邦网络</div>
+                <div class="feature-desc">Ed25519 身份 / Gossip 同步 / 信誉系统</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🚀</div>
+                <div class="feature-title">一键部署</div>
+                <div class="feature-desc">Docker / 二进制 / Cloudflare Tunnel</div>
+            </div>
+        </div>
+
+        <!-- 平台标签 -->
+        <div class="platforms">
+            <h3>已预置平台</h3>
+            <div class="platform-tags">
+                <span class="platform-tag">OpenAI</span>
+                <span class="platform-tag">Claude</span>
+                <span class="platform-tag">Gemini</span>
+                <span class="platform-tag">DeepSeek</span>
+                <span class="platform-tag">Coze</span>
+                <span class="platform-tag">百度千帆</span>
+                <span class="platform-tag">通义千问</span>
+                <span class="platform-tag">智谱</span>
+                <span class="platform-tag">月之暗面</span>
+                <span class="platform-tag">NVIDIA NIM</span>
+                <span class="platform-tag">Groq</span>
+                <span class="platform-tag">xAI</span>
+                <span class="platform-tag">Mistral</span>
+                <span class="platform-tag">Ollama</span>
+                <span class="platform-tag">OpenRouter</span>
+                <span class="platform-tag">+19 more</span>
+            </div>
+        </div>
+
+        <!-- 邀请链接 -->
+        <div class="invite-section">
+            <h3>🔗 邀请链接</h3>
+            <div class="invite-url-box">
+                <input type="text" class="invite-url-input" id="inviteUrl" readonly>
+                <button class="copy-btn" id="copyBtn" onclick="copyLink()">复制</button>
+            </div>
+
+            <div class="qr-section">
+                <div id="qrcode"></div>
+                <span class="qr-hint">扫码访问项目</span>
+            </div>
+        </div>
+
+        <!-- 分享按钮 -->
+        <div class="share-section">
+            <h3>分享到</h3>
+            <div class="share-buttons">
+                <button class="share-btn wechat" onclick="shareWechat()">
+                    <span class="icon">💬</span> 微信
+                </button>
+                <a class="share-btn twitter" id="twitterBtn" target="_blank" rel="noopener">
+                    <span class="icon">𝕏</span> Twitter
+                </a>
+                <a class="share-btn telegram" id="telegramBtn" target="_blank" rel="noopener">
+                    <span class="icon">✈️</span> Telegram
+                </a>
+                <a class="share-btn reddit" id="redditBtn" target="_blank" rel="noopener">
+                    <span class="icon">🤖</span> Reddit
+                </a>
+            </div>
+        </div>
+
+        <!-- GitHub CTA -->
+        <div class="github-cta">
+            <a class="github-btn" href="https://github.com/lisiyu/modelmux" target="_blank" rel="noopener">
+                ⭐ Star on GitHub
+            </a>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            ModelMux · Decentralized AI Model Federation Platform · MIT License
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // 项目信息
+        const PROJECT_URL = 'https://github.com/lisiyu/modelmux';
+        const SHARE_TEXT = 'ModelMux — 一个 API 地址代理 34+ AI 平台，智能路由，去中心化联邦网络。Go 单二进制，Docker 一键部署。';
+        const SHARE_TITLE = 'ModelMux — 去中心化 AI 模型联邦管理平台';
+
+        // 初始化
+        function init() {
+            // 设置邀请链接
+            const currentUrl = window.location.href || PROJECT_URL;
+            document.getElementById('inviteUrl').value = PROJECT_URL;
+
+            // 生成二维码
+            try {
+                new QRCode(document.getElementById('qrcode'), {
+                    text: PROJECT_URL,
+                    width: 160,
+                    height: 160,
+                    colorDark: '#0a0e1a',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+            } catch (e) {
+                // fallback: 使用 Google Charts API
+                const img = document.createElement('img');
+                img.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(PROJECT_URL)}`;
+                img.width = 160;
+                img.height = 160;
+                img.style.borderRadius = '8px';
+                document.getElementById('qrcode').appendChild(img);
+            }
+
+            // 设置分享链接
+            const encodedUrl = encodeURIComponent(PROJECT_URL);
+            const encodedText = encodeURIComponent(SHARE_TEXT);
+            const encodedTitle = encodeURIComponent(SHARE_TITLE);
+
+            document.getElementById('twitterBtn').href =
+                `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`;
+
+            document.getElementById('telegramBtn').href =
+                `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`;
+
+            document.getElementById('redditBtn').href =
+                `https://reddit.com/submit?url=${encodedUrl}&title=${encodedTitle}`;
+        }
+
+        // 复制链接
+        function copyLink() {
+            const url = PROJECT_URL;
+            const btn = document.getElementById('copyBtn');
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).then(() => {
+                    showCopySuccess(btn);
+                }).catch(() => {
+                    fallbackCopy(url, btn);
+                });
+            } else {
+                fallbackCopy(url, btn);
+            }
+        }
+
+        function fallbackCopy(text, btn) {
+            const input = document.getElementById('inviteUrl');
+            input.value = text;
+            input.select();
+            try {
+                document.execCommand('copy');
+                showCopySuccess(btn);
+            } catch (e) {
+                showToast('复制失败，请手动复制');
+            }
+        }
+
+        function showCopySuccess(btn) {
+            btn.textContent = '已复制!';
+            btn.classList.add('copied');
+            showToast('链接已复制到剪贴板');
+            setTimeout(() => {
+                btn.textContent = '复制';
+                btn.classList.remove('copied');
+            }, 2000);
+        }
+
+        // 微信分享
+        function shareWechat() {
+            copyLink();
+            showToast('链接已复制，打开微信粘贴分享给好友');
+        }
+
+        // Toast 提示
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2500);
+        }
+
+        // 初始化
+        init();
+    </script>
+</body>
+</html>

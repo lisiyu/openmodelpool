@@ -9,7 +9,7 @@ func TestMultiUser_CreateInviteCode(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0) // single use
+	code := multiUser.CreateInviteCode(0, "") // single use
 	if code == "" {
 		t.Fatal("CreateInviteCode returned empty string")
 	}
@@ -27,7 +27,7 @@ func TestMultiUser_CreateInviteCode_MultiUse(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(3) // 3 uses
+	code := multiUser.CreateInviteCode(3, "") // 3 uses
 
 	for i := 0; i < 3; i++ {
 		if !multiUser.ValidateInviteCode(code) {
@@ -61,7 +61,7 @@ func TestMultiUser_UseInviteCode(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0) // single use
+	code := multiUser.CreateInviteCode(0, "") // single use
 
 	if !multiUser.UseInviteCode(code, "consumer-1") {
 		t.Fatal("UseInviteCode should succeed for valid code")
@@ -91,7 +91,7 @@ func TestMultiUser_CreateConsumer(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 	consumer, err := multiUser.CreateConsumer("Alice", code)
 	if err != nil {
 		t.Fatalf("CreateConsumer error: %v", err)
@@ -133,7 +133,7 @@ func TestMultiUser_CreateConsumer_UsedInvite(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 	_, err := multiUser.CreateConsumer("First", code)
 	if err != nil {
 		t.Fatalf("first consumer creation should succeed: %v", err)
@@ -149,7 +149,7 @@ func TestMultiUser_ValidateAPIKey(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 	consumer, _ := multiUser.CreateConsumer("Alice", code)
 
 	// Valid key
@@ -172,7 +172,7 @@ func TestMultiUser_ValidateAPIKey_DisabledConsumer(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 	consumer, _ := multiUser.CreateConsumer("Alice", code)
 
 	// Disable consumer
@@ -198,7 +198,7 @@ func TestMultiUser_RecordConsumerUsage(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 	consumer, _ := multiUser.CreateConsumer("Alice", code)
 
 	multiUser.RecordConsumerUsage(consumer.ID, 500)
@@ -220,7 +220,7 @@ func TestMultiUser_DeleteConsumer(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 	consumer, _ := multiUser.CreateConsumer("Alice", code)
 
 	if !multiUser.DeleteConsumer(consumer.ID) {
@@ -241,7 +241,7 @@ func TestMultiUser_DeleteConsumer_RemovesProviders(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 	consumer, _ := multiUser.CreateConsumer("Alice", code)
 
 	// Add a provider owned by this consumer
@@ -265,7 +265,7 @@ func TestMultiUser_ToggleConsumer(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 	consumer, _ := multiUser.CreateConsumer("Alice", code)
 
 	if !multiUser.ToggleConsumer(consumer.ID, false) {
@@ -280,7 +280,7 @@ func TestMultiUser_DeleteInviteCode(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 
 	if !multiUser.DeleteInviteCode(code) {
 		t.Fatal("DeleteInviteCode should return true")
@@ -297,9 +297,9 @@ func TestMultiUser_ListInviteCodes(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	multiUser.CreateInviteCode(0)
-	multiUser.CreateInviteCode(5)
-	multiUser.CreateInviteCode(0)
+	multiUser.CreateInviteCode(0, "")
+	multiUser.CreateInviteCode(5, "")
+	multiUser.CreateInviteCode(0, "")
 
 	codes := multiUser.ListInviteCodes()
 	if len(codes) != 3 {
@@ -311,7 +311,7 @@ func TestMultiUser_ListConsumers_MasksAPIKey(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 	consumer, _ := multiUser.CreateConsumer("Alice", code)
 
 	consumers := multiUser.ListConsumers()
@@ -330,7 +330,7 @@ func TestMultiUser_GetConsumerFull(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
-	code := multiUser.CreateInviteCode(0)
+	code := multiUser.CreateInviteCode(0, "")
 	consumer, _ := multiUser.CreateConsumer("Alice", code)
 
 	full, ok := multiUser.GetConsumerFull(consumer.ID)
@@ -352,10 +352,10 @@ func TestMultiUser_ProviderOwnershipIsolation(t *testing.T) {
 	_ = env
 
 	// Create two consumers
-	code1 := multiUser.CreateInviteCode(0)
+	code1 := multiUser.CreateInviteCode(0, "")
 	c1, _ := multiUser.CreateConsumer("User1", code1)
 
-	code2 := multiUser.CreateInviteCode(0)
+	code2 := multiUser.CreateInviteCode(0, "")
 	c2, _ := multiUser.CreateConsumer("User2", code2)
 
 	// Add providers for each

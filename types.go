@@ -264,6 +264,7 @@ type InviteCode struct {
 	UsedAt    string `json:"used_at,omitempty"`
 	MaxUses   int    `json:"max_uses"` // 0 = single use
 	UseCount  int    `json:"use_count"`
+	Role      string `json:"role,omitempty"` // consumer (default) or collaborator
 }
 
 type Consumer struct {

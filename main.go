@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -100,6 +101,7 @@ func main() {
 	mux.HandleFunc("GET /api/admin/info", withAuth(handleAdminInfo))
 	mux.HandleFunc("POST /api/admin/change-password", withAuth(handleChangePassword))
 	mux.HandleFunc("POST /api/admin/update-email", withAuth(handleUpdateEmail))
+	mux.HandleFunc("GET /api/share/info", withAuth(handleShareInfo))
 
 	// Provider management (admin + consumer)
 	mux.HandleFunc("GET /api/providers", withConsumerOrAdminAuth(handleListProviders))
@@ -195,6 +197,13 @@ func main() {
 	port := cfg.Get("service_port", "8000")
 	addr := ":" + port
 
+	// Initialize Cloudflare Tunnel if enabled
+	portNum := 8000
+	if p, err := strconv.Atoi(port); err == nil {
+		portNum = p
+	}
+	initTunnel(portNum)
+
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      handler,
@@ -231,6 +240,9 @@ func main() {
 				tracker.Stop()
 				healthChecker.stop()
 				CloseAccessLog()
+				if tunnel != nil {
+					tunnel.stop()
+				}
 				if fed != nil {
 					fed.stop()
 				}
@@ -569,6 +581,9 @@ func handleSaveFederationConfig(w http.ResponseWriter, r *http.Request) {
 		fed.relayEnabled = cfg.Get("federation_relay_enabled", "false") == "true"
 		fed.mu.Unlock()
 	}
+
+	// Apply tunnel config changes
+	applyTunnelConfig()
 
 	// Broadcast config update via SSE
 	BroadcastConfigUpdate("federation")

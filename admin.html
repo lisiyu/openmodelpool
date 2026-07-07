@@ -289,6 +289,139 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
   </div>
 
+  <!-- 分享中心 -->
+  <div class="card" id="shareCenterCard">
+    <div class="card-title"><span class="icon">🔗</span> 分享中心</div>
+
+    <!-- Tab 切换 -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border-color);padding-bottom:12px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-primary share-tab active" data-tab="consumer" onclick="switchShareTab('consumer')">🔑 消费者分享</button>
+      <button class="btn btn-sm btn-secondary share-tab" data-tab="collaborator" onclick="switchShareTab('collaborator')">🤝 协作者邀请</button>
+      <button class="btn btn-sm btn-secondary share-tab" data-tab="federation" onclick="switchShareTab('federation')">🌐 联邦节点邀请</button>
+    </div>
+
+    <!-- 模式 A：消费者分享 -->
+    <div id="shareTab-consumer" class="share-tab-content">
+      <div class="section-note">把 API 代理能力分享给朋友，对方只需调用 API，不需要管理节点</div>
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <div class="form-group">
+            <label class="form-label">📡 API 接口地址</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="shareApiUrl" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)">
+              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('shareApiUrl').value)">📋</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">🔑 Proxy API Key</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="shareApiKey" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)" placeholder="未设置（无需认证）">
+              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('shareApiKey').value)">📋</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">💬 预设文案</label>
+            <div style="display:flex;gap:8px">
+              <textarea class="form-input" id="shareConsumerText" rows="2" style="font-size:12px;resize:none;background:var(--bg-secondary)" readonly></textarea>
+              <button class="btn btn-primary btn-sm" onclick="copyText(document.getElementById('shareConsumerText').value)" style="flex-shrink:0">📋 复制</button>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="copyConsumerCombo()">📋 一键复制 API 地址 + Key</button>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">扫码获取 API 信息</div>
+          <div id="qrConsumer" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 模式 B：协作者邀请 -->
+    <div id="shareTab-collaborator" class="share-tab-content" style="display:none">
+      <div class="section-note">邀请信任的朋友一起贡献 API Key / Provider，共同维护节点</div>
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:16px">
+            <div class="form-group" style="flex:1;margin:0">
+              <label class="form-label">最大使用次数</label>
+              <input class="form-input" id="collabInviteMaxUses" type="number" value="5" min="1" style="font-size:12px">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="createCollabInviteCode()" style="margin-bottom:0">+ 创建协作者邀请码</button>
+          </div>
+          <div id="collabInviteLink" style="display:none;margin-bottom:16px">
+            <label class="form-label">🔗 邀请链接</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="collabLinkInput" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)">
+              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('collabLinkInput').value)">📋</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">💬 预设文案</label>
+            <div style="display:flex;gap:8px">
+              <textarea class="form-input" id="shareCollabText" rows="2" style="font-size:12px;resize:none;background:var(--bg-secondary)" readonly>来一起维护我的 ModelMux 节点吧，添加你的 API Key 共享出来，大家一起用 👇</textarea>
+              <button class="btn btn-primary btn-sm" onclick="copyText(document.getElementById('shareCollabText').value)" style="flex-shrink:0">📋 复制</button>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">扫码跳转登录页</div>
+          <div id="qrCollaborator" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"><div style="color:#999;font-size:11px;padding:30px">创建邀请码后生成</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 模式 C：联邦节点邀请 -->
+    <div id="shareTab-federation" class="share-tab-content" style="display:none">
+      <div class="section-note">邀请别人也部署一个 ModelMux 节点，加入联邦网络</div>
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <div class="form-group">
+            <label class="form-label">🔐 Genesis Hash（网络身份）</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="shareGenesisHash" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)">
+              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('shareGenesisHash').value)">📋</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">🌐 网络名称</label>
+            <input class="form-input" id="shareNetworkName" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">🌍 种子节点地址</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="shareSeedNode" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)" placeholder="未启用公网访问">
+              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('shareSeedNode').value)">📋</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">📖 部署指南</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" readonly value="https://github.com/lisiyu/modelmux" style="font-family:monospace;font-size:12px;background:var(--bg-secondary)">
+              <a href="https://github.com/lisiyu/modelmux" target="_blank" class="btn btn-secondary btn-sm">🔗 打开</a>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">🚀 一键部署命令</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="shareDeployCmd" readonly style="font-family:monospace;font-size:11px;background:var(--bg-secondary)">
+              <button class="btn btn-primary btn-sm" onclick="copyText(document.getElementById('shareDeployCmd').value)">📋 复制</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">💬 预设文案</label>
+            <div style="display:flex;gap:8px">
+              <textarea class="form-input" id="shareFedText" rows="2" style="font-size:12px;resize:none;background:var(--bg-secondary)" readonly>我搭了个去中心化 AI 联邦网络，部署一个节点就能加入，共享资源赚积分 👇</textarea>
+              <button class="btn btn-primary btn-sm" onclick="copyText(document.getElementById('shareFedText').value)" style="flex-shrink:0">📋 复制</button>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">扫码获取网络信息</div>
+          <div id="qrFederation" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 配置管理 -->
   <div class="card">
     <div class="card-title"><span class="icon">💾</span> 配置管理</div>
@@ -594,6 +727,7 @@ select.form-input{appearance:none;cursor:pointer}
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script>
 // ================================================================
 // Module: CoreAuth - Authentication, utilities, and initialization
@@ -1295,10 +1429,11 @@ async function refreshInviteCodes() {
     const codes = d.codes || [];
     const container = document.getElementById('inviteCodeList');
     if (!codes.length) { container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:10px">暂无邀请码</div>'; return; }
-    let html = '<table class="usage-table"><thead><tr><th>邀请码</th><th>已用/上限</th><th>创建时间</th><th>操作</th></tr></thead><tbody>';
+    let html = '<table class="usage-table"><thead><tr><th>邀请码</th><th>角色</th><th>已用/上限</th><th>创建时间</th><th>操作</th></tr></thead><tbody>';
     for (const c of codes) {
       const time = c.created_at ? new Date(c.created_at).toLocaleDateString('zh-CN') : '-';
-      html += `<tr><td style="font-family:monospace">${c.code}</td><td>${c.used_count||0}/${c.max_uses||'∞'}</td><td>${time}</td><td><button class="btn btn-danger btn-sm" onclick="deleteInviteCode('${c.code}')" style="font-size:11px;padding:2px 8px">删除</button></td></tr>`;
+      const roleBadge = c.role === 'collaborator' ? '<span class="badge badge-blue">协作者</span>' : '<span class="badge badge-green">消费者</span>';
+      html += `<tr><td style="font-family:monospace">${c.code}</td><td>${roleBadge}</td><td>${c.used_count||0}/${c.max_uses||'∞'}</td><td>${time}</td><td><button class="btn btn-danger btn-sm" onclick="deleteInviteCode('${c.code}')" style="font-size:11px;padding:2px 8px">删除</button></td></tr>`;
     }
     html += '</tbody></table>';
     container.innerHTML = html;
@@ -1792,8 +1927,127 @@ async function sendMessage(toNode, subject, body) {
   }
 }
 
+// ================================================================
+// Module: ShareCenter - Share center functionality
+// ================================================================
+let shareInfoData = null;
+
+function switchShareTab(tab) {
+  document.querySelectorAll('.share-tab').forEach(btn => {
+    btn.classList.remove('btn-primary', 'active');
+    btn.classList.add('btn-secondary');
+  });
+  document.querySelectorAll('.share-tab-content').forEach(el => el.style.display = 'none');
+  const activeBtn = document.querySelector(`.share-tab[data-tab="${tab}"]`);
+  if (activeBtn) { activeBtn.classList.add('btn-primary', 'active'); activeBtn.classList.remove('btn-secondary'); }
+  const tabContent = document.getElementById('shareTab-' + tab);
+  if (tabContent) tabContent.style.display = '';
+}
+
+function generateQRCode(containerId, text) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  try {
+    new QRCode(container, {
+      text: text,
+      width: 128,
+      height: 128,
+      colorDark: "#6c63ff",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.H
+    });
+  } catch(e) { console.error('QR code generation failed:', e); }
+}
+
+async function loadShareInfo() {
+  try {
+    const r = await authFetch('/api/share/info');
+    shareInfoData = await r.json();
+    populateShareCenter(shareInfoData);
+  } catch(e) { console.error('Failed to load share info:', e); }
+}
+
+function populateShareCenter(data) {
+  const apiUrl = data.public_api_url || data.proxy_api_url || '';
+  const apiKey = data.proxy_api_key || '';
+  const baseUrl = window.location.origin;
+
+  // Tab A: Consumer
+  document.getElementById('shareApiUrl').value = apiUrl;
+  document.getElementById('shareApiKey').value = apiKey || '';
+  document.getElementById('shareConsumerText').value = '我用 ModelMux 搭了个 AI 聚合网关，34+ 模型一个地址调用，拿去用 👇\n\nAPI 地址: ' + apiUrl + (apiKey ? '\nAPI Key: ' + apiKey : '');
+
+  // QR code: JSON with API info
+  const qrConsumerData = JSON.stringify({ api_url: apiUrl, api_key: apiKey, platform: "ModelMux" });
+  generateQRCode('qrConsumer', qrConsumerData);
+
+  // Tab C: Federation
+  const genesis = data.genesis || {};
+  const genesisHash = genesis.network_id || '';
+  const networkName = genesis.network_name || '';
+  const tunnelUrl = data.tunnel_url || '';
+  const seedNodes = data.seed_nodes || [];
+  const seedNode = tunnelUrl || (seedNodes.length > 0 ? seedNodes[0] : '');
+
+  document.getElementById('shareGenesisHash').value = genesisHash;
+  document.getElementById('shareNetworkName').value = networkName;
+  document.getElementById('shareSeedNode').value = seedNode;
+
+  // Deploy command
+  const deployCmd = 'curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | GENESIS_HASH=' + genesisHash + ' bash';
+  document.getElementById('shareDeployCmd').value = deployCmd;
+
+  // QR code: JSON with federation info
+  const qrFedData = JSON.stringify({
+    genesis_hash: genesisHash,
+    seed_nodes: seedNode ? [seedNode] : [],
+    docs: "https://github.com/lisiyu/modelmux"
+  });
+  generateQRCode('qrFederation', qrFedData);
+}
+
+function copyText(text) {
+  if (!text) return toast('没有可复制的内容', 'error');
+  navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板')).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    toast('已复制到剪贴板');
+  });
+}
+
+function copyConsumerCombo() {
+  const url = document.getElementById('shareApiUrl').value;
+  const key = document.getElementById('shareApiKey').value;
+  const combo = url + (key ? '\nAPI Key: ' + key : '');
+  copyText(combo);
+}
+
+async function createCollabInviteCode() {
+  const maxUses = parseInt(document.getElementById('collabInviteMaxUses').value) || 5;
+  try {
+    const r = await authFetch('/api/invite-codes', { method: 'POST', body: JSON.stringify({ max_uses: maxUses, role: 'collaborator' }) });
+    const d = await r.json();
+    if (d.code) {
+      toast('✅ 协作者邀请码已创建: ' + d.code);
+      const baseUrl = window.location.origin;
+      const inviteLink = baseUrl + '/login?invite=' + d.code;
+      document.getElementById('collabInviteLink').style.display = '';
+      document.getElementById('collabLinkInput').value = inviteLink;
+      // Update QR code
+      generateQRCode('qrCollaborator', inviteLink);
+      // Update preset text with the invite link
+      document.getElementById('shareCollabText').value = '来一起维护我的 ModelMux 节点吧，添加你的 API Key 共享出来，大家一起用 👇\n\n邀请链接: ' + inviteLink;
+      refreshInviteCodes();
+    } else {
+      toast('创建失败', 'error');
+    }
+  } catch(e) { toast('创建失败: ' + e.message, 'error'); }
+}
+
 // ===== Start =====
-init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); checkFederationDoc(); });
+init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); checkFederationDoc(); loadShareInfo(); });
 
 // Auto-refresh status and usage every 30 seconds
 setInterval(() => { loadStatus(); refreshUsage(); }, 30000);

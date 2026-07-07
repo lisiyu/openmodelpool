@@ -72,19 +72,23 @@ func (m *MultiUserManager) save() {
 	os.WriteFile(m.dataPath, b, 0644)
 }
 
-// CreateInviteCode generates a new invite code.
-func (m *MultiUserManager) CreateInviteCode(maxUses int) string {
+// CreateInviteCode generates a new invite code with optional role.
+func (m *MultiUserManager) CreateInviteCode(maxUses int, role string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if role == "" {
+		role = "consumer"
+	}
 	code := randomString(12)
 	m.invites[code] = &InviteCode{
 		Code:      code,
 		CreatedAt: time.Now().Format(time.RFC3339),
 		MaxUses:   maxUses,
+		Role:      role,
 	}
 	m.save()
-	slog.Info("invite code created", "code", code, "max_uses", maxUses)
+	slog.Info("invite code created", "code", code, "max_uses", maxUses, "role", role)
 	return code
 }
 
@@ -352,7 +356,8 @@ func handleCreateInviteCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		MaxUses int `json:"max_uses"` // 0 = single use
+		MaxUses int    `json:"max_uses"` // 0 = single use
+		Role    string `json:"role"`     // consumer (default) or collaborator
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
@@ -361,8 +366,12 @@ func handleCreateInviteCode(w http.ResponseWriter, r *http.Request) {
 	if body.MaxUses < 0 {
 		body.MaxUses = 0
 	}
-	code := multiUser.CreateInviteCode(body.MaxUses)
-	writeJSON(w, 200, map[string]any{"success": true, "code": code, "max_uses": body.MaxUses})
+	if body.Role != "" && body.Role != "consumer" && body.Role != "collaborator" {
+		writeError(w, 400, "invalid role, must be consumer or collaborator")
+		return
+	}
+	code := multiUser.CreateInviteCode(body.MaxUses, body.Role)
+	writeJSON(w, 200, map[string]any{"success": true, "code": code, "max_uses": body.MaxUses, "role": body.Role})
 }
 
 func handleDeleteInviteCode(w http.ResponseWriter, r *http.Request) {

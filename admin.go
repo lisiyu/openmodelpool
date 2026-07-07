@@ -197,6 +197,51 @@ func handleAdminInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, auth.AdminInfo())
 }
 
+// handleShareInfo returns all data needed for the Share Center UI.
+func handleShareInfo(w http.ResponseWriter, r *http.Request) {
+	proxyURL := cfg.Get("service_host", "")
+	if proxyURL == "" {
+		// Build from request
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		proxyURL = scheme + "://" + r.Host
+	}
+	proxyURL += "/v1"
+
+	info := map[string]any{
+		"proxy_api_url": proxyURL,
+		"proxy_api_key": cfg.Get("proxy_api_key", ""),
+		"tunnel_url":    cfg.Get("tunnel_url", ""),
+		"genesis":       GenesisInfo(),
+		"seed_nodes":    []string{},
+	}
+
+	// Collect seed nodes from federation trust pool
+	if fed != nil {
+		pool := fed.GetTrustPool()
+		var seeds []string
+		for _, n := range pool.Nodes {
+			if n.SeedNode && n.Endpoint != "" {
+				seeds = append(seeds, n.Endpoint)
+			}
+		}
+		if len(seeds) > 0 {
+			info["seed_nodes"] = seeds
+		}
+	}
+
+	// If tunnel URL is available, use it as the public API URL
+	if tunnelURL, ok := info["tunnel_url"].(string); ok && tunnelURL != "" {
+		info["public_api_url"] = tunnelURL + "/v1"
+	} else {
+		info["public_api_url"] = proxyURL
+	}
+
+	writeJSON(w, 200, info)
+}
+
 func handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		OldPassword string `json:"old_password"`
