@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -111,28 +115,67 @@ func (h *HealthChecker) checkProvider(p Provider) {
 		latencyMS = float64(time.Since(start).Milliseconds())
 		healthy = resp.StatusCode == 200
 		if !healthy {
-			failReason = "HTTP " + string(rune(resp.StatusCode))
+			failReason = "HTTP " + strconv.Itoa(resp.StatusCode)
 		}
 
 	default:
-		// OpenAI-compatible: check /models endpoint
+		// OpenAI-compatible: check via /models or fallback endpoint
 		if p.APIKey == "" {
 			failReason = "no API key"
 			break
 		}
-		req, _ := http.NewRequestWithContext(ctx, "GET", p.BaseURL+"/models", nil)
-		req.Header.Set("Authorization", "Bearer "+p.APIKey)
 		client := proxyHTTPClient(p, 15*time.Second)
+
+		// Determine health check endpoint
+		hcEndpoint := p.HealthCheckEndpoint
+		if hcEndpoint == "" {
+			hcEndpoint = "/models"
+		}
+
+		// Primary health check
+		req, _ := http.NewRequestWithContext(ctx, "GET", p.BaseURL+hcEndpoint, nil)
+		req.Header.Set("Authorization", "Bearer "+p.APIKey)
 		resp, err := client.Do(req)
 		if err != nil {
 			failReason = err.Error()
 			break
 		}
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 		latencyMS = float64(time.Since(start).Milliseconds())
 		healthy = resp.StatusCode == 200
 		if !healthy {
-			failReason = "HTTP " + string(rune(resp.StatusCode))
+			failReason = "HTTP " + strconv.Itoa(resp.StatusCode)
+		}
+
+		// Fallback: if /models returned 404, try lightweight /chat/completions probe
+		// This handles providers like TokenHub that don't support /models
+		if !healthy && resp.StatusCode == 404 && (hcEndpoint == "/models" || hcEndpoint == "") {
+			slog.Debug("health check /models 404, falling back to /chat/completions probe", "provider", p.ID)
+			probeBody, _ := json.Marshal(map[string]any{
+				"model":       "gpt-4o-mini",
+				"max_tokens":  1,
+				"messages":    []map[string]string{{"role": "user", "content": "hi"}},
+			})
+			probeReq, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", bytes.NewReader(probeBody))
+			probeReq.Header.Set("Authorization", "Bearer "+p.APIKey)
+			probeReq.Header.Set("Content-Type", "application/json")
+			start = time.Now()
+			probeResp, err := client.Do(probeReq)
+			if err != nil {
+				failReason = err.Error()
+				break
+			}
+			io.Copy(io.Discard, probeResp.Body)
+			probeResp.Body.Close()
+			latencyMS = float64(time.Since(start).Milliseconds())
+			// 200 from chat/completions means provider is healthy
+			healthy = probeResp.StatusCode == 200
+			if healthy {
+				failReason = ""
+			} else {
+				failReason = "HTTP " + strconv.Itoa(probeResp.StatusCode)
+			}
 		}
 	}
 

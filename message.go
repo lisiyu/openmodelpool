@@ -341,7 +341,7 @@ func (m *MessageManager) GetOutbox(limit int) []FederationMessage {
 }
 
 // MarkAsRead marks a message in the inbox as read by its ID.
-func (m *MessageManager) MarkAsRead(msgID string) {
+func (m *MessageManager) MarkAsRead(msgID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -350,9 +350,10 @@ func (m *MessageManager) MarkAsRead(msgID string) {
 			m.inbox[i].Read = true
 			m.save()
 			slog.Debug("message marked as read", "msg_id", msgID)
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // GetUnreadCount returns the number of unread messages in the inbox.
@@ -408,7 +409,7 @@ func (m *MessageManager) save() {
 		slog.Error("failed to marshal messages", "error", err)
 		return
 	}
-	if err := os.WriteFile(path, b, 0644); err != nil {
+	if err := os.WriteFile(path, b, 0600); err != nil {
 		slog.Error("failed to write messages file", "path", path, "error", err)
 	}
 }
@@ -581,7 +582,13 @@ func handleMarkAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msgMgr.MarkAsRead(req.MessageID)
+	if !msgMgr.MarkAsRead(req.MessageID) {
+		writeJSON(w, http.StatusNotFound, map[string]any{
+			"status": "not_found",
+			"error":  "message not found",
+		})
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",

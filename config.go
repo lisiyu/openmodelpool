@@ -11,9 +11,12 @@ import (
 
 // Config manages persistent JSON config with env var fallback.
 type Config struct {
-	mu   sync.RWMutex
-	data map[string]any
-	path string
+	mu       sync.RWMutex
+	data     map[string]any
+	path     string
+	dirty    bool
+	dirtyCh  chan struct{}
+	stopCh   chan struct{}
 }
 
 var cfg *Config
@@ -26,8 +29,42 @@ var envMap = map[string]string{
 }
 
 func initConfig(path string) {
-	cfg = &Config{path: path, data: make(map[string]any)}
+	cfg = &Config{
+		path:    path,
+		data:    make(map[string]any),
+		dirtyCh: make(chan struct{}, 1),
+		stopCh:  make(chan struct{}),
+	}
 	cfg.load()
+	go cfg.debounceWriter()
+}
+
+func (c *Config) debounceWriter() {
+	for {
+		select {
+		case <-c.dirtyCh:
+			time.Sleep(3 * time.Second)
+			// Drain any additional signals during sleep
+			for len(c.dirtyCh) > 0 {
+				<-c.dirtyCh
+			}
+			c.mu.Lock()
+			if c.dirty {
+				c.doSave()
+				c.dirty = false
+			}
+			c.mu.Unlock()
+		case <-c.stopCh:
+			// Final flush on shutdown
+			c.mu.Lock()
+			if c.dirty {
+				c.doSave()
+				c.dirty = false
+			}
+			c.mu.Unlock()
+			return
+		}
+	}
 }
 
 // sensitiveKeys lists config keys that must be encrypted at rest.
@@ -52,8 +89,26 @@ func (c *Config) load() {
 }
 
 func (c *Config) save() {
+	c.mu.Lock()
+	c.dirty = true
+	c.mu.Unlock()
+	// Signal debounce writer
+	select {
+	case c.dirtyCh <- struct{}{}:
+	default:
+	}
+}
+
+// saveSync forces synchronous save (used during shutdown).
+func (c *Config) saveSync() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.doSave()
+	c.dirty = false
+}
+
+func (c *Config) doSave() {
 	os.MkdirAll(filepath.Dir(c.path), 0755)
-	// Deep copy and encrypt sensitive fields before writing
 	safe := make(map[string]any, len(c.data))
 	for k, v := range c.data {
 		safe[k] = v
@@ -64,7 +119,7 @@ func (c *Config) save() {
 		}
 	}
 	b, _ := json.MarshalIndent(safe, "", "  ")
-	os.WriteFile(c.path, b, 0644)
+	os.WriteFile(c.path, b, 0600)
 }
 
 // Get returns config value: file > env > default.
@@ -135,6 +190,8 @@ func maskToken(s string) string {
 	}
 	return s[:6] + "..." + s[len(s)-4:]
 }
+
+func (c *Config) stop() { close(c.stopCh) }
 
 func toUpper(s string) string {
 	b := []byte(s)

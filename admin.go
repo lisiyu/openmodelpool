@@ -62,24 +62,22 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := auth.CreateToken(body.Username, body.Remember)
-	http.SetCookie(w, &http.Cookie{
+	maxAge := 86400
+	if body.Remember {
+		maxAge = 7 * 86400
+	}
+	// Determine if Secure flag should be set
+	isHTTPS := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	c := &http.Cookie{
 		Name:     "admin_token",
 		Path:     "/",
 		Value:    token,
 		HttpOnly: true,
-		MaxAge:   86400,
+		MaxAge:   maxAge,
 		SameSite: http.SameSiteLaxMode,
-	})
-	if body.Remember {
-		http.SetCookie(w, &http.Cookie{
-			Name:     "admin_token",
-		Path:     "/",
-			Value:    token,
-			HttpOnly: true,
-			MaxAge:   7 * 86400,
-			SameSite: http.SameSiteLaxMode,
-		})
+		Secure:   isHTTPS,
 	}
+	http.SetCookie(w, c)
 	writeJSON(w, 200, map[string]string{"access_token": token, "token_type": "bearer"})
 }
 
@@ -195,6 +193,15 @@ func handleVerifyResetToken(w http.ResponseWriter, r *http.Request) {
 
 func handleAdminInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, auth.AdminInfo())
+}
+
+
+// maskKey masks an API key: shows first 4 and last 4 chars.
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return "***"
+	}
+	return key[:4] + "***" + key[len(key)-4:]
 }
 
 // handleShareInfo returns all data needed for the Share Center UI.
@@ -472,12 +479,17 @@ func handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 
 func handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	p, ok := pm.GetRaw(id)
-	if !ok {
+	if _, ok := checkProviderAccess(r, id); !ok {
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}
-	writeJSON(w, 200, testConnection(p))
+	p, _ := pm.GetRaw(id)
+	result := testConnection(p)
+	// Sanitize error messages to avoid leaking internal details
+	if errMsg, ok := result["error"].(string); ok && errMsg != "" {
+		result["error"] = "upstream error"
+	}
+	writeJSON(w, 200, result)
 }
 
 func handleGetProviderModels(w http.ResponseWriter, r *http.Request) {
@@ -581,6 +593,9 @@ func handleUsageRecords(w http.ResponseWriter, r *http.Request) {
 		recs = recs[len(recs)-limit:]
 	}
 	tracker.mu.Unlock()
+	if recs == nil {
+		recs = make([]UsageRecord, 0)
+	}
 	writeJSON(w, 200, map[string]any{"records": recs})
 }
 
@@ -919,8 +934,8 @@ func handleResetWithCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "code and new_password required")
 		return
 	}
-	if len(body.NewPassword) < 6 {
-		writeError(w, 400, "password must be at least 6 characters")
+	if len(body.NewPassword) < 8 {
+		writeError(w, 400, "password must be at least 8 characters")
 		return
 	}
 
@@ -962,13 +977,29 @@ func handleResetWithCode(w http.ResponseWriter, r *http.Request) {
 // GET /api/config/export — export all configuration as JSON
 func handleExportConfig(w http.ResponseWriter, r *http.Request) {
 	smtpCfg := auth.GetSMTP()
+	// Mask provider API keys in export
+	maskedProviders := make([]map[string]any, 0)
+	for _, p := range pm.GetAll() {
+		sp := p.Safe()
+		maskedProviders = append(maskedProviders, map[string]any{
+			"id":          sp.ID,
+			"name":        sp.Name,
+			"type":        sp.Type,
+			"base_url":    sp.BaseURL,
+			"api_key":     sp.APIKey,
+			"enabled":     sp.Enabled,
+			"models":      sp.Models,
+			"priority":    sp.Priority,
+			"proxy":       sp.Proxy,
+		})
+	}
 	export := map[string]any{
 		"version":     "1.0",
 		"exported_at": time.Now().Format(time.RFC3339),
-		"providers":   pm.GetAll(),
+		"providers":   maskedProviders,
 		"config": map[string]any{
 			"routing_mode":  cfg.Get("routing_mode", "priority"),
-			"proxy_api_key": cfg.Get("proxy_api_key", ""),
+			"proxy_api_key": maskKey(cfg.Get("proxy_api_key", "")),
 		},
 		"smtp": map[string]any{
 			"host":       smtpCfg.Host,

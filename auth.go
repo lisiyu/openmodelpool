@@ -54,7 +54,7 @@ func (a *Auth) save() {
 	}
 	b, _ := json.MarshalIndent(safe, "", "  ")
 	os.MkdirAll("data", 0755)
-	os.WriteFile(a.path, b, 0644)
+	os.WriteFile(a.path, b, 0600)
 }
 
 // Initialized returns whether admin has been set up.
@@ -68,8 +68,8 @@ func (a *Auth) SetupAdmin(username, password, email string) error {
 	if username == "" || password == "" || email == "" {
 		return errors.New("username, password, and email are required")
 	}
-	if len(password) < 6 {
-		return errors.New("password must be at least 6 characters")
+	if len(password) < 8 {
+		return errors.New("password must be at least 8 characters")
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	a.data.Admin = AdminData{
@@ -97,8 +97,8 @@ func (a *Auth) ChangePassword(oldPass, newPass string) error {
 	if !a.VerifyCredentials(a.data.Admin.Username, oldPass) {
 		return errors.New("incorrect old password")
 	}
-	if len(newPass) < 6 {
-		return errors.New("password must be at least 6 characters")
+	if len(newPass) < 8 {
+		return errors.New("password must be at least 8 characters")
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
 	a.data.Admin.PasswordHash = string(hash)
@@ -172,6 +172,14 @@ func (a *Auth) UpdateSMTP(c SMTPConfig) {
 
 // Reset token
 func (a *Auth) CreateResetToken() string {
+	// Reuse existing unexpired token to prevent spam
+	if a.data.Reset != nil && !a.data.Reset.Used {
+		if exp, err := time.Parse(time.RFC3339, a.data.Reset.Expire); err == nil {
+			if time.Now().Before(exp) {
+				return a.data.Reset.Token
+			}
+		}
+	}
 	tok := randomString(32)
 	a.data.Reset = &ResetToken{
 		Token:  tok,
@@ -198,8 +206,8 @@ func (a *Auth) ResetPassword(tok, newPass string) error {
 	if !a.VerifyResetToken(tok) {
 		return errors.New("invalid or expired reset token")
 	}
-	if len(newPass) < 6 {
-		return errors.New("password must be at least 6 characters")
+	if len(newPass) < 8 {
+		return errors.New("password must be at least 8 characters")
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
 	a.data.Admin.PasswordHash = string(hash)

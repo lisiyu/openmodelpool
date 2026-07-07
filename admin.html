@@ -763,14 +763,14 @@ select.form-input{appearance:none;cursor:pointer}
 // ================================================================
 // Module: CoreAuth - Authentication, utilities, and initialization
 // ================================================================
-let authToken = localStorage.getItem('admin_token') || '';
+let authToken = '' || '';
 async function authFetch(url, opts = {}) {
   opts.headers = { ...opts.headers, 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' };
   const r = await fetch(url, opts);
   if (r.status === 401) { logout(); throw new Error('未登录'); }
   return r;
 }
-function logout() { localStorage.removeItem('admin_token'); location.href = '/login'; }
+function logout() { document.cookie='admin_token=;path=/;max-age=0'; location.href = '/login'; }
 function toast(msg, type = 'success') { const t = document.createElement('div'); t.className = `toast ${type}`; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
 
 // ===== Init =====

@@ -20,6 +20,20 @@ import (
 // Client handles forwarding requests to upstream AI providers.
 // Supports: openai_compatible, sider, coze, anthropic.
 
+
+// sharedTransport is a connection-pooled transport for all proxy requests.
+var sharedTransport = &http.Transport{
+	MaxIdleConns:        100,
+	MaxIdleConnsPerHost: 10,
+	IdleConnTimeout:     90 * time.Second,
+	DisableCompression:  false,
+}
+
+// sharedHTTPClient reuses connections across requests.
+var sharedHTTPClient = &http.Client{
+	Transport: sharedTransport,
+}
+
 const siderChatURL = "https://sider.ai/api/v3/completion/text"
 
 var siderHeadersBase = map[string]string{
@@ -47,7 +61,7 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 	}
 
 	if proxy == "" {
-		return &http.Client{Timeout: timeout}
+		return &http.Client{Transport: sharedTransport, Timeout: timeout}
 	}
 
 	// For socks5:// proxies, use golang.org/x/net/proxy

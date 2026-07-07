@@ -148,10 +148,10 @@ func main() {
 	mux.HandleFunc("POST /api/domain/unbind", withAuth(handleUnbindDomain))
 
 	// Real-time events (SSE)
-	mux.HandleFunc("GET /events", handleSSE)
+	mux.HandleFunc("GET /events", withAuth(handleSSE))
 
 	// Prometheus metrics
-	mux.HandleFunc("GET /metrics", handleMetrics)
+	mux.HandleFunc("GET /metrics", withAuth(handleMetrics))
 
 	// Multi-user / invite codes (protected)
 	mux.HandleFunc("GET /api/invite-codes", withAuth(handleListInviteCodes))
@@ -172,9 +172,9 @@ func main() {
 
 	// Federation API (v3.0)
 	mux.HandleFunc("GET /api/federation/status", withAuth(handleFederationStatus))
-	mux.HandleFunc("GET /api/federation/pool", handleFederationPool)
-	mux.HandleFunc("POST /api/federation/gossip", handleFederationGossip)
-	mux.HandleFunc("POST /api/federation/announce", handleFederationAnnounce)
+	mux.HandleFunc("GET /api/federation/pool", withFederationAuth(handleFederationPool))
+	mux.HandleFunc("POST /api/federation/gossip", withFederationAuth(handleFederationGossip))
+	mux.HandleFunc("POST /api/federation/announce", withFederationAuth(handleFederationAnnounce))
 	mux.HandleFunc("POST /api/federation/relay", handleRelayRequest)
 	mux.HandleFunc("GET /api/federation/reputations", handleGetReputations)
 	mux.HandleFunc("POST /api/federation/score", withAuth(handlePostScore))
@@ -244,6 +244,8 @@ func main() {
 				slog.Info("configuration reloaded successfully")
 			case syscall.SIGINT, syscall.SIGTERM:
 				slog.Info("shutting down...")
+				cfg.stop()
+				cfg.saveSync()
 				tracker.Stop()
 				healthChecker.stop()
 				CloseAccessLog()
@@ -278,11 +280,19 @@ func main() {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		allowedOrigins := cfg.Get("cors_allowed_origins", "*")
+		allowedOrigins := cfg.Get("cors_allowed_origins", "")
 
-		if allowedOrigins == "*" {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-		} else if origin != "" && isOriginAllowed(origin, allowedOrigins) {
+		// Default: allow localhost and tunnel URL, never wildcard *
+		if allowedOrigins == "" {
+			tunnelURL := cfg.Get("tunnel_url", "")
+			defaults := "http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000"
+			if tunnelURL != "" {
+				defaults += "," + tunnelURL
+			}
+			allowedOrigins = defaults
+		}
+
+		if origin != "" && isOriginAllowed(origin, allowedOrigins) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 		}
@@ -362,12 +372,15 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// If no proxy key is set at all, allow as admin (backward compat)
+		// No anonymous fallback - require valid credentials
 		if proxyKey == "" {
-			r.Header.Set("X-Request-Owner", "")
-			r.Header.Set("X-Request-Role", "admin")
-			handler(w, r)
-			return
+			// Only allow if there's no proxy key AND consumer keys exist (unprotected mode)
+			if len(multiUser.consumers) == 0 {
+				r.Header.Set("X-Request-Owner", "")
+				r.Header.Set("X-Request-Role", "admin")
+				handler(w, r)
+				return
+			}
 		}
 
 		writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{

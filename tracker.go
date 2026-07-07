@@ -91,7 +91,7 @@ func (t *Tracker) save() {
 	}
 	b, _ := json.MarshalIndent(t.records, "", "  ")
 	os.MkdirAll("data", 0755)
-	os.WriteFile(t.dataPath, b, 0644)
+	os.WriteFile(t.dataPath, b, 0600)
 	t.dirtyCount = 0
 	t.lastFlush = time.Now()
 }
@@ -156,11 +156,15 @@ func (t *Tracker) RecordWithRetry(providerID, providerName, model string, prompt
 		}
 	}
 
-	// Check flush threshold
-	if t.dirtyCount >= trackerFlushThreshold || time.Since(t.lastFlush) >= trackerFlushInterval {
-		t.save()
-	}
+	shouldFlush := t.dirtyCount >= trackerFlushThreshold || time.Since(t.lastFlush) >= trackerFlushInterval
 	t.mu.Unlock()
+
+	// Flush outside lock to avoid holding lock during IO
+	if shouldFlush {
+		t.mu.Lock()
+		t.save()
+		t.mu.Unlock()
+	}
 
 	// Record metrics
 	if metrics != nil {
@@ -444,5 +448,11 @@ func (t *Tracker) Reset() {
 	t.mu.Unlock()
 }
 
-func round1(f float64) float64 { return float64(int(f*10+0.5)) / 10 }
-func round4(f float64) float64 { return float64(int(f*10000+0.5)) / 10000 }
+func round1(f float64) float64 {
+	if f < 0 { return 0 }
+	return float64(int(f*10+0.5)) / 10
+}
+func round4(f float64) float64 {
+	if f < 0 { return 0 }
+	return float64(int(f*10000+0.5)) / 10000
+}

@@ -52,7 +52,14 @@ func (m *MultiUserManager) load() {
 		m.consumers = data.Consumers
 		for id, c := range m.consumers {
 			if c.APIKey != "" {
-				m.apiKeyMap[c.APIKey] = id
+				// Decrypt stored key for apiKeyMap lookup
+				plaintext := c.APIKey
+				if IsEncrypted(c.APIKey) {
+					plaintext = enc.Decrypt(c.APIKey)
+				}
+				if plaintext != "" {
+					m.apiKeyMap[plaintext] = id
+				}
 			}
 		}
 	}
@@ -69,7 +76,7 @@ func (m *MultiUserManager) save() {
 		Consumers: m.consumers,
 	}
 	b, _ := json.MarshalIndent(data, "", "  ")
-	os.WriteFile(m.dataPath, b, 0644)
+	os.WriteFile(m.dataPath, b, 0600)
 }
 
 // CreateInviteCode generates a new invite code with optional role.
@@ -152,17 +159,18 @@ func (m *MultiUserManager) CreateConsumer(name, inviteCode string) (*Consumer, e
 
 	apiKey := "sk-" + randomString(48)
 	id := "consumer-" + randomString(8)
+	encryptedKey := enc.Encrypt(apiKey)
 
 	consumer := &Consumer{
 		ID:         id,
 		Name:       name,
-		APIKey:     apiKey,
+		APIKey:     encryptedKey,
 		InviteCode: inviteCode,
 		CreatedAt:  time.Now().Format(time.RFC3339),
 		Enabled:    true,
 	}
 	m.consumers[id] = consumer
-	m.apiKeyMap[apiKey] = id
+	m.apiKeyMap[apiKey] = id  // plaintext key for fast lookup
 
 	// Update invite code usage
 	inv.UseCount++
@@ -171,7 +179,11 @@ func (m *MultiUserManager) CreateConsumer(name, inviteCode string) (*Consumer, e
 
 	m.save()
 	slog.Info("consumer created", "id", id, "name", name)
-	return consumer, nil
+
+	// Return a copy with plaintext key for caller display
+	result := *consumer
+	result.APIKey = apiKey
+	return &result, nil
 }
 
 // ValidateAPIKey checks if an API key belongs to a valid consumer.
@@ -222,8 +234,15 @@ func (m *MultiUserManager) ListConsumers() []Consumer {
 	list := make([]Consumer, 0, len(m.consumers))
 	for _, c := range m.consumers {
 		safe := *c
-		if len(safe.APIKey) > 8 {
-			safe.APIKey = safe.APIKey[:6] + "..." + safe.APIKey[len(safe.APIKey)-4:]
+		// Decrypt for display then mask
+		displayKey := c.APIKey
+		if IsEncrypted(c.APIKey) {
+			displayKey = enc.Decrypt(c.APIKey)
+		}
+		if len(displayKey) > 8 {
+			safe.APIKey = displayKey[:6] + "..." + displayKey[len(displayKey)-4:]
+		} else {
+			safe.APIKey = "***"
 		}
 		list = append(list, safe)
 	}
@@ -238,8 +257,12 @@ func (m *MultiUserManager) GetConsumerFull(id string) (*Consumer, bool) {
 	if !ok {
 		return nil, false
 	}
-	copy := *c
-	return &copy, true
+	result := *c
+	// Decrypt API key for admin display
+	if IsEncrypted(result.APIKey) {
+		result.APIKey = enc.Decrypt(result.APIKey)
+	}
+	return &result, true
 }
 
 // DeleteConsumer removes a consumer and their providers.
@@ -251,7 +274,13 @@ func (m *MultiUserManager) DeleteConsumer(id string) bool {
 	if !ok {
 		return false
 	}
-	delete(m.apiKeyMap, c.APIKey)
+	// Remove all API key mappings for this consumer
+	// Since apiKeyMap uses plaintext keys, iterate to find and remove
+	plaintextKey := c.APIKey
+	if IsEncrypted(c.APIKey) {
+		plaintextKey = enc.Decrypt(c.APIKey)
+	}
+	delete(m.apiKeyMap, plaintextKey)
 	delete(m.consumers, id)
 	m.save()
 

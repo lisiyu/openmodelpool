@@ -3,10 +3,42 @@ package main
 import (
 	"encoding/json"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
+
+
+// withFederationAuth restricts access to known federation nodes or localhost.
+func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Allow localhost (same-node tools)
+		remoteIP := strings.Split(r.RemoteAddr, ":")[0]
+		if remoteIP == "127.0.0.1" || remoteIP == "::1" || remoteIP == "localhost" {
+			handler(w, r)
+			return
+		}
+		// Check X-Node-ID header against known nodes
+		nodeID := r.Header.Get("X-Node-ID")
+		if nodeID != "" && fed != nil {
+			if _, ok := fed.GetNode(nodeID); ok {
+				handler(w, r)
+				return
+			}
+		}
+		// Also allow if admin auth is present
+		token := extractToken(r)
+		if token != "" {
+			if _, err := auth.VerifyToken(token); err == nil {
+				handler(w, r)
+				return
+			}
+		}
+		writeJSON(w, 403, map[string]string{"error": "federation access required"})
+	}
+}
 
 // FederationManager manages this node's participation in the federation.
 type FederationManager struct {
@@ -189,7 +221,7 @@ func (f *FederationManager) saveLocked() error {
 		return err
 	}
 	path := filepath.Join(f.dataDir, "federation_pool.json")
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 // load reads the cached trust pool from dataDir/federation_pool.json.

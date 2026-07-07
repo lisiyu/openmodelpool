@@ -133,8 +133,9 @@ type Provider struct {
 	Description string     `json:"description,omitempty"`
 	Icon        string     `json:"icon,omitempty"`
 	APIKeyURL   string     `json:"api_key_url,omitempty"`
-	Proxy       string     `json:"proxy,omitempty"` // http://, socks5://, or vmess:// link
-	Owner       string     `json:"owner,omitempty"` // consumer ID; empty = admin/system
+	Proxy                 string     `json:"proxy,omitempty"` // http://, socks5://, or vmess:// link
+	HealthCheckEndpoint   string     `json:"health_check_endpoint,omitempty"` // "/models" (default), "/chat/completions", or custom
+	Owner                 string     `json:"owner,omitempty"` // consumer ID; empty = admin/system
 	CreatedAt   string     `json:"created_at,omitempty"`
 	UpdatedAt   string     `json:"updated_at,omitempty"`
 }
