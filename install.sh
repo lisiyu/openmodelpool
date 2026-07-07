@@ -11,7 +11,8 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/modelmux}"
 CONTAINER_NAME="modelmux"
 IMAGE_NAME="modelmux:latest"
 PORT=${PORT:-8080}
-DATA_DIR=${DATA_DIR:-""}  # 空则使用 INSTALL_DIR/data
+DATA_DIR=${DATA_DIR:-""}
+SKIP_DOCKER_INSTALL=${SKIP_DOCKER_INSTALL:-false}
 
 # 颜色
 RED='\033[0;31m'
@@ -32,6 +33,7 @@ while [[ $# -gt 0 ]]; do
         --port) PORT="$2"; shift 2 ;;
         --dir) INSTALL_DIR="$2"; shift 2 ;;
         --data) DATA_DIR="$2"; shift 2 ;;
+        --skip-docker) SKIP_DOCKER_INSTALL=true; shift ;;
         *) shift ;;
     esac
 done
@@ -48,26 +50,159 @@ info "数据目录: $DATA_DIR"
 info "服务端口: $PORT"
 echo ""
 
-# 检查 Docker
-if ! command -v docker &> /dev/null; then
-    error "Docker 未安装。请先安装: https://docs.docker.com/get-docker/"
-fi
-if ! docker info &> /dev/null; then
-    error "Docker 未运行，请先启动 Docker 服务"
-fi
-success "Docker 环境正常"
+# ==================== 环境检测与安装 ====================
+
+# 检测操作系统
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+        OS_VERSION=$VERSION_ID
+    elif [ -f /etc/redhat-release ]; then
+        OS="centos"
+    elif [ -f /etc/debian_version ]; then
+        OS="debian"
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        OS="macos"
+    else
+        OS="unknown"
+    fi
+    echo "$OS"
+}
+
+# 安装 Docker
+install_docker() {
+    if [ "$SKIP_DOCKER_INSTALL" = "true" ]; then
+        error "Docker 未安装，已跳过自动安装。请先手动安装 Docker"
+    fi
+    
+    local os=$(detect_os)
+    info "检测到操作系统: $os"
+    info "正在安装 Docker..."
+    
+    case "$os" in
+        ubuntu|debian)
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq ca-certificates curl gnupg lsb-release > /dev/null 2>&1
+            
+            install -m 0755 -d /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/$os/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg > /dev/null 2>&1
+            chmod a+r /etc/apt/keyrings/docker.gpg
+            
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$os $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+            
+            apt-get update -qq
+            apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin > /dev/null 2>&1
+            ;;
+        centos|rhel|fedora|rocky|almalinux)
+            yum install -y -q yum-utils > /dev/null 2>&1 || dnf install -y -q yum-utils > /dev/null 2>&1
+            yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo > /dev/null 2>&1
+            yum install -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin > /dev/null 2>&1
+            ;;
+        alpine)
+            apk add --no-cache docker docker-cli-compose > /dev/null 2>&1
+            rc-update add docker boot > /dev/null 2>&1 || true
+            ;;
+        macos)
+            warn "macOS 检测到。请手动安装 Docker Desktop: https://docs.docker.com/desktop/install/mac-install/"
+            error "安装 Docker 后重新运行此脚本"
+            ;;
+        *)
+            warn "未识别的操作系统: $os"
+            info "尝试通用安装方式..."
+            curl -fsSL https://get.docker.com | sh
+            ;;
+    esac
+    
+    # 启动 Docker 服务
+    if command -v systemctl &> /dev/null; then
+        systemctl start docker > /dev/null 2>&1 || true
+        systemctl enable docker > /dev/null 2>&1 || true
+    elif command -v service &> /dev/null; then
+        service docker start > /dev/null 2>&1 || true
+    fi
+    
+    # 验证安装
+    if docker info &> /dev/null; then
+        success "Docker 安装成功"
+    else
+        error "Docker 安装失败，请手动安装: https://docs.docker.com/get-docker/"
+    fi
+}
+
+# 检查并安装 Docker
+check_docker() {
+    if command -v docker &> /dev/null; then
+        if docker info &> /dev/null; then
+            success "Docker 环境正常"
+            return 0
+        else
+            warn "Docker 已安装但未运行，尝试启动..."
+            if command -v systemctl &> /dev/null; then
+                systemctl start docker > /dev/null 2>&1 || sudo systemctl start docker > /dev/null 2>&1 || true
+            elif command -v service &> /dev/null; then
+                service docker start > /dev/null 2>&1 || sudo service docker start > /dev/null 2>&1 || true
+            fi
+            
+            if docker info &> /dev/null; then
+                success "Docker 已启动"
+                return 0
+            fi
+        fi
+    fi
+    
+    warn "Docker 未安装或未运行"
+    install_docker
+}
 
 # 检查端口
-if command -v ss &> /dev/null; then
-    if ss -tuln 2>/dev/null | grep -q ":$PORT "; then
-        error "端口 $PORT 已被占用，请使用 --port 指定其他端口"
+check_port() {
+    if command -v ss &> /dev/null; then
+        if ss -tuln 2>/dev/null | grep -q ":$PORT "; then
+            error "端口 $PORT 已被占用，请使用 --port 指定其他端口"
+        fi
+    elif command -v lsof &> /dev/null; then
+        if lsof -Pi :$PORT -sTCP:LISTEN -t &> /dev/null; then
+            error "端口 $PORT 已被占用，请使用 --port 指定其他端口"
+        fi
+    elif command -v netstat &> /dev/null; then
+        if netstat -tuln 2>/dev/null | grep -q ":$PORT "; then
+            error "端口 $PORT 已被占用，请使用 --port 指定其他端口"
+        fi
     fi
-elif command -v lsof &> /dev/null; then
-    if lsof -Pi :$PORT -sTCP:LISTEN -t &> /dev/null; then
-        error "端口 $PORT 已被占用，请使用 --port 指定其他端口"
+    success "端口 $PORT 可用"
+}
+
+# 检查 Git
+check_git() {
+    if ! command -v git &> /dev/null; then
+        info "Git 未安装，正在安装..."
+        local os=$(detect_os)
+        case "$os" in
+            ubuntu|debian)
+                apt-get update -qq && apt-get install -y -qq git > /dev/null 2>&1
+                ;;
+            centos|rhel|fedora|rocky|almalinux)
+                yum install -y -q git > /dev/null 2>&1 || dnf install -y -q git > /dev/null 2>&1
+                ;;
+            alpine)
+                apk add --no-cache git > /dev/null 2>&1
+                ;;
+            *)
+                error "请手动安装 Git 后重试"
+                ;;
+        esac
     fi
-fi
-success "端口 $PORT 可用"
+    success "Git 就绪"
+}
+
+# ==================== 主流程 ====================
+
+# 前置检查
+check_git
+check_docker
+check_port
 
 # 克隆或更新仓库
 if [ -d "$INSTALL_DIR/.git" ]; then
@@ -129,7 +264,6 @@ echo -e "  常用命令:"
 echo -e "    ${YELLOW}查看日志${NC}  docker logs -f $CONTAINER_NAME"
 echo -e "    ${YELLOW}停止服务${NC}  docker stop $CONTAINER_NAME"
 echo -e "    ${YELLOW}重启服务${NC}  docker restart $CONTAINER_NAME"
-echo -e "    ${YELLOW}更新版本${NC}  cd $INSTALL_DIR && git pull && docker stop $CONTAINER_NAME && docker rm $CONTAINER_NAME && docker build -t $IMAGE_NAME . && docker run -d --name $CONTAINER_NAME --restart unless-stopped -p $PORT:8080 -v $DATA_DIR:/app/data -e TZ=Asia/Shanghai $IMAGE_NAME"
 echo ""
 echo -e "  一行更新:"
 echo -e "  ${CYAN}curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | bash${NC}"
