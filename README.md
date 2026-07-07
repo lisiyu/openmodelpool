@@ -7,6 +7,14 @@
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+## 🤖 它是什么？
+
+**ModelMux Agent 是一个 AI 智能代理。** 和你用过的任何 AI Agent 没有本质区别——持有 API Key，向上游模型服务商发送请求，获取响应。
+
+唯一的区别是：它多了一个**可选的共享功能**。你可以把闲置的模型调用能力分享给网络中的其他人，也可以使用他人分享的能力。
+
+对上游服务商而言，这和任何人直接调用 API 完全一样——同一个 Key，同一个配额，同一个服务商。**不存在"转售"，不存在"中间商"，只是一个 Agent 在帮你转发请求。**
+
 ---
 
 ## 🌍 我们的信念
