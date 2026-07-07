@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>初始化向导 - Coze OpenAI Proxy</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-primary: #0f0f23;
+  --bg-secondary: #1a1a2e;
+  --bg-card: #16213e;
+  --bg-input: #1a1a3e;
+  --border-color: #2a2a4a;
+  --border-focus: #6c63ff;
+  --text-primary: #e8e8f0;
+  --text-secondary: #a0a0b8;
+  --text-muted: #6a6a8a;
+  --accent-start: #6c63ff;
+  --accent-end: #b24bf3;
+  --success: #22c55e;
+  --error: #ef4444;
+  --radius: 12px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.setup-container {
+  width: 100%;
+  max-width: 480px;
+}
+.setup-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+.logo {
+  font-size: 32px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+}
+.logo-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.setup-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 32px;
+  box-shadow: var(--shadow);
+}
+.setup-card h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.setup-card p {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+.steps {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+.step {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-color);
+  transition: background 0.3s;
+}
+.step.active {
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+}
+.form-group {
+  margin-bottom: 20px;
+}
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.form-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.3s;
+}
+.form-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.15);
+}
+.form-input::placeholder { color: var(--text-muted); }
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.toggle-password {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 8px;
+}
+.password-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+.password-hint.error { color: var(--error); }
+.btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+  color: #fff;
+  margin-top: 8px;
+}
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(108, 99, 255, 0.4);
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+}
+.toast {
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #fff;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  animation: toastIn 0.3s ease-out;
+  max-width: 400px;
+}
+.toast.success { background: linear-gradient(135deg, #16a34a, #22c55e); }
+.toast.error { background: linear-gradient(135deg, #dc2626, #ef4444); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes toastOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(60px); } }
+.success-view {
+  text-align: center;
+  padding: 20px 0;
+}
+.success-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+.success-view h2 {
+  margin-bottom: 12px;
+}
+.success-view p {
+  margin-bottom: 0;
+}
+</style>
+</head>
+<body>
+<div class="setup-container">
+  <div class="setup-header">
+    <div class="logo">🚀 Coze OpenAI Proxy</div>
+    <div class="logo-sub">管理面板初始化向导</div>
+  </div>
+
+  <div class="setup-card" id="setupCard">
+    <h2>创建管理员账户</h2>
+    <p>首次使用，请设置管理员账户信息。</p>
+
+    <div class="steps">
+      <div class="step active" id="step1"></div>
+      <div class="step" id="step2"></div>
+      <div class="step" id="step3"></div>
+    </div>
+
+    <form id="setupForm" onsubmit="handleSetup(event)">
+      <div class="form-group">
+        <label class="form-label">管理员用户名</label>
+        <input type="text" class="form-input" id="inputUsername"
+               placeholder="admin" autocomplete="username" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">设置密码</label>
+        <div class="input-wrapper">
+          <input type="password" class="form-input" id="inputPassword"
+                 placeholder="至少6位字符" autocomplete="new-password" required>
+          <button type="button" class="toggle-password" onclick="togglePwd('inputPassword', this)">👁️</button>
+        </div>
+        <div class="password-hint" id="pwdHint"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">确认密码</label>
+        <div class="input-wrapper">
+          <input type="password" class="form-input" id="inputConfirm"
+                 placeholder="再次输入密码" autocomplete="new-password" required>
+          <button type="button" class="toggle-password" onclick="togglePwd('inputConfirm', this)">👁️</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">管理员邮箱</label>
+        <input type="email" class="form-input" id="inputEmail"
+               placeholder="用于找回密码" autocomplete="email" required>
+      </div>
+      <button type="submit" class="btn" id="btnSubmit">
+        完成初始化
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// Check if already initialized
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const resp = await fetch('/api/setup/status');
+    const data = await resp.json();
+    if (data.initialized) {
+      window.location.href = '/login';
+    }
+  } catch (e) {
+    console.error('检查初始化状态失败:', e);
+  }
+});
+
+// Password strength hint
+document.getElementById('inputPassword').addEventListener('input', function() {
+  const pwd = this.value;
+  const hint = document.getElementById('pwdHint');
+  if (!pwd) { hint.textContent = ''; hint.className = 'password-hint'; return; }
+  if (pwd.length < 6) {
+    hint.textContent = '密码至少需要6位字符';
+    hint.className = 'password-hint error';
+  } else if (pwd.length < 8) {
+    hint.textContent = '密码强度：一般';
+    hint.className = 'password-hint';
+  } else {
+    const hasNum = /\d/.test(pwd);
+    const hasLetter = /[a-zA-Z]/.test(pwd);
+    const hasSpecial = /[^a-zA-Z0-9]/.test(pwd);
+    if (hasNum && hasLetter && hasSpecial) {
+      hint.textContent = '密码强度：强 ✓';
+      hint.className = 'password-hint';
+      hint.style.color = 'var(--success)';
+    } else if (hasNum && hasLetter) {
+      hint.textContent = '密码强度：中等';
+      hint.className = 'password-hint';
+    } else {
+      hint.textContent = '建议混合使用字母、数字和特殊字符';
+      hint.className = 'password-hint';
+    }
+  }
+});
+
+function togglePwd(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁️';
+  }
+}
+
+async function handleSetup(e) {
+  e.preventDefault();
+
+  const username = document.getElementById('inputUsername').value.trim();
+  const password = document.getElementById('inputPassword').value;
+  const confirm = document.getElementById('inputConfirm').value;
+  const email = document.getElementById('inputEmail').value.trim();
+
+  if (!username || !password || !email) {
+    showToast('请填写所有字段', 'error');
+    return;
+  }
+  if (password.length < 6) {
+    showToast('密码长度至少6位', 'error');
+    return;
+  }
+  if (password !== confirm) {
+    showToast('两次输入的密码不一致', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 初始化中...';
+
+  try {
+    const resp = await fetch('/api/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, email }),
+    });
+    const data = await resp.json();
+
+    if (resp.ok) {
+      // Auto login after setup
+      const loginResp = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, remember: false }),
+      });
+      const loginData = await loginResp.json();
+      if (loginData.access_token) {
+        localStorage.setItem('admin_token', loginData.access_token);
+      }
+
+      // Show success
+      const card = document.getElementById('setupCard');
+      card.innerHTML = `
+        <div class="success-view">
+          <div class="success-icon">✅</div>
+          <h2>初始化完成！</h2>
+          <p>管理员账户已创建，正在跳转到管理面板...</p>
+        </div>
+      `;
+      setTimeout(() => { window.location.href = '/admin'; }, 1500);
+    } else {
+      showToast(data.detail || '初始化失败', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '完成初始化';
+    }
+  } catch (e) {
+    showToast('网络错误: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '完成初始化';
+  }
+}
+
+function showToast(msg, type) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.animation = 'toastOut 0.3s ease-in forwards';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+</script>
+</body>
+</html>
