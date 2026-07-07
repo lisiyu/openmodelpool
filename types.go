@@ -1,6 +1,9 @@
 package main
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // ============================================================
 // OpenAI-compatible request/response models
@@ -130,6 +133,7 @@ type Provider struct {
 	Description string     `json:"description,omitempty"`
 	Icon        string     `json:"icon,omitempty"`
 	APIKeyURL   string     `json:"api_key_url,omitempty"`
+	Proxy       string     `json:"proxy,omitempty"`          // http://, socks5://, or vmess:// link
 	CreatedAt   string     `json:"created_at,omitempty"`
 	UpdatedAt   string     `json:"updated_at,omitempty"`
 }
@@ -143,6 +147,10 @@ func (p *Provider) Safe() Provider {
 		safe.APIKey = "***"
 	} else {
 		safe.APIKey = ""
+	}
+	// Mask vmess proxy links (contains sensitive UUID)
+	if strings.HasPrefix(safe.Proxy, "vmess://") {
+		safe.Proxy = "vmess://***"
 	}
 	return safe
 }

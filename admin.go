@@ -232,6 +232,19 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "provider ID required")
 		return
 	}
+	// Validate VMess proxy link
+	if strings.HasPrefix(p.Proxy, "vmess://") {
+		if _, err := ParseVMessLink(p.Proxy); err != nil {
+			writeError(w, 400, "Invalid VMess link: "+err.Error())
+			return
+		}
+		// Start the proxy (keep original link in provider)
+		if _, err := ResolveProxy(p.ID, p.Proxy); err != nil {
+			slog.Warn("failed to start VMess proxy", "provider", p.ID, "error", err)
+			writeError(w, 400, "VMess proxy failed: "+err.Error())
+			return
+		}
+	}
 	result := pm.Add(p)
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
@@ -262,6 +275,25 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	b2, _ := json.Marshal(updates)
 	json.Unmarshal(b2, &merged)
 	merged.ID = id
+
+	// Validate VMess proxy link if changed
+	if merged.Proxy != "" && merged.Proxy != existing.Proxy {
+		if strings.HasPrefix(merged.Proxy, "vmess://") {
+			// Validate the link by parsing it
+			if _, err := ParseVMessLink(merged.Proxy); err != nil {
+				writeError(w, 400, "Invalid VMess link: "+err.Error())
+				return
+			}
+			// Try to start the proxy
+			if _, err := ResolveProxy(id, merged.Proxy); err != nil {
+				slog.Warn("failed to start VMess proxy", "provider", id, "error", err)
+				writeError(w, 400, "VMess proxy failed: "+err.Error())
+				return
+			}
+			// Keep the original vmess:// link (proxyHTTPClient resolves on-the-fly)
+		}
+	}
+	
 	result := pm.Add(merged)
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }

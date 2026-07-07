@@ -21,6 +21,19 @@ func main() {
 	initTracker("data/usage.json")
 	initSiderMonitor("data/sider_token_status.json")
 	initAuth("data/admin.json")
+	initVMessManager("data")
+
+	// Re-start VMess proxies on startup
+	for _, p := range pm.GetAll() {
+		raw, ok := pm.GetRaw(p.ID)
+		if ok && strings.HasPrefix(raw.Proxy, "vmess://") {
+			if _, err := ResolveProxy(raw.ID, raw.Proxy); err != nil {
+				slog.Warn("failed to re-start VMess proxy on startup", "provider", raw.ID, "error", err)
+			} else {
+				slog.Info("re-started VMess proxy on startup", "provider", raw.ID)
+			}
+		}
+	}
 
 	// Setup HTTP mux
 	mux := http.NewServeMux()

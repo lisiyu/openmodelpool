@@ -3,13 +3,18 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+
+	socksproxy "golang.org/x/net/proxy"
 )
 
 // Client handles forwarding requests to upstream AI providers.
@@ -24,6 +29,54 @@ var siderHeadersBase = map[string]string{
 	"Origin":          "chrome-extension://dhoenijjpgpeimemopealfcbiecgceod",
 	"Content-Type":    "application/json",
 	"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+}
+
+// proxyHTTPClient returns an HTTP client configured with the provider's proxy.
+func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
+	proxy := p.Proxy
+	// For vmess:// links, the proxy should already be resolved to socks5://localhost:port
+	// by ResolveProxy during provider save. If not resolved yet, try now.
+	if strings.HasPrefix(proxy, "vmess://") {
+		resolved, err := ResolveProxy(p.ID, proxy)
+		if err != nil {
+			slog.Warn("failed to resolve VMess proxy", "provider", p.ID, "error", err)
+			proxy = ""
+		} else {
+			proxy = resolved
+		}
+	}
+
+	if proxy == "" {
+		return &http.Client{Timeout: timeout}
+	}
+
+	// For socks5:// proxies, use golang.org/x/net/proxy
+	if strings.HasPrefix(proxy, "socks5://") || strings.HasPrefix(proxy, "socks5h://") {
+		proxyURL, err := url.Parse(proxy)
+		if err == nil {
+			socksDialer, err := socksproxy.SOCKS5("tcp", proxyURL.Host, nil, socksproxy.Direct)
+			if err == nil {
+				transport := &http.Transport{
+					DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+						return socksDialer.Dial(network, addr)
+					},
+				}
+				return &http.Client{Timeout: timeout, Transport: transport}
+			}
+		}
+		return &http.Client{Timeout: timeout}
+	}
+
+	// For http:// and https:// proxies, use standard http.Transport
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(mustParseURL(proxy)),
+	}
+	return &http.Client{Timeout: timeout, Transport: transport}
+}
+
+func mustParseURL(rawurl string) *url.URL {
+	u, _ := url.Parse(rawurl)
+	return u
 }
 
 // doNonStream sends a non-streaming request and returns the OpenAI-format response.
@@ -59,7 +112,7 @@ func openaiNonStream(p Provider, model string, messages []ChatMessage, extra map
 	req, _ := http.NewRequest("POST", p.BaseURL+"/chat/completions", jsonBody(body))
 	setOpenAIHeaders(req, p.APIKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := proxyHTTPClient(p, 300 * time.Second).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +135,7 @@ func openaiStream(p Provider, model string, messages []ChatMessage, extra map[st
 	req, _ := http.NewRequest("POST", p.BaseURL+"/chat/completions", jsonBody(body))
 	setOpenAIHeaders(req, p.APIKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := proxyHTTPClient(p, 300 * time.Second).Do(req)
 	if err != nil {
 		return err
 	}
@@ -182,7 +235,7 @@ func siderNonStream(p Provider, model string, messages []ChatMessage) (*ChatResp
 	req, _ := http.NewRequest("POST", siderChatURL, bytes.NewReader(body))
 	req.Header = siderBuildHeaders(p.APIKey)
 
-	client := &http.Client{Timeout: 300 * time.Second}
+	client := proxyHTTPClient(p, 300 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -240,7 +293,7 @@ func siderStream(p Provider, model string, messages []ChatMessage, w io.Writer) 
 	req, _ := http.NewRequest("POST", siderChatURL, bytes.NewReader(body))
 	req.Header = siderBuildHeaders(p.APIKey)
 
-	client := &http.Client{Timeout: 300 * time.Second}
+	client := proxyHTTPClient(p, 300 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -352,7 +405,7 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 300 * time.Second}
+	client := proxyHTTPClient(p, 300 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -491,7 +544,7 @@ func cozeStream(p Provider, model string, messages []ChatMessage, w io.Writer) e
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 300 * time.Second}
+	client := proxyHTTPClient(p, 300 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		writeSSEError(w, model, err.Error())
@@ -590,7 +643,7 @@ func testConnection(p Provider) map[string]any {
 		}
 		req, _ := http.NewRequest("GET", baseURL+"/v1/bots?page_index=0&page_size=1", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
-		client := &http.Client{Timeout: 15 * time.Second}
+		client := proxyHTTPClient(p, 15 * time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}
@@ -611,7 +664,7 @@ func testConnection(p Provider) map[string]any {
 		body, _ := json.Marshal(payload)
 		req, _ := http.NewRequest("POST", siderChatURL, bytes.NewReader(body))
 		req.Header = h
-		client := &http.Client{Timeout: 30 * time.Second}
+		client := proxyHTTPClient(p, 30 * time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}
@@ -631,7 +684,7 @@ func testConnection(p Provider) map[string]any {
 		}
 		req, _ := http.NewRequest("GET", strings.TrimRight(p.BaseURL, "/")+"/models", nil)
 		req.Header.Set("Authorization", "Bearer "+p.APIKey)
-		client := &http.Client{Timeout: 15 * time.Second}
+		client := proxyHTTPClient(p, 15 * time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}
@@ -656,7 +709,7 @@ func fetchRemoteModels(p Provider) []map[string]string {
 	}
 	req, _ := http.NewRequest("GET", strings.TrimRight(p.BaseURL, "/")+"/models", nil)
 	req.Header.Set("Authorization", "Bearer "+p.APIKey)
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := proxyHTTPClient(p, 15 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		slog.Warn("fetch remote models failed", "provider", p.ID, "error", err)
