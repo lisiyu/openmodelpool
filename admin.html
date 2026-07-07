@@ -750,9 +750,23 @@ function renderPresets() {
   const grid = document.getElementById('presetGrid');
   const search = document.getElementById('presetSearch').value.toLowerCase();
   const filtered = presets.filter(p => !search || p.name.toLowerCase().includes(search) || p.id.includes(search) || (p.description||'').toLowerCase().includes(search));
-  grid.innerHTML = filtered.map(p => `<div class="preset-card" onclick="selectPreset('${p.id}')"><div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${p.description||''}</div></div>`).join('');
+  grid.innerHTML = filtered.map(p => `<div class="preset-card" onclick="selectPreset('${p.id}')"><div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${p.description||''}</div></div>`).join('') + `<div class="preset-card" onclick="selectCustomPreset()" style="border-style:dashed"><div class="preset-icon">🔌</div><div class="preset-name">自定义平台</div><div class="preset-desc">手动填写地址</div></div>`;
 }
 function filterPresets() { renderPresets(); }
+
+function selectCustomPreset() {
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  document.getElementById('modalTitle').textContent = '添加自定义平台';
+  document.getElementById('pId').value = 'custom-' + Date.now().toString(36);
+  document.getElementById('pName').value = '';
+  document.getElementById('pUrl').value = '';
+  document.getElementById('pKey').value = '';
+  document.getElementById('pDesc').value = '';
+  document.getElementById('pPriority').value = '5';
+  document.getElementById('pEnabled').checked = true;
+  editingId = '';
+}
 
 function getIcon(id) {
   const icons = {openai:'🟢',deepseek:'🔵',qwen:'🟠',zhipu:'🟣',moonshot:'🌙',lingyiwanwu:'🔶',minimax:'⬛',siliconflow:'💎',groq:'⚡',xai:'🤖',together:'🔗',mistral:'🇪🇺',doubao:'🫘',spark:'✨',hunyuan:'🐧',gemini:'♊',openrouter:'🌐',poe:'🎭',sid:'🧠',sider:'🌐',ollama:'🦙',coze:'🎯'};

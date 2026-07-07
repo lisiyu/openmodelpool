@@ -57,6 +57,8 @@ func main() {
 	mux.HandleFunc("DELETE /api/providers/{id}", withAuth(handleDeleteProvider))
 	mux.HandleFunc("POST /api/providers/{id}/test", withAuth(handleTestProvider))
 	mux.HandleFunc("GET /api/providers/{id}/models", withAuth(handleGetProviderModels))
+	mux.HandleFunc("POST /api/providers/{id}/sync-url", withAuth(handleSyncProviderURL))
+	mux.HandleFunc("POST /api/providers/sync-all-urls", withAuth(handleSyncAllURLs))
 
 	// Sider status
 	mux.HandleFunc("GET /api/providers/sider/status", withAuth(handleSiderStatus))
