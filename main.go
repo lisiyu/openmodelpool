@@ -36,6 +36,7 @@ func main() {
 	initCredits("data")
 	initMessages("data")
 	initNodeWeightManager("data")
+	initInviteManager("data")
 
 	// Migrate: re-save to encrypt any plaintext sensitive data
 	cfg.save()
@@ -164,6 +165,9 @@ func main() {
 	mux.HandleFunc("POST /api/federation/token-budget", withAuth(handleSetTokenBudget))
 	mux.HandleFunc("POST /api/federation/join", handleJoinNetwork)
 	mux.HandleFunc("GET /api/federation/genesis", handleGetGenesis)
+	mux.HandleFunc("POST /api/federation/invites", withAuth(handleCreateInvite))
+	mux.HandleFunc("GET /api/federation/invites", withAuth(handleListInvites))
+	mux.HandleFunc("POST /api/federation/invites/verify", handleVerifyInvite)
 
 	// CORS middleware
 	handler := corsMiddleware(mux)
@@ -642,6 +646,99 @@ func handleJoinNetwork(w http.ResponseWriter, r *http.Request) {
 // handleGetGenesis returns the genesis configuration (public endpoint).
 func handleGetGenesis(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, GenesisInfo())
+}
+
+// handleCreateInvite creates a new signed invite code.
+func handleCreateInvite(w http.ResponseWriter, r *http.Request) {
+	if invMgr == nil {
+		writeError(w, 500, "invite manager not initialized")
+		return
+	}
+	var body struct {
+		InviteePub  string `json:"invitee_pub"`   // public key or "*" for public
+		InviteeName string `json:"invitee_name"`  // optional display name
+		Type        string `json:"type"`          // directed, public, chain
+		ExpiresIn   int    `json:"expires_hours"` // hours until expiration, default 168 (7 days)
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if body.InviteePub == "" {
+		body.InviteePub = "*" // default to public invite
+	}
+	if body.ExpiresIn <= 0 {
+		body.ExpiresIn = 168 // 7 days
+	}
+	inviteType := FederationInviteType(body.Type)
+	switch inviteType {
+	case FederationInviteDirected, FederationInvitePublic, FederationInviteChain:
+	default:
+		inviteType = FederationInvitePublic
+	}
+
+	invite, err := invMgr.CreateInvite(body.InviteePub, body.InviteeName, inviteType, body.ExpiresIn)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	encoded, _ := EncodeInvite(invite)
+	writeJSON(w, 200, map[string]any{
+		"invite":  invite,
+		"encoded": encoded,
+	})
+}
+
+// handleListInvites returns all issued invites.
+func handleListInvites(w http.ResponseWriter, r *http.Request) {
+	if invMgr == nil {
+		writeJSON(w, 200, map[string]any{"invites": []any{}})
+		return
+	}
+	invites := invMgr.GetInvites()
+	if invites == nil {
+		invites = []*FederationInvite{}
+	}
+	writeJSON(w, 200, map[string]any{"invites": invites})
+}
+
+// handleVerifyInvite verifies an invite code (public endpoint for new nodes).
+func handleVerifyInvite(w http.ResponseWriter, r *http.Request) {
+	if invMgr == nil {
+		writeError(w, 500, "invite manager not initialized")
+		return
+	}
+	var body struct {
+		Encoded string `json:"encoded"` // base64-encoded invite
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+
+	invite, err := DecodeInvite(body.Encoded)
+	if err != nil {
+		writeError(w, 400, fmt.Sprintf("invalid invite: %v", err))
+		return
+	}
+
+	err = invMgr.VerifyInvite(invite)
+	if err != nil {
+		writeJSON(w, 200, map[string]any{
+			"valid":  false,
+			"reason": err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"valid":     true,
+		"inviter":   invite.Inviter,
+		"endpoint":  invite.Endpoint,
+		"network":   invite.NetworkID,
+		"type":      invite.Type,
+		"expires":   invite.ExpiresAt,
+	})
 }
 
 // ============================================================
