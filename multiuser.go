@@ -487,3 +487,25 @@ func handleConsumerRegister(w http.ResponseWriter, r *http.Request) {
 		"message":  "注册成功，请保存你的 API Key，后续请求需要携带",
 	})
 }
+
+// handleUpdateConsumer - PUT /api/consumers/{id} - update consumer disabled state
+func handleUpdateConsumer(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		writeError(w, 403, "admin only")
+		return
+	}
+	id := r.PathValue("id")
+	var body struct {
+		Disabled bool `json:"disabled"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	// disabled=true means enabled=false, so invert
+	if !multiUser.ToggleConsumer(id, !body.Disabled) {
+		writeError(w, 404, "consumer not found")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"success": true})
+}

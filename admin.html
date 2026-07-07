@@ -599,6 +599,37 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
     </div>
 
+    
+    <!-- 域名绑定 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px" id="domainBindingSection">
+      <div class="card-title" style="font-size:14px"><span class="icon">🌐</span> 一键域名绑定 <span style="cursor:help;border-bottom:1px dashed var(--text-muted);font-size:11px;font-weight:normal" title="通过 Cloudflare API 自动创建隧道、配置 DNS，将固定域名绑定到本节点">ⓘ</span></div>
+      <div class="section-note" style="margin-bottom:12px">
+        使用 Cloudflare API Token 自动完成隧道创建 + DNS 配置，无需命令行操作。需要域名已托管在 Cloudflare。
+      </div>
+      
+      <div id="domainStatus" style="margin-bottom:12px;padding:10px;border-radius:8px;background:var(--bg-secondary);font-size:13px;display:none"></div>
+      
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Cloudflare API Token <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="在 Cloudflare Dashboard > My Profile > API Tokens 创建，需要 Zone:DNS:Edit 和 Account:Cloudflare Tunnel:Edit 权限">ⓘ</span></label>
+          <div style="display:flex;gap:8px">
+            <input class="form-input" id="cfApiToken" type="password" placeholder="粘贴你的 Cloudflare API Token" style="flex:1">
+            <button class="btn btn-secondary btn-sm" onclick="verifyDomainToken()" style="flex-shrink:0">验证</button>
+          </div>
+          <div id="tokenVerifyResult" style="font-size:11px;margin-top:4px"></div>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">绑定域名 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="输入你要绑定的完整域名，如 mux.zuiniu.com。域名必须已托管在你的 Cloudflare 账户中">ⓘ</span></label>
+          <input class="form-input" id="cfDomain" placeholder="mux.zuiniu.com">
+        </div>
+        <div style="grid-column:1/-1;display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="bindDomain()" id="bindDomainBtn">🔗 一键绑定域名</button>
+          <button class="btn btn-secondary" onclick="unbindDomain()" id="unbindDomainBtn" style="display:none">解除绑定</button>
+          <button class="btn btn-secondary" onclick="refreshDomainStatus()">刷新状态</button>
+        </div>
+      </div>
+    </div>
+
     <!-- GitHub 绑定 -->
     <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
       <div class="card-title" style="font-size:14px"><span class="icon">🔗</span> GitHub 身份绑定 <span style="cursor:help;border-bottom:1px dashed var(--text-muted);font-size:11px;font-weight:normal" title="绑定 GitHub 后，您的节点在联邦网络中显示为用户名而非匿名 NodeID，也可用于在 Registry 发布自己的 Provider">ⓘ 绑定后在联邦网络中以用户名展示身份，而非匿名 NodeID</span></div>
@@ -2067,6 +2098,94 @@ setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
     es.onerror = () => { es.close(); setTimeout(connectSSE, 5000); };
   } catch(_) {}
 })();
+
+    // Domain Binding Functions
+    async function refreshDomainStatus() {
+      try {
+        const r = await authFetch('/api/domain/status');
+        const d = await r.json();
+        const el = document.getElementById('domainStatus');
+        el.style.display = 'block';
+        if (d.bound) {
+          el.innerHTML = '✅ 已绑定: <strong>' + d.domain + '</strong> | 公网地址: <a href="' + d.public_url + '" target="_blank">' + d.public_url + '</a> | Tunnel ID: ' + d.tunnel_id;
+          el.style.background = 'rgba(16,185,129,0.1)';
+          document.getElementById('unbindDomainBtn').style.display = '';
+          document.getElementById('cfDomain').value = d.domain;
+        } else {
+          el.innerHTML = '⚪ 当前未绑定固定域名，使用 Quick Tunnel（临时地址）';
+          el.style.background = 'var(--bg-secondary)';
+          document.getElementById('unbindDomainBtn').style.display = 'none';
+        }
+      } catch(e) { console.error(e); }
+    }
+
+    async function verifyDomainToken() {
+      const token = document.getElementById('cfApiToken').value.trim();
+      if (!token) { toast('请输入 API Token', 'error'); return; }
+      const el = document.getElementById('tokenVerifyResult');
+      el.innerHTML = '⏳ 验证中...';
+      try {
+        const r = await authFetch('/api/domain/verify', {method:'POST', body:JSON.stringify({api_token:token})});
+        const d = await r.json();
+        if (d.valid) {
+          el.innerHTML = '✅ Token 有效，Account ID: ' + d.account_id;
+          el.style.color = 'var(--success-color, #10b981)';
+        } else {
+          el.innerHTML = '❌ Token 无效: ' + (d.error || '未知错误');
+          el.style.color = 'var(--danger-color, #ef4444)';
+        }
+      } catch(e) {
+        el.innerHTML = '❌ 验证失败: ' + e.message;
+        el.style.color = 'var(--danger-color, #ef4444)';
+      }
+    }
+
+    async function bindDomain() {
+      const token = document.getElementById('cfApiToken').value.trim();
+      const domain = document.getElementById('cfDomain').value.trim();
+      if (!token) { toast('请输入 API Token', 'error'); return; }
+      if (!domain) { toast('请输入要绑定的域名', 'error'); return; }
+      if (!confirm('即将为域名 ' + domain + ' 创建 Cloudflare 隧道并配置 DNS，确认继续？')) return;
+      
+      const btn = document.getElementById('bindDomainBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ 绑定中...';
+      
+      try {
+        const r = await authFetch('/api/domain/bind', {method:'POST', body:JSON.stringify({api_token:token, domain:domain})});
+        const d = await r.json();
+        if (d.success) {
+          toast('🎉 域名绑定成功！公网地址: ' + d.public_url, 'success');
+          refreshDomainStatus();
+          // Also refresh the tunnel URL in the config section
+          setTimeout(() => loadConfig(), 1000);
+        } else {
+          toast('绑定失败: ' + (d.error || '未知错误'), 'error');
+        }
+      } catch(e) {
+        toast('绑定失败: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔗 一键绑定域名';
+      }
+    }
+
+    async function unbindDomain() {
+      if (!confirm('确定要解除域名绑定吗？将切回 Quick Tunnel（临时地址）。')) return;
+      try {
+        const r = await authFetch('/api/domain/unbind', {method:'POST'});
+        const d = await r.json();
+        if (d.success) {
+          toast('已解除绑定，切回 Quick Tunnel', 'success');
+          refreshDomainStatus();
+          setTimeout(() => loadConfig(), 1000);
+        }
+      } catch(e) { toast('操作失败: ' + e.message, 'error'); }
+    }
+
+    // Load domain status on page load
+    setTimeout(() => refreshDomainStatus(), 500);
+    
 </script>
 </body>
 </html>

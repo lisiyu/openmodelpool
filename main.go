@@ -141,6 +141,12 @@ func main() {
 	mux.HandleFunc("GET /api/logs", withAuth(handleRequestLogs))
 	mux.HandleFunc("GET /api/health", withAuth(handleHealthStatus))
 
+	// Domain binding APIs
+	mux.HandleFunc("POST /api/domain/verify", withAuth(handleVerifyDomainToken))
+	mux.HandleFunc("POST /api/domain/bind", withAuth(handleBindDomain))
+	mux.HandleFunc("GET /api/domain/status", withAuth(handleGetDomainStatus))
+	mux.HandleFunc("POST /api/domain/unbind", withAuth(handleUnbindDomain))
+
 	// Real-time events (SSE)
 	mux.HandleFunc("GET /events", handleSSE)
 
@@ -155,6 +161,7 @@ func main() {
 	mux.HandleFunc("POST /api/consumers", withAuth(handleCreateConsumer))
 	mux.HandleFunc("DELETE /api/consumers/{id}", withAuth(handleDeleteConsumer))
 	mux.HandleFunc("POST /api/consumers/{id}/toggle", withAuth(handleToggleConsumer))
+	mux.HandleFunc("PUT /api/consumers/{id}", withAuth(handleUpdateConsumer))
 	mux.HandleFunc("POST /api/consumer/register", handleConsumerRegister)
 
 	// Static pages

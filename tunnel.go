@@ -2,10 +2,16 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
 	"context"
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"strconv"
 	"regexp"
 	"strings"
 	"sync"
@@ -25,6 +31,31 @@ type TunnelManager struct {
 }
 
 var tunnel *TunnelManager
+
+func getListenPort() int {
+	portStr := "8000"
+	if cfg != nil {
+		portStr = cfg.Get("port", "8000")
+	}
+	p, err := strconv.Atoi(portStr)
+	if err != nil || p <= 0 {
+		return 8000
+	}
+	return p
+}
+
+func newTunnelManager(domain, tunnelID, apiToken string) *TunnelManager {
+	t := &TunnelManager{
+		port:   getListenPort(),
+		domain: domain,
+		mode:   "quick",
+	}
+	if domain != "" && tunnelID != "" {
+		t.mode = "named"
+	}
+	return t
+}
+
 
 // initTunnel creates the tunnel manager and starts the tunnel if enabled.
 func initTunnel(port int) {
@@ -259,4 +290,403 @@ func extractSubdomain(url string) string {
 	host := strings.Split(parts[1], "/")[0]
 	subdomain := strings.Split(host, ".")[0]
 	return subdomain
+}
+
+// ============================================================
+// Domain Binding API Handlers (Cloudflare API Token method)
+// ============================================================
+
+// DomainBinder manages Cloudflare tunnel creation and DNS binding via API
+type DomainBinder struct {
+	apiToken string
+}
+
+// TunnelInfo represents a Cloudflare tunnel
+type TunnelInfo struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	RemoteAddr string `json:"remote_addr"`
+}
+
+// createTunnelViaAPI creates a named tunnel using Cloudflare API
+func (b *DomainBinder) createTunnelViaAPI(ctx context.Context, tunnelName string) (*TunnelInfo, error) {
+	url := "https://api.cloudflare.com/client/v4/accounts/tunnels"
+	body := map[string]string{"name": tunnelName, "tunnel_secret": ""}
+	
+	// Generate a random tunnel secret
+	secret := make([]byte, 32)
+	rand.Read(secret)
+	body["tunnel_secret"] = base64.StdEncoding.EncodeToString(secret)
+
+	jsonBody, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+b.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Success bool `json:"success"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+		Result struct {
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Status string `json:"status"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if !result.Success {
+		msg := "unknown error"
+		if len(result.Errors) > 0 {
+			msg = result.Errors[0].Message
+		}
+		return nil, fmt.Errorf("API error: %s", msg)
+	}
+
+	return &TunnelInfo{
+		ID:     result.Result.ID,
+		Name:   result.Result.Name,
+		Status: result.Result.Status,
+	}, nil
+}
+
+// configureTunnel sets up tunnel configuration to route to local service
+func (b *DomainBinder) configureTunnel(ctx context.Context, tunnelID, localAddr string) error {
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/tunnels/%s/configurations", tunnelID)
+	
+	config := map[string]any{
+		"ingress": []map[string]string{
+			{
+				"hostname": "", // will be set by DNS
+				"service":  localAddr,
+			},
+			{
+				"service": "http_status:404",
+			},
+		},
+	}
+
+	jsonBody, _ := json.Marshal(config)
+	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+b.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Success bool `json:"success"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if !result.Success {
+		msg := "unknown error"
+		if len(result.Errors) > 0 {
+			msg = result.Errors[0].Message
+		}
+		return fmt.Errorf("API error: %s", msg)
+	}
+	return nil
+}
+
+// createDNSRecord creates a CNAME record pointing to the tunnel
+func (b *DomainBinder) createDNSRecord(ctx context.Context, zoneID, domain, tunnelID string) error {
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records", zoneID)
+	
+	body := map[string]string{
+		"type":    "CNAME",
+		"name":    domain,
+		"content": tunnelID + ".cfargotunnel.com",
+		"proxied": "true",
+	}
+
+	jsonBody, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+b.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Success bool `json:"success"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if !result.Success {
+		msg := "unknown error"
+		if len(result.Errors) > 0 {
+			msg = result.Errors[0].Message
+		}
+		return fmt.Errorf("API error: %s", msg)
+	}
+	return nil
+}
+
+// getZoneID finds the zone ID for a domain
+func (b *DomainBinder) getZoneID(ctx context.Context, domain string) (string, error) {
+	// Extract the root domain for zone lookup
+	parts := strings.Split(domain, ".")
+	var zoneName string
+	if len(parts) >= 2 {
+		zoneName = strings.Join(parts[len(parts)-2:], ".")
+	} else {
+		zoneName = domain
+	}
+
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones?name=%s", zoneName)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+b.apiToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Success bool `json:"success"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+		Result []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+	if !result.Success || len(result.Result) == 0 {
+		msg := "zone not found"
+		if len(result.Errors) > 0 {
+			msg = result.Errors[0].Message
+		}
+		return "", fmt.Errorf("API error: %s", msg)
+	}
+	return result.Result[0].ID, nil
+}
+
+// getAccountID gets the account ID from the API token
+func (b *DomainBinder) getAccountID(ctx context.Context) (string, error) {
+	url := "https://api.cloudflare.com/client/v4/user/tokens/verify"
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+b.apiToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Success bool `json:"success"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+		Result struct {
+			ID string `json:"id"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+	if !result.Success {
+		msg := "token verification failed"
+		if len(result.Errors) > 0 {
+			msg = result.Errors[0].Message
+		}
+		return "", fmt.Errorf("API error: %s", msg)
+	}
+	return result.Result.ID, nil
+}
+
+// verifyToken checks if the API token is valid
+func handleVerifyDomainToken(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		APIToken string `json:"api_token"`
+	}
+	if err := readJSON(r, &body); err != nil || body.APIToken == "" {
+		writeError(w, 400, "api_token required")
+		return
+	}
+
+	binder := &DomainBinder{apiToken: body.APIToken}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	accountID, err := binder.getAccountID(ctx)
+	if err != nil {
+		writeJSON(w, 200, map[string]any{"valid": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"valid": true, "account_id": accountID})
+}
+
+// handleBindDomain creates tunnel and configures DNS binding
+func handleBindDomain(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		APIToken string `json:"api_token"`
+		Domain   string `json:"domain"`
+	}
+	if err := readJSON(r, &body); err != nil || body.APIToken == "" || body.Domain == "" {
+		writeError(w, 400, "api_token and domain required")
+		return
+	}
+
+	binder := &DomainBinder{apiToken: body.APIToken}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	// Step 1: Get account ID
+	slog.Info("domain binding: verifying token")
+	accountID, err := binder.getAccountID(ctx)
+	if err != nil {
+		writeError(w, 401, "invalid API token: "+err.Error())
+		return
+	}
+
+	// Step 2: Create tunnel
+	tunnelName := "modelmux-" + sanitizeDomain(body.Domain)
+	slog.Info("domain binding: creating tunnel", "name", tunnelName)
+	tunnelInfo, err := binder.createTunnelViaAPI(ctx, tunnelName)
+	if err != nil {
+		// Tunnel might already exist, try to continue
+		slog.Warn("domain binding: tunnel creation failed (may exist)", "error", err)
+		writeError(w, 500, "create tunnel failed: "+err.Error())
+		return
+	}
+
+	// Step 3: Configure tunnel routing
+	localAddr := fmt.Sprintf("http://localhost:%d", getListenPort())
+	slog.Info("domain binding: configuring tunnel", "tunnel_id", tunnelInfo.ID, "local", localAddr)
+	if err := binder.configureTunnel(ctx, tunnelInfo.ID, localAddr); err != nil {
+		writeError(w, 500, "configure tunnel failed: "+err.Error())
+		return
+	}
+
+	// Step 4: Get zone ID
+	slog.Info("domain binding: looking up zone", "domain", body.Domain)
+	zoneID, err := binder.getZoneID(ctx, body.Domain)
+	if err != nil {
+		writeError(w, 500, "get zone ID failed: "+err.Error())
+		return
+	}
+
+	// Step 5: Create DNS record
+	slog.Info("domain binding: creating DNS record", "domain", body.Domain, "tunnel", tunnelInfo.ID)
+	if err := binder.createDNSRecord(ctx, zoneID, body.Domain, tunnelInfo.ID); err != nil {
+		writeError(w, 500, "create DNS record failed: "+err.Error())
+		return
+	}
+
+	// Step 6: Save config
+	// use global cfg
+	cfg.Set("cf_api_token", body.APIToken)
+	cfg.Set("cf_tunnel_id", tunnelInfo.ID)
+	cfg.Set("cf_zone_id", zoneID)
+	cfg.Set("bound_domain", body.Domain)
+	cfg.Set("tunnel_mode", "named")
+	cfg.Set("tunnel_url", "https://"+body.Domain)
+	cfg.save()
+
+	// Step 7: Restart tunnel in named mode
+	if tunnel != nil {
+		tunnel.stop()
+	}
+	tunnel = newTunnelManager(body.Domain, tunnelInfo.ID, body.APIToken)
+	tunnel.start()
+
+	publicURL := "https://" + body.Domain
+	slog.Info("domain binding complete", "domain", body.Domain, "tunnel_id", tunnelInfo.ID, "account_id", accountID)
+
+	writeJSON(w, 200, map[string]any{
+		"success":   true,
+		"domain":    body.Domain,
+		"public_url": publicURL,
+		"tunnel_id": tunnelInfo.ID,
+		"account_id": accountID,
+	})
+}
+
+// handleGetDomainStatus returns current domain binding status
+func handleGetDomainStatus(w http.ResponseWriter, r *http.Request) {
+	// use global cfg
+	domain := cfg.Get("bound_domain", "")
+	tunnelID := cfg.Get("cf_tunnel_id", "")
+	tunnelURL := cfg.Get("tunnel_url", "")
+	hasToken := cfg.Get("cf_api_token", "") != ""
+
+	writeJSON(w, 200, map[string]any{
+		"bound":      domain != "",
+		"domain":     domain,
+		"tunnel_id":  tunnelID,
+		"public_url": tunnelURL,
+		"has_token":  hasToken,
+	})
+}
+
+// handleUnbindDomain removes domain binding
+func handleUnbindDomain(w http.ResponseWriter, r *http.Request) {
+	// use global cfg
+	cfg.Set("bound_domain", "")
+	cfg.Set("cf_tunnel_id", "")
+	cfg.Set("cf_zone_id", "")
+	cfg.Set("tunnel_mode", "quick")
+	cfg.Set("tunnel_url", "")
+	cfg.save()
+
+	// Restart with quick tunnel
+	if tunnel != nil {
+		tunnel.stop()
+	}
+	tunnel = newTunnelManager("", "", "")
+	tunnel.start()
+
+	writeJSON(w, 200, map[string]any{"success": true, "message": "domain unbound, switched to quick tunnel"})
+}
+
+
+func sanitizeDomain(d string) string {
+	d = strings.ToLower(d)
+	d = strings.ReplaceAll(d, ".", "-")
+	d = strings.ReplaceAll(d, " ", "-")
+	if len(d) > 40 {
+		d = d[:40]
+	}
+	return d
 }
