@@ -317,8 +317,8 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
   </div>
 
-  <div class="card" id="federationCard" style="display:none">
-    <div class="card-title"><span class="icon">🌐</span> 联邦网络 v3.0</div>
+  <div class="card" id="federationCard">
+    <div class="card-title"><span class="icon">🌐</span> 联邦网络 v3.0 <span id="fedEnabledStatus" style="font-size:12px;font-weight:normal;margin-left:8px"></span></div>
     
     <!-- 节点身份 -->
     <div class="status-grid" id="fedNodeInfo">
@@ -1242,11 +1242,7 @@ async function loadFederationStatus() {
     const data = await res.json();
     
     const card = document.getElementById('federationCard');
-    if (!data.enabled && !data.node) {
-      card.style.display = 'none';
-      return;
-    }
-    card.style.display = 'block';
+    card.style.display = 'block'; // always visible
     
     if (data.node) {
       document.getElementById('fedNodeId').textContent = data.node.id || '-';
@@ -1258,6 +1254,13 @@ async function loadFederationStatus() {
     document.getElementById('fedTotalNodes').textContent = data.total_nodes || 0;
     document.getElementById('fedSeedNodes').textContent = data.seed_nodes || 0;
     document.getElementById('fedRelayStatus').textContent = data.relay ? '✅ 已启用' : '❌ 未启用';
+    
+    // Show enabled/disabled status
+    const statusEl = document.getElementById('fedEnabledStatus');
+    if (statusEl) {
+      statusEl.textContent = data.enabled ? '✅ 已加入联邦网络' : '⚠️ 未启用（请在下方配置中开启）';
+      statusEl.style.color = data.enabled ? 'var(--success)' : 'var(--warning, #f59e0b)';
+    }
     
     if (data.messages && data.messages.unread > 0) {
       const badge = document.getElementById('fedUnreadBadge');
@@ -1307,6 +1310,11 @@ async function loadFederationConfig() {
     document.getElementById('fedRelay').value = data.federation_relay_enabled || 'false';
     document.getElementById('fedRepo').value = data.federation_registry_repo || '';
     document.getElementById('fedGossipInterval').value = data.gossip_interval_s || '30';
+    document.getElementById('tunnelEnabled').value = data.tunnel_enabled || 'false';
+    document.getElementById('tunnelMode').value = data.tunnel_mode || 'quick';
+    document.getElementById('tunnelDomain').value = data.tunnel_domain || '';
+    document.getElementById('tunnelUrl').value = data.tunnel_url || '';
+    toggleDomainInput();
   } catch(e) {}
 }
 
@@ -1315,7 +1323,10 @@ async function saveFederationConfig() {
     federation_enabled: document.getElementById('fedEnabled').value,
     federation_relay_enabled: document.getElementById('fedRelay').value,
     federation_registry_repo: document.getElementById('fedRepo').value,
-    gossip_interval_s: document.getElementById('fedGossipInterval').value
+    gossip_interval_s: document.getElementById('fedGossipInterval').value,
+    tunnel_enabled: document.getElementById('tunnelEnabled').value,
+    tunnel_mode: document.getElementById('tunnelMode').value,
+    tunnel_domain: document.getElementById('tunnelDomain').value
   };
   try {
     const res = await authFetch('/api/federation/config', {
