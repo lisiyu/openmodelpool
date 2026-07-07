@@ -13,16 +13,20 @@ import (
 )
 
 // NodeIdentity manages this node's identity in the federation.
+// SA-13: The private key is stored encrypted in memory and only decrypted
+// on-demand for signing operations. After use, the decrypted key is zeroed
+// to minimize the window of exposure in process memory.
 type NodeIdentity struct {
-	mu          sync.RWMutex
-	nodeID      string
-	privKey     ed25519.PrivateKey
-	pubKey      ed25519.PublicKey
-	githubUser  string
-	githubID    int64
-	joinedAt    time.Time
-	keyPath     string // path to encrypted key file
-	tokenBudget int64  // monthly token budget declaration
+	mu           sync.RWMutex
+	nodeID       string
+	privKey      ed25519.PrivateKey // kept only during active use; cleared after sign
+	encPrivKey   string             // encrypted private key (AES-256-GCM), always in memory
+	pubKey       ed25519.PublicKey
+	githubUser   string
+	githubID     int64
+	joinedAt     time.Time
+	keyPath      string // path to encrypted key file
+	tokenBudget  int64  // monthly token budget declaration
 }
 
 var node *NodeIdentity
@@ -66,7 +70,10 @@ func initNode(dataDir string) {
 	defer node.mu.Unlock()
 	node.nodeID = store.NodeID
 
-	// Decrypt private key
+	// SA-13: Store encrypted private key in memory (not decrypted)
+	node.encPrivKey = store.PrivKeyB64
+
+	// Derive public key from encrypted key (decrypt temporarily, derive pub, then zero)
 	decrypted := enc.Decrypt(store.PrivKeyB64)
 	if decrypted == "" {
 		slog.Error("failed to decrypt node private key")
@@ -77,8 +84,12 @@ func initNode(dataDir string) {
 		slog.Error("failed to decode decrypted private key", "error", err)
 		return
 	}
-	node.privKey = ed25519.PrivateKey(keyBytes)
-	node.pubKey = node.privKey.Public().(ed25519.PublicKey)
+	tempKey := ed25519.PrivateKey(keyBytes)
+	node.pubKey = tempKey.Public().(ed25519.PublicKey)
+	// Zero the temporary decrypted key bytes
+	for i := range keyBytes {
+		keyBytes[i] = 0
+	}
 	node.githubUser = store.GitHubUser
 	node.githubID = store.GitHubID
 	if store.JoinedAt != "" {
@@ -94,7 +105,10 @@ func (n *NodeIdentity) generate() error {
 		return fmt.Errorf("generate ed25519 key: %w", err)
 	}
 
-	n.privKey = priv
+	// SA-13: Encrypt private key for in-memory storage, then clear plaintext
+	privKeyB64 := base64.StdEncoding.EncodeToString(priv)
+	n.encPrivKey = enc.Encrypt(privKeyB64)
+	n.privKey = priv // temporarily held for save(), cleared after save
 	n.pubKey = pub
 	n.nodeID = "mm-" + base58Encode(pub[:16])
 	n.joinedAt = time.Now().UTC()
@@ -105,15 +119,26 @@ func (n *NodeIdentity) save() {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	if n.privKey == nil {
+	// SA-13: Use encrypted in-memory key if available, otherwise encrypt from plaintext
+	encKey := n.encPrivKey
+	if encKey == "" && n.privKey != nil {
+		privKeyB64 := base64.StdEncoding.EncodeToString(n.privKey)
+		encKey = enc.Encrypt(privKeyB64)
+		// Update stored encrypted key
+		n.mu.RUnlock()
+		n.mu.Lock()
+		n.encPrivKey = encKey
+		n.mu.Unlock()
+		n.mu.RLock()
+	}
+
+	if encKey == "" {
 		return
 	}
 
-	privKeyB64 := base64.StdEncoding.EncodeToString(n.privKey)
-	encrypted := enc.Encrypt(privKeyB64)
 	store := NodeKeyStore{
 		NodeID:     n.nodeID,
-		PrivKeyB64: encrypted,
+		PrivKeyB64: encKey,
 		PubKeyB64:  base64.StdEncoding.EncodeToString(n.pubKey),
 		GitHubUser: n.githubUser,
 		GitHubID:   n.githubID,
@@ -142,14 +167,32 @@ func (n *NodeIdentity) PubKeyB64() string {
 }
 
 // Sign signs a message and returns base64-encoded signature.
+// SA-13: Decrypts the private key on-demand, signs, then zeros the key material.
 func (n *NodeIdentity) Sign(message []byte) string {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	if n.privKey == nil {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	// Decrypt private key from encrypted in-memory storage
+	decrypted := enc.Decrypt(n.encPrivKey)
+	if decrypted == "" {
 		return ""
 	}
-	sig := ed25519.Sign(n.privKey, message)
-	return base64.StdEncoding.EncodeToString(sig)
+	keyBytes, err := base64.StdEncoding.DecodeString(decrypted)
+	if err != nil {
+		return ""
+	}
+	privKey := ed25519.PrivateKey(keyBytes)
+
+	// Sign the message
+	sig := ed25519.Sign(privKey, message)
+	result := base64.StdEncoding.EncodeToString(sig)
+
+	// Zero the decrypted key material immediately after use
+	for i := range keyBytes {
+		keyBytes[i] = 0
+	}
+
+	return result
 }
 
 // SignJSON marshals v to JSON, signs it, and returns the signature.
@@ -159,6 +202,31 @@ func (n *NodeIdentity) SignJSON(v any) string {
 		return ""
 	}
 	return n.Sign(data)
+}
+
+// SignHex signs a message and returns the hex-encoded signature.
+// SA-13: Same decrypt-on-use, zero-after-use pattern as Sign().
+func (n *NodeIdentity) SignHex(message []byte) string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	decrypted := enc.Decrypt(n.encPrivKey)
+	if decrypted == "" {
+		return ""
+	}
+	keyBytes, err := base64.StdEncoding.DecodeString(decrypted)
+	if err != nil {
+		return ""
+	}
+	privKey := ed25519.PrivateKey(keyBytes)
+	sig := ed25519.Sign(privKey, message)
+
+	// Zero the decrypted key material
+	for i := range keyBytes {
+		keyBytes[i] = 0
+	}
+
+	return fmt.Sprintf("%x", sig)
 }
 
 // VerifySignature verifies a signature from a given public key.
@@ -239,7 +307,7 @@ func (n *NodeIdentity) SetTokenBudget(budget int64) {
 func (n *NodeIdentity) IsInitialized() bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
-	return n.nodeID != "" && n.privKey != nil
+	return n.nodeID != "" && (n.encPrivKey != "" || n.privKey != nil)
 }
 
 // base58 encoding (Bitcoin-style, no 0/O/I/l)

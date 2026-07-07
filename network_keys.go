@@ -99,12 +99,10 @@ func initKeyStore(dataDir string) {
 }
 
 func (ks *KeyStore) load() {
-	b, err := os.ReadFile(ks.dataPath)
-	if err != nil {
-		return
-	}
+	// SA-15: Load with HMAC integrity verification
 	var issued []*IssuedKey
-	if err := json.Unmarshal(b, &issued); err != nil {
+	if err := loadWithIntegrity(ks.dataPath, &issued); err != nil {
+		slog.Warn("key store load failed", "error", err)
 		return
 	}
 	ks.mu.Lock()
@@ -125,9 +123,11 @@ func (ks *KeyStore) doSave() {
 	for _, ik := range ks.keys {
 		all = append(all, ik)
 	}
-	b, _ := json.MarshalIndent(all, "", "  ")
+	// SA-15: Save with HMAC integrity protection
 	os.MkdirAll(filepath.Dir(ks.dataPath), 0755)
-	os.WriteFile(ks.dataPath, b, 0600)
+	if err := saveWithIntegrity(ks.dataPath, all); err != nil {
+		slog.Error("key store save failed", "error", err)
+	}
 }
 
 // IssueKey creates a new signed key for a consumer.
@@ -175,15 +175,11 @@ func (ks *KeyStore) IssueKey(consumerID string, quota int64, models []string, ex
 	}
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
 
-	// Sign the payload with Ed25519 private key
-	node.mu.RLock()
-	privKey := node.privKey
-	node.mu.RUnlock()
-	if privKey == nil {
+	// SA-13: Sign using decrypt-on-demand method (avoids keeping private key in memory)
+	sigHex := node.SignHex([]byte(payloadB64))
+	if sigHex == "" {
 		return "", fmt.Errorf("node private key not available")
 	}
-	sig := ed25519.Sign(privKey, []byte(payloadB64))
-	sigHex := hex.EncodeToString(sig)
 
 	// Build mk_ key
 	fullKey := fmt.Sprintf("mk_%s.%s.%s", consumerID, payloadB64, sigHex)
@@ -341,7 +337,9 @@ func validateKeyParts(consumerID, payloadB64, sigHex string) (*KeyPayload, error
 		keyStore.mu.RLock()
 		if ik, ok := keyStore.keys[consumerID]; ok && ik.Revoked {
 			keyStore.mu.RUnlock()
-			return nil, fmt.Errorf("key has been revoked")
+			// SA-09: Log detail internally, return generic error externally
+			slog.Warn("key validation: revoked key presented", "consumer_id", consumerID)
+			return nil, fmt.Errorf("invalid key")
 		}
 		keyStore.mu.RUnlock()
 	}
@@ -349,19 +347,25 @@ func validateKeyParts(consumerID, payloadB64, sigHex string) (*KeyPayload, error
 	// Check expiration
 	now := time.Now().Unix()
 	if payload.Exp > 0 && now > payload.Exp {
-		return nil, fmt.Errorf("key expired at %d", payload.Exp)
+		// SA-09: Do not leak exact expiration time
+		slog.Warn("key validation: expired key presented", "consumer_id", consumerID, "exp", payload.Exp)
+		return nil, fmt.Errorf("invalid key")
 	}
 
 	// SA-06: Check for nonce replay (trial keys and keys with nonces)
 	if payload.Nonce != "" {
 		if err := checkNonceReplay(payload.Nonce, payload.Exp); err != nil {
-			return nil, fmt.Errorf("replay protection: %w", err)
+			// SA-09: Do not reveal replay detection details
+			slog.Warn("key validation: nonce replay detected", "consumer_id", consumerID)
+			return nil, fmt.Errorf("invalid key")
 		}
 	}
 
 	// Check quota
 	if payload.Quota > 0 && payload.Used >= payload.Quota {
-		return nil, fmt.Errorf("quota exhausted: used=%d, quota=%d", payload.Used, payload.Quota)
+		// SA-09: Do not leak quota/usage numbers
+		slog.Warn("key validation: quota exhausted", "consumer_id", consumerID, "used", payload.Used, "quota", payload.Quota)
+		return nil, fmt.Errorf("invalid key")
 	}
 
 	// For open unbound keys, skip issuer verification (no issuer)
@@ -569,28 +573,23 @@ func handleNetworkKeyValidate(w http.ResponseWriter, r *http.Request) {
 
 	payload, err := ValidateKey(body.Key)
 	if err != nil {
-		writeJSON(w, 200, map[string]any{"valid": false, "error": err.Error()})
+		// SA-09: Return generic error, do not expose internal validation details
+		writeJSON(w, 200, map[string]any{"valid": false})
 		return
 	}
 
 	// Check model access if model is specified
 	if body.Model != "" && !CheckModelAccess(payload, body.Model) {
-		writeJSON(w, 200, map[string]any{
-			"valid":  false,
-			"error":  fmt.Sprintf("model '%s' not allowed by this key", body.Model),
-			"allowed": payload.Models,
-		})
+		// SA-09: Do not reveal allowed models list
+		slog.Warn("key validate: model access denied", "model", body.Model)
+		writeJSON(w, 200, map[string]any{"valid": false})
 		return
 	}
 
+	// SA-09: Only return essential info, do not expose quota/used/models to public
 	writeJSON(w, 200, map[string]any{
 		"valid":       true,
 		"consumer_id": payload.Sub,
-		"issuer":      payload.Iss,
-		"quota":       payload.Quota,
-		"used":        payload.Used,
-		"remaining":   payload.Quota - payload.Used,
-		"models":      payload.Models,
 		"expires":     payload.Exp,
 	})
 }
@@ -685,14 +684,11 @@ func (ks *KeyStore) IssueTrialKey(nodeID string, quota int64) (string, *TrialKey
 	}
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
 
-	node.mu.RLock()
-	privKey := node.privKey
-	node.mu.RUnlock()
-	if privKey == nil {
+	// SA-13: Sign using decrypt-on-demand method
+	sigHex := node.SignHex([]byte(payloadB64))
+	if sigHex == "" {
 		return "", nil, fmt.Errorf("node private key not available")
 	}
-	sig := ed25519.Sign(privKey, []byte(payloadB64))
-	sigHex := hex.EncodeToString(sig)
 
 	fullKey := fmt.Sprintf("mk_trial_%s_%d.%s.%s", nodeID, timestamp, payloadB64, sigHex)
 
@@ -836,14 +832,11 @@ func (oks *openKeyStore) IssueOpenKeyUnbound() (string, *OpenKeyInfo, error) {
 	}
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
 
-	node.mu.RLock()
-	privKey := node.privKey
-	node.mu.RUnlock()
-	if privKey == nil {
+	// SA-13: Sign using decrypt-on-demand method
+	sigHex := node.SignHex([]byte(payloadB64))
+	if sigHex == "" {
 		return "", nil, fmt.Errorf("node private key not available")
 	}
-	sig := ed25519.Sign(privKey, []byte(payloadB64))
-	sigHex := hex.EncodeToString(sig)
 
 	fullKey := fmt.Sprintf("mk_open_%s.%s.%s", randHex, payloadB64, sigHex)
 
@@ -907,14 +900,11 @@ func (oks *openKeyStore) IssueOpenKeyBound(nodeID string) (string, *OpenKeyInfo,
 	}
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
 
-	node.mu.RLock()
-	privKey := node.privKey
-	node.mu.RUnlock()
-	if privKey == nil {
+	// SA-13: Sign using decrypt-on-demand method
+	sigHex := node.SignHex([]byte(payloadB64))
+	if sigHex == "" {
 		return "", nil, fmt.Errorf("node private key not available")
 	}
-	sig := ed25519.Sign(privKey, []byte(payloadB64))
-	sigHex := hex.EncodeToString(sig)
 
 	fullKey := fmt.Sprintf("mk_open_%s_%s.%s.%s", nodeID, randHex, payloadB64, sigHex)
 

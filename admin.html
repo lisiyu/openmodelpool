@@ -1050,6 +1050,20 @@ select.form-input{appearance:none;cursor:pointer}
       <div class="form-group"><label class="form-label">描述</label><input class="form-input" id="pDesc" placeholder="平台描述"></div>
       <div class="form-group"><label class="form-label">优先级（数字越小越优先）</label><input class="form-input" id="pPriority" type="number" value="5"></div>
       <div class="form-group"><label class="form-label">Token 预算上限（可选）</label><input class="form-input" id="pTokenLimit" type="number" placeholder="留空表示不限制，单位：Token/月"></div>
+      <div class="form-group">
+        <label class="form-label">🔐 访问权限控制</label>
+        <div style="display:flex;gap:16px;margin-top:6px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
+            <input type="radio" name="pAccessControl" value="private" id="pAccessPrivate" checked>
+            🔒 仅私有 Key
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
+            <input type="radio" name="pAccessControl" value="shared" id="pAccessShared">
+            🌐 允许共享/公共 Key
+          </label>
+        </div>
+        <div class="section-note" style="margin-top:4px;font-size:11px">私有 Key（mk_{consumer_id}.xxx）可访问所有启用的平台；共享 Key（mk_open_xxx）仅可访问标记为「允许共享」的平台</div>
+      </div>
       <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="pEnabled" checked> 启用此平台</label></div>
       <div class="btn-group">
         <button class="btn btn-primary" onclick="saveProvider()">💾 保存</button>
@@ -1354,10 +1368,12 @@ function renderProviders() {
     const models = p.models || [];
     const keyStatus = p.api_key ? `<span class="badge badge-green">Key: ${p.api_key}</span>` : '<span class="badge badge-red">未配置 Key</span>';
     const proxyStatus = p.proxy ? (p.proxy.startsWith('vmess://') ? `<span class="badge badge-blue">代理: vmess://***</span>` : `<span class="badge badge-blue">代理: ✓</span>`) : '';
+    const ac = p.access_control || {};
+    const accessBadge = ac.allow_shared_key ? '<span class="badge badge-green" title="允许共享/公共 Key 访问">🌐 共享</span>' : '<span class="badge badge-yellow" title="仅私有 Key 可访问">🔒 私有</span>';
     return `<div class="provider-item" id="p-${p.id}">
       <div class="provider-header" onclick="toggleModels('${p.id}')">
         <div class="provider-info">
-          <div class="provider-name"><span class="status-dot ${enabled?'green':'red'}" style="width:8px;height:8px"></span> ${p.name} <span class="badge badge-blue">${p.type}</span></div>
+          <div class="provider-name"><span class="status-dot ${enabled?'green':'red'}" style="width:8px;height:8px"></span> ${p.name} <span class="badge badge-blue">${p.type}</span> ${accessBadge}</div>
           <div class="provider-url">${p.base_url}</div>
           <div class="provider-meta">${keyStatus} <span>· ${models.length} 个模型</span> <span>· 优先级 <input type="number" class="priority-input" value="${p.priority||5}" min="1" max="99" onclick="event.stopPropagation()" onchange="updatePriority('${p.id}', this.value)" title="数字越小优先级越高"></span></div>
         </div>
@@ -1512,6 +1528,13 @@ function editProvider(pid) {
   document.getElementById('pPriority').value = p.priority || 5;
   document.getElementById('pTokenLimit').value = p.token_limit || '';
   document.getElementById('pEnabled').checked = p.enabled !== false;
+  // Load access control state
+  const ac = p.access_control || {};
+  if (ac.allow_shared_key) {
+    document.getElementById('pAccessShared').checked = true;
+  } else {
+    document.getElementById('pAccessPrivate').checked = true;
+  }
   document.getElementById('providerModal').classList.add('open');
 }
 
@@ -1530,6 +1553,7 @@ function selectPreset(pid) {
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.id === 'openai' ? 10 : p.id === 'openrouter' ? 20 : p.id === 'ollama' ? 50 : 5;
   document.getElementById('pEnabled').checked = true;
+  document.getElementById('pAccessPrivate').checked = true; // default: private only
 }
 
 function backToStep1() {
@@ -1542,12 +1566,17 @@ function closeModal() { document.getElementById('providerModal').classList.remov
 async function saveProvider() {
   const id = document.getElementById('pId').value.trim();
   if (!id) { toast('请填写平台 ID', 'error'); return; }
+  const accessMode = document.querySelector('input[name="pAccessControl"]:checked').value;
   const data = {
     id, name: document.getElementById('pName').value.trim() || id,
     type: 'openai_compatible', base_url: document.getElementById('pUrl').value.trim(),
     description: document.getElementById('pDesc').value.trim(),
     priority: parseInt(document.getElementById('pPriority').value) || 5,
     enabled: document.getElementById('pEnabled').checked,
+    access_control: {
+      allow_private_key: true,
+      allow_shared_key: accessMode === 'shared',
+    },
   };
   const tokenLimit = document.getElementById('pTokenLimit').value.trim();
   if (tokenLimit) data.token_limit = parseInt(tokenLimit);
@@ -1591,6 +1620,7 @@ function selectCustomPreset() {
   document.getElementById('pDesc').value = '';
   document.getElementById('pPriority').value = '5';
   document.getElementById('pEnabled').checked = true;
+  document.getElementById('pAccessPrivate').checked = true; // default: private only
   editingId = '';
 }
 

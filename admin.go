@@ -525,6 +525,50 @@ func handleSyncModels(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================
+// Provider Access Control handlers
+// ============================================================
+
+// handleGetProviderAccessControl returns the access control settings for a provider.
+// GET /api/providers/{id}/access-control
+func handleGetProviderAccessControl(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, ok := pm.GetRaw(id)
+	if !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
+	writeJSON(w, 200, p.AccessControl)
+}
+
+// handleUpdateProviderAccessControl updates the access control settings for a provider.
+// PUT /api/providers/{id}/access-control
+func handleUpdateProviderAccessControl(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, ok := pm.GetRaw(id)
+	if !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
+
+	var ac ProviderAccessControl
+	if err := readJSON(r, &ac); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+
+	// Normalize: if both false, default to private-only
+	if !ac.AllowPrivateKey && !ac.AllowSharedKey {
+		ac = DefaultAccessControl()
+	}
+
+	p.AccessControl = ac
+	pm.Add(p)
+
+	slog.Info("provider access control updated", "provider", id, "allow_private", ac.AllowPrivateKey, "allow_shared", ac.AllowSharedKey)
+	writeJSON(w, 200, map[string]any{"success": true, "access_control": ac})
+}
+
+// ============================================================
 // Sider handlers
 // ============================================================
 
@@ -1107,4 +1151,108 @@ func handleImportConfig(w http.ResponseWriter, r *http.Request) {
 		"message":         "config imported successfully",
 		"providers_count": len(importData.Providers),
 	})
+}
+
+// ============================================================
+// Multi API Key Management Handlers
+// ============================================================
+
+// handleListAPIKeys returns all API keys for a provider (masked).
+// GET /api/providers/{id}/keys
+func handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := checkProviderAccess(r, id); !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
+
+	keys, err := pm.GetAPIKeys(id)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"keys": keys, "count": len(keys)})
+}
+
+// handleAddAPIKey adds a new API key to a provider.
+// POST /api/providers/{id}/keys
+func handleAddAPIKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := checkProviderAccess(r, id); !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
+
+	var key APIKeyConfig
+	if err := readJSON(r, &key); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if key.Key == "" {
+		writeError(w, 400, "API key value required")
+		return
+	}
+
+	if err := pm.AddAPIKey(id, key); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"success": true, "message": "API key added"})
+}
+
+// handleUpdateAPIKey updates an existing API key.
+// PUT /api/providers/{id}/keys/{key_id}
+func handleUpdateAPIKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	keyID := r.PathValue("key_id")
+	if _, ok := checkProviderAccess(r, id); !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
+
+	var updates map[string]any
+	if err := readJSON(r, &updates); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+
+	if err := pm.UpdateAPIKey(id, keyID, updates); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"success": true, "message": "API key updated"})
+}
+
+// handleDeleteAPIKey removes an API key from a provider.
+// DELETE /api/providers/{id}/keys/{key_id}
+func handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	keyID := r.PathValue("key_id")
+	if _, ok := checkProviderAccess(r, id); !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
+
+	if err := pm.DeleteAPIKey(id, keyID); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"success": true, "message": "API key deleted"})
+}
+
+// handleResetKeyQuota resets the used quota for an API key.
+// POST /api/providers/{id}/keys/{key_id}/reset-quota
+func handleResetKeyQuota(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	keyID := r.PathValue("key_id")
+	if _, ok := checkProviderAccess(r, id); !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
+
+	if err := pm.ResetKeyQuota(id, keyID); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"success": true, "message": "quota reset"})
 }

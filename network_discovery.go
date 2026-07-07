@@ -526,18 +526,12 @@ func registerWithBootstraps() {
 }
 
 // signHeartbeat creates an Ed25519 signature over the node_id for heartbeat authentication.
+// SA-13: Uses node.Sign() for decrypt-on-demand signing.
 func signHeartbeat(nodeID string) string {
 	if node == nil || !node.IsInitialized() {
 		return ""
 	}
-	node.mu.RLock()
-	privKey := node.privKey
-	node.mu.RUnlock()
-	if privKey == nil {
-		return ""
-	}
-	sig := ed25519.Sign(privKey, []byte(nodeID))
-	return base64.StdEncoding.EncodeToString(sig)
+	return node.Sign([]byte(nodeID))
 }
 
 // verifyHeartbeatAuth verifies the heartbeat signature against the node's known public key.

@@ -60,6 +60,37 @@ func (a *Auth) save() {
 // Initialized returns whether admin has been set up.
 func (a *Auth) Initialized() bool { return a.data.Initialized }
 
+// validatePasswordStrength checks password complexity requirements.
+// SA-14: Enforces minimum 12 characters with at least 3 of 4 character classes.
+func validatePasswordStrength(password string) error {
+	if len(password) < 12 {
+		return errors.New("password must be at least 12 characters")
+	}
+	var hasUpper, hasLower, hasDigit, hasSpecial bool
+	for _, c := range password {
+		switch {
+		case c >= 'A' && c <= 'Z':
+			hasUpper = true
+		case c >= 'a' && c <= 'z':
+			hasLower = true
+		case c >= '0' && c <= '9':
+			hasDigit = true
+		default:
+			hasSpecial = true
+		}
+	}
+	categories := 0
+	for _, ok := range []bool{hasUpper, hasLower, hasDigit, hasSpecial} {
+		if ok {
+			categories++
+		}
+	}
+	if categories < 3 {
+		return errors.New("password must contain at least 3 of: uppercase, lowercase, digits, special characters")
+	}
+	return nil
+}
+
 // SetupAdmin creates the initial admin account.
 func (a *Auth) SetupAdmin(username, password, email string) error {
 	if a.data.Initialized {
@@ -68,8 +99,8 @@ func (a *Auth) SetupAdmin(username, password, email string) error {
 	if username == "" || password == "" || email == "" {
 		return errors.New("username, password, and email are required")
 	}
-	if len(password) < 8 {
-		return errors.New("password must be at least 8 characters")
+	if err := validatePasswordStrength(password); err != nil {
+		return err
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	a.data.Admin = AdminData{
@@ -97,8 +128,8 @@ func (a *Auth) ChangePassword(oldPass, newPass string) error {
 	if !a.VerifyCredentials(a.data.Admin.Username, oldPass) {
 		return errors.New("incorrect old password")
 	}
-	if len(newPass) < 8 {
-		return errors.New("password must be at least 8 characters")
+	if err := validatePasswordStrength(newPass); err != nil {
+		return err
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
 	a.data.Admin.PasswordHash = string(hash)
@@ -206,8 +237,8 @@ func (a *Auth) ResetPassword(tok, newPass string) error {
 	if !a.VerifyResetToken(tok) {
 		return errors.New("invalid or expired reset token")
 	}
-	if len(newPass) < 8 {
-		return errors.New("password must be at least 8 characters")
+	if err := validatePasswordStrength(newPass); err != nil {
+		return err
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
 	a.data.Admin.PasswordHash = string(hash)

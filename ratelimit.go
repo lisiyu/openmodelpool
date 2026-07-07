@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -139,4 +140,82 @@ func parseFloat64(s string, defaultVal float64) float64 {
 		return defaultVal
 	}
 	return v
+}
+
+// ============================================================
+// SA-10: Per-IP Rate Limiting for sensitive public endpoints
+// ============================================================
+
+// ipRateLimiters stores per-IP rate limiters for sensitive endpoints.
+var ipRateLimiters = struct {
+	sync.RWMutex
+	limiters map[string]*ipRateLimitEntry
+}{limiters: make(map[string]*ipRateLimitEntry)}
+
+type ipRateLimitEntry struct {
+	limiter  *RateLimiter
+	lastSeen time.Time
+}
+
+// rateLimitByIP returns a middleware that limits requests per client IP.
+// maxRequests defines the allowed requests per minute for each unique IP.
+func rateLimitByIP(maxRequestsPerMinute float64, endpointName string) func(http.HandlerFunc) http.HandlerFunc {
+	qps := maxRequestsPerMinute / 60.0
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			ip := extractClientIP(r.RemoteAddr)
+
+			ipRateLimiters.RLock()
+			entry, exists := ipRateLimiters.limiters[ip+endpointName]
+			ipRateLimiters.RUnlock()
+
+			if !exists {
+				ipRateLimiters.Lock()
+				// Double-check
+				entry, exists = ipRateLimiters.limiters[ip+endpointName]
+				if !exists {
+					entry = &ipRateLimitEntry{
+						limiter:  NewRateLimiter(qps),
+						lastSeen: time.Now(),
+					}
+					ipRateLimiters.limiters[ip+endpointName] = entry
+				}
+				ipRateLimiters.Unlock()
+			}
+
+			entry.lastSeen = time.Now()
+			if !entry.limiter.Allow() {
+				slog.Warn("IP rate limit exceeded", "ip", ip, "endpoint", endpointName, "remote", r.RemoteAddr)
+				writeJSON(w, http.StatusTooManyRequests, ErrorResponse{Error: ErrorDetail{
+					Message: "rate limit exceeded, please try again later",
+					Type:    "rate_limit_error",
+					Code:    "rate_limit_ip",
+				}})
+				return
+			}
+
+			next(w, r)
+		}
+	}
+}
+
+// extractClientIP extracts the IP address from a RemoteAddr string (host:port).
+func extractClientIP(remoteAddr string) string {
+	// Handle IPv6 [::1]:port and IPv4 127.0.0.1:port
+	if idx := strings.LastIndex(remoteAddr, ":"); idx != -1 {
+		return remoteAddr[:idx]
+	}
+	return remoteAddr
+}
+
+// cleanupIPRateLimiters removes stale IP limiter entries older than maxAge.
+func cleanupIPRateLimiters(maxAge time.Duration) {
+	ipRateLimiters.Lock()
+	defer ipRateLimiters.Unlock()
+	cutoff := time.Now().Add(-maxAge)
+	for key, entry := range ipRateLimiters.limiters {
+		if entry.lastSeen.Before(cutoff) {
+			delete(ipRateLimiters.limiters, key)
+		}
+	}
 }

@@ -120,12 +120,26 @@ type ModelDef struct {
 	Enabled bool   `json:"enabled"`
 }
 
+// APIKeyConfig represents a single API key with its own quota and access control.
+type APIKeyConfig struct {
+	ID            string `json:"id"`              // unique identifier
+	Key           string `json:"key"`             // API key (encrypted at rest)
+	Quota         int64  `json:"quota"`           // total quota (tokens), 0=unlimited
+	Used          int64  `json:"used"`            // used quota
+	AccessControl string `json:"access_control"`  // "private" | "shared" | "public"
+	Enabled       bool   `json:"enabled"`         // whether this key is enabled
+	Priority      int    `json:"priority"`        // priority for rotation (higher = preferred)
+	ExpiresAt     string `json:"expires_at"`      // expiration time (optional, RFC3339)
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
 type Provider struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
 	Type        string     `json:"type"` // "openai_compatible", "coze", "sider", "anthropic"
 	BaseURL     string     `json:"base_url"`
-	APIKey      string     `json:"api_key"`
+	APIKey      string     `json:"api_key,omitempty"` // deprecated: use APIKeys instead
 	Enabled     bool       `json:"enabled"`
 	Models      []ModelDef `json:"models"`
 	Priority    int        `json:"priority"`
@@ -136,8 +150,29 @@ type Provider struct {
 	Proxy                 string     `json:"proxy,omitempty"` // http://, socks5://, or vmess:// link
 	HealthCheckEndpoint   string     `json:"health_check_endpoint,omitempty"` // "/models" (default), "/chat/completions", or custom
 	Owner                 string     `json:"owner,omitempty"` // consumer ID; empty = admin/system
+	AccessControl ProviderAccessControl `json:"access_control"`
+
+	// Multi API key support
+	APIKeys     []APIKeyConfig `json:"api_keys,omitempty"` // multiple API keys
+
 	CreatedAt   string     `json:"created_at,omitempty"`
 	UpdatedAt   string     `json:"updated_at,omitempty"`
+}
+
+// ProviderAccessControl defines which key types can access a provider.
+type ProviderAccessControl struct {
+	// AllowPrivateKey allows mk_{consumer_id}.xxx keys (default true)
+	AllowPrivateKey bool `json:"allow_private_key"`
+	// AllowSharedKey allows mk_open_xxx keys (default false)
+	AllowSharedKey bool `json:"allow_shared_key"`
+}
+
+// DefaultAccessControl returns the default access control settings.
+func DefaultAccessControl() ProviderAccessControl {
+	return ProviderAccessControl{
+		AllowPrivateKey: true,
+		AllowSharedKey:  false,
+	}
 }
 
 // Safe returns a copy with API key masked
@@ -149,6 +184,21 @@ func (p *Provider) Safe() Provider {
 		safe.APIKey = "***"
 	} else {
 		safe.APIKey = ""
+	}
+	// Mask API keys in the multi-key array
+	if len(safe.APIKeys) > 0 {
+		maskedKeys := make([]APIKeyConfig, len(safe.APIKeys))
+		for i, k := range safe.APIKeys {
+			maskedKeys[i] = k
+			if len(maskedKeys[i].Key) > 8 {
+				maskedKeys[i].Key = maskedKeys[i].Key[:4] + "..." + maskedKeys[i].Key[len(maskedKeys[i].Key)-4:]
+			} else if maskedKeys[i].Key != "" {
+				maskedKeys[i].Key = "***"
+			} else {
+				maskedKeys[i].Key = ""
+			}
+		}
+		safe.APIKeys = maskedKeys
 	}
 	// Mask vmess proxy links (contains sensitive UUID)
 	if strings.HasPrefix(safe.Proxy, "vmess://") {

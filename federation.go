@@ -1,26 +1,20 @@
 package main
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 )
 
 
-// withFederationAuth restricts access to known federation nodes or localhost.
+// withFederationAuth restricts access to known federation nodes or authenticated requests.
+// SA-12: localhost access now requires a Federation secret header to prevent
+// unauthorized access from co-located processes in containerized/shared environments.
 func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Allow localhost (same-node tools)
-		remoteIP := strings.Split(r.RemoteAddr, ":")[0]
-		if remoteIP == "127.0.0.1" || remoteIP == "::1" || remoteIP == "localhost" {
-			handler(w, r)
-			return
-		}
-		// Check X-Node-ID header against known nodes
+		// Check X-Node-ID header against known nodes (primary auth path)
 		nodeID := r.Header.Get("X-Node-ID")
 		if nodeID != "" && fed != nil {
 			if _, ok := fed.GetNode(nodeID); ok {
@@ -28,7 +22,8 @@ func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 		}
-		// Also allow if admin auth is present
+
+		// Allow if admin JWT auth is present
 		token := extractToken(r)
 		if token != "" {
 			if _, err := auth.VerifyToken(token); err == nil {
@@ -36,6 +31,25 @@ func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 		}
+
+		// SA-12: localhost access requires Federation secret (prevents co-located process bypass)
+		remoteIP := strings.Split(r.RemoteAddr, ":")[0]
+		if remoteIP == "127.0.0.1" || remoteIP == "::1" || remoteIP == "localhost" {
+			fedSecret := cfg.Get("federation_secret", "")
+			if fedSecret != "" {
+				requestSecret := r.Header.Get("X-Federation-Secret")
+				if requestSecret != "" && requestSecret == fedSecret {
+					handler(w, r)
+					return
+				}
+			}
+			// If no federation_secret is configured, allow localhost (backward compat)
+			if fedSecret == "" {
+				handler(w, r)
+				return
+			}
+		}
+
 		writeJSON(w, 403, map[string]string{"error": "federation access required"})
 	}
 }
@@ -215,23 +229,17 @@ func (f *FederationManager) save() {
 }
 
 // saveLocked writes the pool to disk. Caller must hold f.mu.
+// SA-15: Saves with HMAC integrity protection.
 func (f *FederationManager) saveLocked() error {
-	data, err := json.MarshalIndent(f.trustPool, "", "  ")
-	if err != nil {
-		return err
-	}
 	path := filepath.Join(f.dataDir, "federation_pool.json")
-	return os.WriteFile(path, data, 0600)
+	return saveWithIntegrity(path, f.trustPool)
 }
 
 // load reads the cached trust pool from dataDir/federation_pool.json.
+// SA-15: Loads with HMAC integrity verification.
 func (f *FederationManager) load() error {
 	path := filepath.Join(f.dataDir, "federation_pool.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, &f.trustPool)
+	return loadWithIntegrity(path, &f.trustPool)
 }
 
 // refreshFromGitHub fetches the canonical trust pool from the GitHub registry

@@ -18,6 +18,12 @@ import (
 	"time"
 )
 
+// SA-17: cloudflareClient is a dedicated HTTP client with timeout for Cloudflare API calls.
+// Replaces http.DefaultClient which has no timeout and could cause goroutine leaks.
+var cloudflareClient = &http.Client{
+	Timeout: 30 * time.Second,
+}
+
 // TunnelManager manages the Cloudflare Tunnel lifecycle.
 type TunnelManager struct {
 	mu       sync.Mutex
@@ -327,7 +333,7 @@ func (b *DomainBinder) createTunnelViaAPI(ctx context.Context, tunnelName string
 	req.Header.Set("Authorization", "Bearer "+b.apiToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := cloudflareClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("API request: %w", err)
 	}
@@ -386,7 +392,7 @@ func (b *DomainBinder) configureTunnel(ctx context.Context, tunnelID, localAddr 
 	req.Header.Set("Authorization", "Bearer "+b.apiToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := cloudflareClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("API request: %w", err)
 	}
@@ -428,7 +434,7 @@ func (b *DomainBinder) createDNSRecord(ctx context.Context, zoneID, domain, tunn
 	req.Header.Set("Authorization", "Bearer "+b.apiToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := cloudflareClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("API request: %w", err)
 	}
@@ -469,7 +475,7 @@ func (b *DomainBinder) getZoneID(ctx context.Context, domain string) (string, er
 	}
 	req.Header.Set("Authorization", "Bearer "+b.apiToken)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := cloudflareClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("API request: %w", err)
 	}
@@ -507,7 +513,7 @@ func (b *DomainBinder) getAccountID(ctx context.Context) (string, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+b.apiToken)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := cloudflareClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("API request: %w", err)
 	}

@@ -1,13 +1,17 @@
 package main
 
 import (
+	cryptoRand "crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -40,22 +44,69 @@ func (m *ProviderManager) load() {
 	var list []Provider
 	if json.Unmarshal(b, &list) == nil {
 		for _, p := range list {
-			// Decrypt API key if encrypted
+			// Decrypt API key if encrypted (legacy single key)
 			if p.APIKey != "" && IsEncrypted(p.APIKey) {
 				p.APIKey = enc.Decrypt(p.APIKey)
 			}
+			// Decrypt API keys in multi-key array
+			for i := range p.APIKeys {
+				if p.APIKeys[i].Key != "" && IsEncrypted(p.APIKeys[i].Key) {
+					p.APIKeys[i].Key = enc.Decrypt(p.APIKeys[i].Key)
+				}
+			}
+			// Migrate legacy single APIKey to APIKeys array
+			migrated := migrateProviderKeys(&p)
+			// Apply default access control if not set
+			p.AccessControl = normalizeAccessControl(p.AccessControl)
 			m.providers[p.ID] = p
+			if migrated {
+				slog.Info("migrated provider to multi-key format", "provider", p.ID)
+			}
 		}
 		slog.Info("providers loaded", "count", len(m.providers))
 	}
 }
 
+// migrateProviderKeys migrates a legacy single APIKey to the APIKeys array.
+// Returns true if migration occurred.
+func migrateProviderKeys(p *Provider) bool {
+	if p.APIKey != "" && len(p.APIKeys) == 0 {
+		p.APIKeys = []APIKeyConfig{
+			{
+				ID:            generateKeyID(),
+				Key:           p.APIKey,
+				Quota:         p.TokenLimit, // inherit global quota
+				AccessControl: "private",
+				Enabled:       true,
+				Priority:      1,
+				CreatedAt:     time.Now().Format(time.RFC3339),
+			},
+		}
+		p.APIKey = "" // clear legacy field
+		return true
+	}
+	return false
+}
+
+// generateKeyID generates a unique ID for an API key config.
+func generateKeyID() string {
+	b := make([]byte, 8)
+	cryptoRand.Read(b)
+	return fmt.Sprintf("key_%x", b)
+}
+
 func (m *ProviderManager) save() {
 	list := make([]Provider, 0, len(m.providers))
 	for _, p := range m.providers {
-		// Encrypt API key before writing to disk
+		// Encrypt legacy API key before writing to disk
 		if p.APIKey != "" && !IsEncrypted(p.APIKey) {
 			p.APIKey = enc.Encrypt(p.APIKey)
+		}
+		// Encrypt API keys in multi-key array
+		for i := range p.APIKeys {
+			if p.APIKeys[i].Key != "" && !IsEncrypted(p.APIKeys[i].Key) {
+				p.APIKeys[i].Key = enc.Encrypt(p.APIKeys[i].Key)
+			}
 		}
 		list = append(list, p)
 	}
@@ -197,6 +248,16 @@ func (m *ProviderManager) Get(id string) (Provider, bool) {
 	return p.Safe(), true
 }
 
+// normalizeAccessControl ensures sensible defaults for access control.
+// If neither flag is explicitly set (both false, the zero value), default to private-only.
+func normalizeAccessControl(ac ProviderAccessControl) ProviderAccessControl {
+	// Zero value means "not set" — apply defaults
+	if !ac.AllowPrivateKey && !ac.AllowSharedKey {
+		return DefaultAccessControl()
+	}
+	return ac
+}
+
 // Add adds or updates a provider.
 func (m *ProviderManager) Add(p Provider) Provider {
 	m.mu.Lock()
@@ -207,6 +268,7 @@ func (m *ProviderManager) Add(p Provider) Provider {
 		p.CreatedAt = now
 	}
 	p.UpdatedAt = now
+	p.AccessControl = normalizeAccessControl(p.AccessControl)
 	m.providers[p.ID] = p
 	m.mu.Unlock()
 
@@ -247,6 +309,66 @@ func (m *ProviderManager) Enabled() []Provider {
 type candidate struct {
 	Provider Provider
 	Model    string
+}
+
+// RequestKeyType classifies the request key type for access control.
+// Returns "admin", "private", or "shared".
+func RequestKeyType(r *http.Request) string {
+	// If relay already classified the key type, use it
+	if mkType := r.Header.Get("X-MK-KeyType"); mkType != "" {
+		switch mkType {
+		case "open_unbound", "open_bound":
+			return "shared"
+		default:
+			return "private"
+		}
+	}
+
+	// Check role header (set by withProxyAuth)
+	if role := r.Header.Get("X-Request-Role"); role == "admin" {
+		return "admin"
+	}
+
+	// Check Authorization header directly
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(auth, "Bearer mk_open_") {
+		return "shared"
+	}
+	if strings.HasPrefix(auth, "Bearer mk_trial_") {
+		return "private"
+	}
+	if strings.HasPrefix(auth, "Bearer mk_") {
+		return "private"
+	}
+
+	// sk-xxx keys and proxy_api_key are treated as admin (unrestricted)
+	return "admin"
+}
+
+// FilterByAccessControl filters candidates based on the provider's access control
+// and the request's key type. Admin/unrestricted keys bypass the check.
+func FilterByAccessControl(cands []candidate, keyType string) []candidate {
+	if keyType == "admin" {
+		return cands // admin keys bypass access control
+	}
+
+	filtered := make([]candidate, 0, len(cands))
+	for _, c := range cands {
+		ac := c.Provider.AccessControl
+		switch keyType {
+		case "private":
+			if ac.AllowPrivateKey {
+				filtered = append(filtered, c)
+			}
+		case "shared":
+			if ac.AllowSharedKey {
+				filtered = append(filtered, c)
+			}
+		default:
+			filtered = append(filtered, c) // unknown type → allow
+		}
+	}
+	return filtered
 }
 
 // FindCandidates returns all enabled providers that have the given model.
@@ -523,6 +645,69 @@ func (m *ProviderManager) AllModels() []ModelInfo {
 	return models
 }
 
+// AllModelsFiltered returns models filtered by access control based on key type.
+// Admin keys see all models; private/shared keys only see models from allowed providers.
+func (m *ProviderManager) AllModelsFiltered(keyType string) []ModelInfo {
+	if keyType == "admin" {
+		return m.AllModels()
+	}
+
+	seen := make(map[string]bool)
+	var models []ModelInfo
+
+	for _, p := range m.GetAll() {
+		if !p.Enabled {
+			continue
+		}
+		// Check access control
+		if !providerAllowsKeyType(p, keyType) {
+			continue
+		}
+		for _, mdl := range p.Models {
+			if !mdl.Enabled || seen[mdl.ID] {
+				continue
+			}
+			models = append(models, ModelInfo{
+				ID:      mdl.ID,
+				Object:  "model",
+				Created: time.Now().Unix(),
+				OwnedBy: p.Name,
+			})
+			seen[mdl.ID] = true
+		}
+	}
+
+	// Coze bot model (only for admin)
+	if keyType == "admin" {
+		if raw, ok := m.GetRaw("coze"); ok && raw.Enabled && raw.APIKey != "" {
+			botID := cfg.Get("coze_bot_id", "")
+			if botID != "" {
+				id := "coze-" + botID
+				if !seen[id] {
+					models = append(models, ModelInfo{
+						ID: id, Object: "model",
+						Created: time.Now().Unix(), OwnedBy: "Coze",
+					})
+				}
+			}
+		}
+	}
+	return models
+}
+
+// providerAllowsKeyType checks if a provider allows a given key type.
+func providerAllowsKeyType(p Provider, keyType string) bool {
+	ac := p.AccessControl
+	switch keyType {
+	case "private":
+		return ac.AllowPrivateKey
+	case "shared":
+		return ac.AllowSharedKey
+	default:
+		return true // admin or unknown → allow
+	}
+}
+
 // RoutingAdvice returns comparison info for a model across providers.
 func (m *ProviderManager) RoutingAdvice(model string) []map[string]any {
 	cands := m.FindCandidates(model)
@@ -629,10 +814,298 @@ func (m *ProviderManager) ClearAllAPIKeys() int {
 			m.providers[id] = p
 			count++
 		}
+		// Also clear multi-key array
+		if len(p.APIKeys) > 0 {
+			p.APIKeys = nil
+			m.providers[id] = p
+			count++
+		}
 	}
 	if count > 0 {
 		m.save()
 		slog.Info("cleared all provider API keys", "count", count)
 	}
 	return count
+}
+
+// ============================================================
+// Multi API Key Selection
+// ============================================================
+
+// keyRoundRobin is a per-provider round-robin counter for keys at the same priority.
+var keyRoundRobin atomic.Uint64
+
+// SelectAPIKey selects the best available API key for a provider based on
+// access control, quota, expiration, and priority. It uses round-robin for
+// keys at the same priority level.
+// Returns the selected key config and the raw key string, or an error.
+func (p *Provider) SelectAPIKey(accessType string) (*APIKeyConfig, error) {
+	// If no multi-key array, fall back to legacy single key
+	if len(p.APIKeys) == 0 {
+		if p.APIKey == "" {
+			return nil, errors.New("no API key configured")
+		}
+		// Return a synthetic key config for the legacy key
+		return &APIKeyConfig{
+			ID:            "legacy",
+			Key:           p.APIKey,
+			AccessControl: "private",
+			Enabled:       true,
+			Priority:      1,
+		}, nil
+	}
+
+	var candidates []APIKeyConfig
+
+	for _, key := range p.APIKeys {
+		if !key.Enabled {
+			continue
+		}
+
+		// Check access control
+		if !keyAllowedForAccess(key.AccessControl, accessType) {
+			continue
+		}
+
+		// Check quota
+		if key.Quota > 0 && key.Used >= key.Quota {
+			continue
+		}
+
+		// Check expiration
+		if key.ExpiresAt != "" {
+			expires, err := time.Parse(time.RFC3339, key.ExpiresAt)
+			if err == nil && time.Now().After(expires) {
+				continue
+			}
+		}
+
+		candidates = append(candidates, key)
+	}
+
+	if len(candidates) == 0 {
+		return nil, errors.New("no available API key for the given access level")
+	}
+
+	// Sort by priority descending (higher priority first)
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].Priority > candidates[j].Priority
+	})
+
+	// Find the top priority level
+	topPriority := candidates[0].Priority
+
+	// Collect all keys at the top priority level for round-robin
+	var topCandidates []APIKeyConfig
+	for _, c := range candidates {
+		if c.Priority == topPriority {
+			topCandidates = append(topCandidates, c)
+		}
+	}
+
+	// Round-robin among same-priority keys
+	idx := keyRoundRobin.Add(1) - 1
+	selected := topCandidates[idx%uint64(len(topCandidates))]
+
+	return &selected, nil
+}
+
+// keyAllowedForAccess checks if a key's access control allows the given access type.
+func keyAllowedForAccess(keyAccess, accessType string) bool {
+	switch keyAccess {
+	case "public":
+		return true // public keys are accessible by everyone
+	case "shared":
+		return accessType == "shared" || accessType == "private" || accessType == ""
+	case "private":
+		return accessType == "private" || accessType == ""
+	default:
+		return true // unknown access control → allow
+	}
+}
+
+// GetEffectiveAPIKey returns the best available API key string for a provider.
+// This is a convenience method that wraps SelectAPIKey.
+func (p *Provider) GetEffectiveAPIKey() string {
+	key, err := p.SelectAPIKey("")
+	if err != nil {
+		return p.APIKey // fall back to legacy
+	}
+	return key.Key
+}
+
+// RecordKeyUsage records token usage against a specific API key.
+func (m *ProviderManager) RecordKeyUsage(providerID, keyID string, tokens int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	p, ok := m.providers[providerID]
+	if !ok {
+		return
+	}
+	for i := range p.APIKeys {
+		if p.APIKeys[i].ID == keyID {
+			p.APIKeys[i].Used += tokens
+			m.providers[providerID] = p
+			m.save()
+			return
+		}
+	}
+}
+
+// ResetKeyQuota resets the used quota for a specific API key.
+func (m *ProviderManager) ResetKeyQuota(providerID, keyID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	p, ok := m.providers[providerID]
+	if !ok {
+		return fmt.Errorf("provider '%s' not found", providerID)
+	}
+	for i := range p.APIKeys {
+		if p.APIKeys[i].ID == keyID {
+			p.APIKeys[i].Used = 0
+			p.APIKeys[i].UpdatedAt = time.Now().Format(time.RFC3339)
+			m.providers[providerID] = p
+			m.save()
+			return nil
+		}
+	}
+	return fmt.Errorf("key '%s' not found in provider '%s'", keyID, providerID)
+}
+
+// AddAPIKey adds a new API key to a provider.
+func (m *ProviderManager) AddAPIKey(providerID string, key APIKeyConfig) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	p, ok := m.providers[providerID]
+	if !ok {
+		return fmt.Errorf("provider '%s' not found", providerID)
+	}
+
+	if key.ID == "" {
+		key.ID = generateKeyID()
+	}
+	now := time.Now().Format(time.RFC3339)
+	key.CreatedAt = now
+	key.UpdatedAt = now
+	if key.AccessControl == "" {
+		key.AccessControl = "private"
+	}
+
+	p.APIKeys = append(p.APIKeys, key)
+	p.UpdatedAt = now
+	m.providers[providerID] = p
+	m.save()
+
+	slog.Info("API key added", "provider", providerID, "key_id", key.ID)
+	return nil
+}
+
+// UpdateAPIKey updates an existing API key in a provider.
+func (m *ProviderManager) UpdateAPIKey(providerID, keyID string, updates map[string]any) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	p, ok := m.providers[providerID]
+	if !ok {
+		return fmt.Errorf("provider '%s' not found", providerID)
+	}
+
+	for i := range p.APIKeys {
+		if p.APIKeys[i].ID == keyID {
+			if v, ok := updates["key"]; ok {
+				if s, ok := v.(string); ok && s != "" && !strings.Contains(s, "...") {
+					p.APIKeys[i].Key = s
+				}
+			}
+			if v, ok := updates["quota"]; ok {
+				if f, ok := v.(float64); ok {
+					p.APIKeys[i].Quota = int64(f)
+				}
+			}
+			if v, ok := updates["access_control"]; ok {
+				if s, ok := v.(string); ok {
+					p.APIKeys[i].AccessControl = s
+				}
+			}
+			if v, ok := updates["enabled"]; ok {
+				if b, ok := v.(bool); ok {
+					p.APIKeys[i].Enabled = b
+				}
+			}
+			if v, ok := updates["priority"]; ok {
+				if f, ok := v.(float64); ok {
+					p.APIKeys[i].Priority = int(f)
+				}
+			}
+			if v, ok := updates["expires_at"]; ok {
+				if s, ok := v.(string); ok {
+					p.APIKeys[i].ExpiresAt = s
+				}
+			}
+			p.APIKeys[i].UpdatedAt = time.Now().Format(time.RFC3339)
+			m.providers[providerID] = p
+			m.save()
+			slog.Info("API key updated", "provider", providerID, "key_id", keyID)
+			return nil
+		}
+	}
+	return fmt.Errorf("key '%s' not found in provider '%s'", keyID, providerID)
+}
+
+// DeleteAPIKey removes an API key from a provider.
+func (m *ProviderManager) DeleteAPIKey(providerID, keyID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	p, ok := m.providers[providerID]
+	if !ok {
+		return fmt.Errorf("provider '%s' not found", providerID)
+	}
+
+	found := false
+	var newKeys []APIKeyConfig
+	for _, k := range p.APIKeys {
+		if k.ID == keyID {
+			found = true
+			continue
+		}
+		newKeys = append(newKeys, k)
+	}
+	if !found {
+		return fmt.Errorf("key '%s' not found in provider '%s'", keyID, providerID)
+	}
+
+	p.APIKeys = newKeys
+	p.UpdatedAt = time.Now().Format(time.RFC3339)
+	m.providers[providerID] = p
+	m.save()
+
+	slog.Info("API key deleted", "provider", providerID, "key_id", keyID)
+	return nil
+}
+
+// GetAPIKeys returns all API keys for a provider (with masked key values).
+func (m *ProviderManager) GetAPIKeys(providerID string) ([]APIKeyConfig, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	p, ok := m.providers[providerID]
+	if !ok {
+		return nil, fmt.Errorf("provider '%s' not found", providerID)
+	}
+
+	// Return masked keys
+	result := make([]APIKeyConfig, len(p.APIKeys))
+	for i, k := range p.APIKeys {
+		result[i] = k
+		if len(result[i].Key) > 8 {
+			result[i].Key = result[i].Key[:4] + "..." + result[i].Key[len(result[i].Key)-4:]
+		} else if result[i].Key != "" {
+			result[i].Key = "***"
+		}
+	}
+	return result, nil
 }

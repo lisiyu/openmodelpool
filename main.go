@@ -119,6 +119,15 @@ func main() {
 		}
 	}()
 
+	// SA-10: Periodic cleanup of stale IP rate limiter entries
+	go func() {
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			cleanupIPRateLimiters(1 * time.Hour)
+		}
+	}()
+
 	// Migrate: re-save to encrypt any plaintext sensitive data
 	cfg.save()
 	pm.save()
@@ -152,7 +161,7 @@ func main() {
 	// Auth (public)
 	mux.HandleFunc("GET /api/setup/status", handleSetupStatus)
 	mux.HandleFunc("POST /api/setup", handleSetup)
-	mux.HandleFunc("POST /api/login", handleLogin)
+	mux.HandleFunc("POST /api/login", rateLimitByIP(5, "login")(handleLogin)) // SA-10: brute force protection
 	mux.HandleFunc("POST /api/forgot-password", handleForgotPassword)
 	mux.HandleFunc("POST /api/reset-password", handleResetPassword)
 	mux.HandleFunc("POST /api/reset-password/verify", handleVerifyResetToken)
@@ -181,7 +190,17 @@ func main() {
 	mux.HandleFunc("GET /api/providers/{id}/models", withConsumerOrAdminAuth(handleGetProviderModels))
 	mux.HandleFunc("POST /api/providers/{id}/sync-url", withConsumerOrAdminAuth(handleSyncProviderURL))
 	mux.HandleFunc("POST /api/providers/{id}/sync-models", withConsumerOrAdminAuth(handleSyncModels))
+	// Provider access control (admin only)
+	mux.HandleFunc("GET /api/providers/{id}/access-control", withAuth(handleGetProviderAccessControl))
+	mux.HandleFunc("PUT /api/providers/{id}/access-control", withAuth(handleUpdateProviderAccessControl))
 	mux.HandleFunc("POST /api/providers/sync-all-urls", withConsumerOrAdminAuth(handleSyncAllURLs))
+
+	// Provider multi API key management (admin + consumer)
+	mux.HandleFunc("GET /api/providers/{id}/keys", withConsumerOrAdminAuth(handleListAPIKeys))
+	mux.HandleFunc("POST /api/providers/{id}/keys", withConsumerOrAdminAuth(handleAddAPIKey))
+	mux.HandleFunc("PUT /api/providers/{id}/keys/{key_id}", withConsumerOrAdminAuth(handleUpdateAPIKey))
+	mux.HandleFunc("DELETE /api/providers/{id}/keys/{key_id}", withConsumerOrAdminAuth(handleDeleteAPIKey))
+	mux.HandleFunc("POST /api/providers/{id}/keys/{key_id}/reset-quota", withConsumerOrAdminAuth(handleResetKeyQuota))
 
 	// Sider status
 	mux.HandleFunc("GET /api/providers/sider/status", withConsumerOrAdminAuth(handleSiderStatus))
@@ -232,7 +251,7 @@ func main() {
 	mux.HandleFunc("DELETE /api/consumers/{id}", withAuth(handleDeleteConsumer))
 	mux.HandleFunc("POST /api/consumers/{id}/toggle", withAuth(handleToggleConsumer))
 	mux.HandleFunc("PUT /api/consumers/{id}", withAuth(handleUpdateConsumer))
-	mux.HandleFunc("POST /api/consumer/register", handleConsumerRegister)
+	mux.HandleFunc("POST /api/consumer/register", rateLimitByIP(10, "consumer_register")(handleConsumerRegister)) // SA-10
 
 	// Static pages
 	mux.HandleFunc("GET /", handleAdminPage)
@@ -285,7 +304,7 @@ func main() {
 	mux.HandleFunc("POST /api/network/keys/issue", withAuth(handleNetworkKeyIssue))
 	mux.HandleFunc("GET /api/network/keys", withAuth(handleNetworkKeyList))
 	mux.HandleFunc("DELETE /api/network/keys/{consumer_id}", withAuth(handleNetworkKeyRevoke))
-	mux.HandleFunc("POST /api/network/keys/validate", handleNetworkKeyValidate)
+	mux.HandleFunc("POST /api/network/keys/validate", rateLimitByIP(30, "key_validate")(handleNetworkKeyValidate)) // SA-10
 	mux.HandleFunc("GET /api/network/contributions", withAuth(handleNetworkContributions))
 
 	// Phase 2 Economic Model — Trial Pool & Open Keys
@@ -297,7 +316,7 @@ func main() {
 	mux.HandleFunc("GET /api/network/unlock-status", withAuth(handleNetworkUnlockStatus))
 
 	// Node Heartbeat & Discovery (Phase 2)
-	mux.HandleFunc("POST /api/network/heartbeat", handleNetworkHeartbeat)
+	mux.HandleFunc("POST /api/network/heartbeat", rateLimitByIP(30, "heartbeat")(handleNetworkHeartbeat)) // SA-10
 	mux.HandleFunc("GET /api/node/pubkey", requireHTTPS(handleNodePubKey))
 	mux.HandleFunc("GET /api/node/info", handleNodeInfo)
 
@@ -561,8 +580,14 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	}})
 }
 
+// SA-11: readJSON decodes JSON from request body with a 10MB size limit
+// to prevent memory exhaustion attacks via oversized payloads.
 func readJSON(r *http.Request, v any) error {
-	return json.NewDecoder(r.Body).Decode(v)
+	const maxBodySize = 10 << 20 // 10 MB
+	limited := http.MaxBytesReader(nil, r.Body, maxBodySize)
+	defer limited.Close()
+	decoder := json.NewDecoder(limited)
+	return decoder.Decode(v)
 }
 
 // ============================================================
@@ -608,7 +633,8 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleListModels(w http.ResponseWriter, r *http.Request) {
-	models := pm.AllModels()
+	keyType := RequestKeyType(r)
+	models := pm.AllModelsFiltered(keyType)
 	writeJSON(w, 200, ModelListResponse{Object: "list", Data: models})
 }
 
@@ -1053,6 +1079,10 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Smart routing with fallback — uses the unified pool (all providers from all users)
 	routingMode := cfg.Get("routing_mode", "priority")
 	candidates := pm.OrderedCandidates(model, routingMode)
+
+	// Provider access control: filter candidates based on key type
+	keyType := RequestKeyType(r)
+	candidates = FilterByAccessControl(candidates, keyType)
 
 	if len(candidates) == 0 {
 		models := pm.AllModels()

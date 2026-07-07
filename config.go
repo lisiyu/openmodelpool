@@ -118,8 +118,10 @@ func (c *Config) doSave() {
 			safe[key] = enc.Encrypt(v)
 		}
 	}
-	b, _ := json.MarshalIndent(safe, "", "  ")
-	os.WriteFile(c.path, b, 0600)
+	// SA-15: Save with HMAC integrity protection
+	if err := saveWithIntegrity(c.path, safe); err != nil {
+		slog.Error("failed to save config with integrity", "error", err)
+	}
 }
 
 // Get returns config value: file > env > default.
