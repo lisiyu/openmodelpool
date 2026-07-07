@@ -49,6 +49,9 @@ func main() {
 	// Initialize metrics collector
 	initMetrics()
 
+	// Initialize performance optimization layer (memory monitoring, worker pool, cleanup)
+	initPerformance()
+
 	// Initialize rate limiter
 	initRateLimiter()
 
@@ -183,6 +186,9 @@ func main() {
 	// Prometheus metrics
 	mux.HandleFunc("GET /metrics", withAuth(handleMetrics))
 
+	// Performance metrics (lightweight JSON endpoint, no auth required for monitoring)
+	mux.HandleFunc("GET /api/metrics", handleAPIMetrics)
+
 	// Multi-user / invite codes (protected)
 	mux.HandleFunc("GET /api/invite-codes", withAuth(handleListInviteCodes))
 	mux.HandleFunc("POST /api/invite-codes", withAuth(handleCreateInviteCode))
@@ -272,7 +278,7 @@ func main() {
 	mux.HandleFunc("POST /network/{id}", handleNetworkRelay)
 
 	// CORS + request logging middleware
-	handler := corsMiddleware(requestLogMiddleware(mux))
+	handler := corsMiddleware(requestLogMiddleware(concurrencyMiddleware(mux)))
 
 	port := cfg.Get("service_port", "8000")
 	addr := ":" + port

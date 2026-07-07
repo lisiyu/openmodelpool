@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // ============================================================
@@ -422,11 +421,7 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 			// Preserve original auth headers (consumer key transparent to relay)
 			// Do NOT strip Authorization — target node validates it
 		},
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  true, // don't compress SSE streams
-		},
+		Transport: GetSharedHTTPClient().Transport,
 		ErrorHandler: func(w2 http.ResponseWriter, r2 *http.Request, err error) {
 			slog.Error("relay to remote failed", "target", entry.NodeID, "addr", targetAddr, "error", err)
 			netMgr.RecordRelayResult(false)
@@ -480,7 +475,7 @@ func queryBootstrapForNode(nodeID string) *RouteEntry {
 	copy(bootstrapNodes, netMgr.config.BootstrapNodes)
 	netMgr.mu.RUnlock()
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := GetSharedHTTPClient()
 
 	for _, bootstrapURL := range bootstrapNodes {
 		resolveURL := fmt.Sprintf("%s/api/network/resolve/%s", strings.TrimRight(bootstrapURL, "/"), nodeID)
