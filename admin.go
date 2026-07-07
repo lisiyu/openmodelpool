@@ -57,6 +57,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	token := auth.CreateToken(body.Username, body.Remember)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_token",
+		Path:     "/",
 		Value:    token,
 		HttpOnly: true,
 		MaxAge:   86400,
@@ -65,6 +66,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if body.Remember {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "admin_token",
+		Path:     "/",
 			Value:    token,
 			HttpOnly: true,
 			MaxAge:   7 * 86400,
