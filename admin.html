@@ -316,6 +316,124 @@ select.form-input{appearance:none;cursor:pointer}
       <button class="btn btn-primary" onclick="changePassword()">修改密码</button>
     </div>
   </div>
+
+  <div class="card" id="federationCard" style="display:none">
+    <div class="card-title"><span class="icon">🌐</span> 联邦网络 v3.0</div>
+    
+    <!-- 节点身份 -->
+    <div class="status-grid" id="fedNodeInfo">
+      <div class="status-item">
+        <div class="status-dot green"></div>
+        <div>
+          <div class="status-label">节点 ID</div>
+          <div class="status-value" id="fedNodeId">-</div>
+        </div>
+      </div>
+      <div class="status-item">
+        <div class="status-dot green"></div>
+        <div>
+          <div class="status-label">GitHub</div>
+          <div class="status-value" id="fedGithub">未绑定</div>
+        </div>
+      </div>
+      <div class="status-item">
+        <div class="status-dot green"></div>
+        <div>
+          <div class="status-label">积分余额</div>
+          <div class="status-value" id="fedCredits">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 联邦概览 -->
+    <div class="status-grid" style="margin-bottom:16px">
+      <div class="status-item">
+        <div>
+          <div class="status-label">网络节点</div>
+          <div class="status-value" id="fedTotalNodes">0</div>
+        </div>
+      </div>
+      <div class="status-item">
+        <div>
+          <div class="status-label">种子节点</div>
+          <div class="status-value" id="fedSeedNodes">0</div>
+        </div>
+      </div>
+      <div class="status-item">
+        <div>
+          <div class="status-label">中继状态</div>
+          <div class="status-value" id="fedRelayStatus">-</div>
+        </div>
+      </div>
+      <div class="status-item">
+        <div>
+          <div class="status-label">信誉等级</div>
+          <div class="status-value" id="fedRepGrade">-</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 联邦配置 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+      <div class="card-title" style="font-size:14px"><span class="icon">⚙️</span> 联邦配置</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">启用联邦网络</label>
+          <select class="form-input" id="fedEnabled">
+            <option value="false">关闭</option>
+            <option value="true">开启</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">启用中继</label>
+          <select class="form-input" id="fedRelay">
+            <option value="false">关闭</option>
+            <option value="true">开启</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Registry 仓库</label>
+          <input class="form-input" id="fedRepo" placeholder="lisiyu/modelmux">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Gossip 间隔(秒)</label>
+          <input class="form-input" id="fedGossipInterval" type="number" value="30">
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary btn-sm" onclick="saveFederationConfig()">💾 保存配置</button>
+        <button class="btn btn-secondary btn-sm" onclick="refreshFederation()">🔄 刷新状态</button>
+      </div>
+    </div>
+
+    <!-- GitHub 绑定 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+      <div class="card-title" style="font-size:14px"><span class="icon">🔗</span> GitHub 身份绑定</div>
+      <div style="display:flex;gap:12px;align-items:end">
+        <div class="form-group" style="flex:1;margin:0">
+          <input class="form-input" id="fedGithubUser" placeholder="GitHub 用户名">
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="bindGithub()">绑定</button>
+      </div>
+    </div>
+
+    <!-- 信任池节点列表 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px">
+      <div class="card-title" style="font-size:14px"><span class="icon">📡</span> 网络节点</div>
+      <div id="fedNodeList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
+    </div>
+
+    <!-- P2P 消息 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:16px">
+      <div class="card-title" style="font-size:14px"><span class="icon">💬</span> P2P 消息 <span id="fedUnreadBadge" class="badge badge-blue" style="display:none;margin-left:8px">0</span></div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn btn-secondary btn-sm" onclick="showInbox()" id="btnInbox">收件箱</button>
+        <button class="btn btn-secondary btn-sm" onclick="showOutbox()" id="btnOutbox">发件箱</button>
+        <button class="btn btn-primary btn-sm" onclick="showComposeMsg()">✉️ 发消息 (5积分)</button>
+      </div>
+      <div id="fedMsgList" style="font-size:12px;color:var(--text-muted)">暂无消息</div>
+    </div>
+  </div>
 </div>
 
 <!-- 添加/编辑平台模态框 -->
@@ -660,7 +778,7 @@ async function updatePriority(pid, value) {
   if (!p) return;
   p.priority = priority;
   try {
-    await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify(p) });
+    await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({priority: priority}) });
     toast(`${p.name} 优先级已设为 ${priority}`);
   } catch(e) {
     toast('更新失败: ' + e.message, 'error');
@@ -671,7 +789,7 @@ async function toggleProvider(pid, enabled) {
   const p = allProviders.find(x => x.id === pid);
   if (!p) return;
   p.enabled = enabled;
-  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify(p) });
+  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({enabled: enabled}) });
   toast(`${p.name} 已${enabled?'启用':'禁用'}`);
   await loadProviders(); await loadStatus();
 }
@@ -681,7 +799,7 @@ async function toggleModel(pid, mid) {
   if (!p) return;
   const m = (p.models||[]).find(x => x.id === mid);
   if (m) { m.enabled = !m.enabled; }
-  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify(p) });
+  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: p.models}) });
   await loadProviders();
 }
 
@@ -710,9 +828,11 @@ async function fetchRemoteModels(pid) {
       const p = allProviders.find(x => x.id === pid);
       if (p) {
         const existing = new Set((p.models||[]).map(m=>m.id));
-        d.models.forEach(m => { if (!existing.has(m.id)) { (p.models = p.models||[]).push({id:m.id, name:m.name||m.id, enabled:true}); }});
-        await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify(p) });
-        toast(`已添加 ${d.count} 个模型`);
+        let added = 0;
+        d.models.forEach(m => { if (!existing.has(m.id)) { (p.models = p.models||[]).push({id:m.id, name:m.name||m.id, enabled:true}); added++; }});
+        // Only send models update, not the full provider (avoids sending masked API key)
+        await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: p.models}) });
+        toast(`已添加 ${added} 个新模型（共发现 ${d.count} 个）`);
         await loadProviders();
       }
     } else { toast('远程无可用模型', 'info'); }
@@ -1078,8 +1198,184 @@ async function deleteConsumer(id) {
   } catch(e) { toast('删除失败', 'error'); }
 }
 
+// ============================================================
+// Federation (v3.0)
+// ============================================================
+
+async function loadFederationStatus() {
+  try {
+    const res = await authFetch('/api/federation/status');
+    const data = await res.json();
+    
+    const card = document.getElementById('federationCard');
+    if (!data.enabled && !data.node) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = 'block';
+    
+    if (data.node) {
+      document.getElementById('fedNodeId').textContent = data.node.id || '-';
+      document.getElementById('fedGithub').textContent = data.node.github_user || '未绑定';
+    }
+    if (data.credits) {
+      document.getElementById('fedCredits').textContent = data.credits.balance || 0;
+    }
+    document.getElementById('fedTotalNodes').textContent = data.total_nodes || 0;
+    document.getElementById('fedSeedNodes').textContent = data.seed_nodes || 0;
+    document.getElementById('fedRelayStatus').textContent = data.relay ? '✅ 已启用' : '❌ 未启用';
+    
+    if (data.messages && data.messages.unread > 0) {
+      const badge = document.getElementById('fedUnreadBadge');
+      badge.style.display = 'inline-flex';
+      badge.textContent = data.messages.unread;
+    }
+    
+    // Load node list
+    if (data.total_nodes > 0) {
+      loadFederationPool();
+    }
+  } catch(e) {
+    console.error('load federation status error:', e);
+  }
+}
+
+async function loadFederationPool() {
+  try {
+    const res = await authFetch('/api/federation/pool');
+    const data = await res.json();
+    const list = document.getElementById('fedNodeList');
+    
+    if (!data.nodes || data.nodes.length === 0) {
+      list.innerHTML = '<div style="color:var(--text-muted)">暂无节点</div>';
+      return;
+    }
+    
+    let html = '<table class="usage-table"><thead><tr><th>节点ID</th><th>GitHub</th><th>状态</th><th>种子</th><th>模型数</th><th>最后活跃</th></tr></thead><tbody>';
+    for (const n of data.nodes) {
+      const seedBadge = n.seed_node ? '<span class="badge badge-green">种子</span>' : '';
+      const statusBadge = n.status === 'active' ? '<span class="badge badge-green">活跃</span>' : '<span class="badge badge-red">' + n.status + '</span>';
+      const models = (n.shared_models || []).length;
+      html += '<tr><td style="font-family:monospace;font-size:11px">' + (n.node_id || '').substring(0, 16) + '...</td><td>' + (n.github_user || '-') + '</td><td>' + statusBadge + '</td><td>' + seedBadge + '</td><td>' + models + '</td><td>' + (n.last_seen || '-') + '</td></tr>';
+    }
+    html += '</tbody></table>';
+    list.innerHTML = html;
+  } catch(e) {
+    console.error('load pool error:', e);
+  }
+}
+
+async function loadFederationConfig() {
+  try {
+    const res = await authFetch('/api/federation/config');
+    const data = await res.json();
+    document.getElementById('fedEnabled').value = data.federation_enabled || 'false';
+    document.getElementById('fedRelay').value = data.federation_relay_enabled || 'false';
+    document.getElementById('fedRepo').value = data.federation_registry_repo || '';
+    document.getElementById('fedGossipInterval').value = data.gossip_interval_s || '30';
+  } catch(e) {}
+}
+
+async function saveFederationConfig() {
+  const body = {
+    federation_enabled: document.getElementById('fedEnabled').value,
+    federation_relay_enabled: document.getElementById('fedRelay').value,
+    federation_registry_repo: document.getElementById('fedRepo').value,
+    gossip_interval_s: document.getElementById('fedGossipInterval').value
+  };
+  try {
+    const res = await authFetch('/api/federation/config', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+    if (res.ok) toast('联邦配置已保存', 'success');
+    else toast('保存失败', 'error');
+  } catch(e) {
+    toast('保存失败: ' + e.message, 'error');
+  }
+}
+
+async function bindGithub() {
+  const user = document.getElementById('fedGithubUser').value.trim();
+  if (!user) { toast('请输入 GitHub 用户名', 'error'); return; }
+  try {
+    const res = await authFetch('/api/federation/init-node', {
+      method: 'POST',
+      body: JSON.stringify({ github_user: user })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toast('GitHub 已绑定: ' + user, 'success');
+      document.getElementById('fedGithub').textContent = user;
+      document.getElementById('fedNodeId').textContent = data.node_id || '-';
+    } else {
+      toast(data.error || '绑定失败', 'error');
+    }
+  } catch(e) {
+    toast('绑定失败: ' + e.message, 'error');
+  }
+}
+
+function refreshFederation() {
+  loadFederationStatus();
+  loadFederationConfig();
+  toast('已刷新', 'info');
+}
+
+async function showInbox() {
+  try {
+    const res = await authFetch('/api/federation/messages/inbox');
+    const data = await res.json();
+    renderMsgList(data.messages || [], 'inbox');
+  } catch(e) {}
+}
+
+async function showOutbox() {
+  try {
+    const res = await authFetch('/api/federation/messages/outbox');
+    const data = await res.json();
+    renderMsgList(data.messages || [], 'outbox');
+  } catch(e) {}
+}
+
+function renderMsgList(msgs, type) {
+  const list = document.getElementById('fedMsgList');
+  if (!msgs.length) { list.innerHTML = '<div style="color:var(--text-muted)">暂无消息</div>'; return; }
+  let html = '<table class="usage-table"><thead><tr><th>时间</th><th>对方节点</th><th>主题</th><th>类型</th></tr></thead><tbody>';
+  for (const m of msgs) {
+    const peer = type === 'inbox' ? (m.from_node || '-') : (m.to_node || '-');
+    html += '<tr><td>' + (m.timestamp || '').substring(0, 16) + '</td><td style="font-family:monospace">' + peer.substring(0, 12) + '...</td><td>' + (m.subject || '-') + '</td><td>' + (m.type || 'text') + '</td></tr>';
+  }
+  html += '</tbody></table>';
+  list.innerHTML = html;
+}
+
+function showComposeMsg() {
+  const to = prompt('目标节点 ID:');
+  if (!to) return;
+  const subject = prompt('消息主题:');
+  if (!subject) return;
+  const body = prompt('消息内容:');
+  if (!body) return;
+  sendMessage(to, subject, body);
+}
+
+async function sendMessage(toNode, subject, body) {
+  try {
+    const res = await authFetch('/api/federation/messages/send', {
+      method: 'POST',
+      body: JSON.stringify({ to_node: toNode, subject, body, type: 'text' })
+    });
+    const data = await res.json();
+    if (res.ok) { toast('消息已发送 (消耗5积分)', 'success'); showOutbox(); }
+    else toast(data.error || '发送失败', 'error');
+  } catch(e) {
+    toast('发送失败: ' + e.message, 'error');
+  }
+}
+
 // ===== Start =====
-init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); });
+init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); });
 
 // Auto-refresh status and usage every 30 seconds
 setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
