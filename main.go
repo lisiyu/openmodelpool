@@ -447,6 +447,9 @@ func main() {
 		}
 	}()
 
+	// Start Seed discovery service on port 8001
+	startSeedServer()
+
 	slog.Info("OpenModelPool Agent started", "port", port, "providers", len(pm.Enabled()))
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		slog.Error("server error", "error", err)
