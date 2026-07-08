@@ -1,0 +1,2769 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenModelPool Agent - 管理面板</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg-primary:#0f0f23;--bg-secondary:#1a1a2e;--bg-card:#16213e;--bg-input:#1a1a3e;--border-color:#2a2a4a;--border-focus:#6c63ff;--text-primary:#e8e8f0;--text-secondary:#a0a0b8;--text-muted:#6a6a8a;--accent-start:#6c63ff;--accent-end:#b24bf3;--success:#22c55e;--error:#ef4444;--warning:#f59e0b;--info:#3b82f6;--radius:12px;--shadow:0 4px 24px rgba(0,0,0,.3)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;min-height:100vh}
+.container{max-width:960px;margin:0 auto;padding:24px 20px 60px}
+.header{text-align:center;padding:32px 0 28px;position:relative}
+.header::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:120px;height:3px;background:linear-gradient(90deg,var(--accent-start),var(--accent-end));border-radius:2px}
+.logo{font-size:28px;font-weight:700;background:linear-gradient(135deg,var(--accent-start),var(--accent-end));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:6px}
+.logo-sub{font-size:14px;color:var(--text-muted);letter-spacing:1px}
+.header-actions{display:flex;justify-content:center;gap:12px;margin-top:12px}
+.btn-logout{padding:6px 16px;font-size:12px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:var(--error);border-radius:6px;cursor:pointer;transition:all .2s}
+.btn-logout:hover{background:rgba(239,68,68,.25)}
+.card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:24px;margin-bottom:20px;box-shadow:var(--shadow);transition:border-color .3s}
+.card:hover{border-color:rgba(108,99,255,.3)}
+.card-title{font-size:16px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card-title .icon{font-size:18px}
+.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px}
+.status-item{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius);padding:18px 20px;display:flex;align-items:center;gap:14px;transition:all .3s}
+.status-item:hover{border-color:rgba(108,99,255,.4);transform:translateY(-1px)}
+.status-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.status-dot.green{background:var(--success)}
+.status-dot.red{background:var(--error)}
+.status-label{font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+.status-value{font-size:14px;font-weight:500;margin-top:2px}
+.form-group{margin-bottom:18px}
+.form-label{display:block;font-size:13px;font-weight:500;color:var(--text-secondary);margin-bottom:6px}
+.form-input{width:100%;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none;transition:border-color .3s}
+.form-input:focus{border-color:var(--border-focus)}
+select.form-input{appearance:none;cursor:pointer}
+.btn{padding:10px 24px;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:all .3s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:#fff}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+.btn-secondary{background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary)}
+.btn-secondary:hover{border-color:var(--border-focus)}
+.btn-sm{padding:6px 14px;font-size:12px;border-radius:6px}
+.btn-danger{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:var(--error)}
+.btn-danger:hover{background:rgba(239,68,68,.25)}
+.btn-success{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:var(--success)}
+.btn-success:hover{background:rgba(34,197,94,.25)}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap}
+.toast{position:fixed;top:20px;right:20px;padding:14px 24px;border-radius:10px;font-size:14px;z-index:10000;animation:slideIn .3s ease;max-width:400px}
+.toast.success{background:rgba(34,197,94,.9);color:#fff}
+.toast.error{background:rgba(239,68,68,.9);color:#fff}
+.toast.info{background:rgba(59,130,246,.9);color:#fff}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500}
+.badge-green{background:rgba(34,197,94,.15);color:var(--success);border:1px solid rgba(34,197,94,.3)}
+.badge-red{background:rgba(239,68,68,.15);color:var(--error);border:1px solid rgba(239,68,68,.3)}
+.badge-blue{background:rgba(59,130,246,.15);color:var(--info);border:1px solid rgba(59,130,246,.3)}
+.badge-yellow{background:rgba(245,158,11,.15);color:var(--warning);border:1px solid rgba(245,158,11,.3)}
+/* Provider List */
+.provider-list{display:flex;flex-direction:column;gap:12px}
+.provider-item{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;overflow:hidden;transition:all .3s}
+.provider-item:hover{border-color:rgba(108,99,255,.3)}
+.provider-header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:12px}
+.provider-info{flex:1;min-width:0}
+.provider-name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px}
+.provider-url{font-size:12px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.provider-meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:12px;color:var(--text-secondary)}
+.provider-actions{display:flex;gap:6px;flex-shrink:0}
+.provider-models{padding:0 20px 16px;display:none;border-top:1px solid var(--border-color);margin-top:0}
+.provider-models.open{display:block;padding-top:12px}
+.model-item{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-card);border-radius:6px;margin-bottom:6px;font-size:13px}
+.model-name{color:var(--text-secondary);font-size:12px}
+.toggle{position:relative;width:36px;height:20px;background:var(--border-color);border-radius:10px;cursor:pointer;transition:background .3s}
+.toggle.active{background:var(--success)}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .3s}
+.toggle.active::after{transform:translateX(16px)}
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);width:100%;max-width:600px;max-height:80vh;overflow-y:auto;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal-title{font-size:18px;font-weight:600;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+.modal-close{background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px}
+.modal-close:hover{color:var(--text-primary)}
+/* Preset Grid */
+.preset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+.preset-card{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:14px;cursor:pointer;transition:all .3s;text-align:center}
+.preset-card:hover{border-color:var(--border-focus);transform:translateY(-2px)}
+.preset-card.selected{border-color:var(--accent-start);background:rgba(108,99,255,.1)}
+.preset-card .preset-icon{font-size:24px;margin-bottom:6px}
+.preset-card .preset-name{font-size:13px;font-weight:600}
+.preset-card .preset-desc{font-size:11px;color:var(--text-muted);margin-top:4px}
+.loading{display:inline-block;width:16px;height:16px;border:2px solid var(--border-color);border-top-color:var(--accent-start);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.section-note{font-size:12px;color:var(--text-muted);padding:10px 14px;background:rgba(108,99,255,.08);border-radius:8px;margin-bottom:16px;border-left:3px solid var(--accent-start)}
+.routing-btn{padding:6px 14px;border:1px solid var(--border-color);border-radius:8px;background:white;cursor:pointer;font-size:12px;transition:all .2s}
+.routing-btn:hover{border-color:var(--accent-start)}
+.routing-btn.active{background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:white;border-color:transparent}
+.usage-table{width:100%;border-collapse:collapse;font-size:12px}
+.usage-table th{text-align:left;padding:8px 6px;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500}
+.usage-table td{padding:8px 6px;border-bottom:1px solid rgba(0,0,0,.04)}
+.usage-table tr:hover{background:rgba(108,99,255,.03)}
+.cost-tag{font-weight:600;color:var(--success)}
+.latency-tag{font-weight:500}
+.latency-tag.slow{color:var(--danger)}
+.latency-tag.medium{color:var(--warning)}
+.latency-tag.fast{color:var(--success)}
+.priority-input{width:42px;padding:2px 4px;border:1px solid var(--border-color);border-radius:4px;font-size:12px;text-align:center;background:rgba(108,99,255,.06);color:var(--text-primary)}
+.priority-input:focus{border-color:var(--accent-start);outline:none;background:white}
+@media(max-width:640px){.container{padding:16px 12px 40px}.preset-grid{grid-template-columns:repeat(2,1fr)}.provider-header{flex-direction:column;align-items:flex-start}.provider-actions{margin-top:8px}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo">OpenModelPool</div>
+    <div class="logo-sub">v4.0.0 · 去中心化 AI 模型联邦管理</div>
+    <div class="header-actions">
+      <button class="btn-logout" onclick="logout()">退出登录</button>
+    </div>
+  </div>
+
+  <!-- 服务概览 -->
+  <div class="card" id="overviewCard">
+    <div class="card-title"><span class="icon">📊</span> 服务概览</div>
+    <div class="status-grid" id="statusGrid">
+      <div class="status-item"><div class="status-dot green" id="statusDot"></div><div><div class="status-label">服务状态</div><div class="status-value" id="statusText">检测中...</div></div></div>
+      <div class="status-item"><div class="status-dot blue" style="background:var(--info)"></div><div><div class="status-label">已启用平台</div><div class="status-value" id="providerCount">-</div></div></div>
+      <div class="status-item"><div class="status-dot" style="background:var(--accent-start)"></div><div><div class="status-label">可用模型</div><div class="status-value" id="modelCount">-</div></div></div>
+      <div class="status-item"><div class="status-dot" style="background:var(--accent-end)"></div><div><div class="status-label">版本</div><div class="status-value" id="versionText">-</div></div></div>
+    </div>
+  </div>
+
+  <!-- API Key 认证 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🔑</span> API 访问认证</div>
+    <div class="section-note">设置后，外部应用调用 /v1/* 接口需携带 <code>Authorization: Bearer &lt;your-key&gt;</code>；留空则不校验（仅适合内网使用）</div>
+
+    <!-- 地址列表 -->
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+      <div>
+        <label class="form-label" style="font-size:12px;margin-bottom:6px">🏠 局域网地址</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="lanApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制')">
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('lanApiUrl').value)">📋</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px">同一局域网内的设备可直接访问</div>
+      </div>
+      <div>
+        <label class="form-label" style="font-size:12px;margin-bottom:6px">🌍 公网地址 <span id="publicUrlBadge" style="font-size:10px;font-weight:normal"></span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="publicApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted)" onclick="this.select();document.execCommand('copy');toast('已复制')" placeholder="未启用公网访问">
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('publicApiUrl').value)">📋</button>
+        </div>
+        <div id="publicUrlHint" style="font-size:11px;color:var(--text-muted);margin-top:3px">未启用公网访问</div>
+      </div>
+      <div>
+        <label class="form-label" style="font-size:12px;margin-bottom:6px">🔗 固定域名地址 <span id="domainUrlBadge" style="font-size:10px;font-weight:normal"></span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="domainApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted)" onclick="this.select();document.execCommand('copy');toast('已复制')" placeholder="需先绑定自定义域名">
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('domainApiUrl').value)">📋</button>
+        </div>
+        <div id="domainUrlHint" style="font-size:11px;color:var(--text-muted);margin-top:3px">绑定自己的域名后获得固定不变的公网地址</div>
+      </div>
+    </div>
+
+    <!-- 域名/IP绑定引导 -->
+    <div id="domainBindingQuickCard" style="display:none;margin-bottom:16px;padding:12px;background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(178,75,243,.06));border:1px solid rgba(108,99,255,.2);border-radius:10px">
+      <div style="font-size:13px;font-weight:500;margin-bottom:8px">🔗 固定公网地址</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">
+        获得永久固定的公网地址，不再随重启变化。可选择绑定域名或直接绑定IP。
+      </div>
+      
+      <!-- 切换标签 -->
+      <div style="display:flex;gap:4px;margin-bottom:10px">
+        <button id="tabDomainBtn" class="btn btn-secondary btn-sm" onclick="switchBindMode('domain')" style="flex:1;font-size:11px;padding:4px 8px">🌐 绑定域名</button>
+        <button id="tabIpBtn" class="btn btn-secondary btn-sm" onclick="switchBindMode('ip')" style="flex:1;font-size:11px;padding:4px 8px">📡 绑定IP</button>
+      </div>
+      
+      <!-- 域名绑定模式 -->
+      <div id="domainBindMode">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">
+          将域名（如 api.yourdomain.com）CNAME 解析到 Cloudflare Tunnel，获得固定HTTPS地址。
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="quickDomainInput" placeholder="输入您的域名，如 api.yourdomain.com" style="flex:1;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="quickBindDomain()">绑定域名</button>
+        </div>
+      </div>
+      
+      <!-- IP绑定模式 -->
+      <div id="ipBindMode" style="display:none">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">
+          直接绑定您的公网IP地址，无需域名。需确保端口已开放。
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="quickIpInput" placeholder="输入公网IP，如 58.87.70.231" style="flex:1;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="quickBindIp()">绑定IP</button>
+        </div>
+      </div>
+      
+      <div id="domainBindResult" style="font-size:11px;margin-top:6px"></div>
+    </div>
+
+
+    <div class="form-group"><label class="form-label">Proxy API Key</label>
+      <div style="display:flex;gap:8px">
+        <input class="form-input" id="proxyApiKey" placeholder="留空表示不启用认证" style="flex:1">
+        <button class="btn btn-secondary btn-sm" onclick="generateApiKey()">🎲 生成</button>
+      </div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="saveProxyApiKey()">保存</button>
+      <button class="btn btn-danger btn-sm" onclick="clearProxyApiKey()">清除（关闭认证）</button>
+    </div>
+
+    <!-- 全球公共 Key (试用 Key) -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:500">🌍 全球公共 Key（试用）</span>
+        <span style="font-size:10px;padding:2px 6px;background:rgba(52,199,89,.12);color:var(--accent-green);border-radius:4px">零门槛</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <input class="form-input" value="mk_public_v1" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制全球公共 Key')">
+        <button class="btn btn-secondary btn-sm" onclick="copyText('mk_public_v1')">📋</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted)">无需搭建节点即可使用，访问全网共享的公共模型算力资源（有基础额度上限）</div>
+    </div>
+
+    <!-- Guest Key 管理 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:500">🎫 Guest Key 管理</span>
+        <button class="btn btn-primary btn-sm" onclick="generateGuestKey()">+ 签发新 Key</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">签发给他人使用，可设置额度和有效期。Guest Key 的访问范围取决于你的共享网络状态。</div>
+      <div id="guestKeysList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
+    </div>
+  </div>
+
+  <!-- 使用量 & 动态路由 -->
+  <div class="card" id="usageCard">
+    <div class="card-title" style="justify-content:space-between">
+      <span><span class="icon">📈</span> 使用量 & 动态路由</span>
+      <button class="btn btn-secondary btn-sm" onclick="refreshUsage()">🔄 刷新</button>
+    </div>
+    <!-- 路由模式 -->
+    <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:13px;color:var(--text-secondary)">路由模式：</span>
+      <button class="btn btn-sm routing-btn" data-mode="priority" onclick="setRoutingMode('priority')">🎯 优先级优先</button>
+      <button class="btn btn-sm routing-btn" data-mode="cheapest" onclick="setRoutingMode('cheapest')">💰 成本最低</button>
+      <button class="btn btn-sm routing-btn" data-mode="fastest" onclick="setRoutingMode('fastest')">⚡ 速度最快</button>
+      <button class="btn btn-sm routing-btn" data-mode="auto" onclick="setRoutingMode('auto')">🧠 综合权重</button>
+    </div>
+    <!-- 权重滑块（仅 auto 模式显示）-->
+    <div id="weightSliders" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:8px;background:rgba(108,99,255,.03);border:1px solid var(--border-color)">
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">⚖️ 权重分配（拖动调整，总和自动归一化）</div>
+      <div style="display:grid;grid-template-columns:100px 1fr 50px;gap:8px;align-items:center;font-size:13px">
+        <span>🎯 优先级</span>
+        <input type="range" id="wPriority" min="0" max="100" value="50" oninput="updateWeightLabel()" style="width:100%">
+        <span id="wPriorityVal" style="text-align:right;font-variant-numeric:tabular-nums">50%</span>
+        <span>💰 成本</span>
+        <input type="range" id="wCost" min="0" max="100" value="30" oninput="updateWeightLabel()" style="width:100%">
+        <span id="wCostVal" style="text-align:right;font-variant-numeric:tabular-nums">30%</span>
+        <span>⚡ 速度</span>
+        <input type="range" id="wLatency" min="0" max="100" value="20" oninput="updateWeightLabel()" style="width:100%">
+        <span id="wLatencyVal" style="text-align:right;font-variant-numeric:tabular-nums">20%</span>
+        <span>🪙 剩余Token</span>
+        <input type="range" id="wToken" min="0" max="100" value="15" oninput="updateWeightLabel()" style="width:100%">
+        <span id="wTokenVal" style="text-align:right;font-variant-numeric:tabular-nums">15%</span>
+      </div>
+      <div style="margin-top:8px;text-align:right">
+        <button class="btn btn-sm btn-primary" onclick="saveWeights()" style="font-size:11px;padding:4px 12px">保存权重</button>
+      </div>
+    </div>
+    <!-- Sider Token 状态 -->
+    <div id="siderStatusBox" style="margin-bottom:16px;padding:10px 14px;border-radius:8px;display:flex;align-items:center;gap:10px;font-size:13px;background:rgba(108,99,255,.04);border:1px solid var(--border-color)">
+      <span id="siderStatusIcon" style="font-size:18px">🔄</span>
+      <span id="siderStatusText" style="flex:1">Sider Token 状态：检测中...</span>
+      <button class="btn btn-sm btn-secondary" onclick="testSiderToken()" id="siderTestBtn" style="font-size:11px;padding:4px 10px">测试连接</button>
+    </div>
+    <!-- 概览统计 -->
+    <div class="status-grid" id="usageGrid" style="margin-bottom:16px">
+      <div class="status-item"><div><div class="status-label">今日请求</div><div class="status-value" id="todayRequests">-</div></div></div>
+      <div class="status-item"><div><div class="status-label">今日 Token</div><div class="status-value" id="todayTokens">-</div></div></div>
+      <div class="status-item"><div><div class="status-label">今日成本</div><div class="status-value" id="todayCost">-</div></div></div>
+      <div class="status-item"><div><div class="status-label">30 天总成本</div><div class="status-value" id="totalCost30d">-</div></div></div>
+    </div>
+    <!-- 各平台使用详情 -->
+    <div id="usageProviderList" style="font-size:13px">
+      <div style="text-align:center;color:var(--text-muted);padding:20px">暂无使用记录</div>
+    </div>
+    <div class="btn-group" style="margin-top:12px">
+      <button class="btn btn-danger btn-sm" onclick="resetUsage()">🗑 清空记录</button>
+    </div>
+  </div>
+
+  <!-- 请求日志 -->
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span><span class="icon">📋</span> 请求日志</span>
+      <button class="btn btn-secondary btn-sm" onclick="refreshLogs()">🔄 刷新</button>
+    </div>
+    <div id="logList" style="font-size:12px;max-height:400px;overflow-y:auto">
+      <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
+    </div>
+  </div>
+
+  <!-- Provider 健康状态 -->
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span><span class="icon">🏥</span> Provider 健康状态</span>
+      <button class="btn btn-secondary btn-sm" onclick="refreshHealth()">🔄 刷新</button>
+    </div>
+    <div id="healthList" style="font-size:12px">
+      <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
+    </div>
+  </div>
+
+  <!-- 平台管理 -->
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span><span class="icon">🔌</span> 平台管理</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="syncAllUrls()">🔄 一键同步全部地址</button>
+        <button class="btn btn-primary btn-sm" onclick="showAddProvider()">+ 添加平台</button>
+      </div>
+    </div>
+    <div class="section-note">添加 AI 平台并配置 API Key，请求将根据模型名称自动路由到对应平台</div>
+    <div class="provider-list" id="providerList">
+      <div style="text-align:center;color:var(--text-muted);padding:30px"><div class="loading"></div><br>加载中...</div>
+    </div>
+  </div>
+
+
+
+  <!-- 邮件服务 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">📧</span> 邮件服务配置</div>
+    <div class="form-group"><label class="form-label">SMTP 服务器</label><input class="form-input" id="smtpHost" placeholder="smtp.gmail.com"></div>
+    <div class="form-group"><label class="form-label">端口</label><input class="form-input" id="smtpPort" placeholder="587" type="number"></div>
+    <div class="form-group"><label class="form-label">用户名</label><input class="form-input" id="smtpUser" placeholder="your@email.com"></div>
+    <div class="form-group"><label class="form-label">密码</label><input class="form-input" id="smtpPass" type="password" placeholder="SMTP 密码"></div>
+    <div class="form-group"><label class="form-label">发件人</label><input class="form-input" id="smtpFrom" placeholder="noreply@domain.com"></div>
+    <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="smtpTls" checked> 启用 TLS</label></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="saveSmtp()">保存配置</button>
+      <button class="btn btn-secondary" onclick="testSmtp()">发送测试邮件</button>
+    </div>
+  </div>
+
+  <!-- 多用户管理 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">👥</span> 多用户管理</div>
+    
+    <!-- 邀请码 -->
+    <div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-size:14px;font-weight:500">邀请码</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="inviteMaxUses" type="number" value="5" min="1" style="width:80px;padding:6px 10px;font-size:12px" placeholder="次数">
+          <button class="btn btn-primary btn-sm" onclick="createInviteCode()">+ 创建邀请码</button>
+        </div>
+      </div>
+      <div id="inviteCodeList" style="font-size:12px">
+        <div style="text-align:center;color:var(--text-muted);padding:10px">加载中...</div>
+      </div>
+    </div>
+
+    <!-- 消费者列表 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px">
+      <div style="font-size:14px;font-weight:500;margin-bottom:10px">已注册用户</div>
+      <div id="consumerList" style="font-size:12px">
+        <div style="text-align:center;color:var(--text-muted);padding:10px">加载中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分享中心 -->
+  <div class="card" id="shareCenterCard">
+    <div class="card-title"><span class="icon">🔗</span> 分享中心</div>
+
+    <!-- Tab 切换 -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border-color);padding-bottom:12px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-primary share-tab active" data-tab="consumer" onclick="switchShareTab('consumer')">🔑 消费者分享</button>
+      <button class="btn btn-sm btn-secondary share-tab" data-tab="collaborator" onclick="switchShareTab('collaborator')">🤝 协作者邀请</button>
+    </div>
+
+    <!-- 模式 A：消费者分享 -->
+    <div id="shareTab-consumer" class="share-tab-content">
+      <div class="section-note">把 API 代理能力分享给朋友，对方只需调用 API，不需要管理节点</div>
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <div class="form-group">
+            <label class="form-label">📡 API 接口地址</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="shareApiUrl" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)">
+              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('shareApiUrl').value)">📋</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">🔑 Proxy API Key</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="shareApiKey" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)" placeholder="未设置（无需认证）">
+              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('shareApiKey').value)">📋</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">💬 预设文案</label>
+            <div style="display:flex;gap:8px">
+              <textarea class="form-input" id="shareConsumerText" rows="2" style="font-size:12px;resize:none;background:var(--bg-secondary)" readonly></textarea>
+              <button class="btn btn-primary btn-sm" onclick="copyText(document.getElementById('shareConsumerText').value)" style="flex-shrink:0">📋 复制</button>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="copyConsumerCombo()">📋 一键复制 API 地址 + Key</button>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">扫码获取 API 信息</div>
+          <div id="qrConsumer" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 模式 B：协作者邀请 -->
+    <div id="shareTab-collaborator" class="share-tab-content" style="display:none">
+      <div class="section-note">邀请信任的朋友一起贡献 API Key / Provider，共同维护节点</div>
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:16px">
+            <div class="form-group" style="flex:1;margin:0">
+              <label class="form-label">最大使用次数</label>
+              <input class="form-input" id="collabInviteMaxUses" type="number" value="5" min="1" style="font-size:12px">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="createCollabInviteCode()" style="margin-bottom:0">+ 创建协作者邀请码</button>
+          </div>
+          <div id="collabInviteLink" style="display:none;margin-bottom:16px">
+            <label class="form-label">🔗 邀请链接</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="collabLinkInput" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)">
+              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('collabLinkInput').value)">📋</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">💬 预设文案</label>
+            <div style="display:flex;gap:8px">
+              <textarea class="form-input" id="shareCollabText" rows="2" style="font-size:12px;resize:none;background:var(--bg-secondary)" readonly>来一起维护我的 OpenModelPool Agent 节点吧，添加你的 API Key 共享出来，大家一起用 👇</textarea>
+              <button class="btn btn-primary btn-sm" onclick="copyText(document.getElementById('shareCollabText').value)" style="flex-shrink:0">📋 复制</button>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">扫码跳转登录页</div>
+          <div id="qrCollaborator" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"><div style="color:#999;font-size:11px;padding:30px">创建邀请码后生成</div></div>
+        </div>
+      </div>
+    </div>
+
+  <!-- 配置管理 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">💾</span> 配置管理</div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
+      导出所有配置（平台、路由、SMTP 等）为 JSON 文件，或从备份文件导入恢复。
+      <br><span style="color:var(--warning)">⚠️ 导入会覆盖当前所有平台和配置</span>
+    </p>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="exportConfig()">📤 导出配置</button>
+      <label class="btn btn-secondary" style="cursor:pointer;margin:0">
+        📥 导入配置
+        <input type="file" accept=".json" onchange="importConfig(this)" style="display:none">
+      </label>
+    </div>
+  </div>
+
+  <!-- 账户安全 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🔐</span> 账户安全</div>
+    <div class="form-group"><label class="form-label">管理员邮箱</label><input class="form-input" id="adminEmail" placeholder="admin@email.com"></div>
+    <button class="btn btn-secondary btn-sm" onclick="updateEmail()" style="margin-bottom:20px">更新邮箱</button>
+    <div style="border-top:1px solid var(--border-color);padding-top:16px">
+      <div class="form-group"><label class="form-label">旧密码</label><input class="form-input" id="oldPass" type="password"></div>
+      <div class="form-group"><label class="form-label">新密码</label><input class="form-input" id="newPass" type="password"></div>
+      <button class="btn btn-primary" onclick="changePassword()">修改密码</button>
+    </div>
+  </div>
+
+  <div class="card" id="federationCard">
+    <div class="card-title"><span class="icon">🌐</span> 共享网络 <span id="fedEnabledStatus" style="font-size:12px;font-weight:normal;margin-left:8px"></span></div>
+
+    <!-- 共享网络开关 -->
+    <div style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:var(--bg-secondary);border-radius:10px;margin-bottom:16px">
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:600">🌐 加入共享网络</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">开启后，您的 Provider 将贡献到全网资源池，同时获得访问其他节点 Provider 的权限</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:52px;height:28px;flex-shrink:0">
+        <input type="checkbox" id="sharedNetworkToggle" onchange="toggleSharedNetwork()" style="opacity:0;width:0;height:0">
+        <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--text-muted);border-radius:28px;transition:.3s"></span>
+      </label>
+    </div>
+
+    <!-- 中继设置（加入后显示） -->
+    <div id="relaySettings" style="display:none;margin-bottom:16px">
+      <div style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:rgba(16,185,129,.04);border:1px solid rgba(16,185,129,.15);border-radius:10px">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500">🔀 开启中继（Relay）</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">允许您的节点帮助其他节点转发请求</div>
+        </div>
+        <select class="form-input" id="relayEnabled" style="width:100px">
+          <option value="false">关闭</option>
+          <option value="true">开启</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 额度分配（加入后显示） -->
+    <div id="quotaAllocation" style="display:none;margin-bottom:16px">
+      <div style="padding:12px 16px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.15);border-radius:10px">
+        <div style="font-size:13px;font-weight:500;margin-bottom:10px">📊 额度分配</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">设定您贡献的 Token 额度中，多少比例给免费消费者使用，多少比例给其他节点的 Proxy API Key 使用</div>
+        <div style="display:flex;gap:16px;align-items:center">
+          <div style="flex:1">
+            <label style="font-size:12px;color:var(--text-secondary)">免费消费者占比</label>
+            <input type="range" id="freeConsumerPercent" min="0" max="100" value="30" oninput="document.getElementById('freePercentDisplay').textContent=this.value+'%'; document.getElementById('nodePercentDisplay').textContent=(100-this.value)+'%'" style="width:100%">
+          </div>
+          <div style="display:flex;gap:12px;font-size:13px;font-weight:600">
+            <span>消费者: <span id="freePercentDisplay">30%</span></span>
+            <span style="color:var(--text-muted)">|</span>
+            <span>节点: <span id="nodePercentDisplay">70%</span></span>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveQuotaAllocation()">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 已加入共享网络后显示的面板 -->
+    <div id="networkActivePanel" style="display:none">
+      <!-- 网络状态 -->
+      <div class="status-grid" style="margin-bottom:16px">
+        <div class="status-item">
+          <div class="status-dot green"></div>
+          <div>
+            <div class="status-label">网络模式</div>
+            <div class="status-value" id="netMode">共享网络</div>
+          </div>
+        </div>
+        <div class="status-item">
+          <div class="status-dot" style="background:var(--accent-start)"></div>
+          <div>
+            <div class="status-label">节点 ID</div>
+            <div class="status-value" id="netNodeId" style="font-family:monospace;font-size:12px">-</div>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <div class="status-label">连接节点</div>
+            <div class="status-value" id="netPeers">0</div>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <div class="status-label">运行时长</div>
+            <div class="status-value" id="netUptime">-</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 已连接节点列表 -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">👥 已连接节点</div>
+        <div id="netPeersList" style="font-size:12px;color:var(--text-muted)">暂无连接节点</div>
+      </div>
+
+      <!-- 邀请管理 -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">📨 邀请新节点加入</div>
+        <div class="section-note" style="margin-bottom:12px">生成邀请码，邀请他人部署节点并加入您的网络</div>
+        <div style="display:flex;gap:12px;margin-bottom:12px">
+          <div style="flex:1">
+            <label class="form-label" style="font-size:12px">邀请码</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="fedInviteCode" readonly style="flex:1;font-family:monospace;font-size:13px" placeholder="点击下方按钮生成">
+              <button class="btn btn-primary btn-sm" onclick="generateFedInvite()">🎲 生成</button>
+              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('fedInviteCode').value)">📋</button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:12px">已发出的邀请</label>
+          <div id="fedInviteList" style="font-size:12px;color:var(--text-muted)">暂无邀请记录</div>
+        </div>
+      </div>
+
+      <!-- 退出按钮 -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;text-align:center">
+        <button class="btn btn-danger" onclick="disableNetwork()" style="padding:10px 24px">🚪 退出共享网络</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 共享网络免责声明模态框 -->
+  <div class="modal-overlay" id="networkDisclaimerModal">
+    <div class="modal" style="max-width:640px">
+      <div class="modal-title">
+        <span>🌐 共享网络使用须知</span>
+        <button class="modal-close" onclick="closeNetworkDisclaimer()">✕</button>
+      </div>
+      <div id="disclaimerContent"></div>
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border-color)">
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="networkConsentCheck" onchange="toggleNetworkConsentBtn()" style="margin-top:3px;width:16px;height:16px;flex-shrink:0">
+          <span id="networkConsentText">我已阅读并理解以上说明，自愿承担相关风险</span>
+        </label>
+      </div>
+      <div style="margin-top:16px;text-align:right">
+        <button class="btn btn-secondary" onclick="closeNetworkDisclaimer()" style="margin-right:8px">取消</button>
+        <button class="btn btn-primary" id="networkConsentBtn" onclick="confirmNetworkJoin()" disabled style="opacity:0.5">确认加入</button>
+      </div>
+    </div>
+  </div>
+
+
+<!-- 添加/编辑平台模态框 -->
+<div class="modal-overlay" id="providerModal">
+  <div class="modal">
+    <div class="modal-title"><span id="modalTitle">添加平台</span><button class="modal-close" onclick="closeModal()">&times;</button></div>
+    <div id="modalStep1">
+      <div class="form-label">选择平台（或选择「自定义平台」）</div>
+      <input class="form-input" id="presetSearch" placeholder="搜索平台..." oninput="filterPresets()" style="margin-bottom:12px">
+      <div class="preset-grid" id="presetGrid"></div>
+    </div>
+    <div id="modalStep2" style="display:none">
+      <button class="btn btn-secondary btn-sm" onclick="backToStep1()" style="margin-bottom:16px">← 返回选择</button>
+      <div class="form-group"><label class="form-label">平台 ID</label><input class="form-input" id="pId" placeholder="deepseek"></div>
+      <div class="form-group"><label class="form-label">显示名称</label><input class="form-input" id="pName" placeholder="DeepSeek"></div>
+      <div class="form-group"><label class="form-label">API Base URL</label><input class="form-input" id="pUrl" placeholder="https://api.deepseek.com/v1"></div>
+      <div class="form-group"><label class="form-label">API Key *</label><input class="form-input" id="pKey" placeholder="sk-..."></div>
+      <div id="editKeysSection" style="display:none;margin-bottom:18px;padding:14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <label style="font-size:13px;font-weight:500;color:var(--text-secondary)">🔑 已配置的多 Key 管理</label>
+          <button class="btn btn-secondary btn-sm" onclick="testAllEditKeys()" style="font-size:11px;padding:3px 10px">🧪 批量测试</button>
+        </div>
+        <div id="editKeysList"></div>
+        <div id="editKeysInlineRow" style="display:none;margin-top:10px;padding:12px;border-top:1px dashed var(--border-color)">
+          <div style="display:grid;grid-template-columns:1fr 2fr 100px 100px 80px;gap:8px;align-items:end;margin-bottom:8px">
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">别名</label>
+              <input id="newKeyAlias" class="form-input" style="font-size:12px;height:32px" placeholder="可选">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">API Key *</label>
+              <input id="newKeyValue" class="form-input" style="font-size:12px;height:32px" placeholder="sk-...">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">额度(tokens)</label>
+              <input id="newKeyQuota" class="form-input" type="number" style="font-size:12px;height:32px" value="0" placeholder="0=无限">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">优先级</label>
+              <input id="newKeyPriority" class="form-input" type="number" style="font-size:12px;height:32px" value="1" min="1">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">权限</label>
+              <select id="newKeyAccess" class="form-input" style="font-size:12px;height:32px">
+                <option value="private">私有</option>
+                <option value="shared">共享</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button class="btn btn-sm btn-secondary" onclick="cancelInlineKey()" style="font-size:11px;padding:3px 10px">取消</button>
+            <button class="btn btn-sm btn-primary" onclick="saveInlineKey()" style="font-size:11px;padding:3px 10px">💾 保存</button>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">代理（可选）</label>
+        <input class="form-input" id="pProxy" placeholder="vmess://... 或 socks5://127.0.0.1:1080 或 http://proxy:port">
+        <div class="section-note" style="margin-top:4px">支持 vmess:// 链接（自动启动本地代理）、socks5:// 或 http:// 代理地址</div>
+      </div>
+      <div class="form-group"><label class="form-label">描述</label><input class="form-input" id="pDesc" placeholder="平台描述"></div>
+      <div class="form-group"><label class="form-label">优先级（数字越小越优先）</label><input class="form-input" id="pPriority" type="number" value="5"></div>
+      <div class="form-group">
+        <label class="form-label">🔐 访问权限控制</label>
+        <div style="display:flex;gap:16px;margin-top:6px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
+            <input type="radio" name="pAccessControl" value="private" id="pAccessPrivate" checked>
+            🔒 仅私有 Key
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
+            <input type="radio" name="pAccessControl" value="shared" id="pAccessShared">
+            🌐 允许共享/公共 Key
+          </label>
+        </div>
+        <div class="section-note" style="margin-top:4px;font-size:11px">私有 Key（mk_{consumer_id}.xxx）可访问所有启用的平台；共享 Key（mk_open_xxx）仅可访问标记为「允许共享」的平台</div>
+      </div>
+      <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="pEnabled" checked> 启用此平台</label></div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveProvider()">💾 保存</button>
+        <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+// ================================================================
+// Module: CoreAuth - Authentication, utilities, and initialization
+// ================================================================
+let authToken = localStorage.getItem('admin_token') || '';
+async function authFetch(url, opts = {}) {
+  opts.headers = { ...opts.headers, 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' };
+  const r = await fetch(url, opts);
+  if (r.status === 401) {
+    localStorage.removeItem('admin_token');
+    toast('登录已过期，请重新登录', 'error');
+    setTimeout(() => { location.href = '/login'; }, 1500);
+    throw new Error('未登录');
+  }
+  return r;
+}
+function logout() { localStorage.removeItem('admin_token'); location.href = '/login'; }
+function toast(msg, type = 'success') { const t = document.createElement('div'); t.className = `toast ${type}`; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
+
+// ===== Init =====
+// Auth guard — show message instead of immediate redirect to prevent loops
+
+// ================================================================
+// Module: Dashboard - Status overview and usage statistics
+// ================================================================
+if (!authToken) {
+  document.body.innerHTML = '<div style="text-align:center;padding:80px 20px;font-family:sans-serif"><h2 style="color:#e8e8f0;margin-bottom:16px">未登录</h2><p style="color:#a0a0b8;margin-bottom:24px">请先登录管理面板</p><a href="/login" style="display:inline-block;padding:10px 28px;background:linear-gradient(135deg,#6c63ff,#b24bf3);color:#fff;border-radius:8px;text-decoration:none;font-size:14px">前往登录 →</a></div>';
+}
+
+let presets = [];
+async function init() {
+  try { await loadStatus(); await loadProviders(); await refreshInviteCodes(); await refreshConsumers(); } catch(e) { console.error(e); }
+  // Load presets in background
+  try { const r = await fetch('/api/providers/presets'); const d = await r.json(); presets = d.presets || []; } catch(e) {}
+}
+
+async function loadStatus() {
+  const r = await authFetch('/api/status');
+  const d = await r.json();
+  document.getElementById('statusText').textContent = d.status === 'running' ? '运行中' : '异常';
+  document.getElementById('statusDot').className = `status-dot ${d.status === 'running' ? 'green' : 'red'}`;
+  document.getElementById('providerCount').textContent = `${d.providers?.enabled || 0} / ${d.providers?.total || 0}`;
+  document.getElementById('modelCount').textContent = d.models || 0;
+  document.getElementById('versionText').textContent = d.version || '-';
+}
+
+// ===== Usage & Routing =====
+async function refreshUsage() {
+  try {
+    const [summaryRes, providersRes, routingRes] = await Promise.all([
+      authFetch('/api/usage/summary'),
+      authFetch('/api/usage/providers?days=30'),
+      authFetch('/api/routing/mode'),
+    ]);
+    const summary = await summaryRes.json();
+    const providers = await providersRes.json();
+    const routing = await routingRes.json();
+
+    // 更新概览
+    document.getElementById('todayRequests').textContent = summary.today_requests || 0;
+    document.getElementById('todayTokens').textContent = formatTokens(summary.today_tokens || 0);
+    document.getElementById('todayCost').textContent = `$${(summary.today_cost_usd || 0).toFixed(4)}`;
+    document.getElementById('totalCost30d').textContent = `$${(summary.total_cost_usd_30d || 0).toFixed(4)}`;
+
+    // 更新路由模式按钮
+    const currentMode = routing.current?.id || 'priority';
+    document.querySelectorAll('.routing-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === currentMode);
+    });
+
+    // 综合权重模式时显示权重滑块
+    const weightBox = document.getElementById('weightSliders');
+    if (weightBox) {
+      if (currentMode === 'auto') {
+        weightBox.style.display = 'block';
+        loadWeights();
+      } else {
+        weightBox.style.display = 'none';
+      }
+    }
+
+    // 更新平台使用详情表
+    renderUsageTable(providers);
+    // 同时刷新 Sider 状态
+    refreshSiderStatus();
+  } catch (e) {
+    console.error('加载使用量失败:', e);
+  }
+}
+
+function renderUsageTable(stats) {
+  const container = document.getElementById('usageProviderList');
+  const entries = Object.values(stats || {});
+  if (!entries.length) {
+    container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无使用记录，发起请求后将自动统计</div>';
+    return;
+  }
+  // 按请求数降序排列
+  entries.sort((a, b) => b.request_count - a.request_count);
+  let html = '<table class="usage-table"><thead><tr><th>平台</th><th>请求数</th><th>成功率</th><th>Token</th><th>成本</th><th>平均延迟</th></tr></thead><tbody>';
+  for (const s of entries) {
+    const latencyClass = s.avg_latency_ms < 1000 ? 'fast' : s.avg_latency_ms < 3000 ? 'medium' : 'slow';
+    html += `<tr>
+      <td><strong>${esc(s.provider_name)}</strong></td>
+      <td>${s.request_count}</td>
+      <td>${s.success_rate}%</td>
+      <td>${formatTokens(s.total_tokens)}</td>
+      <td class="cost-tag">$${s.total_cost_usd.toFixed(4)}</td>
+      <td class="latency-tag ${latencyClass}">${s.avg_latency_ms.toFixed(0)}ms</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function formatTokens(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+
+async function setRoutingMode(mode) {
+  try {
+    const r = await authFetch('/api/routing/mode', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ mode }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      document.querySelectorAll('.routing-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+      alert(`路由模式已切换为: ${mode === 'priority' ? '优先级优先' : mode === 'cheapest' ? '成本最低' : '速度最快'}`);
+    }
+  } catch (e) {
+    alert('切换失败: ' + e.message);
+  }
+}
+
+async function resetUsage() {
+  if (!confirm('确定要清空所有使用记录吗？此操作不可恢复。')) return;
+  try {
+    const r = await authFetch('/api/usage/reset', { method: 'DELETE' });
+    const d = await r.json();
+    if (d.success) {
+      alert('使用记录已清空');
+      refreshUsage();
+    }
+  } catch (e) {
+    alert('清空失败: ' + e.message);
+  }
+}
+
+// ===== Weight Sliders =====
+function updateWeightLabel() {
+  const p = parseInt(document.getElementById('wPriority').value);
+  const c = parseInt(document.getElementById('wCost').value);
+  const l = parseInt(document.getElementById('wLatency').value);
+  const t = parseInt(document.getElementById('wToken').value);
+  const total = p + c + l + t || 1;
+  document.getElementById('wPriorityVal').textContent = Math.round(p / total * 100) + '%';
+  document.getElementById('wCostVal').textContent = Math.round(c / total * 100) + '%';
+  document.getElementById('wLatencyVal').textContent = Math.round(l / total * 100) + '%';
+  document.getElementById('wTokenVal').textContent = Math.round(t / total * 100) + '%';
+}
+
+async function saveWeights() {
+  const p = parseInt(document.getElementById('wPriority').value);
+  const c = parseInt(document.getElementById('wCost').value);
+  const l = parseInt(document.getElementById('wLatency').value);
+  const t = parseInt(document.getElementById('wToken').value);
+  const total = p + c + l + t || 1;
+  try {
+    const r = await authFetch('/api/routing/weights', {
+      method: 'POST',
+      body: JSON.stringify({
+        priority: +(p / total).toFixed(2),
+        cost: +(c / total).toFixed(2),
+        latency: +(l / total).toFixed(2),
+        token: +(t / total).toFixed(2),
+      }),
+    });
+    const d = await r.json();
+    if (d.success) toast('✅ 权重已保存', 'success');
+  } catch (e) {
+    toast('保存失败: ' + e.message, 'error');
+  }
+}
+
+async function loadWeights() {
+  try {
+    const r = await authFetch('/api/routing/weights');
+    const w = await r.json();
+    document.getElementById('wPriority').value = Math.round((w.priority || 0.5) * 100);
+    document.getElementById('wCost').value = Math.round((w.cost || 0.3) * 100);
+    document.getElementById('wLatency').value = Math.round((w.latency || 0.2) * 100);
+    document.getElementById('wToken').value = Math.round((w.token || 0.15) * 100);
+    updateWeightLabel();
+  } catch (e) { /* ignore */ }
+}
+
+// ===== Sider Token Status =====
+// ================================================================
+// Module: SiderMonitor - Sider token status monitoring
+// ================================================================
+async function refreshSiderStatus() {
+  try {
+    const r = await authFetch('/api/providers/sider/status');
+    const d = await r.json();
+    updateSiderStatusUI(d);
+  } catch (e) {
+    updateSiderStatusUI({ token_status: 'unknown', failure_message: '无法获取状态' });
+  }
+}
+
+function updateSiderStatusUI(status) {
+  const icon = document.getElementById('siderStatusIcon');
+  const text = document.getElementById('siderStatusText');
+  const box = document.getElementById('siderStatusBox');
+  if (!icon || !text) return;
+
+  const st = status.token_status || 'unknown';
+  if (st === 'ok') {
+    icon.textContent = '✅';
+    text.innerHTML = '<b>Sider Token 正常</b>' + (status.last_success_at ? ' · 上次成功: ' + formatTime(status.last_success_at) : '');
+    box.style.background = 'rgba(34,197,94,.06)';
+    box.style.borderColor = 'rgba(34,197,94,.3)';
+  } else if (st === 'expired') {
+    icon.textContent = '🔴';
+    const failCount = status.consecutive_failures || 0;
+    text.innerHTML = '<b>Sider Token 已过期！</b> 连续失败 ' + failCount + ' 次'
+      + (status.last_failure_at ? ' · 最近: ' + formatTime(status.last_failure_at) : '')
+      + '<br><span style="font-size:11px;color:var(--text-muted)">请打开浏览器登录 sider.ai，然后重新获取 Cookie 中的 Token</span>';
+    box.style.background = 'rgba(239,68,68,.06)';
+    box.style.borderColor = 'rgba(239,68,68,.3)';
+  } else {
+    icon.textContent = '⚪';
+    text.textContent = 'Sider Token 状态：未检测';
+    box.style.background = 'rgba(108,99,255,.04)';
+    box.style.borderColor = 'var(--border-color)';
+  }
+}
+
+function formatTime(isoStr) {
+  if (!isoStr) return '-';
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch { return isoStr; }
+}
+
+async function testSiderToken() {
+  const btn = document.getElementById('siderTestBtn');
+  const oldText = btn.textContent;
+  btn.textContent = '检测中...';
+  btn.disabled = true;
+  try {
+    const r = await authFetch('/api/providers/sider/test', { method: 'POST' });
+    const d = await r.json();
+    if (d.valid) {
+      alert('✅ ' + d.message);
+    } else {
+      alert('❌ ' + d.message);
+    }
+    refreshSiderStatus();
+  } catch (e) {
+    alert('测试失败: ' + e.message);
+  } finally {
+    btn.textContent = oldText;
+    btn.disabled = false;
+  }
+}
+
+// ===== Providers =====
+let allProviders = [];
+// ================================================================
+// Module: ProviderManager - Provider CRUD, testing, and model management
+// ================================================================
+async function loadProviders() {
+  const r = await authFetch('/api/providers');
+  const d = await r.json();
+  allProviders = d.providers || [];
+  renderProviders();
+}
+
+function renderProviders() {
+  const list = document.getElementById('providerList');
+  if (!allProviders.length) { list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px">暂无平台配置，点击「+ 添加平台」开始</div>'; return; }
+  list.innerHTML = allProviders.map(p => {
+    const enabled = p.enabled;
+    const models = p.models || [];
+    const keys = p.api_keys || [];
+    const keyCount = keys.length;
+    const keyStatus = keyCount > 0
+      ? `<span class="badge badge-green">🔑 ${keyCount} 个 Key</span>`
+      : (p.api_key ? `<span class="badge badge-green">Key: ${p.api_key}</span>` : '<span class="badge badge-red">未配置 Key</span>');
+    const ac = p.access_control || {};
+    const accessBadge = ac.allow_shared_key ? '<span class="badge badge-green" title="允许共享/公共 Key 访问">🌐 共享</span>' : '<span class="badge badge-yellow" title="仅私有 Key 可访问">🔒 私有</span>';
+    return `<div class="provider-item" id="p-${p.id}">
+      <div class="provider-header" onclick="toggleModels('${p.id}')">
+        <div class="provider-info">
+          <div class="provider-name"><span class="status-dot ${enabled?'green':'red'}" style="width:8px;height:8px"></span> ${p.name} <span class="badge badge-blue">${p.type}</span> ${accessBadge}</div>
+          <div class="provider-url">${p.base_url}</div>
+          <div class="provider-meta">${keyStatus} <span>· ${models.length} 个模型</span> <span>· 📊 额度: ${p.token_limit > 0 ? p.token_limit.toLocaleString() + ' tokens' : '无限'}</span> <span>· 优先级 <input type="number" class="priority-input" value="${p.priority||5}" min="1" max="99" onclick="event.stopPropagation()" onchange="updatePriority('${p.id}', this.value)" title="数字越小优先级越高"></span></div>
+        </div>
+        <div class="provider-actions">
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleApiKeys('${p.id}')" title="管理 API Keys，支持多 Key 轮询和故障转移" style="border-color:rgba(108,99,255,.4);color:var(--primary)">🔑 Keys${keyCount > 0 ? '('+keyCount+')' : ''}</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncProviderUrl('${p.id}')">同步地址</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncModels('${p.id}')">同步模型</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();editProvider('${p.id}')">编辑</button>
+          <button class="btn btn-success btn-sm" onclick="event.stopPropagation();testProvider('${p.id}')">测试</button>
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();toggleProvider('${p.id}',${!enabled})">${enabled?'禁用':'启用'}</button>
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteProvider('${p.id}')">删除</button>
+        </div>
+      </div>
+      <div class="provider-apikeys" id="apikeys-${p.id}" style="display:none;padding:12px 16px;background:var(--bg-secondary);border-top:1px solid var(--border-color)">
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;padding:8px 12px;background:rgba(108,99,255,.04);border-radius:6px;border:1px solid rgba(108,99,255,.1)">💡 多 Key 管理：为同一平台配置多个 API Key，系统自动轮询/故障转移。可设置不同额度、权限和优先级。</div>
+        <div id="apikeys-list-${p.id}"><div style="color:var(--text-muted);text-align:center;padding:8px">点击加载 Key 列表</div></div>
+      </div>
+      <div class="provider-models" id="models-${p.id}">
+        ${models.length ? models.map(m => `<div class="model-item"><div><span>${m.id}</span> <span class="model-name">${m.name||''}</span></div><div class="toggle ${m.enabled?'active':''}" onclick="toggleModel('${p.id}','${m.id}')"></div></div>`).join('') : '<div style="color:var(--text-muted);text-align:center;padding:10px">无模型配置</div>'}
+        <button class="btn btn-secondary btn-sm" onclick="fetchRemoteModels('${p.id}')" style="margin-top:8px">🔄 从远程刷新模型列表</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleModels(pid) { const el = document.getElementById('models-' + pid); el.classList.toggle('open'); }
+
+async function updatePriority(pid, value) {
+  const priority = parseInt(value, 10);
+  if (isNaN(priority) || priority < 1 || priority > 99) {
+    toast('优先级需为 1-99 的整数', 'error');
+    return;
+  }
+  const p = allProviders.find(x => x.id === pid);
+  if (!p) return;
+  p.priority = priority;
+  try {
+    await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({priority: priority}) });
+    toast(`${p.name} 优先级已设为 ${priority}`);
+  } catch(e) {
+    toast('更新失败: ' + e.message, 'error');
+  }
+}
+
+async function toggleProvider(pid, enabled) {
+  const p = allProviders.find(x => x.id === pid);
+  if (!p) return;
+  p.enabled = enabled;
+  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({enabled: enabled}) });
+  toast(`${p.name} 已${enabled?'启用':'禁用'}`);
+  await loadProviders(); await loadStatus();
+}
+
+async function toggleModel(pid, mid) {
+  const p = allProviders.find(x => x.id === pid);
+  if (!p) return;
+  const m = (p.models||[]).find(x => x.id === mid);
+  if (m) { m.enabled = !m.enabled; }
+  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: p.models}) });
+  await loadProviders();
+}
+
+async function testProvider(pid) {
+  toast('正在测试连接...', 'info');
+  try {
+    const r = await authFetch(`/api/providers/${pid}/test`, { method: 'POST' });
+    const d = await r.json();
+    toast(d.success ? `✅ ${d.message}` : `❌ ${d.error}`, d.success ? 'success' : 'error');
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+async function deleteProvider(pid) {
+  if (!confirm('确定删除此平台？')) return;
+  await authFetch(`/api/providers/${pid}`, { method: 'DELETE' });
+  toast('已删除');
+  await loadProviders(); await loadStatus();
+}
+
+async function fetchRemoteModels(pid) {
+  toast('正在拉取远程模型列表...', 'info');
+  try {
+    const r = await authFetch(`/api/providers/${pid}/models`);
+    const d = await r.json();
+    if (d.models && d.models.length) {
+      const p = allProviders.find(x => x.id === pid);
+      if (p) {
+        const existing = new Set((p.models||[]).map(m=>m.id));
+        let added = 0;
+        d.models.forEach(m => { if (!existing.has(m.id)) { (p.models = p.models||[]).push({id:m.id, name:m.name||m.id, enabled:true}); added++; }});
+        // Only send models update, not the full provider (avoids sending masked API key)
+        await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: p.models}) });
+        toast(`已添加 ${added} 个新模型（共发现 ${d.count} 个）`);
+        await loadProviders();
+      }
+    } else { toast('远程无可用模型', 'info'); }
+  } catch(e) { toast('拉取失败: ' + e.message, 'error'); }
+}
+
+async function syncProviderUrl(pid) {
+  toast('正在同步地址...', 'info');
+  try {
+    const r = await authFetch(`/api/providers/${pid}/sync-url`, { method: 'POST' });
+    const d = await r.json();
+    if (d.changed) { toast(`✅ ${d.message}`, 'success'); } else { toast(d.message, 'info'); }
+    await loadProviders();
+  } catch(e) { toast('同步失败: ' + e.message, 'error'); }
+}
+
+async function syncModels(pid) {
+  toast('正在同步模型列表...', 'info');
+  try {
+    const r = await authFetch(`/api/providers/${pid}/sync-models`, { method: 'POST' });
+    const d = await r.json();
+    if (d.success) { toast(`✅ 已同步 ${d.models_synced} 个模型`, 'success'); } else { toast(d.error || '同步失败', 'error'); }
+    await loadProviders();
+  } catch(e) { toast('同步失败: ' + e.message, 'error'); }
+}
+
+async function syncAllUrls() {
+  toast('正在同步所有平台地址...', 'info');
+  try {
+    const r = await authFetch('/api/providers/sync-all-urls', { method: 'POST' });
+    const d = await r.json();
+    if (d.changed > 0) { toast(`✅ 已更新 ${d.changed} 个平台的地址`, 'success'); } else { toast('所有平台地址已是最新，无需更新', 'info'); }
+    await loadProviders();
+  } catch(e) { toast('同步失败: ' + e.message, 'error'); }
+}
+
+// ===== Add/Edit Provider Modal =====
+let editingId = null;
+function showAddProvider() {
+  editingId = null;
+  document.getElementById('editKeysSection').style.display = 'none';
+  document.getElementById('modalTitle').textContent = '添加平台';
+  document.getElementById('modalStep1').style.display = '';
+  document.getElementById('modalStep2').style.display = 'none';
+  document.getElementById('presetSearch').value = '';
+  renderPresets();
+  document.getElementById('providerModal').classList.add('open');
+}
+
+function editProvider(pid) {
+  const p = allProviders.find(x => x.id === pid);
+  if (!p) return;
+  editingId = pid;
+  document.getElementById('modalTitle').textContent = '编辑平台';
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  document.getElementById('pId').value = p.id;
+  document.getElementById('pId').readOnly = true;
+  document.getElementById('pName').value = p.name || '';
+  document.getElementById('pUrl').value = p.base_url || '';
+  document.getElementById('pKey').value = '';
+  document.getElementById('pKey').placeholder = p.api_key ? `当前: ${p.api_key}（留空不修改）` : '输入 API Key';
+  document.getElementById('pProxy').value = p.proxy && p.proxy.startsWith('vmess://') ? p.proxy : '';
+  document.getElementById('pProxy').placeholder = p.proxy && !p.proxy.startsWith('vmess://') ? `当前代理: ${p.proxy}（输入新值覆盖）` : 'vmess://... 或 socks5://127.0.0.1:1080';
+  document.getElementById('pDesc').value = p.description || '';
+  document.getElementById('pPriority').value = p.priority || 5;
+  document.getElementById('pEnabled').checked = p.enabled !== false;
+  // Load access control state
+  const ac = p.access_control || {};
+  if (ac.allow_shared_key) {
+    document.getElementById('pAccessShared').checked = true;
+  } else {
+    document.getElementById('pAccessPrivate').checked = true;
+  }
+  document.getElementById('providerModal').classList.add('open');
+  // Show multi-key management section when editing
+  document.getElementById('editKeysSection').style.display = '';
+  loadEditKeys(pid);
+}
+
+function selectPreset(pid) {
+  const p = presets.find(x => x.id === pid);
+  if (!p) return;
+  editingId = null;
+  document.getElementById('editKeysSection').style.display = 'none';
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  document.getElementById('pId').value = p.id;
+  document.getElementById('pId').readOnly = false;
+  document.getElementById('pName').value = p.name;
+  document.getElementById('pUrl').value = p.base_url;
+  document.getElementById('pKey').value = '';
+  document.getElementById('pKey').placeholder = '输入 API Key';
+  document.getElementById('pDesc').value = p.description || '';
+  document.getElementById('pPriority').value = p.id === 'openai' ? 10 : p.id === 'openrouter' ? 20 : p.id === 'ollama' ? 50 : 5;
+  document.getElementById('pEnabled').checked = true;
+  document.getElementById('pAccessPrivate').checked = true; // default: private only
+}
+
+function backToStep1() {
+  document.getElementById('modalStep1').style.display = '';
+  document.getElementById('modalStep2').style.display = 'none';
+}
+
+function closeModal() { document.getElementById('providerModal').classList.remove('open'); }
+
+async function saveProvider() {
+  const id = document.getElementById('pId').value.trim();
+  if (!id) { toast('请填写平台 ID', 'error'); return; }
+  const accessMode = document.querySelector('input[name="pAccessControl"]:checked').value;
+  const data = {
+    id, name: document.getElementById('pName').value.trim() || id,
+    type: 'openai_compatible', base_url: document.getElementById('pUrl').value.trim(),
+    description: document.getElementById('pDesc').value.trim(),
+    priority: parseInt(document.getElementById('pPriority').value) || 5,
+    enabled: document.getElementById('pEnabled').checked,
+    access_control: {
+      allow_private_key: true,
+      allow_shared_key: accessMode === 'shared',
+    },
+  };
+  const key = document.getElementById('pKey').value.trim();
+  if (key) data.api_key = key;
+  const proxy = document.getElementById('pProxy').value.trim();
+  if (proxy) data.proxy = proxy;
+  else if (!editingId) { toast('请填写 API Key', 'error'); return; }
+  // Carry over models from existing if editing
+  if (editingId) {
+    const existing = allProviders.find(x => x.id === editingId);
+    if (existing) data.models = existing.models || [];
+  }
+  if (!data.models) data.models = (presets.find(p=>p.id===id)||{}).default_models || [];
+
+  try {
+    const r = await authFetch('/api/providers', { method: 'POST', body: JSON.stringify(data) });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || '保存失败'); }
+    toast(editingId ? '已更新' : '已添加');
+    closeModal();
+    await loadProviders(); await loadStatus();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function renderPresets() {
+  const grid = document.getElementById('presetGrid');
+  const search = document.getElementById('presetSearch').value.toLowerCase();
+  const filtered = presets.filter(p => !search || p.name.toLowerCase().includes(search) || p.id.includes(search) || (p.description||'').toLowerCase().includes(search));
+  grid.innerHTML = filtered.map(p => `<div class="preset-card" onclick="selectPreset('${p.id}')"><div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${p.description||''}</div></div>`).join('') + `<div class="preset-card" onclick="selectCustomPreset()" style="border-style:dashed"><div class="preset-icon">🔌</div><div class="preset-name">自定义平台</div><div class="preset-desc">手动填写地址</div></div>`;
+}
+function filterPresets() { renderPresets(); }
+
+function selectCustomPreset() {
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  document.getElementById('modalTitle').textContent = '添加自定义平台';
+  document.getElementById('pId').value = 'custom-' + Date.now().toString(36);
+  document.getElementById('pName').value = '';
+  document.getElementById('pUrl').value = '';
+  document.getElementById('pKey').value = '';
+  document.getElementById('pDesc').value = '';
+  document.getElementById('pPriority').value = '5';
+  document.getElementById('pEnabled').checked = true;
+  document.getElementById('pAccessPrivate').checked = true; // default: private only
+  document.getElementById('editKeysSection').style.display = 'none';
+  editingId = '';
+}
+
+function getIcon(id) {
+  const icons = {openai:'🟢',deepseek:'🔵',qwen:'🟠',zhipu:'🟣',moonshot:'🌙',lingyiwanwu:'🔶',minimax:'⬛',siliconflow:'💎',groq:'⚡',xai:'🤖',together:'🔗',mistral:'🇪🇺',doubao:'🫘',spark:'✨',hunyuan:'🐧','tokenhub-coding':'🐧','tokenhub-plan':'🐧','tokenhub-enterprise':'🐧',gemini:'♊',openrouter:'🌐',poe:'🎭',sid:'🧠',sider:'🌐',ollama:'🦙',coze:'🎯',nvidia:'🟩',anthropic:'🟠',qianfan:'🔴',novita:'🔮',fireworks:'🎆',cohere:'🔷',cerebras:'⚡',stepfun:'🌟',baichuan:'🌊'};
+  return icons[id] || '🔌';
+}
+
+// ===== Proxy API URL =====
+function initApiUrls() {
+  const lanEl = document.getElementById('lanApiUrl');
+  const pubEl = document.getElementById('publicApiUrl');
+  const hintEl = document.getElementById('publicUrlHint');
+  const badgeEl = document.getElementById('publicUrlBadge');
+  const domainUrlEl = document.getElementById('domainApiUrl');
+  const domainHintEl = document.getElementById('domainUrlHint');
+  const domainBadgeEl = document.getElementById('domainUrlBadge');
+  const domainQuickCard = document.getElementById('domainBindingQuickCard');
+
+  authFetch('/api/federation/config').then(r => r.json()).then(d => {
+    const lanIP = d.lan_ip || '';
+    const servicePort = d.service_port || '8000';
+    const tunnelUrl = d.tunnel_url || '';
+    const tunnelDomain = d.tunnel_domain || '';
+    const tunnelEnabled = d.tunnel_enabled === 'true';
+
+    // 1. 局域网地址
+    if (lanEl) {
+      if (lanIP) {
+        lanEl.value = 'http://' + lanIP + ':' + servicePort + '/v1';
+        lanEl.style.color = 'var(--text-primary)';
+      } else {
+        lanEl.value = '无法获取局域网IP';
+        lanEl.style.color = 'var(--text-muted)';
+      }
+    }
+
+    // 2. 公网地址（Cloudflare 随机隧道）
+    if (tunnelUrl && tunnelEnabled) {
+      if (pubEl) pubEl.value = tunnelUrl + '/v1';
+      if (hintEl) {
+        if (tunnelDomain) {
+          hintEl.textContent = '✅ 服务运行期间一直可用，重启后会变化（已绑定固定域名，见下方）';
+          if (badgeEl) badgeEl.textContent = '(隧道)';
+          if (pubEl) pubEl.style.color = 'var(--text-muted)';
+        } else {
+          hintEl.textContent = '✅ 服务运行期间一直可用，重启后会变化。建议绑定自定义域名获得永久固定地址';
+          if (badgeEl) badgeEl.textContent = '(临时)';
+          if (pubEl) pubEl.style.color = 'var(--text-primary)';
+        }
+      }
+    } else {
+      if (pubEl) { pubEl.value = ''; pubEl.placeholder = '未启用公网访问'; }
+      if (hintEl) hintEl.textContent = '未启用公网隧道';
+      if (pubEl) pubEl.style.color = 'var(--text-muted)';
+    }
+
+    // 3. 固定域名地址
+    if (tunnelDomain && tunnelEnabled && tunnelUrl) {
+      const domainUrl = 'https://' + tunnelDomain + '/v1';
+      if (domainUrlEl) {
+        domainUrlEl.value = domainUrl;
+        domainUrlEl.style.color = 'var(--accent-green)';
+      }
+      if (domainHintEl) domainHintEl.textContent = '✅ 已绑定自定义域名，地址固定不变';
+      if (domainBadgeEl) domainBadgeEl.textContent = '(固定)';
+      if (domainQuickCard) domainQuickCard.style.display = 'none';
+    } else if (tunnelUrl && tunnelEnabled) {
+      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '需先绑定自定义域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
+      if (domainHintEl) domainHintEl.textContent = '当前未绑定域名，点击下方引导进行绑定';
+      if (domainBadgeEl) domainBadgeEl.textContent = '';
+      if (domainQuickCard) domainQuickCard.style.display = 'block';
+    } else {
+      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '需先启用公网隧道并绑定域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
+      if (domainHintEl) domainHintEl.textContent = '需先启用公网隧道';
+      if (domainQuickCard) domainQuickCard.style.display = 'none';
+    }
+  }).catch(() => {
+    if (hintEl) hintEl.textContent = '获取地址信息失败';
+    if (domainHintEl) domainHintEl.textContent = '获取地址信息失败';
+  });
+}
+
+async function quickBindDomain() {
+    function switchBindMode(mode) {
+      if (mode === 'domain') {
+        document.getElementById('domainBindMode').style.display = '';
+        document.getElementById('ipBindMode').style.display = 'none';
+        document.getElementById('tabDomainBtn').className = 'btn btn-primary btn-sm';
+        document.getElementById('tabIpBtn').className = 'btn btn-secondary btn-sm';
+      } else {
+        document.getElementById('domainBindMode').style.display = 'none';
+        document.getElementById('ipBindMode').style.display = '';
+        document.getElementById('tabDomainBtn').className = 'btn btn-secondary btn-sm';
+        document.getElementById('tabIpBtn').className = 'btn btn-primary btn-sm';
+      }
+    }
+    
+    function quickBindIp() {
+      const ip = document.getElementById('quickIpInput').value.trim();
+      if (!ip) return toast('请输入公网IP地址', 'error');
+      
+      // 简单IP格式校验
+      const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      if (!ipv4Regex.test(ip)) return toast('IP格式不正确', 'error');
+      
+      const port = document.getElementById('servicePort')?.value || '8000';
+      const resultDiv = document.getElementById('domainBindResult');
+      resultDiv.innerHTML = '⏳ 正在绑定IP...';
+      
+      postJSON('/api/ip/bind', { ip, port }).then(resp => {
+        if (resp.success) {
+          resultDiv.innerHTML = '✅ IP已绑定！Base URL：<code>http://' + ip + ':' + port + '/v1</code>';
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          resultDiv.innerHTML = '❌ ' + (resp.error || '绑定失败');
+        }
+      }).catch(err => {
+        resultDiv.innerHTML = '❌ 请求失败：' + err;
+      });
+    }
+
+  const input = document.getElementById('quickDomainInput');
+  const resultEl = document.getElementById('domainBindResult');
+  if (!input || !input.value.trim()) {
+    toast('请输入域名', 'error');
+    return;
+  }
+  const domain = input.value.trim();
+  // Validate domain format
+  if (!/^[a-zA-Z0-9]([a-zA-Z0-9\-]*\.)+[a-zA-Z]{2,}$/.test(domain)) {
+    toast('域名格式不正确', 'error');
+    return;
+  }
+  resultEl.innerHTML = '<span style="color:var(--text-muted)">正在提交绑定请求...</span>';
+  try {
+    const res = await authFetch('/api/federation/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ tunnel_domain: domain, tunnel_enabled: true })
+    });
+    const d = await res.json();
+    if (res.ok) {
+      resultEl.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定请求已提交！请将 <strong>' + domain + '</strong> CNAME 解析到 <strong>' + (d.tunnel_url || '当前隧道地址') + ' 后等待生效</span>';
+      setTimeout(() => { initApiUrls(); }, 3000);
+    } else {
+      resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定失败: ' + (d.error || '未知错误') + '</span>';
+    }
+  } catch(e) {
+    resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定请求失败</span>';
+  }
+}
+
+
+// Set personal API access URLs
+
+// ===== Proxy API Key =====
+function generateApiKey() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let key = 'sk-';
+  for (let i = 0; i < 48; i++) key += chars.charAt(Math.floor(Math.random() * chars.length));
+  document.getElementById('proxyApiKey').value = key;
+}
+async function saveProxyApiKey() {
+  const key = document.getElementById('proxyApiKey').value.trim();
+  if (key) {
+    await authFetch('/api/config', { method: 'POST', body: JSON.stringify({ proxy_api_key: key }) });
+    toast('✅ API Key 认证已启用');
+  } else {
+    toast('请输入 API Key');
+    return;
+  }
+  document.getElementById('proxyApiKey').value = '';
+  await loadProxyApiKey();
+}
+async function clearProxyApiKey() {
+  await authFetch('/api/config', { method: 'POST', body: JSON.stringify({ proxy_api_key: '' }) });
+  document.getElementById('proxyApiKey').value = '';
+  document.getElementById('proxyApiKey').placeholder = '留空表示不启用认证';
+  toast('已关闭 API Key 认证');
+}
+async function loadProxyApiKey() {
+  try {
+    const r = await authFetch('/api/config');
+    const d = await r.json();
+    const el = document.getElementById('proxyApiKey');
+    el.value = '';
+    if (d.proxy_api_key_masked && d.proxy_api_key_masked !== '未配置') {
+      el.placeholder = `当前: ${d.proxy_api_key_masked}（输入新值覆盖）`;
+    } else {
+      el.placeholder = '留空表示不启用认证';
+    }
+  } catch(e) {}
+}
+
+// ===== SMTP =====
+// ================================================================
+// Module: Settings - SMTP, admin info, proxy API key configuration
+// ================================================================
+async function loadSmtp() {
+  try { const r = await authFetch('/api/smtp/config'); const d = await r.json(); document.getElementById('smtpHost').value = d.host||''; document.getElementById('smtpPort').value = d.port||'587'; document.getElementById('smtpUser').value = d.username||''; document.getElementById('smtpFrom').value = d.from_email||''; document.getElementById('smtpTls').checked = d.use_tls!==false; } catch(e) {}
+}
+async function saveSmtp() {
+  const data = { host:document.getElementById('smtpHost').value, port:document.getElementById('smtpPort').value, username:document.getElementById('smtpUser').value, from_email:document.getElementById('smtpFrom').value, use_tls:document.getElementById('smtpTls').checked };
+  const p = document.getElementById('smtpPass').value; if (p) data.password = p;
+  await authFetch('/api/smtp/config', { method: 'POST', body: JSON.stringify(data) });
+  toast('SMTP 配置已保存');
+}
+async function testSmtp() { toast('发送测试邮件...', 'info'); try { const r = await authFetch('/api/smtp/test', {method:'POST'}); const d = await r.json(); toast(d.success?'✅ '+d.message:'❌ '+d.detail, d.success?'success':'error'); } catch(e) { toast('失败: '+e.message, 'error'); } }
+
+// ===== Account =====
+async function loadAdminInfo() { try { const r = await authFetch('/api/admin/info'); const d = await r.json(); document.getElementById('adminEmail').value = d.email||''; } catch(e) {} }
+async function updateEmail() { const e = document.getElementById('adminEmail').value.trim(); if (!e) return toast('邮箱不能为空','error'); await authFetch('/api/admin/update-email', {method:'POST', body:JSON.stringify({email:e})}); toast('邮箱已更新'); }
+async function changePassword() { const o = document.getElementById('oldPass').value; const n = document.getElementById('newPass').value; if (!o||!n) return toast('请填写密码','error'); try { const r = await authFetch('/api/admin/change-password', {method:'POST', body:JSON.stringify({old_password:o,new_password:n})}); const d = await r.json(); toast(d.success?'✅ 密码已修改':'❌ '+d.detail, d.success?'success':'error'); document.getElementById('oldPass').value=''; document.getElementById('newPass').value=''; } catch(e) { toast(e.message,'error'); } }
+
+async function exportConfig() {
+  try {
+    const r = await authFetch('/api/config/export');
+    if (!r.ok) throw new Error('导出失败');
+    const data = await r.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const ts = new Date().toISOString().slice(0,10);
+    a.download = `openmodelpool-config-${ts}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('✅ 配置已导出', 'success');
+  } catch(e) { toast('❌ '+e.message, 'error'); }
+}
+
+async function importConfig(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm(`确认导入 ${file.name}？\n这将覆盖当前所有平台和配置！`)) {
+    input.value = '';
+    return;
+  }
+  try {
+    const formData = new FormData();
+    formData.append('config', file);
+    const r = await authFetch('/api/config/import', {method:'POST', body:formData});
+    const d = await r.json();
+    toast(d.success ? `✅ 导入成功，已恢复 ${d.providers_count} 个平台` : '❌ '+d.detail, d.success?'success':'error');
+    if (d.success) setTimeout(()=>location.reload(), 1500);
+  } catch(e) { toast('❌ '+e.message, 'error'); }
+  input.value = '';
+}
+
+// ===== Request Logs =====
+// ================================================================
+// Module: LogsAndHealth - Request logs and health status display
+// ================================================================
+async function refreshLogs() {
+  try {
+    const r = await authFetch('/api/logs');
+    const d = await r.json();
+    const logs = d.logs || [];
+    const container = document.getElementById('logList');
+    if (!logs.length) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无请求日志</div>';
+      return;
+    }
+    let html = '<table class="usage-table"><thead><tr><th>时间</th><th>模型</th><th>平台</th><th>Token</th><th>延迟</th><th>状态</th></tr></thead><tbody>';
+    for (const l of logs) {
+      const statusBadge = l.success ? '<span class="badge badge-green">成功</span>' : '<span class="badge badge-red">失败</span>';
+      const time = l.timestamp ? new Date(l.timestamp).toLocaleString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
+      html += `<tr><td>${time}</td><td>${l.model||'-'}</td><td>${l.provider||'-'}</td><td>${l.tokens||0}</td><td>${l.latency_ms||0}ms</td><td>${statusBadge}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+// ===== Health Status =====
+async function refreshHealth() {
+  try {
+    const r = await authFetch('/api/health');
+    const d = await r.json();
+    const health = d.health || {};
+    const container = document.getElementById('healthList');
+    const keys = Object.keys(health);
+    if (!keys.length) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无健康检测数据</div>';
+      return;
+    }
+    let html = '<table class="usage-table"><thead><tr><th>平台</th><th>状态</th><th>延迟</th><th>上次检查</th><th>连续失败</th></tr></thead><tbody>';
+    for (const [k, v] of Object.entries(health)) {
+      const dot = v.healthy ? '<span class="status-dot green" style="width:8px;height:8px;display:inline-block"></span>' : '<span class="status-dot red" style="width:8px;height:8px;display:inline-block"></span>';
+      const checkTime = v.last_check ? new Date(v.last_check).toLocaleString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
+      html += `<tr><td>${dot} ${k}</td><td>${v.healthy?'正常':'异常'}</td><td>${v.latency_ms||0}ms</td><td>${checkTime}</td><td>${v.consecutive_failures||0}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+// ===== Invite Codes & Consumers =====
+// ================================================================
+// Module: MultiUser - Invite codes and consumer management
+// ================================================================
+async function refreshInviteCodes() {
+  try {
+    const r = await authFetch('/api/invite-codes');
+    const d = await r.json();
+    const codes = d.codes || [];
+    const container = document.getElementById('inviteCodeList');
+    if (!codes.length) { container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:10px">暂无邀请码</div>'; return; }
+    let html = '<table class="usage-table"><thead><tr><th>邀请码</th><th>角色</th><th>已用/上限</th><th>创建时间</th><th>操作</th></tr></thead><tbody>';
+    for (const c of codes) {
+      const time = c.created_at ? new Date(c.created_at).toLocaleDateString('zh-CN') : '-';
+      const roleBadge = c.role === 'collaborator' ? '<span class="badge badge-blue">协作者</span>' : '<span class="badge badge-green">消费者</span>';
+      html += `<tr><td style="font-family:monospace">${c.code}</td><td>${roleBadge}</td><td>${c.used_count||0}/${c.max_uses||'∞'}</td><td>${time}</td><td><button class="btn btn-danger btn-sm" onclick="deleteInviteCode('${c.code}')" style="font-size:11px;padding:2px 8px">删除</button></td></tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function createInviteCode() {
+  const maxUses = parseInt(document.getElementById('inviteMaxUses').value) || 5;
+  try {
+    const r = await authFetch('/api/invite-codes', { method: 'POST', body: JSON.stringify({ max_uses: maxUses }) });
+    const d = await r.json();
+    if (d.code) { toast('✅ 邀请码已创建: ' + d.code); refreshInviteCodes(); }
+    else toast('创建失败', 'error');
+  } catch(e) { toast('创建失败: '+e.message, 'error'); }
+}
+
+async function deleteInviteCode(code) {
+  if (!confirm('确定删除此邀请码？')) return;
+  try {
+    await authFetch('/api/invite-codes/' + encodeURIComponent(code), { method: 'DELETE' });
+    toast('已删除'); refreshInviteCodes();
+  } catch(e) { toast('删除失败', 'error'); }
+}
+
+async function refreshConsumers() {
+  try {
+    const r = await authFetch('/api/consumers');
+    const d = await r.json();
+    const consumers = d.consumers || [];
+    const container = document.getElementById('consumerList');
+    if (!consumers.length) { container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:10px">暂无注册用户</div>'; return; }
+    let html = '<table class="usage-table"><thead><tr><th>ID</th><th>状态</th><th>总用量</th><th>注册时间</th><th>操作</th></tr></thead><tbody>';
+    for (const c of consumers) {
+      const status = c.disabled ? '<span class="badge badge-red">已禁用</span>' : '<span class="badge badge-green">正常</span>';
+      const time = c.created_at ? new Date(c.created_at).toLocaleDateString('zh-CN') : '-';
+      html += `<tr><td style="font-family:monospace;font-size:11px">${c.id}</td><td>${status}</td><td>${c.total_tokens||0}</td><td>${time}</td><td><button class="btn btn-sm ${c.disabled?'btn-success':'btn-danger'}" onclick="toggleConsumer('${c.id}',${!c.disabled})" style="font-size:11px;padding:2px 8px">${c.disabled?'启用':'禁用'}</button> <button class="btn btn-danger btn-sm" onclick="deleteConsumer('${c.id}')" style="font-size:11px;padding:2px 8px">删除</button></td></tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function toggleConsumer(id, disabled) {
+  try {
+    await authFetch('/api/consumers/' + id, { method: 'PUT', body: JSON.stringify({ disabled: disabled }) });
+    toast(disabled ? '已禁用' : '已启用'); refreshConsumers();
+  } catch(e) { toast('操作失败', 'error'); }
+}
+
+async function deleteConsumer(id) {
+  if (!confirm('确定删除此用户？其所有 Provider 也将被删除。')) return;
+  try {
+    await authFetch('/api/consumers/' + id, { method: 'DELETE' });
+    toast('已删除'); refreshConsumers();
+  } catch(e) { toast('删除失败', 'error'); }
+}
+
+// ============================================================
+// Multi API Key Management
+// ============================================================
+
+async function toggleApiKeys(pid) {
+  const el = document.getElementById('apikeys-' + pid);
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    await loadApiKeys(pid);
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function loadApiKeys(pid) {
+  const container = document.getElementById('apikeys-list-' + pid);
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys');
+    const d = await r.json();
+    const keys = d.keys || [];
+    if (!keys.length) {
+      container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:8px">未配置多 Key，点击下方按钮添加</div>';
+    } else {
+      let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>别名/Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>操作</th><th>测试</th></tr></thead><tbody>';
+      for (const k of keys) {
+        const quotaText = k.quota > 0 ? (k.used + '/' + k.quota) : '无限';
+        const accessLabel = k.access_control === 'public' ? '🌐 公共' : k.access_control === 'shared' ? '🔗 共享' : '🔒 私有';
+        const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
+        const expiresText = k.expires_at ? '<br><small style="color:var(--text-muted)">过期: ' + new Date(k.expires_at).toLocaleDateString('zh-CN') + '</small>' : '';
+        html += '<tr>';
+        html += '<td style="font-family:monospace">' + (k.alias || k.key.substring(0, 8) + '...') + '</td>';
+        html += '<td>' + quotaText + '<br><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:1px 6px;margin-top:2px" onclick="resetKeyQuota(\'' + pid + '\',\'' + k.id + '\')">重置</button></td>';
+        html += '<td>' + accessLabel + '</td>';
+        html += '<td>' + (k.priority || 1) + '</td>';
+        html += '<td>' + statusBadge + expiresText + '</td>';
+        html += '<td>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteApiKey(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
+        html += '</td>';
+        html += '<td><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testSingleKey(\'' + pid + '\',\'' + k.id + '\')">测试</button></td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+    // Add key button
+    container.innerHTML += '<div style="margin-top:8px;display:flex;justify-content:space-between"><button class="btn btn-secondary btn-sm" onclick="testAllKeys(\'' + pid + '\')">🧪 测试全部 Key</button><button class="btn btn-primary btn-sm" onclick="showAddApiKey(\'' + pid + '\')">+ 添加 API Key</button></div>';
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error)">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function showAddApiKey(pid) {
+  const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
+  const key = prompt('请输入 API Key:');
+  if (!key) return;
+  const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
+  const access = prompt('访问权限 (private/shared/public):', 'private') || 'private';
+  const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys', {
+      method: 'POST',
+      body: JSON.stringify({ key: key, alias: alias, quota: quota, access_control: access, priority: priority, enabled: true })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ API Key 已添加', 'success');
+      await loadApiKeys(pid);
+      await loadProviders();
+    } else {
+      toast('添加失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+
+async function toggleKeyEnabled(pid, keyId, enabled) {
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: enabled })
+    });
+    toast(enabled ? '已启用' : '已禁用');
+    await loadApiKeys(pid);
+  } catch(e) { toast('操作失败: ' + e.message, 'error'); }
+}
+
+async function deleteApiKey(pid, keyId) {
+  if (!confirm('确定删除此 API Key？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId, { method: 'DELETE' });
+    toast('已删除');
+    await loadApiKeys(pid);
+    await loadProviders();
+  } catch(e) { toast('删除失败: ' + e.message, 'error'); }
+}
+
+async function resetKeyQuota(pid, keyId) {
+  if (!confirm('确定重置此 Key 的已用额度？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId + '/reset-quota', { method: 'POST' });
+    toast('额度已重置');
+    await loadApiKeys(pid);
+  } catch(e) { toast('重置失败: ' + e.message, 'error'); }
+}
+
+async function testSingleKey(pid, keyId) {
+  toast('正在测试...', 'info');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test?key_id=' + keyId, {method:'POST'});
+    const d = await r.json();
+    toast(d.success ? '✅ Key 可用' : '❌ Key 不可用: ' + (d.error||''), d.success ? 'success' : 'error');
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+async function testAllKeys(pid) {
+  toast('正在测试所有 Key...', 'info');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test-all-keys', {method:'POST'});
+    const d = await r.json();
+    if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    let msg = d.results.map(k => {
+      let status = k.success ? '✅' : '❌';
+      let label = k.alias || ('Key#' + k.index);
+      return status + ' ' + label + (k.error ? ': ' + k.error : '');
+    }).join('\n');
+    alert('Key 测试结果:\n' + msg);
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+// ============================================================
+// Edit Form Multi-Key Management
+// ============================================================
+
+// ===== Multi-Key Inline Editor =====
+function showInlineKeyForm() {
+  document.getElementById('editKeysInlineRow').style.display = 'block';
+  document.getElementById('newKeyAlias').value = '';
+  document.getElementById('newKeyValue').value = '';
+  document.getElementById('newKeyQuota').value = '0';
+  document.getElementById('newKeyPriority').value = '1';
+  document.getElementById('newKeyAccess').value = 'private';
+  document.getElementById('newKeyValue').focus();
+  // Add a "+" button row at bottom of key list if not exists
+  if (!document.getElementById('addKeyRow')) {
+    const addBtn = document.createElement('div');
+    addBtn.id = 'addKeyRow';
+    addBtn.style.cssText = 'margin-top:10px;text-align:center';
+    addBtn.innerHTML = '<button class="btn btn-primary btn-sm" onclick="showInlineKeyForm()" style="font-size:11px;padding:4px 14px;border:1px dashed var(--border-color)">+ 添加新 Key</button>';
+    document.getElementById('editKeysList').appendChild(addBtn);
+  }
+}
+
+function cancelInlineKey() {
+  document.getElementById('editKeysInlineRow').style.display = 'none';
+}
+
+async function saveInlineKey() {
+  if (!editingId) return;
+  const alias = document.getElementById('newKeyAlias').value.trim();
+  const key = document.getElementById('newKeyValue').value.trim();
+  if (!key) { toast('请输入 API Key', 'error'); return; }
+  const quota = parseInt(document.getElementById('newKeyQuota').value, 10) || 0;
+  const priority = parseInt(document.getElementById('newKeyPriority').value, 10) || 1;
+  const access = document.getElementById('newKeyAccess').value;
+  try {
+    const r = await authFetch('/api/providers/' + editingId + '/keys', {
+      method: 'POST',
+      body: JSON.stringify({ key: key, alias: alias, quota: quota, access_control: access, priority: priority, enabled: true })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ Key 已添加', 'success');
+      document.getElementById('editKeysInlineRow').style.display = 'none';
+      await loadEditKeys(editingId);
+      await loadProviders();
+    } else {
+      toast('添加失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+
+async function loadEditKeys(pid) {
+  const container = document.getElementById('editKeysList');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys');
+    const d = await r.json();
+    const keys = d.keys || [];
+    let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>别名</th><th>Key</th><th>状态</th><th>额度</th><th>优先级</th><th>权限</th><th>操作</th></tr></thead><tbody>';
+    if (!keys.length) {
+      html += '<tr><td colspan="7" style="color:var(--text-muted);text-align:center;padding:16px">暂无 Key，点击下方按钮添加</td></tr>';
+    } else {
+      for (const k of keys) {
+        const quotaText = k.quota > 0 ? (k.used.toLocaleString() + '/' + k.quota.toLocaleString()) : '无限';
+        const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
+        const accessLabel = k.access_control === 'shared' ? '共享' : '私有';
+        const maskedKey = k.key ? (k.key.substring(0, 4) + '••••' + k.key.substring(k.key.length - 4)) : '<span style="color:var(--text-muted)">未设置</span>';
+        html += '<tr>';
+        html += '<td>' + (k.alias || '-') + '</td>';
+        html += '<td style="font-family:monospace;font-size:11px">' + maskedKey + '</td>';
+        html += '<td>' + statusBadge + '</td>';
+        html += '<td>' + quotaText + '</td>';
+        html += '<td>' + k.priority + '</td>';
+        html += '<td>' + accessLabel + '</td>';
+        html += '<td style="white-space:nowrap">';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testEditKey(\'' + pid + '\',\'' + k.id + '\')">测试</button> ';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteKeyInEdit(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
+        html += '</td>';
+        html += '</tr>';
+      }
+    }
+    html += '</tbody></table>';
+    // Always show the add button
+    html += '<div id="addKeyRow" style="margin-top:10px;text-align:center"><button class="btn btn-primary btn-sm" onclick="showInlineKeyForm()" style="font-size:11px;padding:4px 14px;border:1px dashed var(--border-color)">+ 添加新 Key</button></div>';
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error);font-size:12px">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function deleteKeyInEdit(pid, keyId) {
+  if (!confirm('确定删除此 API Key？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId, { method: 'DELETE' });
+    toast('已删除');
+    await loadEditKeys(pid);
+    await loadProviders();
+  } catch(e) { toast('删除失败: ' + e.message, 'error'); }
+}
+
+async function testEditKey(pid, keyId) {
+  toast('正在测试...', 'info');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test?key_id=' + keyId, {method:'POST'});
+    const d = await r.json();
+    toast(d.success ? '✅ Key 可用' : '❌ Key 不可用: ' + (d.error||''), d.success ? 'success' : 'error');
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+async function testAllEditKeys() {
+  if (!editingId) return;
+  toast('正在测试所有 Key...', 'info');
+  try {
+    const r = await authFetch('/api/providers/' + editingId + '/test-all-keys', {method:'POST'});
+    const d = await r.json();
+    if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    let msg = d.results.map(k => {
+      let status = k.success ? '✅' : '❌';
+      let label = k.alias || ('Key#' + k.index);
+      return status + ' ' + label + (k.error ? ': ' + k.error : '');
+    }).join('\n');
+    alert('Key 测试结果:\n' + msg);
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+
+// Load node quota info for personal proxy section
+async function loadNodeQuotaInfo() {
+  const el = document.getElementById('nodeQuotaInfo');
+  if (!el) return;
+  try {
+    const r = await authFetch('/api/network/status');
+    const d = await r.json();
+    if (d.enabled) {
+      const cp = d.contribution_points || 0;
+      const quota = cp > 0 ? (cp * 10).toLocaleString() + ' tokens' : '需先积累贡献积分';
+      el.innerHTML = '🌐 节点可用额度: ' + quota + ' <span style="margin-left:12px">📡 已广播到网络</span>';
+    } else {
+      el.innerHTML = '🌐 节点可用额度: 本地模式（未加入共享网络）';
+      el.style.background = 'rgba(108,99,255,.04)';
+      el.style.borderColor = 'rgba(108,99,255,.12)';
+    }
+  } catch(e) {
+    el.innerHTML = '🌐 节点额度: 获取失败';
+  }
+}
+// Call on page load
+setTimeout(loadNodeQuotaInfo, 1000);
+
+// ============================================================
+// Federation (v3.0)
+// ============================================================
+
+// ================================================================
+// Module: Federation - Node management, trust pool, and P2P discovery
+// ================================================================
+async function loadFederationStatus() {
+  try {
+    const res = await authFetch('/api/federation/status');
+    const data = await res.json();
+    const statusEl = document.getElementById('fedEnabledStatus');
+    if (statusEl) {
+      statusEl.textContent = data.enabled ? '✅ 已加入' : '未启用';
+      statusEl.style.color = data.enabled ? 'var(--success)' : 'var(--text-muted)';
+    }
+  } catch(e) {
+    console.error('load federation status error:', e);
+  }
+}
+
+async function loadFederationConfig() {
+  try {
+    const res = await authFetch('/api/federation/config');
+    const data = await res.json();
+    const fedOn = data.federation_enabled === 'true';
+    if (document.getElementById('relaySettings')) document.getElementById('relaySettings').style.display = fedOn ? 'block' : 'none';
+    if (document.getElementById('quotaAllocation')) document.getElementById('quotaAllocation').style.display = fedOn ? 'block' : 'none';
+  } catch(e) {
+    console.error('load federation config error:', e);
+  }
+}
+
+
+
+async function saveFederationConfig() {
+  try {
+    const body = {
+      relay_enabled: document.getElementById('relayEnabled') ? document.getElementById('relayEnabled').value : 'false',
+    };
+    const res = await authFetch('/api/federation/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res.ok) {
+      toast('联邦配置已保存', 'success');
+      loadFederationConfig();
+      loadFederationStatus();
+    } else {
+      toast('保存失败', 'error');
+    }
+  } catch(e) {
+    console.error('save federation config error:', e);
+    toast('保存失败', 'error');
+  }
+}
+
+
+function refreshFederation() {
+  loadFederationStatus();
+  loadFederationConfig();
+  toast('已刷新', 'info');
+}
+
+
+
+
+}
+
+}
+
+
+
+// Invite management
+async function createInvite() {
+  const target = document.getElementById('inviteTarget').value.trim();
+  const type = document.getElementById('inviteType').value;
+  const inviteePub = target || '*';
+  try {
+    const res = await authFetch('/api/federation/invites', {
+      method: 'POST',
+      body: JSON.stringify({
+        invitee_pub: inviteePub,
+        type: type,
+        expires_hours: 168
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      toast('邀请已创建', 'success');
+      loadInvites();
+      // Show the encoded invite code
+      const code = data.encoded;
+      if (code) {
+        const copyText = `OpenModelPool Agent 联邦邀请码：\n${code}\n\n请在 OpenModelPool Agent 管理页面中导入此邀请码加入网络。`;
+        alert('邀请码已生成，请复制以下内容发送给对方：\n\n' + copyText);
+      }
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast(data.error || '创建失败', 'error');
+    }
+  } catch(e) { toast('创建失败', 'error'); }
+}
+
+async function loadInvites() {
+  try {
+    const res = await authFetch('/api/federation/invites');
+    const data = await res.json();
+    const el = document.getElementById('inviteList');
+    if (!data.invites || data.invites.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-muted)">暂无邀请记录</span>';
+      return;
+    }
+    let html = '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+    html += '<tr style="border-bottom:1px solid var(--border-color)"><th style="text-align:left;padding:4px">邀请码</th><th>类型</th><th>受邀方</th><th>过期时间</th><th>操作</th></tr>';
+    for (const inv of data.invites) {
+      const typeLabel = {directed:'定向', public:'公开', chain:'链式'}[inv.type] || inv.type;
+      const expires = new Date(inv.expires_at).toLocaleString();
+      const isExpired = new Date(inv.expires_at) < new Date();
+      const status = isExpired ? '<span style="color:var(--danger)">已过期</span>' : '<span style="color:var(--success)">有效</span>';
+      html += `<tr style="border-bottom:1px solid var(--border-color)">`;
+      html += `<td style="padding:4px;font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${inv.invite_code || ''}">${(inv.invite_code || '').substring(0, 30)}...</td>`;
+      html += `<td style="text-align:center">${typeLabel}</td>`;
+      html += `<td style="text-align:center;font-size:11px">${inv.invitee_pub === '*' ? '公开' : inv.invitee_pub.substring(0, 12) + '...'}</td>`;
+      html += `<td style="text-align:center">${expires}</td>`;
+      html += `<td style="text-align:center">${status}</td>`;
+      html += `</tr>`;
+    }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch(e) {
+    document.getElementById('inviteList').innerHTML = '<span style="color:var(--text-muted)">加载失败</span>';
+  }
+}
+
+// Federation doc version check
+const FEDERATION_DOC_VERSION = '3.0.0';
+// Module: ShareCenter - Share center functionality
+// ================================================================
+let shareInfoData = null;
+
+function switchShareTab(tab) {
+  document.querySelectorAll('.share-tab').forEach(btn => {
+    btn.classList.remove('btn-primary', 'active');
+    btn.classList.add('btn-secondary');
+  });
+  document.querySelectorAll('.share-tab-content').forEach(el => el.style.display = 'none');
+  const activeBtn = document.querySelector(`.share-tab[data-tab="${tab}"]`);
+  if (activeBtn) { activeBtn.classList.add('btn-primary', 'active'); activeBtn.classList.remove('btn-secondary'); }
+  const tabContent = document.getElementById('shareTab-' + tab);
+  if (tabContent) tabContent.style.display = '';
+}
+
+function generateQRCode(containerId, text) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  try {
+    new QRCode(container, {
+      text: text,
+      width: 128,
+      height: 128,
+      colorDark: "#6c63ff",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.H
+    });
+  } catch(e) { console.error('QR code generation failed:', e); }
+}
+
+async function loadShareInfo() {
+  try {
+    const r = await authFetch('/api/share/info');
+    shareInfoData = await r.json();
+    populateShareCenter(shareInfoData);
+  } catch(e) { console.error('Failed to load share info:', e); }
+}
+
+function populateShareCenter(data) {
+  const apiUrl = data.public_api_url || data.proxy_api_url || '';
+  const apiKey = data.proxy_api_key || '';
+  const baseUrl = window.location.origin;
+
+  // Tab A: Consumer
+  document.getElementById('shareApiUrl').value = apiUrl;
+  document.getElementById('shareApiKey').value = apiKey || '';
+  document.getElementById('shareConsumerText').value = '我用 OpenModelPool Agent 搭了个 AI 聚合网关，34+ 模型一个地址调用，拿去用 👇\n\nAPI 地址: ' + apiUrl + (apiKey ? '\nAPI Key: ' + apiKey : '');
+
+  // QR code: JSON with API info
+  const qrConsumerData = JSON.stringify({ api_url: apiUrl, api_key: apiKey, platform: "OpenModelPool Agent" });
+  generateQRCode('qrConsumer', qrConsumerData);
+
+  // Tab C: Federation
+  const genesis = data.genesis || {};
+  const genesisHash = genesis.network_id || '';
+  const networkName = genesis.network_name || '';
+  const tunnelUrl = data.tunnel_url || '';
+  const seedNodes = data.seed_nodes || [];
+  const seedNode = tunnelUrl || (seedNodes.length > 0 ? seedNodes[0] : '');
+
+  document.getElementById('shareGenesisHash').value = genesisHash;
+  document.getElementById('shareNetworkName').value = networkName;
+  document.getElementById('shareSeedNode').value = seedNode;
+
+  // Deploy command
+  const deployCmd = 'curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.sh | GENESIS_HASH=' + genesisHash + ' bash';
+  document.getElementById('shareDeployCmd').value = deployCmd;
+
+  // QR code: JSON with federation info
+  const qrFedData = JSON.stringify({
+    genesis_hash: genesisHash,
+    seed_nodes: seedNode ? [seedNode] : [],
+    docs: "https://github.com/lisiyu/openmodelpool"
+  });
+  generateQRCode('qrFederation', qrFedData);
+}
+
+function copyText(text) {
+  if (!text) return toast('没有可复制的内容', 'error');
+  navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板')).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    toast('已复制到剪贴板');
+  });
+}
+
+function copyConsumerCombo() {
+  const url = document.getElementById('shareApiUrl').value;
+  const key = document.getElementById('shareApiKey').value;
+  const combo = url + (key ? '\nAPI Key: ' + key : '');
+  copyText(combo);
+}
+
+async function createCollabInviteCode() {
+  const maxUses = parseInt(document.getElementById('collabInviteMaxUses').value) || 5;
+  try {
+    const r = await authFetch('/api/invite-codes', { method: 'POST', body: JSON.stringify({ max_uses: maxUses, role: 'collaborator' }) });
+    const d = await r.json();
+    if (d.code) {
+      toast('✅ 协作者邀请码已创建: ' + d.code);
+      const baseUrl = window.location.origin;
+      const inviteLink = baseUrl + '/login?invite=' + d.code;
+      document.getElementById('collabInviteLink').style.display = '';
+      document.getElementById('collabLinkInput').value = inviteLink;
+      // Update QR code
+      generateQRCode('qrCollaborator', inviteLink);
+      // Update preset text with the invite link
+      document.getElementById('shareCollabText').value = '来一起维护我的 OpenModelPool Agent 节点吧，添加你的 API Key 共享出来，大家一起用 👇\n\n邀请链接: ' + inviteLink;
+      refreshInviteCodes();
+    } else {
+      toast('创建失败', 'error');
+    }
+  } catch(e) { toast('创建失败: ' + e.message, 'error'); }
+}
+
+// ===== Start (only if authenticated) =====
+if (authToken) {
+  init().then(() => { initApiUrls(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); loadShareInfo(); });
+
+  // Auto-refresh status and usage every 30 seconds with error handling
+  let _pollTimer = setInterval(async () => {
+    try { await loadStatus(); await refreshUsage(); } catch(e) {
+      console.error('状态刷新失败:', e);
+      clearInterval(_pollTimer); _pollTimer = null;
+    }
+  }, 30000);
+
+  // Pause polling when tab is hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; } }
+    else { if (!_pollTimer) { _pollTimer = setInterval(async () => { try { await loadStatus(); await refreshUsage(); } catch(e) { clearInterval(_pollTimer); _pollTimer = null; } }, 30000); } }
+  });
+}
+
+// ================================================================
+// Module: RealtimeEvents - SSE connection for live updates
+// ================================================================
+(function connectSSE() {
+  if (!authToken) return;
+  try {
+    const es = new EventSource('/events');
+    es.addEventListener('health_change', (e) => {
+      try { const d = JSON.parse(e.data); refreshHealth(); toast(`Health: ${d.data.provider_id} → ${d.data.new_status}`, 'info'); } catch(_) {}
+    });
+    es.addEventListener('config_update', () => { loadStatus(); });
+    es.addEventListener('provider_status', () => { loadProviders(); refreshHealth(); });
+    es.onerror = () => { es.close(); setTimeout(connectSSE, 5000); };
+  } catch(_) {}
+})();
+
+    // Domain Binding Functions
+    async function refreshDomainStatus() {
+      try {
+        const r = await authFetch('/api/domain/status');
+        const d = await r.json();
+        const el = document.getElementById('domainStatus');
+        el.style.display = 'block';
+        if (d.bound) {
+          el.innerHTML = '✅ 已绑定: <strong>' + d.domain + '</strong> | 公网地址: <a href="' + d.public_url + '" target="_blank">' + d.public_url + '</a> | Tunnel ID: ' + d.tunnel_id;
+          el.style.background = 'rgba(16,185,129,0.1)';
+          document.getElementById('unbindDomainBtn').style.display = '';
+          document.getElementById('cfDomain').value = d.domain;
+        } else {
+          el.innerHTML = '⚪ 当前未绑定固定域名，使用 Quick Tunnel（临时地址）';
+          el.style.background = 'var(--bg-secondary)';
+          document.getElementById('unbindDomainBtn').style.display = 'none';
+        }
+      } catch(e) { console.error(e); }
+    }
+
+    async function verifyDomainToken() {
+      const token = document.getElementById('cfApiToken').value.trim();
+      if (!token) { toast('请输入 API Token', 'error'); return; }
+      const el = document.getElementById('tokenVerifyResult');
+      el.innerHTML = '⏳ 验证中...';
+      try {
+        const r = await authFetch('/api/domain/verify', {method:'POST', body:JSON.stringify({api_token:token})});
+        const d = await r.json();
+        if (d.valid) {
+          el.innerHTML = '✅ Token 有效，Account ID: ' + d.account_id;
+          el.style.color = 'var(--success-color, #10b981)';
+        } else {
+          el.innerHTML = '❌ Token 无效: ' + (d.error || '未知错误');
+          el.style.color = 'var(--danger-color, #ef4444)';
+        }
+      } catch(e) {
+        el.innerHTML = '❌ 验证失败: ' + e.message;
+        el.style.color = 'var(--danger-color, #ef4444)';
+      }
+    }
+
+    async function bindDomain() {
+      const token = document.getElementById('cfApiToken').value.trim();
+      const domain = document.getElementById('cfDomain').value.trim();
+      if (!token) { toast('请输入 API Token', 'error'); return; }
+      if (!domain) { toast('请输入要绑定的域名', 'error'); return; }
+      if (!confirm('即将为域名 ' + domain + ' 创建 Cloudflare 隧道并配置 DNS，确认继续？')) return;
+      
+      const btn = document.getElementById('bindDomainBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ 绑定中...';
+      
+      try {
+        const r = await authFetch('/api/domain/bind', {method:'POST', body:JSON.stringify({api_token:token, domain:domain})});
+        const d = await r.json();
+        if (d.success) {
+          toast('🎉 域名绑定成功！公网地址: ' + d.public_url, 'success');
+          refreshDomainStatus();
+          // Also refresh the tunnel URL in the config section
+          setTimeout(() => loadConfig(), 1000);
+        } else {
+          toast('绑定失败: ' + (d.error || '未知错误'), 'error');
+        }
+      } catch(e) {
+        toast('绑定失败: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔗 一键绑定域名';
+      }
+    }
+
+    async function unbindDomain() {
+      if (!confirm('确定要解除域名绑定吗？将切回 Quick Tunnel（临时地址）。')) return;
+      try {
+        const r = await authFetch('/api/domain/unbind', {method:'POST'});
+        const d = await r.json();
+        if (d.success) {
+          toast('已解除绑定，切回 Quick Tunnel', 'success');
+          refreshDomainStatus();
+          setTimeout(() => loadConfig(), 1000);
+        }
+      } catch(e) { toast('操作失败: ' + e.message, 'error'); }
+    }
+
+    // Load domain status on page load
+    setTimeout(() => refreshDomainStatus(), 500);
+    
+
+    // ============================================================
+    // Shared Network (P2P) UI
+    // ============================================================
+
+    let networkStatus = null;
+
+    async function loadNetworkStatus() {
+      try {
+        const r = await authFetch('/api/network/status');
+        networkStatus = await r.json();
+        renderNetworkUI();
+      } catch(e) {
+        console.warn('network status load failed', e);
+      }
+    }
+
+    function renderNetworkUI() {
+      if (!networkStatus) return;
+      const s = networkStatus;
+      const isShared = s.mode === 'shared';
+      const panel = document.getElementById('networkActivePanel');
+      const toggle = document.getElementById('sharedNetworkToggle');
+
+      if (isShared) {
+        if (panel) panel.style.display = '';
+        if (toggle) toggle.checked = true;
+        setText('netNodeId', s.node_id || '-');
+        setText('netUptime', formatUptime(s.uptime_seconds || 0));
+        setText('netPeers', (s.peers_count || 0) + ' / ' + ((s.stats && s.stats.online_peers) || 0) + ' 在线');
+        setText('netMode', '共享网络');
+        loadNetworkPeers();
+      } else {
+        if (panel) panel.style.display = 'none';
+        if (toggle) toggle.checked = false;
+      }
+    }
+
+
+    
+    async function loadNetworkPeers() {
+      try {
+        const r = await authFetch('/api/network/peers');
+        const d = await r.json();
+        const list = document.getElementById('netPeersList');
+        if (!list) return;
+        if (!d.peers || d.peers.length === 0) {
+          list.innerHTML = '<div style="color:var(--text-muted)">暂无连接节点</div>';
+          return;
+        }
+        let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+        d.peers.forEach(p => {
+          const statusColor = p.status === 'online' ? 'var(--success)' : p.status === 'degraded' ? 'var(--warning)' : 'var(--error)';
+          html += '<div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">';
+          html += '<div>';
+          html += '<div style="font-weight:500;font-size:13px">' + (p.name || p.node_id) + '</div>';
+          html += '<div style="font-size:11px;color:var(--text-muted);font-family:monospace">' + p.node_id + '</div>';
+          if (p.models && p.models.length > 0) {
+            html += '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">' + p.models.slice(0,3).join(', ') + (p.models.length > 3 ? '...' : '') + '</div>';
+          }
+          html += '</div>';
+          html += '<div style="display:flex;align-items:center;gap:8px">';
+          html += '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + '"></span>';
+          html += '<button class="btn btn-danger btn-sm" onclick="removeNetworkPeer(\'' + p.node_id + '\')" style="padding:3px 8px;font-size:10px">移除</button>';
+          html += '</div></div>';
+        });
+        html += '</div>';
+        list.innerHTML = html;
+      } catch(e) { console.warn('load peers failed', e); }
+    }
+
+    // Disclaimer modal
+    async function showNetworkDisclaimer() {
+      const modal = document.getElementById('networkDisclaimerModal');
+      modal.classList.add('open');
+      // Load disclaimer
+      try {
+        const r = await fetch('/api/network/disclaimer');
+        const d = await r.json();
+        renderDisclaimer(d);
+      } catch(e) {
+        toast('加载免责声明失败', 'error');
+      }
+    }
+
+    function renderDisclaimer(d) {
+      const el = document.getElementById('disclaimerContent');
+      let html = '';
+      d.sections.forEach(s => {
+        const isRisk = s.is_risk === true;
+        html += '<div style="margin-bottom:16px;padding:14px;border-radius:8px;';
+        if (isRisk) {
+          html += 'background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3)';
+        } else {
+          html += 'background:var(--bg-secondary);border:1px solid var(--border-color)';
+        }
+        html += '">';
+        html += '<div style="font-weight:600;font-size:14px;margin-bottom:8px;';
+        if (isRisk) html += 'color:var(--error)';
+        html += '">' + s.heading + '</div>';
+        html += '<div style="font-size:13px;line-height:1.7;white-space:pre-line;';
+        if (isRisk) html += 'color:#ff6b6b;font-weight:700';
+        else html += 'color:var(--text-secondary)';
+        html += '">' + s.content + '</div>';
+        html += '</div>';
+      });
+      el.innerHTML = html;
+      // Set confirmation text
+      const ct = document.getElementById('networkConsentText');
+      if (ct && d.confirmation_text) ct.textContent = d.confirmation_text;
+    }
+
+    function closeNetworkDisclaimer() {
+      document.getElementById('networkDisclaimerModal').classList.remove('open');
+      document.getElementById('networkConsentCheck').checked = false;
+      toggleNetworkConsentBtn();
+    }
+
+    function toggleNetworkConsentBtn() {
+      const checked = document.getElementById('networkConsentCheck').checked;
+      const btn = document.getElementById('networkConsentBtn');
+      btn.disabled = !checked;
+      btn.style.opacity = checked ? '1' : '0.5';
+    }
+
+    async function confirmNetworkJoin() {
+      try {
+        // Step 1: Record consent
+        const r1 = await authFetch('/api/network/consent', {method:'POST', body:JSON.stringify({accepted:true})});
+        if (!r1.ok) { toast('同意记录失败', 'error'); return; }
+
+        // Step 2: Enable shared network
+        const r2 = await authFetch('/api/network/enable', {method:'POST'});
+        const d = await r2.json();
+        if (!r2.ok) { toast(d.error || '启用失败', 'error'); return; }
+
+        closeNetworkDisclaimer();
+        let msg = '🎉 已加入共享网络！NodeID: ' + (d.node_id || '');
+        if (d.public_key) {
+          msg += '\n🔑 公共 Key 已自动生成';
+        }
+        toast(msg, 'success');
+        await loadNetworkStatus();
+      } catch(e) {
+        toast('加入失败: ' + e.message, 'error');
+      }
+    }
+
+    async function disableNetwork() {
+      if (!confirm('确定要退出共享网络吗？所有连接节点将被清除，回到个人模式。')) return;
+      try {
+        const r = await authFetch('/api/network/disable', {method:'POST'});
+        if (!r.ok) { toast('退出失败', 'error'); return; }
+        toast('已退出共享网络，回到个人模式', 'success');
+        await loadNetworkStatus();
+      } catch(e) {
+        toast('退出失败: ' + e.message, 'error');
+      }
+    }
+
+
+    async function removeNetworkPeer(nodeId) {
+      if (!confirm('确定移除此节点？')) return;
+      try {
+        const r = await authFetch('/api/network/peers/' + encodeURIComponent(nodeId), {method:'DELETE'});
+        if (!r.ok) { toast('移除失败', 'error'); return; }
+        toast('节点已移除', 'success');
+        await loadNetworkStatus();
+      } catch(e) {
+        toast('移除失败: ' + e.message, 'error');
+      }
+    }
+
+    async function issueSignedKey() {
+      const consumerId = document.getElementById('mkConsumerId').value.trim();
+      if (!consumerId) { toast('请输入 Consumer ID', 'error'); return; }
+      const quota = parseInt(document.getElementById('mkQuota').value) || 15000;
+      const modelsStr = document.getElementById('mkModels').value.trim();
+      const models = modelsStr ? modelsStr.split(',').map(m => m.trim()).filter(m => m) : [];
+      const expDays = parseInt(document.getElementById('mkExpDays').value) || 30;
+      try {
+        const r = await authFetch('/api/network/keys/issue', {
+          method: 'POST',
+          body: JSON.stringify({ consumer_id: consumerId, quota, models, exp_days: expDays })
+        });
+        const d = await r.json();
+        if (!r.ok) { toast('签发失败: ' + (d.error || d.message || '未知错误'), 'error'); return; }
+        // Show the key
+        const keyText = d.key;
+        toast('密钥签发成功', 'success');
+        // Copy to clipboard
+        try { await navigator.clipboard.writeText(keyText); } catch(e) {}
+        // Show in a prompt for manual copy
+        prompt('密钥已签发，请复制保存（此密钥仅显示一次）:', keyText);
+        // Clear form
+        document.getElementById('mkConsumerId').value = '';
+        document.getElementById('mkQuota').value = '';
+        document.getElementById('mkModels').value = '';
+        document.getElementById('mkExpDays').value = '';
+        // Refresh list
+      } catch(e) {
+        toast('签发失败: ' + e.message, 'error');
+      }
+    }
+
+    
+    
+    
+
+
+
+    function formatUptime(seconds) {
+      if (seconds < 60) return seconds + '秒';
+      if (seconds < 3600) return Math.floor(seconds/60) + '分' + (seconds%60) + '秒';
+      const h = Math.floor(seconds/3600);
+      const m = Math.floor((seconds%3600)/60);
+      if (h < 24) return h + '时' + m + '分';
+      const d = Math.floor(h/24);
+      return d + '天' + (h%24) + '时';
+    }
+
+    function setText(id, val) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    }
+
+    // ============================================================
+    // ============================================================
+
+    
+    
+    
+    
+    }
+
+    
+
+    // ============================================================
+    // ============================================================
+
+    
+    
+    
+    
+    // Load algorithm params when network status loads
+
+
+
+
+
+
+    async function loadGuestKeys() {
+      const el = document.getElementById('guestKeysList');
+      if (!el) return;
+      try {
+        const res = await authFetch('/api/network/guest-keys');
+        if (!res.ok) { el.textContent = '加载失败'; return; }
+        const data = await res.json();
+        const keys = data.keys || [];
+        if (keys.length === 0) {
+          el.innerHTML = '<span style="color:var(--text-muted)">暂无 Guest Key</span>';
+          return;
+        }
+        el.innerHTML = keys.map(k => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;margin-bottom:4px;background:var(--bg-secondary);border-radius:6px">
+            <div>
+              <div style="font-family:monospace;font-size:11px">${k.key || k}</div>
+              <div style="color:var(--text-muted);font-size:10px">额度: ${k.quota || '∞'} | 创建: ${k.created_at || '-'}</div>
+            </div>
+            <button class="btn btn-danger btn-sm" onclick="revokeGuestKey('${k.key || k}')">撤销</button>
+          </div>
+        `).join('');
+      } catch(e) { el.textContent = '加载失败'; }
+    }
+
+    async function generateGuestKey() {
+      try {
+        const res = await authFetch('/api/network/guest-keys', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({quota: 10000})
+        });
+        if (res.ok) {
+          toast('Guest Key 已生成', 'success');
+          loadGuestKeys();
+        } else {
+          const err = await res.json();
+          toast('生成失败: ' + (err.error || '未知错误'), 'error');
+        }
+      } catch(e) { toast('生成失败', 'error'); }
+    }
+
+    async function revokeGuestKey(key) {
+      if (!confirm('确定撤销此 Guest Key？')) return;
+      try {
+        const res = await authFetch('/api/network/guest-keys/' + encodeURIComponent(key), { method: 'DELETE' });
+        if (res.ok) {
+          toast('已撤销', 'success');
+          loadGuestKeys();
+        } else { toast('撤销失败', 'error'); }
+      } catch(e) { toast('撤销失败', 'error'); }
+    }
+
+    // Load network status on page load
+    setTimeout(() => loadNetworkStatus(), 300);
+    // Refresh every 30 seconds with error handling
+    let _netPollTimer = setInterval(async () => {
+      try { await loadNetworkStatus(); } catch(e) {
+        console.error('网络状态刷新失败:', e);
+        clearInterval(_netPollTimer); _netPollTimer = null;
+      }
+    }, 30000);
+
+    }
+
+    // ============================================================
+    // ============================================================
+    
+
+
+
+function toggleSharedNetwork() {
+  const enabled = document.getElementById('sharedNetworkToggle').checked;
+  document.getElementById('relaySettings').style.display = enabled ? 'block' : 'none';
+  document.getElementById('quotaAllocation').style.display = enabled ? 'block' : 'none';
+  // 调用 API
+  authFetch('/api/network/toggle', {
+    method: 'POST',
+    body: JSON.stringify({ enabled: enabled })
+  }).then(r => r.json()).then(d => {
+    toast(d.success ? (enabled ? '✅ 已加入共享网络' : '已退出共享网络') : '操作失败', d.success ? 'success' : 'error');
+  }).catch(e => toast('操作失败: ' + e.message, 'error'));
+}
+
+async function saveQuotaAllocation() {
+  const freePercent = parseInt(document.getElementById('freeConsumerPercent').value, 10);
+  try {
+    const r = await authFetch('/api/network/quota-allocation', {
+      method: 'PUT',
+      body: JSON.stringify({ free_consumer_percent: freePercent, network_node_percent: 100 - freePercent })
+    });
+    const d = await r.json();
+    toast(d.success ? '✅ 额度分配已保存' : '保存失败', d.success ? 'success' : 'error');
+  } catch(e) { toast('保存失败: ' + e.message, 'error'); }
+}
+
+async function generateFedInvite() {
+  try {
+    const r = await authFetch('/api/federation/invites', {
+      method: 'POST',
+      body: JSON.stringify({ invitee_name: '新节点', invite_type: 'federation', expires_in_hours: 72 })
+    });
+    const d = await r.json();
+    if (d.code) {
+      document.getElementById('fedInviteCode').value = d.code;
+      toast('✅ 邀请码已生成');
+    } else {
+      toast('生成失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('生成失败: ' + e.message, 'error'); }
+}
+
+
+    async function quickSetPublicUrl() {
+      const url = document.getElementById('quickPublicUrlInput').value.trim();
+      if (!url) { 
+        toast('请输入完整的域名 URL', 'error'); 
+        return; 
+      }
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        toast('URL 必须以 http:// 或 https:// 开头', 'error');
+        return;
+      }
+      
+      const btn = document.getElementById('quickSetBtn');
+      const result = document.getElementById('quickSetResult');
+      btn.disabled = true;
+      btn.textContent = '⏳ 处理中...';
+      result.innerHTML = '';
+      
+      try {
+        const r = await authFetch('/api/config', {
+          method: 'POST',
+          body: JSON.stringify({ public_url: url })
+        });
+        const d = await r.json();
+        
+        if (url.startsWith('https://')) {
+          result.innerHTML = '<div style="padding:8px;background:rgba(46,204,113,.1);border-radius:6px;color:#2ecc71">' +
+            '✅ 已保存！服务正在申请 Let\'s Encrypt 证书并启动 HTTPS...<br>' +
+            '<span style="font-size:10px">DNS 生效后（通常 1-5 分钟），访问 <a href="' + url + '" target="_blank" style="color:#2ecc71">' + url + '</a> 验证</span>' +
+            '</div>';
+          // 显示解绑按钮
+          document.getElementById('quickUnbindBtn').style.display = '';
+          document.getElementById('quickSetBtn').style.display = 'none';
+        } else {
+          result.innerHTML = '<div style="padding:8px;background:rgba(46,204,113,.1);border-radius:6px;color:#2ecc71">' +
+            '✅ 已保存！服务将使用 HTTP 模式（适合隧道场景）' +
+            '</div>';
+        }
+        
+        toast('配置已保存', 'success');
+        setTimeout(() => loadConfig(), 1000);
+        
+      } catch(e) {
+        result.innerHTML = '<div style="padding:8px;background:rgba(231,76,60,.1);border-radius:6px;color:#e74c3c">❌ 保存失败: ' + e.message + '</div>';
+        toast('保存失败', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '保存并启用';
+      }
+    }
+
+</script>
+</body>
+</html>
+
+    async function quickUnbindDomain() {
+      if (!confirm('确定要解绑当前域名吗？服务将切换到 HTTP 模式（或隧道模式）。')) {
+        return;
+      }
+      
+      const btn = document.getElementById('quickUnbindBtn');
+      const result = document.getElementById('quickSetResult');
+      btn.disabled = true;
+      btn.textContent = '⏳ 解绑中...';
+      result.innerHTML = '';
+      
+      try {
+        const r = await authFetch('/api/config', {
+          method: 'POST',
+          body: JSON.stringify({ public_url: '' })
+        });
+        const d = await r.json();
+        
+        result.innerHTML = '<div style="padding:8px;background:rgba(52,152,219,.1);border-radius:6px;color:#3498db">' +
+          '✅ 已解绑域名！服务正在切换到 HTTP 模式...<br>' +
+          '<span style="font-size:10px">如需重新绑定，请在上方输入新的域名 URL</span>' +
+          '</div>';
+        
+        toast('域名已解绑', 'success');
+        
+        // 隐藏解绑按钮，显示绑定按钮
+        document.getElementById('quickUnbindBtn').style.display = 'none';
+        document.getElementById('quickSetBtn').style.display = '';
+        document.getElementById('quickPublicUrlInput').value = '';
+        
+        setTimeout(() => {
+          loadConfig();
+        }, 1000);
+        
+      } catch(e) {
+        result.innerHTML = '<div style="padding:8px;background:rgba(231,76,60,.1);border-radius:6px;color:#e74c3c">❌ 解绑失败: ' + e.message + '</div>';
+        toast('解绑失败', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '解绑域名';
+      }
+    }
+
+    // 页面加载时检查当前是否有绑定域名
+    setTimeout(() => {
+      authFetch('/api/config').then(r => r.json()).then(d => {
+        const publicUrl = d.public_url || '';
+        const input = document.getElementById('quickPublicUrlInput');
+        const bindBtn = document.getElementById('quickSetBtn');
+        const unbindBtn = document.getElementById('quickUnbindBtn');
+        
+        if (publicUrl && publicUrl.startsWith('https://')) {
+          // 已绑定 HTTPS 域名
+          if (input) input.value = publicUrl;
+          if (bindBtn) bindBtn.style.display = 'none';
+          if (unbindBtn) unbindBtn.style.display = '';
+        } else {
+          // 未绑定或 HTTP 模式
+          if (input) input.value = publicUrl || '';
+          if (bindBtn) bindBtn.style.display = '';
+          if (unbindBtn) unbindBtn.style.display = 'none';
+        }
+      }).catch(() => {});
+    }, 500);
+

@@ -1,0 +1,8 @@
+# OpenModelPool dev-15814cc SHA256 Checksums
+# Build: 2026-07-07_15:44:49
+1c964ad0d95126a530717ecbf1f312f54ce748f70493ed146f6f0cfd61df1391  openmodelpool-darwin-amd64
+b04fdd0e51bc4355a20c70a8c040f875b536fa11b378a73c0e43d40e27c465fe  openmodelpool-darwin-arm64
+861a0c9b688bd5d2e0852241ca6336fae19a232357ed1a3ab82c7dad88ed91e1  openmodelpool-linux-amd64
+cad1aa77c2fa82deee09cee99954fe007b0ea6bb18b8222d71e8c7e391881318  openmodelpool-linux-arm64
+99814309c0ff5a32f46b42dddf9da7ecf20fe8c742a4cd657cfa9d6a0fc2ac80  openmodelpool-linux-armv7
+d5b28122150ef54ebf807941f134a57dbd75c5665032026a4d56819879407df6  openmodelpool-windows-amd64.exe

@@ -1,0 +1,97 @@
+2026/07/08 23:57:17 INFO genesis hash initialized network_id=0xae90fb58a4430d227366eda532bc98d2 network_name=openmodelpool-mainnet
+2026/07/08 23:57:17 INFO encryption key loaded
+2026/07/08 23:57:17 INFO config loaded path=data/config.json keys=8
+time=2026-07-08T23:57:17.911+08:00 level=INFO msg="structured logger initialized" level=INFO log_file=data/access.log
+time=2026-07-08T23:57:17.911+08:00 level=INFO msg="providers loaded" count=0
+time=2026-07-08T23:57:17.911+08:00 level=INFO msg="usage records loaded" count=0
+time=2026-07-08T23:57:17.911+08:00 level=WARN msg="xray binary not found, VMess proxy disabled"
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="node identity loaded" node_id=mm-J2SEF6ZmUB4U14C8KwzBFr
+time=2026-07-08T23:57:17.912+08:00 level=WARN msg="failed to load cached federation pool, starting fresh" error="open data/federation_pool.json: no such file or directory"
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="federation manager initialized" enabled=true relay_enabled=true pool_version=0 nodes=0
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="gossip manager initialized and running"
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="reputation manager initialized" nodes=0
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="allocation manager initialized" free_percent=50 network_percent=50
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="message manager initialized" inbox=0 outbox=0
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="federation refresh loop started" interval_s=300
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="gossip loop started" interval_s=30
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="node weight manager initialized" overrides=0 approval_mode=auto token_budget=0
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="invite manager initialized" issued=0 used=0
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="DHT routing table initialized" node_id=mm-J2SEF6ZmUB4U14C8KwzBFr ring_pos=3143
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="event bus initialized"
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="metrics collector initialized"
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="internal HTTP client initialized" max_idle_conns=100 idle_timeout=90s
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="worker pool initialized" workers=50 queue_size=200
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="concurrency limiter initialized" max_concurrent=100
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="cleanup loop started" interval=5m
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="performance optimization layer initialized"
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="rate limiter initialized" global_qps=100 consumer_qps=20
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="network manager initialized" mode=personal node_id=mmx-88f1816f8c48b70350e4b7bb51d218a4
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="guest key store initialized" keys=0
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="algorithm chain loaded" blocks=1
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="open key quota manager initialized"
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="global pool initialized" participants=0 total_contributed=0
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="region manager initialized"
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="balance engine initialized"
+time=2026-07-08T23:57:17.912+08:00 level=INFO msg="load balancer health check started" interval=30s
+time=2026-07-08T23:57:17.913+08:00 level=INFO msg="load balancer initialized"
+time=2026-07-08T23:57:17.913+08:00 level=INFO msg="heartbeat loop started" interval=1m0s
+time=2026-07-08T23:57:17.913+08:00 level=INFO msg="balance loop started" interval=5m
+time=2026-07-08T23:57:17.913+08:00 level=INFO msg="health checker started" interval=5m0s
+time=2026-07-08T23:57:17.914+08:00 level=INFO msg="HTTPS enabled with Let's Encrypt auto-cert" domain=b83d93ca656be786-140-143-238-57.serveousercontent.com
+time=2026-07-08T23:57:17.914+08:00 level=INFO msg="Seed discovery service started" port=8001
+time=2026-07-08T23:57:17.914+08:00 level=INFO msg="OpenModelPool Agent started" port=8000 providers=0
+time=2026-07-08T23:57:17.914+08:00 level=INFO msg="HTTPS server starting" addr=:8443 domain=b83d93ca656be786-140-143-238-57.serveousercontent.com
+time=2026-07-08T23:57:19.426+08:00 level=WARN msg="initial federation refresh failed, falling back to peers" error="registry returned HTTP 404"
+time=2026-07-08T23:57:20.915+08:00 level=INFO msg="self-registered in route table" node_id=mmx-88f1816f8c48b70350e4b7bb51d218a4 addresses=[https://b83d93ca656be786-140-143-238-57.serveousercontent.com]
+time=2026-07-08T23:57:21.675+08:00 level=INFO msg="auto-detected public IP" ip=49.233.196.249 source=https://icanhazip.com
+time=2026-07-08T23:57:21.675+08:00 level=INFO msg="http request" method=GET path=/api/addresses status=200 latency_ms=748 consumer=admin remote=127.0.0.1:55782 user_agent=curl/7.81.0
+time=2026-07-08T23:59:30.406+08:00 level=INFO msg="auto-detected public IP" ip=82.157.168.109 source=https://icanhazip.com
+time=2026-07-08T23:59:30.406+08:00 level=INFO msg="http request" method=GET path=/api/addresses status=200 latency_ms=2391 consumer=admin remote=127.0.0.1:51076 user_agent=curl/7.81.0
+time=2026-07-08T23:59:56.339+08:00 level=INFO msg="http request" method=GET path=/v1/models status=200 latency_ms=0 consumer=admin remote=127.0.0.1:46038 user_agent=curl/7.81.0
+time=2026-07-09T00:00:25.830+08:00 level=INFO msg="http request" method=GET path=/v1/models status=200 latency_ms=0 consumer=admin remote=127.0.0.1:53182 user_agent=curl/7.81.0
+time=2026-07-09T00:02:17.914+08:00 level=INFO msg="balance cycle completed" nodes=0 global_ratio=0 avg_balance=0 imbalance=0 duration_ms=0 note=""
+time=2026-07-09T00:02:18.801+08:00 level=WARN msg="federation refresh from GitHub failed, falling back to peers" error="registry returned HTTP 404"
+time=2026-07-09T00:07:17.914+08:00 level=INFO msg="balance cycle completed" nodes=0 global_ratio=0 avg_balance=0 imbalance=0 duration_ms=0 note=""
+time=2026-07-09T00:07:47.914+08:00 level=WARN msg="federation refresh from GitHub failed, falling back to peers" error="fetch registry: Get \"https://raw.githubusercontent.com/lisiyu/openmodelpool/main/federation/trust_pool.json\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)"
+time=2026-07-09T00:12:17.913+08:00 level=INFO msg="balance cycle completed" nodes=0 global_ratio=0 avg_balance=0 imbalance=0 duration_ms=0 note=""
+time=2026-07-09T00:12:47.914+08:00 level=WARN msg="federation refresh from GitHub failed, falling back to peers" error="fetch registry: Get \"https://raw.githubusercontent.com/lisiyu/openmodelpool/main/federation/trust_pool.json\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)"
+time=2026-07-09T00:17:17.913+08:00 level=INFO msg="balance cycle completed" nodes=0 global_ratio=0 avg_balance=0 imbalance=0 duration_ms=0 note=""
+time=2026-07-09T00:17:26.975+08:00 level=WARN msg="federation refresh from GitHub failed, falling back to peers" error="registry returned HTTP 404"
+time=2026-07-09T00:22:17.914+08:00 level=INFO msg="balance cycle completed" nodes=0 global_ratio=0 avg_balance=0 imbalance=0 duration_ms=0 note=""
+time=2026-07-09T00:22:18.371+08:00 level=WARN msg="federation refresh from GitHub failed, falling back to peers" error="registry returned HTTP 404"
+time=2026-07-09T00:27:17.918+08:00 level=INFO msg="balance cycle completed" nodes=0 global_ratio=0 avg_balance=0 imbalance=0 duration_ms=0 note=""
+time=2026-07-09T00:27:19.140+08:00 level=WARN msg="federation refresh from GitHub failed, falling back to peers" error="registry returned HTTP 404"
+time=2026-07-09T00:29:21.938+08:00 level=INFO msg="http request" method=GET path=/v1/models status=200 latency_ms=5 consumer=admin remote=127.0.0.1:39402 user_agent=curl/7.81.0
+time=2026-07-09T00:30:09.452+08:00 level=INFO msg="http request" method=GET path=/v1/models status=200 latency_ms=0 consumer=admin remote=127.0.0.1:39402 user_agent=curl/7.81.0
+time=2026-07-09T00:30:10.996+08:00 level=INFO msg="http request" method=GET path=/ status=302 latency_ms=0 consumer=admin remote=127.0.0.1:39402 user_agent=curl/7.81.0
+time=2026-07-09T00:32:17.914+08:00 level=INFO msg="balance cycle completed" nodes=0 global_ratio=0 avg_balance=0 imbalance=0 duration_ms=0 note=""
+time=2026-07-09T00:32:20.731+08:00 level=INFO msg="http request" method=GET path=/ status=302 latency_ms=2 consumer=admin remote=127.0.0.1:58052 user_agent=curl/7.81.0
+time=2026-07-09T00:32:26.333+08:00 level=WARN msg="federation refresh from GitHub failed, falling back to peers" error="registry returned HTTP 404"
+time=2026-07-09T00:34:47.581+08:00 level=INFO msg="http request" method=GET path=/setup status=200 latency_ms=7 consumer=admin remote=127.0.0.1:47790 user_agent=curl/7.81.0
+time=2026-07-09T00:34:47.587+08:00 level=INFO msg="http request" method=GET path=/setup status=200 latency_ms=0 consumer=admin remote=127.0.0.1:47798 user_agent=curl/7.81.0
+time=2026-07-09T00:34:47.593+08:00 level=INFO msg="http request" method=GET path=/ status=302 latency_ms=0 consumer=admin remote=127.0.0.1:47802 user_agent=curl/7.81.0
+time=2026-07-09T00:37:17.913+08:00 level=INFO msg="balance cycle completed" nodes=0 global_ratio=0 avg_balance=0 imbalance=0 duration_ms=0 note=""
+time=2026-07-09T00:37:18.383+08:00 level=WARN msg="federation refresh from GitHub failed, falling back to peers" error="registry returned HTTP 404"
+time=2026-07-09T00:37:23.369+08:00 level=INFO msg="http request" method=GET path=/favicon.ico status=302 latency_ms=0 consumer=admin remote=127.0.0.1:40974 user_agent="Mozilla/5.0 (Linux; Android 12; GRL-AL10 Build/HUAWEIGRL-AL10D; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36 MicroMessenger/6.6.1.1220"
+time=2026-07-09T00:37:23.923+08:00 level=INFO msg="http request" method=GET path=/setup status=200 latency_ms=0 consumer=admin remote=127.0.0.1:40974 user_agent="Mozilla/5.0 (Linux; Android 12; GRL-AL10 Build/HUAWEIGRL-AL10D; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36 MicroMessenger/6.6.1.1220"
+time=2026-07-09T00:37:38.649+08:00 level=INFO msg="http request" method=GET path=/favicon.ico status=302 latency_ms=0 consumer=admin remote=127.0.0.1:40974 user_agent="Mozilla/5.0 (Linux; Android 12; GRL-AL10 Build/HUAWEIGRL-AL10D; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36 MicroMessenger/6.6.1.1220"
+time=2026-07-09T00:37:39.457+08:00 level=INFO msg="http request" method=GET path=/ status=302 latency_ms=0 consumer=admin remote=127.0.0.1:40974 user_agent="Mozilla/5.0 (Linux; Android 12; GRL-AL10 Build/HUAWEIGRL-AL10D; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36 MicroMessenger/6.6.1.1220"
+time=2026-07-09T00:37:40.250+08:00 level=INFO msg="http request" method=GET path=/api/setup/status status=200 latency_ms=0 consumer=admin remote=127.0.0.1:40974 user_agent="Mozilla/5.0 (Linux; Android 12; GRL-AL10 Build/HUAWEIGRL-AL10D; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36 MicroMessenger/6.6.1.1220"
+time=2026-07-09T00:37:40.441+08:00 level=INFO msg="http request" method=GET path=/favicon.ico status=302 latency_ms=0 consumer=admin remote=127.0.0.1:40974 user_agent="Mozilla/5.0 (Linux; Android 12; GRL-AL10 Build/HUAWEIGRL-AL10D; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36 MicroMessenger/6.6.1.1220"
+time=2026-07-09T00:38:57.221+08:00 level=INFO msg="http request" method=POST path=/api/setup status=400 latency_ms=0 consumer=admin remote=127.0.0.1:45242 user_agent="Mozilla/5.0 (Linux; Android 12; GRL-AL10 Build/HUAWEIGRL-AL10D; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36 MicroMessenger/6.6.1.1220"
+time=2026-07-09T00:41:46.978+08:00 level=INFO msg="http request" method=POST path=/setup status=405 latency_ms=0 consumer=admin remote=127.0.0.1:53178 user_agent=curl/7.81.0
+time=2026-07-09T00:41:54.458+08:00 level=INFO msg="http request" method=GET path=/api/setup/status status=200 latency_ms=0 consumer=admin remote=127.0.0.1:47480 user_agent=curl/7.81.0
+time=2026-07-09T00:42:01.578+08:00 level=INFO msg="http request" method=POST path=/api/setup status=400 latency_ms=0 consumer=admin remote=127.0.0.1:47494 user_agent=curl/7.81.0
+time=2026-07-09T00:42:07.039+08:00 level=INFO msg="admin initialized" username=admin
+time=2026-07-09T00:42:07.039+08:00 level=INFO msg="http request" method=POST path=/api/setup status=200 latency_ms=75 consumer=admin remote=127.0.0.1:60242 user_agent=curl/7.81.0
+time=2026-07-09T00:42:17.913+08:00 level=INFO msg="balance cycle completed" nodes=0 global_ratio=0 avg_balance=0 imbalance=0 duration_ms=0 note=""
+time=2026-07-09T00:42:43.575+08:00 level=INFO msg="http request" method=GET path=/api/setup/status status=200 latency_ms=0 consumer=admin remote=127.0.0.1:32838 user_agent=curl/7.81.0
+time=2026-07-09T00:42:43.582+08:00 level=INFO msg="http request" method=POST path=/api/setup status=400 latency_ms=0 consumer=admin remote=127.0.0.1:32852 user_agent=curl/7.81.0
+time=2026-07-09T00:42:47.914+08:00 level=WARN msg="federation refresh from GitHub failed, falling back to peers" error="fetch registry: Get \"https://raw.githubusercontent.com/lisiyu/openmodelpool/main/federation/trust_pool.json\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)"
+time=2026-07-09T00:42:48.474+08:00 level=INFO msg="SIGHUP received, reloading configuration..."
+time=2026-07-09T00:42:48.476+08:00 level=INFO msg="config loaded" path=data/config.json keys=8
+time=2026-07-09T00:42:48.478+08:00 level=INFO msg="rate limiter initialized" global_qps=100 consumer_qps=20
+time=2026-07-09T00:42:48.478+08:00 level=INFO msg="configuration reloaded successfully"
+time=2026-07-09T00:42:49.475+08:00 level=INFO msg="shutting down..."
+time=2026-07-09T00:42:49.475+08:00 level=INFO msg="federation manager stopped"
+time=2026-07-09T00:42:49.475+08:00 level=INFO msg="gossip manager stopped"

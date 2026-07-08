@@ -1,0 +1,16 @@
+{
+  "issued": {
+    "inv-cb216a2038e9bddb": {
+      "network_id": "0xae90fb58a4430d227366eda532bc98d2",
+      "inviter": "mm-J2SEF6ZmUB4U14C8KwzBFr",
+      "inviter_key": "id6mBA+KwShwVce7n60GjarNY/uKhjcou29AWEKVr5g=",
+      "invitee_pub": "*",
+      "endpoint": "http://VM-52-187-ubuntu:8000",
+      "expires_at": "2026-07-15T17:02:34Z",
+      "type": "public",
+      "created_at": "2026-07-08T17:02:34Z",
+      "signature": "bwQ5jOPdKF6jx9lR77kQ2QCaCEEk/rd3qMjWc9iErxXFbOzjcgl6MmMh5jHNHl723+khV6P0H68kYxOhwK/cDg=="
+    }
+  },
+  "used": {}
+}

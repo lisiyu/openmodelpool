@@ -1,0 +1,18 @@
+{
+  "admin": {
+    "username": "admin",
+    "password_hash": "$2a$10$G785WlIso8HMykcd/3AGUuV7PR7PUHrjGFzGeZzcVHzmkhJ5A1mGK",
+    "email": "test@example.com",
+    "created_at": "2026-07-09T00:52:01+08:00"
+  },
+  "jwt_secret": "pbxofUK7PuIcRhyDByseZKRaIVoiGk-4HZfoZdT3gr7S3-Yo_wxj_PxToWEaHoEg",
+  "smtp": {
+    "host": "",
+    "port": 0,
+    "username": "",
+    "password": "",
+    "from_email": "",
+    "use_tls": false
+  },
+  "initialized": true
+}

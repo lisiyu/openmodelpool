@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - OpenModelPool Agent</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-primary: #0f0f23;
+  --bg-secondary: #1a1a2e;
+  --bg-card: #16213e;
+  --bg-input: #1a1a3e;
+  --border-color: #2a2a4a;
+  --border-focus: #6c63ff;
+  --text-primary: #e8e8f0;
+  --text-secondary: #a0a0b8;
+  --text-muted: #6a6a8a;
+  --accent-start: #6c63ff;
+  --accent-end: #b24bf3;
+  --success: #22c55e;
+  --error: #ef4444;
+  --warning: #f59e0b;
+  --radius: 12px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.login-container {
+  width: 100%;
+  max-width: 420px;
+}
+.login-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+.logo {
+  font-size: 32px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+}
+.logo-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.login-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 32px;
+  box-shadow: var(--shadow);
+}
+.login-card h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 24px;
+  text-align: center;
+}
+.form-group {
+  margin-bottom: 20px;
+}
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.form-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.3s;
+}
+.form-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.15);
+}
+.form-input::placeholder { color: var(--text-muted); }
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.toggle-password {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 8px;
+}
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-start);
+  cursor: pointer;
+}
+.forgot-link {
+  font-size: 13px;
+  color: var(--accent-start);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.forgot-link:hover { color: var(--accent-end); }
+.btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+  color: #fff;
+}
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(108, 99, 255, 0.4);
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-msg {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--error);
+  margin-bottom: 16px;
+  display: none;
+}
+.error-msg.show { display: block; }
+.toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; }
+.toast {
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #fff;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  animation: toastIn 0.3s ease-out;
+  max-width: 400px;
+}
+.toast.success { background: linear-gradient(135deg, #16a34a, #22c55e); }
+.toast.error { background: linear-gradient(135deg, #dc2626, #ef4444); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes toastOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(60px); } }
+</style>
+</head>
+<body>
+<div class="login-container">
+  <div class="login-header">
+    <div class="logo">🔀 OpenModelPool Agent</div>
+    <div class="logo-sub">管理面板登录</div>
+  </div>
+
+  <div class="login-card">
+    <h2>🔐 管理员登录</h2>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <form onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label class="form-label">用户名</label>
+        <input type="text" class="form-input" id="inputUsername"
+               placeholder="请输入用户名" autocomplete="username" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">密码</label>
+        <div class="input-wrapper">
+          <input type="password" class="form-input" id="inputPassword"
+                 placeholder="请输入密码" autocomplete="current-password" required>
+          <button type="button" class="toggle-password" onclick="togglePwd()">👁️</button>
+        </div>
+      </div>
+      <div class="checkbox-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="rememberMe">
+          记住我（7天免登录）
+        </label>
+        <div style="display:flex;gap:12px">
+          <a href="javascript:void(0)" class="forgot-link" onclick="showForgotForm()">忘记密码？</a>
+          <a href="javascript:void(0)" class="forgot-link" onclick="showResetForm()" style="color:var(--warning)">重置密码</a>
+        </div>
+      </div>
+      <button type="submit" class="btn" id="btnLogin">
+        登录
+      </button>
+    </form>
+
+    <!-- Forgot Password Form (email-based) -->
+    <div id="forgotForm" style="display:none">
+      <h2 style="margin-top:24px">📧 忘记密码</h2>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;text-align:center">
+        输入管理员邮箱，发送重置链接
+      </p>
+      <div class="error-msg" id="forgotErrorMsg"></div>
+      <div class="form-group">
+        <label class="form-label">管理员邮箱</label>
+        <input type="email" class="form-input" id="inputForgotEmail"
+               placeholder="admin@email.com" autocomplete="email" required>
+      </div>
+      <button type="button" class="btn" id="btnForgot" onclick="handleForgot()">
+        发送重置链接
+      </button>
+      <button type="button" class="btn" onclick="showLoginForm()"
+              style="background:var(--bg-input);border:1px solid var(--border-color);margin-top:12px">
+        ← 返回登录
+      </button>
+    </div>
+
+    <!-- Reset Password Form (Proxy API Key) -->
+    <div id="resetForm" style="display:none">
+      <h2 style="margin-top:24px">🔑 重置密码</h2>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;text-align:center">
+        输入已配置的 Proxy API Key 验证身份<br>
+        <span style="color:var(--error);font-size:12px">⚠️ 重置后所有平台 API Key 和 Proxy API Key 将被清空</span>
+      </p>
+      <div class="error-msg" id="resetErrorMsg"></div>
+      <div class="form-group">
+        <label class="form-label">Proxy API Key</label>
+        <input type="text" class="form-input" id="inputResetCode"
+               placeholder="请输入之前配置的 Proxy API Key" autocomplete="off" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">新密码</label>
+        <div class="input-wrapper">
+          <input type="password" class="form-input" id="inputNewPassword"
+                 placeholder="至少 6 位" autocomplete="new-password" required>
+          <button type="button" class="toggle-password" onclick="toggleNewPwd()">👁️</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">确认新密码</label>
+        <input type="password" class="form-input" id="inputConfirmPassword"
+               placeholder="再次输入新密码" autocomplete="new-password" required>
+      </div>
+      <button type="button" class="btn" id="btnReset" onclick="handleReset()" style="margin-bottom:12px">
+        确认重置
+      </button>
+      <button type="button" class="btn" onclick="showLoginForm()"
+              style="background:var(--bg-input);border:1px solid var(--border-color)">
+        ← 返回登录
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// Check if not initialized yet
+let isRedirecting = false;
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (isRedirecting) return;
+  
+  try {
+    const resp = await fetch('/api/setup/status');
+    const data = await resp.json();
+    if (!data.initialized) {
+      isRedirecting = true;
+      window.location.href = '/setup';
+      return;
+    }
+    // Check if already logged in
+    const token = localStorage.getItem('admin_token');
+    if (token) {
+      // Verify token validity
+      const verifyResp = await fetch('/api/auth/verify', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (verifyResp.ok) {
+        isRedirecting = true;
+        setTimeout(() => {
+          window.location.href = '/admin';
+        }, 100);
+      } else {
+        localStorage.removeItem('admin_token');
+      }
+    }
+  } catch (e) {
+    console.error('初始化检查失败:', e);
+  }
+});
+
+function togglePwd() {
+  const input = document.getElementById('inputPassword');
+  const btn = event.target;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁️';
+  }
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+
+  const username = document.getElementById('inputUsername').value.trim();
+  const password = document.getElementById('inputPassword').value;
+  const remember = document.getElementById('rememberMe').checked;
+
+  if (!username || !password) {
+    showError('请填写用户名和密码');
+    return;
+  }
+
+  const btn = document.getElementById('btnLogin');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 登录中...';
+  hideError();
+
+  try {
+    const resp = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, remember }),
+    });
+    const data = await resp.json();
+
+    if (resp.ok && data.access_token) {
+      localStorage.setItem('admin_token', data.access_token);
+      showToast('登录成功！', 'success');
+      setTimeout(() => { window.location.href = '/admin'; }, 500);
+    } else {
+      showError(data.detail || '用户名或密码错误');
+      btn.disabled = false;
+      btn.innerHTML = '登录';
+    }
+  } catch (e) {
+    showError('网络错误: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '登录';
+  }
+}
+
+function showLoginForm() {
+  document.querySelector('form').style.display = '';
+  document.getElementById('forgotForm').style.display = 'none';
+  document.getElementById('resetForm').style.display = 'none';
+  document.querySelector('.login-card h2').style.display = '';
+  document.getElementById('errorMsg').style.display = '';
+}
+function showForgotForm() {
+  document.querySelector('form').style.display = 'none';
+  document.getElementById('forgotForm').style.display = '';
+  document.getElementById('resetForm').style.display = 'none';
+  document.querySelector('.login-card h2').style.display = 'none';
+  document.getElementById('errorMsg').style.display = 'none';
+  document.getElementById('forgotErrorMsg').classList.remove('show');
+}
+function showResetForm() {
+  document.querySelector('form').style.display = 'none';
+  document.getElementById('forgotForm').style.display = 'none';
+  document.getElementById('resetForm').style.display = '';
+  document.querySelector('.login-card h2').style.display = 'none';
+  document.getElementById('errorMsg').style.display = 'none';
+  document.getElementById('resetErrorMsg').classList.remove('show');
+}
+
+async function handleForgot() {
+  const email = document.getElementById('inputForgotEmail').value.trim();
+  if (!email) {
+    document.getElementById('forgotErrorMsg').textContent = '请输入邮箱';
+    document.getElementById('forgotErrorMsg').classList.add('show');
+    return;
+  }
+  const btn = document.getElementById('btnForgot');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 发送中...';
+  try {
+    const resp = await fetch('/api/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await resp.json();
+    if (resp.ok && data.success) {
+      showToast(data.message || '重置链接已发送', 'success');
+      setTimeout(() => showLoginForm(), 2000);
+    } else {
+      document.getElementById('forgotErrorMsg').textContent = data.detail || '发送失败';
+      document.getElementById('forgotErrorMsg').classList.add('show');
+      btn.disabled = false;
+      btn.innerHTML = '发送重置链接';
+    }
+  } catch (e) {
+    document.getElementById('forgotErrorMsg').textContent = '网络错误: ' + e.message;
+    document.getElementById('forgotErrorMsg').classList.add('show');
+    btn.disabled = false;
+    btn.innerHTML = '发送重置链接';
+  }
+}
+
+function toggleNewPwd() {
+  const input = document.getElementById('inputNewPassword');
+  const btn = event.target;
+  if (input.type === 'password') { input.type = 'text'; btn.textContent = '🙈'; }
+  else { input.type = 'password'; btn.textContent = '👁️'; }
+}
+
+async function handleReset() {
+  const code = document.getElementById('inputResetCode').value.trim();
+  const newPwd = document.getElementById('inputNewPassword').value;
+  const confirmPwd = document.getElementById('inputConfirmPassword').value;
+
+  if (!code || !newPwd) {
+    showResetError('请填写重置码和新密码');
+    return;
+  }
+  if (newPwd.length < 6) {
+    showResetError('密码至少 6 位');
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    showResetError('两次输入的密码不一致');
+    return;
+  }
+
+  const btn = document.getElementById('btnReset');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 重置中...';
+
+  try {
+    const resp = await fetch('/api/auth/reset-with-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, new_password: newPwd }),
+    });
+    const data = await resp.json();
+
+    if (resp.ok && data.success) {
+      showToast('密码重置成功！已清空 ' + (data.keys_cleared||0) + ' 个 API Key', 'success');
+      setTimeout(() => { toggleResetForm(false); }, 1500);
+    } else {
+      showResetError(data.detail || '重置失败');
+      btn.disabled = false;
+      btn.innerHTML = '确认重置';
+    }
+  } catch (e) {
+    showResetError('网络错误: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '确认重置';
+  }
+}
+
+function showResetError(msg) {
+  const el = document.getElementById('resetErrorMsg');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+function hideError() {
+  document.getElementById('errorMsg').classList.remove('show');
+}
+function showToast(msg, type) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.animation = 'toastOut 0.3s ease-in forwards';
+    setTimeout(() => toast.remove(), 300);
+  }, 2000);
+}
+</script>
+</body>
+</html>
