@@ -1305,6 +1305,16 @@ select.form-input{appearance:none;cursor:pointer}
       <div class="form-group"><label class="form-label">显示名称</label><input class="form-input" id="pName" placeholder="DeepSeek"></div>
       <div class="form-group"><label class="form-label">API Base URL</label><input class="form-input" id="pUrl" placeholder="https://api.deepseek.com/v1"></div>
       <div class="form-group"><label class="form-label">API Key *</label><input class="form-input" id="pKey" placeholder="sk-..."></div>
+      <div id="editKeysSection" style="display:none;margin-bottom:18px;padding:14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <label style="font-size:13px;font-weight:500;color:var(--text-secondary)">🔑 已配置的多 Key 管理</label>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-secondary btn-sm" onclick="testAllEditKeys()" style="font-size:11px;padding:3px 10px">🧪 批量测试</button>
+            <button class="btn btn-primary btn-sm" onclick="addKeyInEdit()" style="font-size:11px;padding:3px 10px">+ 添加 Key</button>
+          </div>
+        </div>
+        <div id="editKeysList"></div>
+      </div>
       <div class="form-group">
         <label class="form-label">代理（可选）</label>
         <input class="form-input" id="pProxy" placeholder="vmess://... 或 socks5://127.0.0.1:1080 或 http://proxy:port">
@@ -1772,6 +1782,7 @@ async function syncAllUrls() {
 let editingId = null;
 function showAddProvider() {
   editingId = null;
+  document.getElementById('editKeysSection').style.display = 'none';
   document.getElementById('modalTitle').textContent = '添加平台';
   document.getElementById('modalStep1').style.display = '';
   document.getElementById('modalStep2').style.display = 'none';
@@ -1807,12 +1818,16 @@ function editProvider(pid) {
     document.getElementById('pAccessPrivate').checked = true;
   }
   document.getElementById('providerModal').classList.add('open');
+  // Show multi-key management section when editing
+  document.getElementById('editKeysSection').style.display = '';
+  loadEditKeys(pid);
 }
 
 function selectPreset(pid) {
   const p = presets.find(x => x.id === pid);
   if (!p) return;
   editingId = null;
+  document.getElementById('editKeysSection').style.display = 'none';
   document.getElementById('modalStep1').style.display = 'none';
   document.getElementById('modalStep2').style.display = '';
   document.getElementById('pId').value = p.id;
@@ -1892,6 +1907,7 @@ function selectCustomPreset() {
   document.getElementById('pPriority').value = '5';
   document.getElementById('pEnabled').checked = true;
   document.getElementById('pAccessPrivate').checked = true; // default: private only
+  document.getElementById('editKeysSection').style.display = 'none';
   editingId = '';
 }
 
@@ -2288,6 +2304,100 @@ async function testAllKeys(pid) {
   toast('正在测试所有 Key...', 'info');
   try {
     const r = await authFetch('/api/providers/' + pid + '/test-all-keys', {method:'POST'});
+    const d = await r.json();
+    if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    let msg = d.results.map(k => {
+      let status = k.success ? '✅' : '❌';
+      let label = k.alias || ('Key#' + k.index);
+      return status + ' ' + label + (k.error ? ': ' + k.error : '');
+    }).join('\n');
+    alert('Key 测试结果:\n' + msg);
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+// ============================================================
+// Edit Form Multi-Key Management
+// ============================================================
+
+async function loadEditKeys(pid) {
+  const container = document.getElementById('editKeysList');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys');
+    const d = await r.json();
+    const keys = d.keys || [];
+    if (!keys.length) {
+      container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px;font-size:12px">暂无多 Key 配置。点击上方「+ 添加 Key」添加。</div>';
+      return;
+    }
+    let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>别名/Key</th><th>状态</th><th>额度</th><th>操作</th></tr></thead><tbody>';
+    for (const k of keys) {
+      const quotaText = k.quota > 0 ? (k.used + '/' + k.quota) : '无限';
+      const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
+      html += '<tr>';
+      html += '<td style="font-family:monospace">' + (k.alias || k.key.substring(0, 8) + '...') + '</td>';
+      html += '<td>' + statusBadge + '</td>';
+      html += '<td>' + quotaText + '</td>';
+      html += '<td style="white-space:nowrap">';
+      html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testEditKey(\'' + pid + '\',\'' + k.id + '\')">测试</button> ';
+      html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteKeyInEdit(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
+      html += '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error);font-size:12px">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function addKeyInEdit() {
+  if (!editingId) return;
+  const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
+  const key = prompt('请输入 API Key:');
+  if (!key) return;
+  const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
+  const access = prompt('访问权限 (private/shared/public):', 'private') || 'private';
+  const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
+  try {
+    const r = await authFetch('/api/providers/' + editingId + '/keys', {
+      method: 'POST',
+      body: JSON.stringify({ key: key, alias: alias, quota: quota, access_control: access, priority: priority, enabled: true })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ API Key 已添加', 'success');
+      await loadEditKeys(editingId);
+      await loadProviders();
+    } else {
+      toast('添加失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+
+async function deleteKeyInEdit(pid, keyId) {
+  if (!confirm('确定删除此 API Key？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId, { method: 'DELETE' });
+    toast('已删除');
+    await loadEditKeys(pid);
+    await loadProviders();
+  } catch(e) { toast('删除失败: ' + e.message, 'error'); }
+}
+
+async function testEditKey(pid, keyId) {
+  toast('正在测试...', 'info');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test?key_id=' + keyId, {method:'POST'});
+    const d = await r.json();
+    toast(d.success ? '✅ Key 可用' : '❌ Key 不可用: ' + (d.error||''), d.success ? 'success' : 'error');
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+async function testAllEditKeys() {
+  if (!editingId) return;
+  toast('正在测试所有 Key...', 'info');
+  try {
+    const r = await authFetch('/api/providers/' + editingId + '/test-all-keys', {method:'POST'});
     const d = await r.json();
     if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
     let msg = d.results.map(k => {
