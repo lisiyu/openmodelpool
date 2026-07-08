@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -742,6 +743,22 @@ func handleFederationStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, status)
 }
 
+// getLocalIP returns the first non-loopback IPv4 address.
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
+}
+
 // handleGetFederationConfig returns the current federation configuration.
 func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 	approvalMode := cfg.Get("node_approval_mode", "auto")
@@ -752,6 +769,10 @@ func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 	if nwm != nil {
 		tokenBudget = nwm.GetTokenBudget()
 	}
+
+	// Detect LAN IP
+	lanIP := getLocalIP()
+	servicePort := cfg.Get("port", "8000")
 
 	writeJSON(w, 200, map[string]any{
 		"federation_enabled":       cfg.Get("federation_enabled", "false"),
@@ -764,6 +785,8 @@ func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 		"tunnel_mode":              cfg.Get("tunnel_mode", "quick"), // quick | named
 		"tunnel_domain":            cfg.Get("tunnel_domain", ""),     // custom domain e.g. mux.example.com
 		"tunnel_url":               cfg.Get("tunnel_url", ""),        // current quick tunnel URL
+		"lan_ip":                   lanIP,
+		"service_port":             servicePort,
 		"federation_doc_version":   AppVersion,                       // current doc version
 		"federation_doc_read_version": cfg.Get("federation_doc_read_version", ""), // last read version
 		"node_approval_mode":       cfg.Get("node_approval_mode", "auto"),

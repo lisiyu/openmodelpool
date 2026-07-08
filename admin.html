@@ -136,7 +136,7 @@ select.form-input{appearance:none;cursor:pointer}
     <!-- 地址列表 -->
     <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
       <div>
-        <label class="form-label" style="font-size:12px;margin-bottom:6px">️ 局域网地址</label>
+        <label class="form-label" style="font-size:12px;margin-bottom:6px">🏠 局域网地址</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input class="form-input" id="lanApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制')">
           <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('lanApiUrl').value)">📋</button>
@@ -151,10 +151,29 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
         <div id="publicUrlHint" style="font-size:11px;color:var(--text-muted);margin-top:3px">未启用公网访问</div>
       </div>
+      <div>
+        <label class="form-label" style="font-size:12px;margin-bottom:6px">🔗 固定域名地址 <span id="domainUrlBadge" style="font-size:10px;font-weight:normal"></span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="domainApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted)" onclick="this.select();document.execCommand('copy');toast('已复制')" placeholder="需先绑定自定义域名">
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('domainApiUrl').value)">📋</button>
+        </div>
+        <div id="domainUrlHint" style="font-size:11px;color:var(--text-muted);margin-top:3px">绑定自己的域名后获得固定不变的公网地址</div>
+      </div>
     </div>
 
     <!-- 域名绑定引导 -->
     <div id="domainBindingQuickCard" style="display:none;margin-bottom:16px;padding:12px;background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(178,75,243,.06));border:1px solid rgba(108,99,255,.2);border-radius:10px">
+      <div style="font-size:13px;font-weight:500;margin-bottom:8px">🔗 绑定自定义域名</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">
+        将您自己的域名（如 api.yourdomain.com）CNAME 解析到 Cloudflare Tunnel，即可获得永久固定的公网地址。<br>
+        绑定后地址不再随重启变化，适合长期使用。
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="form-input" id="quickDomainInput" placeholder="输入您的域名，如 api.yourdomain.com" style="flex:1;font-size:12px">
+        <button class="btn btn-primary btn-sm" onclick="quickBindDomain()">绑定域名</button>
+      </div>
+      <div id="domainBindResult" style="font-size:11px;margin-top:6px"></div>
+    </div>
 
 
     <div class="form-group"><label class="form-label">Proxy API Key</label>
@@ -166,6 +185,29 @@ select.form-input{appearance:none;cursor:pointer}
     <div class="btn-group">
       <button class="btn btn-primary" onclick="saveProxyApiKey()">保存</button>
       <button class="btn btn-danger btn-sm" onclick="clearProxyApiKey()">清除（关闭认证）</button>
+    </div>
+
+    <!-- 全球公共 Key (试用 Key) -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:500">🌍 全球公共 Key（试用）</span>
+        <span style="font-size:10px;padding:2px 6px;background:rgba(52,199,89,.12);color:var(--accent-green);border-radius:4px">零门槛</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <input class="form-input" value="mk_public_v1" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制全球公共 Key')">
+        <button class="btn btn-secondary btn-sm" onclick="copyText('mk_public_v1')">📋</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted)">无需搭建节点即可使用，访问全网已共享的模型资源（有基础额度上限）</div>
+    </div>
+
+    <!-- Guest Key 管理 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:500">🎫 Guest Key 管理</span>
+        <button class="btn btn-primary btn-sm" onclick="generateGuestKey()">+ 签发新 Key</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">签发给他人使用，可设置额度和有效期。Guest Key 的访问范围取决于你的共享网络状态。</div>
+      <div id="guestKeysList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
     </div>
   </div>
 
@@ -678,27 +720,7 @@ select.form-input{appearance:none;cursor:pointer}
       <div id="fedNodeList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
     </div>
 
-    <!-- Token 预算 & 审批设置 -->
-    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
-      <div class="card-title" style="font-size:14px"><span class="icon">💰</span> Token 预算 & 审批设置</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="form-group">
-          <label class="form-label" title="声明本节点每月可提供的 Token 总量（0 表示不限制）">月度 Token 预算 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="其他节点可据此评估您的服务能力。0 = 不限制">ⓘ</span></label>
-          <input class="form-input" id="tokenBudget" type="number" min="0" placeholder="0 (不限制)">
-        </div>
-        <div class="form-group">
-          <label class="form-label" title="当其他节点将您的节点设为高优先级时，是否需要手动审批">审批模式 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="自动=立即生效；手动=需您在后台审批后生效">ⓘ</span></label>
-          <select class="form-input" id="approvalMode">
-            <option value="auto">自动生效</option>
-            <option value="manual">手动审批</option>
-          </select>
-        </div>
-      </div>
-      <div class="btn-group">
-        <button class="btn btn-primary btn-sm" onclick="saveTokenBudget()">💾 保存预算</button>
-        <button class="btn btn-primary btn-sm" onclick="saveApprovalMode()">💾 保存审批模式</button>
-      </div>
-    </div>
+
 
     <!-- 节点权重管理 -->
     <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
@@ -717,11 +739,7 @@ select.form-input{appearance:none;cursor:pointer}
       <div id="nodeWeightsList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
     </div>
 
-    <!-- 审批请求 -->
-    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
-      <div class="card-title" style="font-size:14px"><span class="icon">📋</span> 审批请求</div>
-      <div id="approvalRequests" style="font-size:12px;color:var(--text-muted)">加载中...</div>
-    </div>
+
 
     <!-- 邀请管理 -->
     <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
@@ -964,19 +982,6 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
       </div>
 
-      <!-- 开放密钥 (Phase 2 Open Keys) -->
-      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🌍 开放密钥管理</div>
-        <div class="section-note" style="margin-bottom:12px">
-          <strong>未绑定</strong>：固定 1000 tokens，用完失效（零门槛体验）。<br>
-          <strong>已绑定</strong>：额度按信誉和贡献动态计算，可访问全网（需节点已解锁）。
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="issueOpenKeyBound()">🔗 签发已绑定密钥</button>
-          <button class="btn btn-secondary btn-sm" onclick="loadOpenKeys()">🔄 刷新</button>
-        </div>
-        <div id="netOpenKeysList" style="font-size:12px;color:var(--text-muted)">暂无开放密钥</div>
-      </div>
 
       <!-- 算法参数链 (Phase 3) -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
@@ -996,37 +1001,7 @@ select.form-input{appearance:none;cursor:pointer}
         <div id="netAlgoChainInfo" style="font-size:11px;color:var(--text-muted)">加载中...</div>
       </div>
 
-      <!-- 开放 Key 额度 (Phase 3) -->
-      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:12px">💰 开放 Key 动态额度</div>
-        <div class="section-note" style="margin-bottom:12px">
-          开放 Key 额度由全网资源动态决定：全局额度 = 网络总资源 × openKeyRatio。用户额度 = 全局额度 × (信誉权重 × 信誉占比 + 贡献权重 × 贡献占比)。
-        </div>
-        <div id="netQuotaInfo" style="margin-bottom:12px">
-          <!-- Filled by JS -->
-        </div>
-        <button class="btn btn-secondary btn-sm" onclick="loadQuotaInfo()">🔄 刷新额度</button>
-      </div>
 
-      <!-- 全球算力池 (Phase 4) -->
-      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🌍 全球算力池 (Global Pool)</div>
-        <div class="section-note" style="margin-bottom:12px">
-          全网节点贡献的算力汇聚成一个统一资源池。加入全局池后可签发 Global Key，一个 Key 访问全网所有 AI 能力。
-        </div>
-        <div id="netGlobalPoolInfo" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:12px">
-          <!-- Filled by JS -->
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="joinGlobalPool()">🚀 加入全局池</button>
-          <button class="btn btn-secondary btn-sm" onclick="contributeToGlobalPool()">💎 贡献额度</button>
-          <button class="btn btn-secondary btn-sm" onclick="loadGlobalPoolStatus()">🔄 刷新</button>
-          <button class="btn btn-secondary btn-sm" onclick="loadGlobalPoolNodes()">📋 参与节点</button>
-          <button class="btn btn-secondary btn-sm" onclick="issueGlobalKey()">🔑 签发 Global Key</button>
-        </div>
-        <div id="netGlobalPoolNodes" style="font-size:12px;color:var(--text-muted);margin-bottom:8px">加载中...</div>
-        <div id="netGlobalPoolKeys" style="font-size:12px;color:var(--text-muted)">暂无 Global Key</div>
-      </div>
 
       <!-- 动态负载均衡 (Phase 4) -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
@@ -1189,7 +1164,6 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
       <div class="form-group"><label class="form-label">描述</label><input class="form-input" id="pDesc" placeholder="平台描述"></div>
       <div class="form-group"><label class="form-label">优先级（数字越小越优先）</label><input class="form-input" id="pPriority" type="number" value="5"></div>
-      <div class="form-group"><label class="form-label">Token 预算上限（可选）</label><input class="form-input" id="pTokenLimit" type="number" placeholder="留空表示不限制，单位：Token/月"></div>
       <div class="form-group">
         <label class="form-label">🔐 访问权限控制</label>
         <div style="display:flex;gap:16px;margin-top:6px">
@@ -1675,7 +1649,6 @@ function editProvider(pid) {
   document.getElementById('pProxy').placeholder = p.proxy && !p.proxy.startsWith('vmess://') ? `当前代理: ${p.proxy}（输入新值覆盖）` : 'vmess://... 或 socks5://127.0.0.1:1080';
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.priority || 5;
-  document.getElementById('pTokenLimit').value = p.token_limit || '';
   document.getElementById('pEnabled').checked = p.enabled !== false;
   // Load access control state
   const ac = p.access_control || {};
@@ -1731,8 +1704,6 @@ async function saveProvider() {
       allow_shared_key: accessMode === 'shared',
     },
   };
-  const tokenLimit = document.getElementById('pTokenLimit').value.trim();
-  if (tokenLimit) data.token_limit = parseInt(tokenLimit);
   const key = document.getElementById('pKey').value.trim();
   if (key) data.api_key = key;
   const proxy = document.getElementById('pProxy').value.trim();
@@ -1785,49 +1756,109 @@ function getIcon(id) {
 
 // ===== Proxy API URL =====
 function initApiUrls() {
-  // 局域网地址
   const lanEl = document.getElementById('lanApiUrl');
-  if (lanEl) {
-    const hostname = window.location.hostname;
-    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-    lanEl.value = (isLocalhost ? 'http://<本机局域网IP>:8000' : window.location.origin) + '/v1';
-    if (isLocalhost) lanEl.style.color = 'var(--text-muted)';
-  }
-  // 公网地址
   const pubEl = document.getElementById('publicApiUrl');
   const hintEl = document.getElementById('publicUrlHint');
   const badgeEl = document.getElementById('publicUrlBadge');
+  const domainUrlEl = document.getElementById('domainApiUrl');
+  const domainHintEl = document.getElementById('domainUrlHint');
+  const domainBadgeEl = document.getElementById('domainUrlBadge');
   const domainQuickCard = document.getElementById('domainBindingQuickCard');
 
   authFetch('/api/federation/config').then(r => r.json()).then(d => {
+    const lanIP = d.lan_ip || '';
+    const servicePort = d.service_port || '8000';
     const tunnelUrl = d.tunnel_url || '';
     const tunnelDomain = d.tunnel_domain || '';
     const tunnelEnabled = d.tunnel_enabled === 'true';
 
+    // 1. 局域网地址
+    if (lanEl) {
+      if (lanIP) {
+        lanEl.value = 'http://' + lanIP + ':' + servicePort + '/v1';
+        lanEl.style.color = 'var(--text-primary)';
+      } else {
+        lanEl.value = '无法获取局域网IP';
+        lanEl.style.color = 'var(--text-muted)';
+      }
+    }
+
+    // 2. 公网地址（Cloudflare 随机隧道）
     if (tunnelUrl && tunnelEnabled) {
       if (pubEl) pubEl.value = tunnelUrl + '/v1';
       if (hintEl) {
         if (tunnelDomain) {
-          hintEl.textContent = '✅ 已绑定自定义域名，地址固定不变';
-          if (badgeEl) badgeEl.textContent = '(固定)';
-          if (pubEl) pubEl.style.color = 'var(--text-primary)';
-          // 隐藏域名绑定引导
-          if (domainQuickCard) domainQuickCard.style.display = 'none';
+          hintEl.textContent = '当前公网隧道地址（已绑定自定义域名，见下方固定域名地址）';
+          if (badgeEl) badgeEl.textContent = '(隧道)';
+          if (pubEl) pubEl.style.color = 'var(--text-muted)';
         } else {
-          hintEl.textContent = '⚠️ 当前使用随机隧道地址，重启后会变化';
+          hintEl.textContent = '⚠️ 随机隧道地址，重启后会变化。建议绑定自定义域名获得固定地址';
           if (badgeEl) badgeEl.textContent = '(临时)';
-          // 显示域名绑定引导
-          if (domainQuickCard) domainQuickCard.style.display = 'block';
+          if (pubEl) pubEl.style.color = 'var(--text-primary)';
         }
       }
     } else {
       if (pubEl) { pubEl.value = ''; pubEl.placeholder = '未启用公网访问'; }
-      if (hintEl) hintEl.textContent = '未启用公网访问，仅局域网可访问';
+      if (hintEl) hintEl.textContent = '未启用公网隧道';
+      if (pubEl) pubEl.style.color = 'var(--text-muted)';
+    }
+
+    // 3. 固定域名地址
+    if (tunnelDomain && tunnelEnabled && tunnelUrl) {
+      const domainUrl = 'https://' + tunnelDomain + '/v1';
+      if (domainUrlEl) {
+        domainUrlEl.value = domainUrl;
+        domainUrlEl.style.color = 'var(--accent-green)';
+      }
+      if (domainHintEl) domainHintEl.textContent = '✅ 已绑定自定义域名，地址固定不变';
+      if (domainBadgeEl) domainBadgeEl.textContent = '(固定)';
+      if (domainQuickCard) domainQuickCard.style.display = 'none';
+    } else if (tunnelUrl && tunnelEnabled) {
+      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '需先绑定自定义域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
+      if (domainHintEl) domainHintEl.textContent = '当前未绑定域名，点击下方引导进行绑定';
+      if (domainBadgeEl) domainBadgeEl.textContent = '';
+      if (domainQuickCard) domainQuickCard.style.display = 'block';
+    } else {
+      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '需先启用公网隧道并绑定域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
+      if (domainHintEl) domainHintEl.textContent = '需先启用公网隧道';
       if (domainQuickCard) domainQuickCard.style.display = 'none';
     }
   }).catch(() => {
-    if (hintEl) hintEl.textContent = '获取公网地址失败';
+    if (hintEl) hintEl.textContent = '获取地址信息失败';
+    if (domainHintEl) domainHintEl.textContent = '获取地址信息失败';
   });
+}
+
+async function quickBindDomain() {
+  const input = document.getElementById('quickDomainInput');
+  const resultEl = document.getElementById('domainBindResult');
+  if (!input || !input.value.trim()) {
+    toast('请输入域名', 'error');
+    return;
+  }
+  const domain = input.value.trim();
+  // Validate domain format
+  if (!/^[a-zA-Z0-9]([a-zA-Z0-9\-]*\.)+[a-zA-Z]{2,}$/.test(domain)) {
+    toast('域名格式不正确', 'error');
+    return;
+  }
+  resultEl.innerHTML = '<span style="color:var(--text-muted)">正在提交绑定请求...</span>';
+  try {
+    const res = await authFetch('/api/federation/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ tunnel_domain: domain, tunnel_enabled: true })
+    });
+    const d = await res.json();
+    if (res.ok) {
+      resultEl.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定请求已提交！请将 <strong>' + domain + '</strong> CNAME 解析到 <strong>' + (d.tunnel_url || '当前隧道地址') + ' 后等待生效</span>';
+      setTimeout(() => { initApiUrls(); }, 3000);
+    } else {
+      resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定失败: ' + (d.error || '未知错误') + '</span>';
+    }
+  } catch(e) {
+    resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定请求失败</span>';
+  }
 }
 
 function copyPersonalLanUrl() {
@@ -2449,11 +2480,8 @@ async function loadFederationConfig() {
     document.getElementById('tunnelMode').value = data.tunnel_mode || 'quick';
     document.getElementById('tunnelDomain').value = data.tunnel_domain || '';
     document.getElementById('tunnelUrl').value = data.tunnel_url || '';
-    document.getElementById('tokenBudget').value = data.token_budget || 0;
-    document.getElementById('approvalMode').value = data.approval_mode || 'auto';
     toggleDomainInput();
     loadNodeWeights();
-    loadApprovals();
     loadInvites();
   } catch(e) {}
 }
@@ -2521,29 +2549,7 @@ function copyTunnelUrl() {
   }
 }
 
-async function saveTokenBudget() {
-  const budget = parseInt(document.getElementById('tokenBudget').value) || 0;
-  try {
-    const res = await authFetch('/api/federation/token-budget', {
-      method: 'POST',
-      body: JSON.stringify({ budget })
-    });
-    if (res.ok) toast('Token 预算已保存', 'success');
-    else toast('保存失败', 'error');
-  } catch(e) { toast('保存失败', 'error'); }
-}
 
-async function saveApprovalMode() {
-  const mode = document.getElementById('approvalMode').value;
-  try {
-    const res = await authFetch('/api/federation/config', {
-      method: 'POST',
-      body: JSON.stringify({ node_approval_mode: mode })
-    });
-    if (res.ok) toast('审批模式已保存', 'success');
-    else toast('保存失败', 'error');
-  } catch(e) { toast('保存失败', 'error'); }
-}
 
 async function setNodeWeight() {
   const nodeId = document.getElementById('weightNodeId').value.trim();
@@ -2563,8 +2569,7 @@ async function setNodeWeight() {
         toast('权重已提交，等待节点所有者审批', 'info');
       }
       loadNodeWeights();
-      loadApprovals();
-    } else {
+      } else {
       toast(data.error || '设置失败', 'error');
     }
   } catch(e) { toast('设置失败', 'error'); }
@@ -2605,43 +2610,7 @@ async function removeNodeWeight(nodeId) {
   } catch(e) { toast('操作失败', 'error'); }
 }
 
-async function loadApprovals() {
-  try {
-    const res = await authFetch('/api/federation/approvals?pending=true');
-    const data = await res.json();
-    const el = document.getElementById('approvalRequests');
-    if (!data.pending || data.pending.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-muted)">暂无待审批请求</span>';
-      return;
-    }
-    let html = '<table style="width:100%;font-size:12px;border-collapse:collapse">';
-    html += '<tr style="border-bottom:1px solid var(--border-color)"><th style="text-align:left;padding:4px">来源节点</th><th>请求权重</th><th>时间</th><th>操作</th></tr>';
-    for (const r of data.pending) {
-      const time = new Date(r.created_at).toLocaleString();
-      html += `<tr style="border-bottom:1px solid var(--border-color)"><td style="padding:4px;font-family:monospace">${r.from_node_id}</td><td style="text-align:center">${r.weight}x</td><td style="text-align:center">${time}</td><td style="text-align:center"><button class="btn btn-primary btn-sm" onclick="resolveApproval('${r.id}',true)" style="font-size:11px">批准</button> <button class="btn btn-secondary btn-sm" onclick="resolveApproval('${r.id}',false)" style="font-size:11px">拒绝</button></td></tr>`;
-    }
-    html += '</table>';
-    el.innerHTML = html;
-  } catch(e) {
-    document.getElementById('approvalRequests').innerHTML = '<span style="color:var(--text-muted)">加载失败</span>';
-  }
-}
 
-async function resolveApproval(requestId, approve) {
-  try {
-    const res = await authFetch('/api/federation/approvals/resolve', {
-      method: 'POST',
-      body: JSON.stringify({ request_id: requestId, approve })
-    });
-    if (res.ok) {
-      toast(approve ? '已批准' : '已拒绝', 'success');
-      loadApprovals();
-      loadNodeWeights();
-    } else {
-      toast('操作失败', 'error');
-    }
-  } catch(e) { toast('操作失败', 'error'); }
-}
 
 // Invite management
 async function createInvite() {
@@ -3105,10 +3074,7 @@ if (authToken) {
         loadHeartbeatStatus();
         loadTrialPool();
         loadUnlockStatus();
-        loadOpenKeys();
         // Phase 3-4 data
-        loadQuotaInfo();
-        loadGlobalPoolStatus();
       } else {
         modeLabel.textContent = '个人模式';
         modeLabel.className = 'badge badge-blue';
@@ -3546,84 +3512,8 @@ if (authToken) {
       } catch(e) { console.warn('load unlock status failed', e); }
     }
 
-    async function loadOpenKeys() {
-      try {
-        const r = await authFetch('/api/network/open-keys');
-        const d = await r.json();
-        const unbound = d.unbound || [];
-        const bound = d.bound || {};
-        const boundEntries = Object.entries(bound);
-        
-        const el = document.getElementById('netOpenKeysList');
-        if (!el) return;
-        
-        if (unbound.length === 0 && boundEntries.length === 0) {
-          el.innerHTML = '<div style="color:var(--text-muted)">No open keys</div>';
-          return;
-        }
-        
-        let html = '';
-        
-        if (unbound.length > 0) {
-          html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary)">Unbound Keys (Zero-barrier)</div>';
-          html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">';
-          unbound.forEach(k => {
-            const active = k.active ? '<span style="color:#22c55e">Active</span>' : '<span style="color:#ef4444">Depleted</span>';
-            html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center">';
-            html += '<div>';
-            html += '<div style="font-weight:500;font-size:12px">Unbound ' + active + '</div>';
-            html += '<div style="color:var(--text-muted);font-size:11px">Quota: ' + (k.used||0) + '/' + (k.quota||0) + ' | Issued: ' + (k.issued_at || '-') + '</div>';
-            html += '</div></div>';
-          });
-          html += '</div>';
-        }
-        
-        if (boundEntries.length > 0) {
-          html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary)">Bound Keys (Network-wide)</div>';
-          html += '<div style="display:flex;flex-direction:column;gap:6px">';
-          boundEntries.forEach(([nodeId, k]) => {
-            const active = k.active ? '<span style="color:#22c55e">Active</span>' : '<span style="color:#ef4444">Inactive</span>';
-            html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center">';
-            html += '<div>';
-            html += '<div style="font-weight:500;font-size:12px">Bound: ' + nodeId + ' ' + active + '</div>';
-            html += '<div style="color:var(--text-muted);font-size:11px">Quota: ' + (k.used||0) + '/' + (k.quota||0) + ' | Issued: ' + (k.issued_at || '-') + '</div>';
-            html += '</div></div>';
-          });
-          html += '</div>';
-        }
-        
-        el.innerHTML = html;
-      } catch(e) { console.warn('load open keys failed', e); }
-    }
 
-    async function issueOpenKeyUnbound() {
-      try {
-        const r = await authFetch('/api/network/open-keys/unbound', { method: 'POST' });
-        const d = await r.json();
-        if (!r.ok) { toast('Issue failed: ' + (d.error || 'unknown'), 'error'); return; }
-        const key = d.key || '';
-        toast('Unbound open key issued (1000 tokens)', 'success');
-        if (key) prompt('Key issued, please copy and save:', key);
-        loadOpenKeys();
-      } catch(e) { toast('Issue failed: ' + e.message, 'error'); }
-    }
 
-    async function issueOpenKeyBound() {
-      const nodeId = prompt('Enter NodeID to bind:');
-      if (!nodeId) return;
-      try {
-        const r = await authFetch('/api/network/open-keys/bound', {
-          method: 'POST',
-          body: JSON.stringify({ node_id: nodeId })
-        });
-        const d = await r.json();
-        if (!r.ok) { toast('Issue failed: ' + (d.error || 'unknown'), 'error'); return; }
-        const key = d.key || '';
-        toast('Bound open key issued', 'success');
-        if (key) prompt('Key issued, please copy and save:', key);
-        loadOpenKeys();
-      } catch(e) { toast('Issue failed: ' + e.message, 'error'); }
-    }
 
     function formatUptime(seconds) {
       if (seconds < 60) return seconds + '秒';
@@ -3783,47 +3673,6 @@ if (authToken) {
       } catch(e) { toast('Vote failed: ' + e.message, 'error'); }
     }
 
-    async function loadQuotaInfo() {
-      try {
-        const r = await authFetch('/api/network/open-key-quota/all');
-        const d = await r.json();
-        const el = document.getElementById('netQuotaInfo');
-        if (!el) return;
-
-        const globalQuota = d.global_quota || 0;
-        const quotas = d.quotas || [];
-
-        let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px">';
-        html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px 12px">';
-        html += '<div style="font-size:11px;color:var(--text-muted)">🌐 全局额度</div>';
-        html += '<div style="font-size:18px;font-weight:700">' + globalQuota.toLocaleString() + ' tokens</div>';
-        html += '</div>';
-        html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px 12px">';
-        html += '<div style="font-size:11px;color:var(--text-muted)">📊 网络节点数</div>';
-        html += '<div style="font-size:18px;font-weight:700">' + quotas.length + '</div>';
-        html += '</div>';
-        html += '</div>';
-
-        if (quotas.length > 0) {
-          html += '<div style="font-size:12px;font-weight:600;margin-bottom:6px">节点额度分配:</div>';
-          html += '<div style="display:flex;flex-direction:column;gap:4px">';
-          quotas.forEach(q => {
-            const pct = globalQuota > 0 ? ((q.user_quota / globalQuota) * 100).toFixed(1) : '0';
-            html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center">';
-            html += '<div>';
-            html += '<div style="font-weight:500;font-size:12px">' + (q.node_id || '-') + '</div>';
-            html += '<div style="color:var(--text-muted);font-size:11px">信誉占比: ' + ((q.reputation_share || 0) * 100).toFixed(1) + '% | 贡献占比: ' + ((q.contribution_share || 0) * 100).toFixed(1) + '%</div>';
-            html += '</div>';
-            html += '<div style="text-align:right">';
-            html += '<div style="font-weight:600;font-size:13px">' + (q.user_quota || 0).toLocaleString() + '</div>';
-            html += '<div style="color:var(--text-muted);font-size:11px">' + pct + '%</div>';
-            html += '</div></div>';
-          });
-          html += '</div>';
-        }
-        el.innerHTML = html;
-      } catch(e) { console.warn('load quota info failed', e); }
-    }
 
     // ============================================================
     // Phase 4: Region & Balance UI
@@ -3956,131 +3805,68 @@ if (authToken) {
       const netActive = document.getElementById('networkActive');
       if (netActive && netActive.style.display !== 'none') {
         loadAlgorithmParams();
-        loadQuotaInfo();
-        loadGlobalPoolStatus();
         loadRegionData();
         loadBalanceData();
       }
     };
 
     // Phase 4: Global Pool UI
-    async function loadGlobalPoolStatus() {
+
+
+
+
+
+
+    async function loadGuestKeys() {
+      const el = document.getElementById('guestKeysList');
+      if (!el) return;
       try {
-        const r = await fetch('/api/network/global-pool');
-        const d = await r.json();
-        const el = document.getElementById('netGlobalPoolInfo');
-        if (!d.enabled) {
-          el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">全局池未启用</div>';
+        const res = await authFetch('/api/network/guest-keys');
+        if (!res.ok) { el.textContent = '加载失败'; return; }
+        const data = await res.json();
+        const keys = data.keys || [];
+        if (keys.length === 0) {
+          el.innerHTML = '<span style="color:var(--text-muted)">暂无 Guest Key</span>';
           return;
         }
-        const util = d.utilization ? (d.utilization * 100).toFixed(1) + '%' : '0%';
-        el.innerHTML = `
-          <div style="background:var(--bg-secondary);padding:8px 12px;border-radius:8px">
-            <div style="font-size:11px;color:var(--text-muted)">总贡献</div>
-            <div style="font-size:16px;font-weight:600">${(d.total_contributed||0).toLocaleString()}</div>
+        el.innerHTML = keys.map(k => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;margin-bottom:4px;background:var(--bg-secondary);border-radius:6px">
+            <div>
+              <div style="font-family:monospace;font-size:11px">${k.key || k}</div>
+              <div style="color:var(--text-muted);font-size:10px">额度: ${k.quota || '∞'} | 创建: ${k.created_at || '-'}</div>
+            </div>
+            <button class="btn btn-danger btn-sm" onclick="revokeGuestKey('${k.key || k}')">撤销</button>
           </div>
-          <div style="background:var(--bg-secondary);padding:8px 12px;border-radius:8px">
-            <div style="font-size:11px;color:var(--text-muted)">已消费</div>
-            <div style="font-size:16px;font-weight:600">${(d.total_consumed||0).toLocaleString()}</div>
-          </div>
-          <div style="background:var(--bg-secondary);padding:8px 12px;border-radius:8px">
-            <div style="font-size:11px;color:var(--text-muted)">可用额度</div>
-            <div style="font-size:16px;font-weight:600;color:var(--accent)">${(d.available_quota||0).toLocaleString()}</div>
-          </div>
-          <div style="background:var(--bg-secondary);padding:8px 12px;border-radius:8px">
-            <div style="font-size:11px;color:var(--text-muted)">参与节点</div>
-            <div style="font-size:16px;font-weight:600">${d.participant_count||0} <span style="font-size:11px;color:var(--text-muted)">(${d.active_count||0} 活跃)</span></div>
-          </div>
-          <div style="background:var(--bg-secondary);padding:8px 12px;border-radius:8px">
-            <div style="font-size:11px;color:var(--text-muted)">利用率</div>
-            <div style="font-size:16px;font-weight:600">${util}</div>
-          </div>
-        `;
-      } catch(e) {
-        console.error('loadGlobalPoolStatus error:', e);
-      }
+        `).join('');
+      } catch(e) { el.textContent = '加载失败'; }
     }
 
-    async function loadGlobalPoolNodes() {
+    async function generateGuestKey() {
       try {
-        const [poolR, keysR] = await Promise.all([
-          fetch('/api/network/global-pool/nodes'),
-          fetch('/api/network/global-keys').then(r => r.ok ? r.json() : {keys:[]})
-        ]);
-        const d = await poolR.json();
-        const el = document.getElementById('netGlobalPoolNodes');
-        if (!d.nodes || d.nodes.length === 0) {
-          el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">暂无参与节点</div>';
+        const res = await authFetch('/api/network/guest-keys', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({quota: 10000})
+        });
+        if (res.ok) {
+          toast('Guest Key 已生成', 'success');
+          loadGuestKeys();
         } else {
-          let html = '<div style="display:grid;gap:4px">';
-          d.nodes.forEach(n => {
-            const statusColor = n.status === 'active' ? 'var(--accent)' : n.status === 'degraded' ? '#f0ad4e' : '#999';
-            html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:var(--bg-secondary);border-radius:6px;font-size:11px">
-              <span><span style="color:${statusColor}">●</span> ${n.node_id.substring(0,12)}... (${n.region||'unknown'})</span>
-              <span>贡献:${n.contributed} 消费:${n.consumed} 比:${n.ratio.toFixed(2)}</span>
-            </div>`;
-          });
-          html += '</div>';
-          el.innerHTML = html;
+          const err = await res.json();
+          toast('生成失败: ' + (err.error || '未知错误'), 'error');
         }
-        // Global keys
-        const keysEl = document.getElementById('netGlobalPoolKeys');
-        if (keysR.keys && keysR.keys.length > 0) {
-          let html = '<div style="font-size:11px;font-weight:600;margin-bottom:4px">Global Keys:</div>';
-          keysR.keys.forEach(k => {
-            html += `<div style="padding:2px 0;color:var(--text-muted)">${k.key.substring(0,40)}... quota:${k.quota} used:${k.used}</div>`;
-          });
-          keysEl.innerHTML = html;
-        } else {
-          keysEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">暂无 Global Key</div>';
-        }
-      } catch(e) {
-        console.error('loadGlobalPoolNodes error:', e);
-      }
+      } catch(e) { toast('生成失败', 'error'); }
     }
 
-    async function joinGlobalPool() {
-      const amount = prompt('输入初始贡献额度（最低 10000）:', '10000');
-      if (!amount) return;
-      const region = prompt('输入区域（如 cn-east, us-west）:', 'cn-east');
+    async function revokeGuestKey(key) {
+      if (!confirm('确定撤销此 Guest Key？')) return;
       try {
-        const r = await authFetch('/api/network/global-pool/join', {
-          method: 'POST',
-          body: JSON.stringify({ amount: parseInt(amount), region: region || 'cn-east' })
-        });
-        const d = await r.json();
-        if (r.ok) { alert('✅ 已加入全局池！'); loadGlobalPoolStatus(); }
-        else { alert('❌ ' + (d.message || d.error || '加入失败')); }
-      } catch(e) { alert('请求失败: ' + e.message); }
-    }
-
-    async function contributeToGlobalPool() {
-      const amount = prompt('输入贡献额度:', '5000');
-      if (!amount) return;
-      try {
-        const r = await authFetch('/api/network/global-pool/contribute', {
-          method: 'POST',
-          body: JSON.stringify({ amount: parseInt(amount) })
-        });
-        const d = await r.json();
-        if (r.ok) { alert('✅ 贡献成功！'); loadGlobalPoolStatus(); }
-        else { alert('❌ ' + (d.message || d.error || '贡献失败')); }
-      } catch(e) { alert('请求失败: ' + e.message); }
-    }
-
-    async function issueGlobalKey() {
-      const quota = prompt('输入 Global Key 额度（默认 50000）:', '50000');
-      try {
-        const r = await authFetch('/api/network/global-keys/issue', {
-          method: 'POST',
-          body: JSON.stringify({ quota: parseInt(quota) || 50000 })
-        });
-        const d = await r.json();
-        if (r.ok) {
-          alert('✅ Global Key 已签发！\n\n' + d.key);
-          loadGlobalPoolNodes();
-        } else { alert('❌ ' + (d.message || d.error || '签发失败')); }
-      } catch(e) { alert('请求失败: ' + e.message); }
+        const res = await authFetch('/api/network/guest-keys/' + encodeURIComponent(key), { method: 'DELETE' });
+        if (res.ok) {
+          toast('已撤销', 'success');
+          loadGuestKeys();
+        } else { toast('撤销失败', 'error'); }
+      } catch(e) { toast('撤销失败', 'error'); }
     }
 
     // Load network status on page load
