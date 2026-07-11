@@ -243,7 +243,7 @@ select.form-input{appearance:none;cursor:pointer}
         <span style="font-size:13px;font-weight:500">🎫 Guest Key 管理</span>
         <button class="btn btn-primary btn-sm" onclick="generateGuestKey()">+ 签发新 Key</button>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">签发给他人使用，可设置额度和有效期。Guest Key 的访问范围取决于你的共享网络状态。</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">签发给他人使用，可设置有效期。Guest Key 由全网 Pool 均分额度，无需单独设定。</div>
       <div id="guestKeysList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
     </div>
   </div>
@@ -526,16 +526,16 @@ select.form-input{appearance:none;cursor:pointer}
     <div id="quotaAllocation" style="display:none;margin-bottom:16px">
       <div style="padding:12px 16px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.15);border-radius:10px">
         <div style="font-size:13px;font-weight:500;margin-bottom:10px">📊 额度分配</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">设定您贡献的 Token 额度中，多少比例给免费消费者使用，多少比例给其他节点的 Proxy API Key 使用</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">设定您贡献的 Token 额度中，多少比例贡献给 Guest Key Pool，多少比例贡献给 Public Key Pool</div>
         <div style="display:flex;gap:16px;align-items:center">
           <div style="flex:1">
-            <label style="font-size:12px;color:var(--text-secondary)">免费消费者占比</label>
-            <input type="range" id="freeConsumerPercent" min="0" max="100" value="30" oninput="document.getElementById('freePercentDisplay').textContent=this.value+'%'; document.getElementById('nodePercentDisplay').textContent=(100-this.value)+'%'" style="width:100%">
+            <label style="font-size:12px;color:var(--text-secondary)">Guest Key / Public Key 分配比例</label>
+            <input type="range" id="guestKeyPercentSlider" min="0" max="100" value="50" oninput="document.getElementById('guestPercentDisplay').textContent=this.value+'%'; document.getElementById('publicPercentDisplay').textContent=(100-this.value)+'%'" style="width:100%">
           </div>
           <div style="display:flex;gap:12px;font-size:13px;font-weight:600">
-            <span>消费者: <span id="freePercentDisplay">30%</span></span>
+            <span>Guest Key: <span id="guestPercentDisplay">50%</span></span>
             <span style="color:var(--text-muted)">|</span>
-            <span>节点: <span id="nodePercentDisplay">70%</span></span>
+            <span>Public Key: <span id="publicPercentDisplay">50%</span></span>
           </div>
           <button class="btn btn-primary btn-sm" onclick="saveQuotaAllocation()">保存</button>
         </div>
@@ -2628,7 +2628,7 @@ if (authToken) {
         const data = await res.json();
         const keys = data.keys || [];
         if (keys.length === 0) {
-          el.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px">暂无 Guest Key，点击「+ 签发新 Key」创建</div>';
+          el.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px">暂无 Guest Key，点击「+ 签发新 Key」创建<br><span style="font-size:10px;margin-top:4px;display:block">💡 Guest Key 额度由全网 Pool 均分，无需单独设定</span></div>';
           return;
         }
         el.innerHTML = keys.map(k => {
@@ -2662,11 +2662,8 @@ if (authToken) {
       const formHtml = `
         <div id="guestKeyForm" style="padding:14px;margin-bottom:8px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.2);border-radius:8px">
           <div style="font-size:13px;font-weight:500;margin-bottom:10px">🎫 签发新 Guest Key</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-            <div>
-              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">每日 Token 额度</label>
-              <input id="gkQuota" class="form-input" type="number" value="10000" min="0" style="font-size:12px;height:32px" placeholder="0=无限">
-            </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:6px 10px;background:rgba(108,99,255,.04);border-radius:6px">💡 Guest Key 额度由全网 Pool 均分，无需单独设定。所有 Guest Key 共享同一额度池。</div>
+          <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:10px">
             <div>
               <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">有效期（天）</label>
               <input id="gkExpDays" class="form-input" type="number" value="30" min="0" style="font-size:12px;height:32px" placeholder="0=永不过期">
@@ -2685,11 +2682,10 @@ if (authToken) {
     }
 
     async function doGenerateGuestKey() {
-      const quota = parseInt(document.getElementById('gkQuota').value) || 0;
       const expDays = parseInt(document.getElementById('gkExpDays').value) || 30;
       const note = document.getElementById('gkNote').value.trim();
       try {
-        const body = { quota: quota, exp_days: expDays };
+        const body = { exp_days: expDays };
         if (note) body.note = note;
         const res = await authFetch('/api/network/guest-keys', {
           method: 'POST',
@@ -2790,14 +2786,18 @@ function toggleSharedNetwork() {
 }
 
 async function saveQuotaAllocation() {
-  const freePercent = parseInt(document.getElementById('freeConsumerPercent').value, 10);
+  const guestPercent = parseInt(document.getElementById('guestKeyPercentSlider').value, 10);
   try {
     const r = await authFetch('/api/network/quota-allocation', {
       method: 'PUT',
-      body: JSON.stringify({ free_consumer_percent: freePercent, network_node_percent: 100 - freePercent })
+      body: JSON.stringify({ guest_key_percent: guestPercent })
     });
     const d = await r.json();
-    toast(d.success ? '✅ 额度分配已保存' : '保存失败', d.success ? 'success' : 'error');
+    if (d.guest_key_percent !== undefined) {
+      toast('✅ 额度分配已保存', 'success');
+    } else {
+      toast('保存失败', 'error');
+    }
   } catch(e) { toast('保存失败: ' + e.message, 'error'); }
 }
 

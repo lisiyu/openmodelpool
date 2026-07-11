@@ -368,8 +368,8 @@ func handleNetworkKeyValidate(w http.ResponseWriter, r *http.Request) {
 func handleGetQuotaAllocation(w http.ResponseWriter, r *http.Request) {
 	if netMgr == nil {
 		writeJSON(w, 200, map[string]any{
-			"free_consumer_percent": 50,
-			"network_node_percent":  50,
+			"guest_key_percent": 50,
+			"public_key_percent":  50,
 		})
 		return
 	}
@@ -379,8 +379,8 @@ func handleGetQuotaAllocation(w http.ResponseWriter, r *http.Request) {
 	netMgr.mu.RUnlock()
 
 	writeJSON(w, 200, map[string]any{
-		"free_consumer_percent": alloc.FreeConsumerPercent,
-		"network_node_percent":  alloc.NetworkNodePercent,
+		"guest_key_percent": alloc.GuestKeyPercent,
+		"public_key_percent":  alloc.PublicKeyPercent,
 	})
 }
 
@@ -392,27 +392,27 @@ func handleUpdateQuotaAllocation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		FreeConsumerPercent int `json:"free_consumer_percent"`
+		GuestKeyPercent int `json:"guest_key_percent"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
 
-	if body.FreeConsumerPercent < 0 || body.FreeConsumerPercent > 100 {
-		writeError(w, 400, "free_consumer_percent must be between 0 and 100")
+	if body.GuestKeyPercent < 0 || body.GuestKeyPercent > 100 {
+		writeError(w, 400, "guest_key_percent must be between 0 and 100")
 		return
 	}
 
 	netMgr.mu.Lock()
-	netMgr.config.QuotaAllocation.FreeConsumerPercent = body.FreeConsumerPercent
-	netMgr.config.QuotaAllocation.NetworkNodePercent = 100 - body.FreeConsumerPercent
+	netMgr.config.QuotaAllocation.GuestKeyPercent = body.GuestKeyPercent
+	netMgr.config.QuotaAllocation.PublicKeyPercent = 100 - body.GuestKeyPercent
 	netMgr.mu.Unlock()
 	netMgr.doSave()
 
 	writeJSON(w, 200, map[string]any{
-		"free_consumer_percent": body.FreeConsumerPercent,
-		"network_node_percent":  100 - body.FreeConsumerPercent,
+		"guest_key_percent": body.GuestKeyPercent,
+		"public_key_percent":  100 - body.GuestKeyPercent,
 	})
 }
 

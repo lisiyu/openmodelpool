@@ -717,11 +717,11 @@ func TestAllocation_Balance(t *testing.T) {
 	t.Run("DefaultAllocation", func(t *testing.T) {
 		am := initTestAllocation(t, dir)
 		alloc := am.GetAllocation()
-		if alloc.FreeConsumerPercent != 50 {
-			t.Fatalf("default free_consumer_percent should be 50, got %d", alloc.FreeConsumerPercent)
+		if alloc.GuestKeyPercent != 50 {
+			t.Fatalf("default guest_key_percent should be 50, got %d", alloc.GuestKeyPercent)
 		}
-		if alloc.NetworkNodePercent != 50 {
-			t.Fatalf("default network_node_percent should be 50, got %d", alloc.NetworkNodePercent)
+		if alloc.PublicKeyPercent != 50 {
+			t.Fatalf("default public_key_percent should be 50, got %d", alloc.PublicKeyPercent)
 		}
 	})
 
@@ -733,11 +733,11 @@ func TestAllocation_Balance(t *testing.T) {
 			t.Fatalf("SetAllocation should succeed: %v", err)
 		}
 		alloc := am.GetAllocation()
-		if alloc.FreeConsumerPercent != 70 {
-			t.Fatalf("free_consumer_percent should be 70, got %d", alloc.FreeConsumerPercent)
+		if alloc.GuestKeyPercent != 70 {
+			t.Fatalf("guest_key_percent should be 70, got %d", alloc.GuestKeyPercent)
 		}
-		if alloc.NetworkNodePercent != 30 {
-			t.Fatalf("network_node_percent should be 30, got %d", alloc.NetworkNodePercent)
+		if alloc.PublicKeyPercent != 30 {
+			t.Fatalf("public_key_percent should be 30, got %d", alloc.PublicKeyPercent)
 		}
 	})
 
@@ -749,11 +749,11 @@ func TestAllocation_Balance(t *testing.T) {
 			t.Fatalf("SetAllocation(0) should succeed: %v", err)
 		}
 		alloc := am.GetAllocation()
-		if alloc.FreeConsumerPercent != 0 {
-			t.Fatalf("free_consumer_percent should be 0, got %d", alloc.FreeConsumerPercent)
+		if alloc.GuestKeyPercent != 0 {
+			t.Fatalf("guest_key_percent should be 0, got %d", alloc.GuestKeyPercent)
 		}
-		if alloc.NetworkNodePercent != 100 {
-			t.Fatalf("network_node_percent should be 100, got %d", alloc.NetworkNodePercent)
+		if alloc.PublicKeyPercent != 100 {
+			t.Fatalf("public_key_percent should be 100, got %d", alloc.PublicKeyPercent)
 		}
 	})
 
@@ -765,11 +765,11 @@ func TestAllocation_Balance(t *testing.T) {
 			t.Fatalf("SetAllocation(100) should succeed: %v", err)
 		}
 		alloc := am.GetAllocation()
-		if alloc.FreeConsumerPercent != 100 {
-			t.Fatalf("free_consumer_percent should be 100, got %d", alloc.FreeConsumerPercent)
+		if alloc.GuestKeyPercent != 100 {
+			t.Fatalf("guest_key_percent should be 100, got %d", alloc.GuestKeyPercent)
 		}
-		if alloc.NetworkNodePercent != 0 {
-			t.Fatalf("network_node_percent should be 0, got %d", alloc.NetworkNodePercent)
+		if alloc.PublicKeyPercent != 0 {
+			t.Fatalf("public_key_percent should be 0, got %d", alloc.PublicKeyPercent)
 		}
 	})
 
@@ -792,11 +792,11 @@ func TestAllocation_Balance(t *testing.T) {
 		am.RecordUsage(true, 1000)
 		am.RecordUsage(false, 2000)
 		stats := am.GetUsageStats()
-		if stats["used_free_tokens"] != int64(1000) {
-			t.Fatalf("used_free_tokens should be 1000, got %v", stats["used_free_tokens"])
+		if stats["used_guest_tokens"] != int64(1000) {
+			t.Fatalf("used_free_tokens should be 1000, got %v", stats["used_guest_tokens"])
 		}
-		if stats["used_network_tokens"] != int64(2000) {
-			t.Fatalf("used_network_tokens should be 2000, got %v", stats["used_network_tokens"])
+		if stats["used_public_tokens"] != int64(2000) {
+			t.Fatalf("used_network_tokens should be 2000, got %v", stats["used_public_tokens"])
 		}
 	})
 
@@ -811,11 +811,11 @@ func TestAllocation_Balance(t *testing.T) {
 			dataDir: dir,
 		}
 		am2.load()
-		if am2.config.FreeConsumerPercent != 80 {
-			t.Fatalf("loaded free_consumer_percent should be 80, got %d", am2.config.FreeConsumerPercent)
+		if am2.config.GuestKeyPercent != 80 {
+			t.Fatalf("loaded guest_key_percent should be 80, got %d", am2.config.GuestKeyPercent)
 		}
-		if am2.config.NetworkNodePercent != 20 {
-			t.Fatalf("loaded network_node_percent should be 20, got %d", am2.config.NetworkNodePercent)
+		if am2.config.PublicKeyPercent != 20 {
+			t.Fatalf("loaded public_key_percent should be 20, got %d", am2.config.PublicKeyPercent)
 		}
 	})
 }
