@@ -235,14 +235,14 @@ func getSelfAddresses() []string {
 	publicIP := detectPublicIP()
 	if publicIP != "" {
 		port := cfg.Get("service_port", "8000")
-		addrs = append(addrs, "http://"+publicIP+":"+port)
+		addrs = append(addrs, "https://"+publicIP+":"+port)
 	}
 
 	// 3. LAN IP as fallback
 	lanIP := cfg.Get("lan_ip", "")
 	if lanIP != "" {
 		port := cfg.Get("service_port", "8000")
-		lanAddr := "http://" + lanIP + ":" + port
+		lanAddr := "https://" + lanIP + ":" + port
 		// Avoid duplicate if lanIP == publicIP
 		found := false
 		for _, a := range addrs {

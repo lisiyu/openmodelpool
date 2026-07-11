@@ -1,6 +1,6 @@
 package main
 
-// Preset provider definitions (34 platforms).
+// Preset provider definitions (35 platforms).
 // These serve as defaults when no user config exists.
 
 var presetProviders = []Provider{
@@ -463,6 +463,20 @@ var presetProviders = []Provider{
 			{ID: "Baichuan4-Air", Name: "Baichuan 4 Air"},
 			{ID: "Baichuan4", Name: "Baichuan 4"},
 			{ID: "Baichuan3-Turbo", Name: "Baichuan 3 Turbo"},
+		},
+	},
+	{
+		ID: "agnes", Name: "Agnes AI", Type: "openai_compatible",
+		BaseURL:    "https://apihub.agnes-ai.com/v1",
+		Priority:   5,
+		Description: "新加坡 Sapiens AI 多模态平台（文本/图像/视频），OpenAI 兼容，注册即送免费额度",
+		Icon:        "agnes",
+		APIKeyURL:   "https://platform.agnes-ai.com/",
+		Models: []ModelDef{
+			{ID: "agnes-2.0-flash", Name: "Agnes 2.0 Flash (文本)"},
+			{ID: "agnes-image-2.1-flash", Name: "Agnes Image 2.1 Flash (图像)"},
+			{ID: "agnes-image-2.0-flash", Name: "Agnes Image 2.0 Flash (图像)"},
+			{ID: "agnes-video-v2.0", Name: "Agnes Video V2.0 (视频)"},
 		},
 	},
 }

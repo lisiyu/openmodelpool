@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"log/slog"
+	"crypto/tls"
 	"net/http"
 	"runtime"
 	"sync"
@@ -61,8 +62,8 @@ func getMemoryUsage() MemoryStats {
 // head-of-line blocking between internal and external traffic.
 
 // internalTransport is the shared connection pool for ALL internal communications.
-// Extracted as a package-level variable so clients with custom timeouts can
-// reuse the same TCP/TLS connection pool, eliminating redundant TLS handshakes.
+// TLSClientConfig skips cert verification for pool-internal self-signed certificates.
+// All nodes in the trust pool are mutually trusted.
 var internalTransport = &http.Transport{
 	MaxIdleConns:          100,
 	MaxIdleConnsPerHost:   10,
@@ -71,6 +72,7 @@ var internalTransport = &http.Transport{
 	TLSHandshakeTimeout:   10 * time.Second,
 	ExpectContinueTimeout: 1 * time.Second,
 	ForceAttemptHTTP2:     true,
+	TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // trust pool-internal self-signed certs
 }
 
 var internalHTTPClient *http.Client

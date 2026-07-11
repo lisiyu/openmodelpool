@@ -354,23 +354,28 @@ type candidate struct {
 // RequestKeyType classifies the request key type for access control (v2.0).
 // Returns "admin", "guest", "public", or "proxy".
 func RequestKeyType(r *http.Request) string {
-	// If relay already classified the key type, use it
+	// Priority 1: If relay already classified the key type, use it
 	if mkType := r.Header.Get("X-MK-KeyType"); mkType != "" {
 		return mkType
 	}
 
-	// Check role header (set by withProxyAuth)
+	// Priority 2: Check role header (set by withProxyAuth)
 	if role := r.Header.Get("X-Request-Role"); role == "admin" {
 		return "admin"
 	}
 
-	// Check Authorization header directly
+	// Priority 3: Check Authorization header directly
 	auth := r.Header.Get("Authorization")
 	key := strings.TrimPrefix(auth, "Bearer ")
 	switch ClassifyKey(key) {
 	case KeyTypePublic:
 		return "public"
 	case KeyTypeGuest:
+		// Check if this guest key has public pool access
+		_, accessPool, valid := GetGuestKeyAccessPublicPool(key)
+		if valid && accessPool {
+			return "public"
+		}
 		return "guest"
 	case KeyTypeProxy:
 		return "proxy"

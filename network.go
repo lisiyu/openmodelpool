@@ -435,17 +435,42 @@ func (nm *NetworkManager) registerSelf() {
 	slog.Info("registered self in route table", "node_id", nodeID, "addresses", addresses)
 }
 
-// collectAddresses gathers all reachable URLs for this node
+// collectAddresses gathers all reachable URLs for this node.
+// Includes Cloudflare tunnel URL, custom domain, public IP (HTTPS), and localhost (HTTPS).
 func (nm *NetworkManager) collectAddresses() []string {
 	var addrs []string
+
+	// 1. Cloudflare tunnel URL (already HTTPS)
 	if u := cfg.Get("tunnel_url", ""); u != "" {
 		addrs = append(addrs, u)
 	}
+
+	// 2. Custom domain (HTTPS)
 	if d := cfg.Get("tunnel_domain", ""); d != "" {
 		addrs = append(addrs, "https://"+d)
 	}
+
+	// 3. Public IP detection (HTTPS with self-signed cert)
+	if pubIP := detectPublicIP(); pubIP != "" {
+		port := cfg.Get("service_port", "8000")
+		pubAddr := fmt.Sprintf("https://%s:%s", pubIP, port)
+		// Avoid duplicate if already present
+		found := false
+		for _, a := range addrs {
+			if a == pubAddr {
+				found = true
+				break
+			}
+		}
+		if !found {
+			addrs = append(addrs, pubAddr)
+		}
+	}
+
+	// 4. Localhost (HTTPS)
 	port := cfg.Get("service_port", "8000")
-	addrs = append(addrs, fmt.Sprintf("http://localhost:%s", port))
+	addrs = append(addrs, fmt.Sprintf("https://localhost:%s", port))
+
 	return addrs
 }
 
