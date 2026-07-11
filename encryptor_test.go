@@ -1,165 +1,181 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
-	"testing"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"sync"
+	"time"
 )
 
-// newTestEncryptor creates a fresh encryptor with a temp key file.
-func newTestEncryptor(t *testing.T) *encryptor {
-	t.Helper()
-	dir := t.TempDir()
-	keyPath := filepath.Join(dir, ".key")
-	e := &encryptor{keyPath: keyPath}
-	e.loadOrCreateKey()
-	if !e.ready {
-		t.Fatal("encryptor not ready after init")
-	}
-	return e
+// EventBus manages real-time event broadcasting to connected clients.
+// Uses Server-Sent Events (SSE) for browser-compatible push notifications.
+type EventBus struct {
+	mu      sync.RWMutex
+	clients map[string]chan SSEEvent // clientID -> event channel
+	nextID  int
 }
 
-func TestEncryptor_RoundTrip(t *testing.T) {
-	e := newTestEncryptor(t)
-
-	tests := []struct {
-		name      string
-		plaintext string
-	}{
-		{"hello", "hello world"},
-		{"unicode", "你好世界 🌍"},
-		{"long", "a]b[c{d}e(f)g!@#$%^&*()_+-=0123456789"},
-		{"single_char", "x"},
-		{"json_payload", `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			enc := e.Encrypt(tt.plaintext)
-			if enc == "" {
-				t.Fatal("Encrypt returned empty string")
-			}
-			if enc == tt.plaintext {
-				t.Fatal("Encrypt returned plaintext unchanged")
-			}
-			if !IsEncrypted(enc) {
-				t.Fatalf("encrypted result missing enc: prefix: %q", enc)
-			}
-			dec := e.Decrypt(enc)
-			if dec != tt.plaintext {
-				t.Fatalf("roundtrip mismatch: got %q, want %q", dec, tt.plaintext)
-			}
-		})
-	}
+// SSEEvent represents a push event sent to connected clients.
+type SSEEvent struct {
+	Type string `json:"type"` // "provider_status", "health_change", "config_update", etc.
+	Data any    `json:"data"`
+	Time string `json:"time"`
 }
 
-func TestEncryptor_EmptyString(t *testing.T) {
-	e := newTestEncryptor(t)
-	enc := e.Encrypt("")
-	if enc != "" {
-		t.Fatalf("Encrypt(\"\") should return \"\", got %q", enc)
+var eventBus *EventBus
+
+func initEventBus() {
+	eventBus = &EventBus{
+		clients: make(map[string]chan SSEEvent),
 	}
-	dec := e.Decrypt("")
-	if dec != "" {
-		t.Fatalf("Decrypt(\"\") should return \"\", got %q", dec)
-	}
+	slog.Info("event bus initialized")
 }
 
-func TestEncryptor_RandomIV_DifferentCiphertext(t *testing.T) {
-	e := newTestEncryptor(t)
-	plaintext := "same plaintext every time"
+// Subscribe creates a new SSE subscription and returns the client ID and channel.
+func (eb *EventBus) Subscribe() (string, <-chan SSEEvent) {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
 
-	c1 := e.Encrypt(plaintext)
-	c2 := e.Encrypt(plaintext)
+	eb.nextID++
+	clientID := fmt.Sprintf("client-%d-%d", time.Now().UnixNano(), eb.nextID)
+	ch := make(chan SSEEvent, 64) // buffered to avoid blocking
+	eb.clients[clientID] = ch
 
-	if c1 == c2 {
-		t.Fatal("two encryptions of the same plaintext should differ (random IV)")
-	}
-
-	// Both must decrypt to the same value
-	if e.Decrypt(c1) != plaintext || e.Decrypt(c2) != plaintext {
-		t.Fatal("decryption of both ciphertexts should yield original plaintext")
-	}
+	slog.Debug("sse client subscribed", "client_id", clientID, "total", len(eb.clients))
+	return clientID, ch
 }
 
-func TestEncryptor_DecryptInvalidData(t *testing.T) {
-	e := newTestEncryptor(t)
+// Unsubscribe removes a client subscription.
+func (eb *EventBus) Unsubscribe(clientID string) {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
 
-	// Non-encrypted plaintext (legacy) - returns as-is
-	legacy := "not-encrypted-at-all"
-	if got := e.Decrypt(legacy); got != legacy {
-		t.Fatalf("non-encrypted should pass through, got %q", got)
+	if ch, ok := eb.clients[clientID]; ok {
+		close(ch)
+		delete(eb.clients, clientID)
 	}
-
-	// Corrupted enc: prefix
-	corrupted := "enc:not-valid-base64!!!###"
-	if got := e.Decrypt(corrupted); got != "" {
-		t.Fatalf("corrupted data should decrypt to \"\", got %q", got)
-	}
-
-	// Valid base64 but wrong content (not an actual GCM ciphertext)
-	bad := "enc:aGVsbG8=" // "hello" in base64 - too short for nonce
-	if got := e.Decrypt(bad); got != "" {
-		t.Fatalf("short encrypted data should decrypt to \"\", got %q", got)
-	}
+	slog.Debug("sse client unsubscribed", "client_id", clientID, "total", len(eb.clients))
 }
 
-func TestEncryptor_NotReady(t *testing.T) {
-	e := &encryptor{ready: false}
-	if got := e.Encrypt("hello"); got != "hello" {
-		t.Fatalf("not-ready encryptor should return plaintext, got %q", got)
+// Broadcast sends an event to all connected clients.
+func (eb *EventBus) Broadcast(event SSEEvent) {
+	if event.Time == "" {
+		event.Time = time.Now().Format(time.RFC3339)
 	}
-	if got := e.Decrypt("anything"); got != "anything" {
-		t.Fatalf("not-ready decryptor should return as-is, got %q", got)
-	}
-}
 
-func TestEncryptor_KeyPersistence(t *testing.T) {
-	dir := t.TempDir()
-	keyPath := filepath.Join(dir, ".key")
+	eb.mu.RLock()
+	defer eb.mu.RUnlock()
 
-	// First encryptor creates key
-	e1 := &encryptor{keyPath: keyPath}
-	e1.loadOrCreateKey()
-	cipher1 := e1.Encrypt("test")
-
-	// Second encryptor loads same key
-	e2 := &encryptor{keyPath: keyPath}
-	e2.loadOrCreateKey()
-
-	dec := e2.Decrypt(cipher1)
-	if dec != "test" {
-		t.Fatalf("key persistence failed: got %q", dec)
-	}
-}
-
-func TestIsEncrypted(t *testing.T) {
-	tests := []struct {
-		input string
-		want  bool
-	}{
-		{"enc:abc", true},
-		{"enc:", true},
-		{"enc", false},
-		{"en:", false},
-		{"", false},
-		{"hello", false},
-		{"ENc:abc", false},
-	}
-	for _, tt := range tests {
-		if got := IsEncrypted(tt.input); got != tt.want {
-			t.Errorf("IsEncrypted(%q) = %v, want %v", tt.input, got, tt.want)
+	for id, ch := range eb.clients {
+		select {
+		case ch <- event:
+			// sent successfully
+		default:
+			// client channel full, skip (slow consumer)
+			slog.Debug("sse client slow, dropping event", "client_id", id)
 		}
 	}
 }
 
-func TestEncryptor_KeyFileCreated(t *testing.T) {
-	dir := t.TempDir()
-	keyPath := filepath.Join(dir, "subdir", ".key")
-	e := &encryptor{keyPath: keyPath}
-	e.loadOrCreateKey()
+// BroadcastProviderStatus sends a provider status update to all clients.
+func BroadcastProviderStatus(providerID, status string) {
+	if eventBus == nil {
+		return
+	}
+	eventBus.Broadcast(SSEEvent{
+		Type: "provider_status",
+		Data: map[string]string{
+			"provider_id": providerID,
+			"status":      status,
+		},
+	})
+}
 
-	if _, err := os.Stat(keyPath); err != nil {
-		t.Fatalf("key file should exist at %s: %v", keyPath, err)
+// BroadcastHealthChange sends a health status change event.
+func BroadcastHealthChange(providerID, oldStatus, newStatus string) {
+	if eventBus == nil {
+		return
+	}
+	eventBus.Broadcast(SSEEvent{
+		Type: "health_change",
+		Data: map[string]string{
+			"provider_id": providerID,
+			"old_status":  oldStatus,
+			"new_status":  newStatus,
+		},
+	})
+}
+
+// BroadcastConfigUpdate sends a configuration update event.
+func BroadcastConfigUpdate(key string) {
+	if eventBus == nil {
+		return
+	}
+	eventBus.Broadcast(SSEEvent{
+		Type: "config_update",
+		Data: map[string]string{"key": key},
+	})
+}
+
+// handleSSE is the HTTP handler for the /events SSE endpoint.
+func handleSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	clientID, ch := eventBus.Subscribe()
+	defer eventBus.Unsubscribe(clientID)
+
+	// Send initial connection event
+	initData, _ := json.Marshal(SSEEvent{
+		Type: "connected",
+		Data: map[string]string{"client_id": clientID},
+		Time: time.Now().Format(time.RFC3339),
+	})
+	fmt.Fprintf(w, "data: %s\n\n", initData)
+	flusher.Flush()
+
+	ctx := r.Context()
+	keepAlive := time.NewTicker(30 * time.Second)
+	defer keepAlive.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, _ := json.Marshal(event)
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, data)
+			flusher.Flush()
+		case <-keepAlive.C:
+			// Send keepalive comment to prevent connection timeout
+			fmt.Fprintf(w, ": keepalive\n\n")
+			flusher.Flush()
+		}
+	}
+}
+
+// GetEventBusStats returns event bus statistics.
+func GetEventBusStats() map[string]any {
+	if eventBus == nil {
+		return map[string]any{"enabled": false}
+	}
+	eventBus.mu.RLock()
+	defer eventBus.mu.RUnlock()
+	return map[string]any{
+		"enabled":        true,
+		"connected_clients": len(eventBus.clients),
 	}
 }

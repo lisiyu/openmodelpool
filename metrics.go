@@ -1,189 +1,164 @@
 package main
 
 import (
-	"fmt"
-	"log/slog"
 	"net/http"
-	"sort"
 	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
-// Metrics collects and exposes Prometheus-compatible metrics.
-// Uses a lightweight implementation without the prometheus client library.
-type Metrics struct {
-	mu             sync.RWMutex
-	requestTotal   atomic.Int64
-	requestErrors  atomic.Int64
-	requestByModel map[string]*atomic.Int64
-	requestByProvider map[string]*atomic.Int64
-	latencySum     map[string]*atomic.Int64 // provider -> sum of latencies in ms
-	latencyCount   map[string]*atomic.Int64 // provider -> count
-	tokenUsage     atomic.Int64
-	startTime      time.Time
-}
+// corsMiddleware handles CORS headers based on configured allowed origins.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		allowedOrigins := cfg.Get("cors_allowed_origins", "")
 
-var metrics *Metrics
-
-func initMetrics() {
-	metrics = &Metrics{
-		requestByModel:    make(map[string]*atomic.Int64),
-		requestByProvider: make(map[string]*atomic.Int64),
-		latencySum:        make(map[string]*atomic.Int64),
-		latencyCount:      make(map[string]*atomic.Int64),
-		startTime:         time.Now(),
-	}
-	slog.Info("metrics collector initialized")
-}
-
-// RecordRequest records a request metric.
-func (m *Metrics) RecordRequest(model, providerID string, latencyMS int64, success bool, tokens int) {
-	m.requestTotal.Add(1)
-	if !success {
-		m.requestErrors.Add(1)
-	}
-
-	// Per-model counter
-	m.mu.RLock()
-	counter, ok := m.requestByModel[model]
-	m.mu.RUnlock()
-	if !ok {
-		m.mu.Lock()
-		counter = &atomic.Int64{}
-		m.requestByModel[model] = counter
-		m.mu.Unlock()
-	}
-	counter.Add(1)
-
-	// Per-provider counter
-	m.mu.RLock()
-	pCounter, ok := m.requestByProvider[providerID]
-	m.mu.RUnlock()
-	if !ok {
-		m.mu.Lock()
-		pCounter = &atomic.Int64{}
-		m.requestByProvider[providerID] = pCounter
-		m.mu.Unlock()
-	}
-	pCounter.Add(1)
-
-	// Latency tracking per provider
-	if latencyMS > 0 && providerID != "" {
-		m.mu.RLock()
-		lSum, ok := m.latencySum[providerID]
-		lCount, ok2 := m.latencyCount[providerID]
-		m.mu.RUnlock()
-		if !ok || !ok2 {
-			m.mu.Lock()
-			if _, ok := m.latencySum[providerID]; !ok {
-				m.latencySum[providerID] = &atomic.Int64{}
-				m.latencyCount[providerID] = &atomic.Int64{}
+		// Default: allow localhost and tunnel URL, never wildcard *
+		if allowedOrigins == "" {
+			tunnelURL := cfg.Get("tunnel_url", "")
+			defaults := "http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000"
+			if tunnelURL != "" {
+				defaults += "," + tunnelURL
 			}
-			lSum = m.latencySum[providerID]
-			lCount = m.latencyCount[providerID]
-			m.mu.Unlock()
+			allowedOrigins = defaults
 		}
-		lSum.Add(latencyMS)
-		lCount.Add(1)
-	}
 
-	// Token usage
-	if tokens > 0 {
-		m.tokenUsage.Add(int64(tokens))
+		if origin != "" && isOriginAllowed(origin, allowedOrigins) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
+
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isOriginAllowed checks if an origin match the whitelist.
+// Supports exact match and wildcard subdomain (*.example.com).
+func isOriginAllowed(origin, whitelist string) bool {
+	origins := strings.Split(whitelist, ",")
+	for _, allowed := range origins {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "" {
+			continue
+		}
+		if allowed == origin {
+			return true
+		}
+		// Wildcard subdomain: *.example.com matches sub.example.com
+		if strings.HasPrefix(allowed, "*.") {
+			suffix := allowed[1:] // ".example.com"
+			if strings.HasSuffix(origin, suffix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// withProxyAuth authenticates v1 proxy endpoints.
+// Accepts: public trial key, admin proxy API key, or consumer API key.
+// If no proxy API key is set and no consumer key matches, allows anonymous access as admin.
+func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			key := authHeader[7:]
+			// v2.0: public trial key — always accepted
+			if key == PublicKeyValue {
+				r.Header.Set("X-Request-Owner", "")
+				r.Header.Set("X-Request-Role", "public")
+				handler(w, r)
+				return
+			}
+		}
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			// No auth header - check if proxy key is required
+			proxyKey := cfg.Get("proxy_api_key", "")
+			if proxyKey == "" {
+				r.Header.Set("X-Request-Owner", "")
+				r.Header.Set("X-Request-Role", "admin")
+				handler(w, r)
+				return
+			}
+			writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
+				Message: "API key required",
+				Type:    "authentication_error",
+				Code:    "missing_api_key",
+			}})
+			return
+		}
+
+		key := authHeader[7:]
+		// Check admin proxy API key first
+		proxyKey := cfg.Get("proxy_api_key", "")
+		if proxyKey != "" && key == proxyKey {
+			r.Header.Set("X-Request-Owner", "")
+			r.Header.Set("X-Request-Role", "admin")
+			handler(w, r)
+			return
+		}
+
+		// Check consumer API key
+		if consumer, ok := multiUser.ValidateAPIKey(key); ok {
+			r.Header.Set("X-Request-Owner", consumer.ID)
+			r.Header.Set("X-Request-Role", "consumer")
+			r.Header.Set("X-Consumer-Name", consumer.Name)
+			handler(w, r)
+			return
+		}
+
+		// No anonymous fallback - require valid credentials
+		if proxyKey == "" {
+			// Only allow if there's no proxy key AND consumer keys exist (unprotected mode)
+			if len(multiUser.consumers) == 0 {
+				r.Header.Set("X-Request-Owner", "")
+				r.Header.Set("X-Request-Role", "admin")
+				handler(w, r)
+				return
+			}
+		}
+
+		// S-9: Generic error message - do not expose internal details
+		writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
+			Message: "请求处理失败，请稍后重试",
+			Type:    "authentication_error",
+			Code:    "invalid_api_key",
+		}})
 	}
 }
 
-// handleMetrics serves the /metrics endpoint in Prometheus text format.
-func handleMetrics(w http.ResponseWriter, r *http.Request) {
-	if metrics == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		return
-	}
-
-	var b strings.Builder
-
-	// HELP and TYPE headers
-	b.WriteString("# HELP openmodelpool_requests_total Total number of requests processed.\n")
-	b.WriteString("# TYPE openmodelpool_requests_total counter\n")
-	b.WriteString(fmt.Sprintf("openmodelpool_requests_total %d\n", metrics.requestTotal.Load()))
-
-	b.WriteString("# HELP openmodelpool_request_errors_total Total number of failed requests.\n")
-	b.WriteString("# TYPE openmodelpool_request_errors_total counter\n")
-	b.WriteString(fmt.Sprintf("openmodelpool_request_errors_total %d\n", metrics.requestErrors.Load()))
-
-	b.WriteString("# HELP openmodelpool_tokens_total Total tokens consumed.\n")
-	b.WriteString("# TYPE openmodelpool_tokens_total counter\n")
-	b.WriteString(fmt.Sprintf("openmodelpool_tokens_total %d\n", metrics.tokenUsage.Load()))
-
-	b.WriteString("# HELP openmodelpool_uptime_seconds Uptime in seconds.\n")
-	b.WriteString("# TYPE openmodelpool_uptime_seconds gauge\n")
-	b.WriteString(fmt.Sprintf("openmodelpool_uptime_seconds %.0f\n", time.Since(metrics.startTime).Seconds()))
-
-	// Per-model requests
-	b.WriteString("# HELP openmodelpool_requests_by_model Requests by model.\n")
-	b.WriteString("# TYPE openmodelpool_requests_by_model counter\n")
-	metrics.mu.RLock()
-	models := make([]string, 0, len(metrics.requestByModel))
-	for k := range metrics.requestByModel {
-		models = append(models, k)
-	}
-	sort.Strings(models)
-	for _, model := range models {
-		b.WriteString(fmt.Sprintf("openmodelpool_requests_by_model{model=%q} %d\n", model, metrics.requestByModel[model].Load()))
-	}
-
-	// Per-provider requests
-	b.WriteString("# HELP openmodelpool_requests_by_provider Requests by provider.\n")
-	b.WriteString("# TYPE openmodelpool_requests_by_provider counter\n")
-	providers := make([]string, 0, len(metrics.requestByProvider))
-	for k := range metrics.requestByProvider {
-		providers = append(providers, k)
-	}
-	sort.Strings(providers)
-	for _, pid := range providers {
-		b.WriteString(fmt.Sprintf("openmodelpool_requests_by_provider{provider=%q} %d\n", pid, metrics.requestByProvider[pid].Load()))
-	}
-
-	// Average latency per provider
-	b.WriteString("# HELP openmodelpool_avg_latency_ms Average latency per provider in milliseconds.\n")
-	b.WriteString("# TYPE openmodelpool_avg_latency_ms gauge\n")
-	for _, pid := range providers {
-		sum := metrics.latencySum[pid].Load()
-		count := metrics.latencyCount[pid].Load()
-		if count > 0 {
-			avg := float64(sum) / float64(count)
-			b.WriteString(fmt.Sprintf("openmodelpool_avg_latency_ms{provider=%q} %.2f\n", pid, avg))
+// withAuth authenticates admin-only endpoints via JWT token.
+func withAuth(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := extractToken(r)
+		if token == "" {
+			writeJSON(w, 401, map[string]string{"error": "not authenticated"})
+			return
 		}
-	}
-	metrics.mu.RUnlock()
-
-	// Active providers
-	enabledCount := len(pm.Enabled())
-	b.WriteString("# HELP openmodelpool_active_providers Number of enabled providers.\n")
-	b.WriteString("# TYPE openmodelpool_active_providers gauge\n")
-	b.WriteString(fmt.Sprintf("openmodelpool_active_providers %d\n", enabledCount))
-
-	// Federation info
-	if fed != nil && fed.IsEnabled() {
-		pool := fed.GetTrustPool()
-		b.WriteString("# HELP openmodelpool_federation_nodes Number of federation nodes.\n")
-		b.WriteString("# TYPE openmodelpool_federation_nodes gauge\n")
-		b.WriteString(fmt.Sprintf("openmodelpool_federation_nodes %d\n", len(pool.Nodes)))
-	}
-
-	// SSE clients
-	if eventBus != nil {
-		stats := GetEventBusStats()
-		if clients, ok := stats["connected_clients"].(int); ok {
-			b.WriteString("# HELP openmodelpool_sse_clients Number of connected SSE clients.\n")
-			b.WriteString("# TYPE openmodelpool_sse_clients gauge\n")
-			b.WriteString(fmt.Sprintf("openmodelpool_sse_clients %d\n", clients))
+		_, err := auth.VerifyToken(token)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "token expired"})
+			return
 		}
+		r.Header.Set("X-Request-Owner", "")
+		r.Header.Set("X-Request-Role", "admin")
+		handler(w, r)
 	}
+}
 
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(b.String()))
+// extractToken extracts the JWT token from Authorization header or cookie.
+func extractToken(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		return authHeader[7:]
+	}
+	cookie, _ := r.Cookie("admin_token")
+	if cookie != nil {
+		return cookie.Value
+	}
+	return ""
 }

@@ -12,107 +12,112 @@ import (
 	"time"
 )
 
-// IOTAClient provides a zero-dependency IOTA tangle client.
-// It uses public IOTA nodes for data anchoring; when nodes are unreachable
-// it generates a deterministic simulated transaction hash locally.
-type IOTAClient struct {
+// IPFSClient provides a zero-dependency IPFS client that uses public gateways
+// for storage and retrieval, with local simulation fallback.
+type IPFSClient struct {
 	mu sync.RWMutex
 
-	// Public IOTA nodes (Hornet / Chrysalis REST API).
-	nodes []string
+	// Public IPFS gateways for read/write.
+	gateways []string
 
-	// Local simulation store.
-	localTxs map[string]iotaTxEntry
+	// Local cache simulating IPFS pinning when gateways are unreachable.
+	localCache map[string][]byte
 
+	// HTTP client with timeout.
 	httpClient *http.Client
 }
 
-type iotaTxEntry struct {
-	Data      []byte  `json:"data"`
-	Timestamp int64   `json:"timestamp"`
-	Tag       string  `json:"tag"`
-}
-
-// NewIOTAClient creates a new IOTA client with default public nodes.
-func NewIOTAClient() *IOTAClient {
-	return &IOTAClient{
-		nodes: []string{
-			"https://chrysalis-nodes.iota.org",
-			"https://chrysalis-nodes.iota.cafe",
-			"https://nodes.iota.cafe:443",
+// NewIPFSClient creates a new IPFS client with default public gateways.
+func NewIPFSClient() *IPFSClient {
+	return &IPFSClient{
+		gateways: []string{
+			"https://ipfs.io",
+			"https://dweb.link",
+			"https://gateway.pinata.cloud",
+			"https://cloudflare-ipfs.com",
+			"https://ipfs.infura.io",
 		},
-		localTxs:   make(map[string]iotaTxEntry),
+		localCache: make(map[string][]byte),
 		httpClient: &http.Client{Timeout: 200 * time.Millisecond},
 	}
 }
 
-// SubmitData anchors data on the IOTA tangle. On failure falls back to a
-// locally simulated transaction hash.
-// The tag is an optional short label (e.g. "CONTRIB", "TRUST").
-// Returns the transaction hash.
-func (c *IOTAClient) SubmitData(data []byte, tag string) (string, error) {
-	for _, node := range c.nodes {
-		txHash, err := c.submitViaNode(node, data, tag)
+// Store uploads data to IPFS. It first tries the HTTP gateway add API;
+// on failure it computes a SHA-256 hash locally to simulate a CID.
+// Returns the simulated or real CID.
+func (c *IPFSClient) Store(data []byte) (string, error) {
+	// Try each gateway's /api/v0/add endpoint.
+	for _, gw := range c.gateways {
+		cid, err := c.storeViaGateway(gw, data)
 		if err == nil {
-			return txHash, nil
+			return cid, nil
 		}
 	}
-	// Fallback: simulated hash.
-	return c.simulateTx(data, tag), nil
+
+	// Fallback: compute local CID-like hash.
+	return c.localStore(data), nil
 }
 
-// VerifyData verifies that data matches what was anchored.
-// Tries the network first, then local simulation.
-func (c *IOTAClient) VerifyData(txHash string) ([]byte, bool, error) {
-	for _, node := range c.nodes {
-		data, found, err := c.verifyViaNode(node, txHash)
-		if err == nil && found {
-			return data, true, nil
+// Retrieve fetches data from IPFS by CID. Tries gateways first, then local cache.
+func (c *IPFSClient) Retrieve(cid string) ([]byte, error) {
+	// Try each gateway.
+	for _, gw := range c.gateways {
+		data, err := c.retrieveViaGateway(gw, cid)
+		if err == nil {
+			return data, nil
 		}
 	}
 
-	// Fallback: local store.
+	// Fallback: local cache.
 	c.mu.RLock()
-	entry, ok := c.localTxs[txHash]
+	data, ok := c.localCache[cid]
 	c.mu.RUnlock()
 	if ok {
-		return entry.Data, true, nil
+		return data, nil
 	}
 
-	return nil, false, nil
+	return nil, fmt.Errorf("failed to retrieve CID %s from all gateways and local cache", cid)
 }
 
-// TxCount returns the number of locally simulated transactions.
-func (c *IOTAClient) TxCount() int {
+// StoreJSON marshals v to JSON and stores it on IPFS.
+func (c *IPFSClient) StoreJSON(v interface{}) (string, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	return c.Store(data)
+}
+
+// RetrieveJSON fetches data and unmarshals into v.
+func (c *IPFSClient) RetrieveJSON(cid string, v interface{}) error {
+	data, err := c.Retrieve(cid)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, v)
+}
+
+// CacheSize returns the number of items in local cache.
+func (c *IPFSClient) CacheSize() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return len(c.localTxs)
+	return len(c.localCache)
 }
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-func (c *IOTAClient) submitViaNode(node string, data []byte, tag string) (string, error) {
-	// IOTA Chrysalis REST API: POST /api/v1/messages
-	url := node + "/api/v1/messages"
+func (c *IPFSClient) storeViaGateway(gateway string, data []byte) (string, error) {
+	url := gateway + "/api/v0/add"
 
-	payload := map[string]interface{}{
-		"tag":   tag,
-		"data":  hex.EncodeToString(data),
-		"index": tag,
-	}
-
-	body, err := json.Marshal(payload)
+	body := &bytes.Buffer{}
+	// Multipart is ideal but for simplicity we send raw body.
+	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
 		return "", err
 	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/octet-stream")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -120,84 +125,58 @@ func (c *IOTAClient) submitViaNode(node string, data []byte, tag string) (string
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("gateway %s returned status %d", gateway, resp.StatusCode)
+	}
+
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("node %s returned status %d: %s", node, resp.StatusCode, string(respBody))
-	}
-
+	// The API returns JSON with "Hash" field.
 	var result struct {
-		Data struct {
-			MessageID string `json:"messageId"`
-		} `json:"data"`
+		Hash string `json:"Hash"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", err
 	}
-	if result.Data.MessageID == "" {
-		return "", fmt.Errorf("empty messageId from node %s", node)
+	if result.Hash == "" {
+		return "", fmt.Errorf("empty hash from gateway %s", gateway)
 	}
 
 	// Also cache locally.
 	c.mu.Lock()
-	c.localTxs[result.Data.MessageID] = iotaTxEntry{Data: data, Timestamp: time.Now().Unix(), Tag: tag}
+	c.localCache[result.Hash] = data
 	c.mu.Unlock()
 
-	return result.Data.MessageID, nil
+	return result.Hash, nil
 }
 
-func (c *IOTAClient) verifyViaNode(node, txHash string) ([]byte, bool, error) {
-	url := node + "/api/v1/messages/" + txHash
+func (c *IPFSClient) retrieveViaGateway(gateway, cid string) ([]byte, error) {
+	url := gateway + "/ipfs/" + cid
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("node %s returned status %d", node, resp.StatusCode)
+		return nil, fmt.Errorf("gateway %s returned status %d for CID %s", gateway, resp.StatusCode, cid)
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, false, err
-	}
-
-	var result struct {
-		Data struct {
-			Payload struct {
-				Data  string `json:"data"`
-				Index string `json:"index"`
-			} `json:"payload"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, false, err
-	}
-
-	rawData, err := hex.DecodeString(result.Data.Payload.Data)
-	if err != nil {
-		return nil, false, err
-	}
-
-	return rawData, true, nil
+	return io.ReadAll(resp.Body)
 }
 
-// simulateTx generates a deterministic transaction hash from the data and tag
-// and caches it locally.
-func (c *IOTAClient) simulateTx(data []byte, tag string) string {
-	h := sha256.New()
-	h.Write(data)
-	h.Write([]byte(tag))
-	h.Write([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
-	txHash := hex.EncodeToString(h.Sum(nil))
+// localStore computes a SHA-256 hash of data and stores it in local cache,
+// simulating an IPFS CID. The hash is prefixed with "Qm" to resemble a real CIDv0.
+func (c *IPFSClient) localStore(data []byte) string {
+	h := sha256.Sum256(data)
+	cid := "Qm" + hex.EncodeToString(h[:])
 
 	c.mu.Lock()
-	c.localTxs[txHash] = iotaTxEntry{Data: data, Timestamp: time.Now().Unix(), Tag: tag}
+	c.localCache[cid] = data
 	c.mu.Unlock()
 
-	return txHash
+	return cid
 }

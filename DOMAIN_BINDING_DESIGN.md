@@ -1,183 +1,322 @@
-# OpenModelPool Agent 一键域名绑定功能设计
+# OpenModelPool 项目路线图 v4.0
 
-## 功能目标
-在 Web 管理面板实现一键绑定固定域名，替代手动配置 Cloudflare Tunnel。
+> **版本**: v4.0 | **日期**: 2026-07-11 | **状态**: 规划
 
-## 技术方案
+本文档是 OpenModelPool 从个人版 MVP 到全球自治网络的技术路线图。
 
-### 方案选择：Cloudflare API Token 方式
+---
 
-**为什么不用 OAuth？**
-- OAuth 需要浏览器交互，远程服务器无法直接完成
-- Device Code Flow 用户体验差
-- API Token 方式更安全、可控
+## 目录
 
-**API Token 优势：**
-- 用户可以在 Cloudflare Dashboard 精确控制权限
-- Token 可以撤销，安全性高
-- 支持完整的隧道管理 API
-- 无需浏览器交互
+1. [路线图总览](#1-路线图总览)
+2. [Phase 0: 个人版 MVP](#2-phase-0-个人版-mvp)
+3. [Phase 1: 共享版最小闭环](#3-phase-1-共享版最小闭环)
+4. [Phase 2: P2P 增强](#4-phase-2-p2p-增强)
+5. [Phase 3: 自治网络](#5-phase-3-自治网络)
+6. [各阶段里程碑与交付物](#6-各阶段里程碑与交付物)
+7. [版本兼容性策略](#7-版本兼容性策略)
+8. [历史变更记录](#8-历史变更记录)
 
-### 实现步骤
+---
 
-#### 1. 后端 API 设计
+## 1. 路线图总览
 
-**存储 Cloudflare API Token**
 ```
-POST /api/tunnel/token
-Body: { "token": "xxxxx" }
-```
-- 加密存储到 config.json（使用现有的 encryptor）
-- Token 权限要求：Cloudflare Tunnel DNS Edit
-
-**创建命名隧道**
-```
-POST /api/tunnel/create
-Body: { "name": "openmodelpool", "domain": "zuiniu.com" }
-```
-- 调用 Cloudflare API 创建隧道
-- 返回 tunnel_id
-- 自动配置 DNS 路由
-
-**查询隧道状态**
-```
-GET /api/tunnel/status
-```
-- 返回当前隧道信息：name, domain, tunnel_id, url, status
-
-**启动/停止隧道**
-```
-POST /api/tunnel/start
-POST /api/tunnel/stop
+Phase 0                Phase 1                 Phase 2              Phase 3
+个人版 MVP              共享版最小闭环            P2P 增强              自治网络
+(当前 ✅)               🔜 4-6周                 🌐 8-12周              🧠 12-16周
+                      
+┌────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐
+│ 本地代理     │    │ 双模式架构     │    │ 多跳路由       │    │ 声誉系统          │
+│ 额度管理     │ →  │ 助记词身份     │ →  │ 传输路径加密    │ →  │ 公证人去中心化     │
+│ 34+ 平台    │    │ 单跳中继       │    │ P2P 能力发现   │    │ 完全无中心依赖     │
+│ 4 维路由     │    │ 贡献积分       │    │ 能力验证协议   │    │ 全球节点自治       │
+│ 密钥体系v4   │    │ 两级开关       │    │ 混合穿透       │    │ 治理投票          │
+└────────────┘    └──────────────┘    └──────────────┘    └──────────────────┘
 ```
 
-#### 2. 前端 UI 设计
+> **v4.0 本质变化**：默认启动永远是个人版；只有配置 Provider Token、开启额度管理且本月有剩余额度时，才温和提示加入共享网络。加入共享网络后才生成助记词和 Node ID。
 
-**位置**：admin.html → 配置管理卡片 → 公网访问区域
+---
 
-**UI 流程**：
-1. **未绑定状态**：
-   - 显示"绑定域名"按钮
-   - 点击弹出对话框：
-     - 输入 Cloudflare API Token（带说明链接）
-     - 输入想要的域名（如 zuiniu.com）
-     - "一键绑定"按钮
-   
-2. **绑定中状态**：
-   - 显示进度：创建隧道 → 配置 DNS → 验证
-   - 禁用按钮
+## 2. Phase 0: 个人版 MVP
 
-3. **已绑定状态**：
-   - 显示当前域名：zuiniu.com ✅
-   - 显示隧道状态：运行中 / 已停止
-   - 显示公网地址：https://zuiniu.com
-   - "解绑"按钮
+**目标**：完成单节点智能代理的核心功能，作为本地 AI 模型代理独立可用。
 
-#### 3. 后端实现
+**状态**：✅ 基本完成
 
-**tunnel.go 扩展**：
-```go
-type TunnelManager struct {
-    // 现有字段
-    mu       sync.Mutex
-    cmd      *exec.Cmd
-    url      string
-    running  bool
-    
-    // 新增字段
-    apiToken    string  // Cloudflare API Token
-    tunnelID    string  // 命名隧道 ID
-    customDomain string // 自定义域名
-    mode        string  // "quick" | "named"
-}
+### 2.1 已完成功能
 
-// 新方法
-func (t *TunnelManager) CreateNamedTunnel(name, domain string) error
-func (t *TunnelManager) ConfigureDNS(domain string) error
-func (t *TunnelManager) StartNamedTunnel() error
-func (t *TunnelManager) StopNamedTunnel() error
+#### 核心架构
+- ✅ Go 1.23+ 单体架构
+- ✅ 嵌入式 SQLite 数据存储（GORM）
+- ✅ 内嵌 Web 前端（零配置部署）
+- ✅ 多 OS 架构支持（linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64）
+
+#### API 代理核心
+- ✅ OpenAI 兼容接口（/v1/models, /v1/chat/completions）
+- ✅ 流式 SSE 转发 + 非流式转发
+- ✅ 8 个上游提供商支持（Coze, Sider.ai, OpenAI, DeepSeek, xAI, Groq, 硅基流动, Ollama）
+- ✅ 扩展至 34+ 预置提供商
+- ✅ Provider Token OS Keyring 加密存储（go-keyring）
+- ✅ Token 使用量跟踪（输入/输出 Token 统计）
+- ✅ 本地额度管理（每日 Token 限额、每分钟 RPM 限制）
+
+#### 路由系统
+- ✅ 多维路由策略（优先级、权重、负载均衡、故障切换）
+- ✅ ProviderSelector 重构（策略驱动）
+- ✅ 基于健康检查的提供者选择
+- ✅ 模型映射（上游 ID 到标准化模型名称）
+- ✅ 模型能力矩阵
+
+#### 用户管理
+- ✅ 多用户管理
+- ✅ 基础认证与授权
+- ✅ 管理员控制面板
+
+#### 配置管理
+- ✅ 基于文件和环境变量的配置
+- ✅ 首次运行自动初始化
+- ✅ 配置文件生成与密钥管理
+
+### 2.2 密钥体系 v4.0（已完成）
+
+| Key 类型 | 前缀 | 生成方式 | 存储位置 | 用途 | 数据库表 |
+|---------|------|---------|---------|------|---------|
+| **Proxy API Key** | `ompk_` | 随机生成 | DB（AES-256-GCM 加密） | 日常 API 调用 | `api_keys` (proxy) |
+| **Guest Proxy Key** | `omgk_` | 随机生成 | DB（AES-256-GCM 加密） | 访客临时密钥 | `guest_keys` |
+| **Public Global Key** | `global` | 管理员配置 | 配置文件 | 公共体验入口 | 内置 |
+| **Provider Key** | `provider` | 用户输入 | OS Keyring | 大模型 API Token | `provider_keys` |
+
+> ~~`omsk_*` 系列（mk_, mk-rk_, mk-chk_）已在 v4.0 中废弃~~。
+
+### 2.3 交付物
+
+- ✅ 可运行的单节点代理二进制文件
+- ✅ Docker 镜像
+- ✅ 基本文档（README, API 文档）
+
+---
+
+## 3. Phase 1: 共享版最小闭环
+
+**目标**：引入双模式架构，用户可以从个人版升级到共享版，实现单跳中继共享。
+
+**预计时间**：4-6 周
+
+### 3.1 双模式架构
+
+#### 3.1.1 个人版（Personal Mode）— 默认
+
+| 功能 | 说明 |
+|------|------|
+| 本地 Provider Token 管理 | Keyring 加密存储 |
+| 本地 OpenAI-compatible API 代理 | `http://127.0.0.1:8080/v1` |
+| 本地额度管理与调用统计 | |
+| 管理员界面 | |
+
+#### 3.1.2 共享版（Network Mode）— 按需加入
+
+**触发条件（全部满足）**：
+- ✅ 已配置至少一个 Provider Token
+- ✅ 该 Token 已开启额度管理
+- ✅ 本月 remaining_quota > 0
+
+**额外启用**：
+- Node ID + 助记词
+- P2P 网络基础（Seed 端点连接）
+- 贡献账本与贡献积分
+- Guest Proxy Key
+- Public Global Key
+- 能力声明（CapabilityClaim）
+- 共享额度配置
+
+### 3.2 两级开关
+
+| 开关 | 作用 | 默认值 |
+|------|------|-------|
+| `network_enabled` | 是否加入共享网络 | `false` |
+| `share_to_pool` | 是否将剩余额度共享到网络 | `false` |
+
+两个开关完全独立，用户可以只入网不共享（只做消费者），也可以只共享不入网（不可能，必须先入网）。
+
+### 3.3 助记词机制
+
+```
+用户点击"加入共享网络"
+  ↓
+展示项目说明（公益共享、绝不发币、Key 不上传）
+  ↓
+用户确认理解共享机制
+  ↓
+生成 BIP39 助记词（12/24 词）
+  ↓
+由助记词派生 Ed25519 私钥
+  ↓
+生成公钥 → Node ID = hash(public_key)
+  ↓
+强制用户备份助记词（抄写/加密导出）
+  ↓
+配置共享额度边界
+  ↓
+进入共享网络
 ```
 
-**Cloudflare API 调用**：
-- 创建隧道：POST /accounts/{account_id}/cfd_tunnel
-- 配置 DNS：PUT /zones/{zone_id}/dns_records
-- 获取账户信息：GET /accounts
-- 获取域名列表：GET /zones
+### 3.4 贡献积分（Contribution Credit）
 
-#### 4. 安全考虑
+- 贡献积分**不可提现、不可交易**
+- 绑定 Node ID，跟随身份
+- 记录用户对网络的贡献，以及从网络中获取资源的权利
+- request-id 缺失的请求不计入积分
 
-**Token 存储**：
-- 使用现有 encryptor 加密
-- 存储在 config.json 的 `cloudflare_api_token_encrypted` 字段
-- 不在日志中输出 Token
+### 3.5 单跳中继
 
-**权限最小化**：
-- 引导用户创建只包含必要权限的 Token：
-  - Account: Cloudflare Tunnel: Edit
-  - Zone: DNS: Edit
+```
+请求节点 → Seed 端点（中继） → 资源节点
+              ↑
+         传输路径加密（中继不可见）
+```
 
-#### 5. 错误处理
+### 3.6 里程碑
 
-**常见错误**：
-- Token 无效：提示用户检查权限
-- 域名已被其他账户占用：提示用户选择其他域名
-- DNS 配置失败：提示用户检查域名是否在 Cloudflare 管理
-- 隧道名称冲突：自动添加随机后缀
+- [ ] 双模式架构实现（Personal / Network Mode 切换）
+- [ ] 助记词生成与备份流程
+- [ ] Node ID 生成（BIP39 → Ed25519 → hash）
+- [ ] 两级开关 UI（`network_enabled` + `share_to_pool`）
+- [ ] Seed 端点中继服务
+- [ ] 贡献积分账本（Contribution Credit）
+- [ ] 传输路径加密（中继不可见）
+- [ ] 能力声明协议（CapabilityClaim）
+- [ ] Public Global Key 四重限额实现
+- [ ] 闲置额度检测与加入提示
+- [ ] 共享额度边界配置 UI
 
-#### 6. 用户体验优化
+---
 
-**引导说明**：
-- 提供图文教程：如何生成 Cloudflare API Token
-- 视频演示（可选）
-- 常见问题 FAQ
+## 4. Phase 2: P2P 增强
 
-**实时反馈**：
-- 使用 WebSocket 推送配置进度
-- 显示详细的错误信息和解决建议
+**目标**：实现真正的 P2P 网络，节点之间可以直接发现和通信，不再完全依赖中心 Seed 端点。
 
-**回滚机制**：
-- 绑定失败时自动清理已创建的资源
-- 提供"重试"按钮
+**预计时间**：8-12 周
 
-## 实现优先级
+### 4.1 多跳路由
 
-### Phase 1: 基础功能（MVP）
-- [ ] 存储 API Token
-- [ ] 创建隧道 + 配置 DNS
-- [ ] 启动命名隧道
-- [ ] 前端 UI：绑定对话框
+- 请求可以经过多个节点中继
+- 路由选择基于延迟、贡献积分、声誉
+- 每跳都有传输路径加密
 
-### Phase 2: 增强体验
-- [ ] 隧道状态监控
-- [ ] 解绑功能
-- [ ] 域名验证
-- [ ] 错误提示优化
+### 4.2 P2P 能力发现
 
-### Phase 3: 高级功能
-- [ ] 多域名支持
-- [ ] 隧道健康检查
-- [ ] 自动重连
-- [ ] 隧道统计信息
+- DHT（分布式哈希表）用于节点发现
+- Gossip 协议用于能力声明传播
+- 节点可以直接发现其他节点提供的模型能力
 
-## 开发时间估算
+### 4.3 能力验证
 
-- Phase 1: 2-3 小时
-- Phase 2: 1-2 小时
-- Phase 3: 2-3 小时
+- 新节点加入时验证其声称的模型能力
+- 探测请求验证（probe request）
+- 虚假能力防御机制
 
-## 替代方案
+### 4.4 混合穿透
 
-如果用户不想使用 Cloudflare API Token，可以：
-1. 手动在 Cloudflare Dashboard 创建隧道
-2. 复制 Tunnel Token（不是 API Token）
-3. 在管理面板输入 Tunnel Token
-4. 后端使用 `cloudflared tunnel run --token <TOKEN>` 启动
+- NAT 穿透（STUN/TURN）
+- 反向隧道（对无法穿透的节点）
+- 局域网发现（mDNS）
 
-这个方案更简单，但需要用户手动创建隧道。
+### 4.5 里程碑
 
-## 结论
+- [ ] DHT 节点发现
+- [ ] Gossip 协议实现
+- [ ] 多跳路由与中继选择
+- [ ] 传输路径加密增强（每跳加密）
+- [ ] NAT 穿透（STUN/TURN）
+- [ ] 能力验证协议
+- [ ] 虚假能力防御
+- [ ] P2P 能力发现与声明
 
-推荐使用 **API Token 方案**，用户体验最好，真正的一键绑定。
-备选 **Tunnel Token 方案**，实现更简单，但需要用户手动创建隧道。
+---
 
-可以两个方案都支持，让用户选择。
+## 5. Phase 3: 自治网络
+
+**目标**：实现完全去中心化的自治网络，无需任何中心基础设施。
+
+**预计时间**：12-16 周
+
+### 5.1 声誉系统
+
+- 基于历史表现计算节点声誉
+- 响应时间、可用性、能力真实性
+- 声誉影响路由优先级
+
+### 5.2 公证人去中心化演进
+
+- 从 seed1 单点公证 → 多公证人冗余
+- 公证人选举与轮换机制
+- 减少单点依赖，增强抗审查能力
+
+### 5.3 防共谋增强
+
+- 减少 seed1 单点依赖
+- 贡献验证去中心化
+- 反女巫攻击（助记词身份绑定）
+
+### 5.4 联邦治理
+
+- 治理投票机制
+- 网络参数集体决策
+- 争议解决机制
+
+### 5.5 里程碑
+
+- [ ] 声誉系统实现
+- [ ] 公证人去中心化（多公证人冗余）
+- [ ] 防共谋增强
+- [ ] 贡献验证去中心化
+- [ ] 联邦治理与投票
+- [ ] 完全无中心依赖运行
+- [ ] 网络参数集体决策
+
+---
+
+## 6. 各阶段里程碑与交付物
+
+| Phase | 时间 | 交付物 | 验收标准 |
+|-------|------|--------|---------|
+| **Phase 0** | 已完成 | 单节点代理 | 34+ 平台可用，本地额度管理，密钥体系v4 |
+| **Phase 1** | 4-6 周 | 共享版最小闭环 | 双模式切换、助记词、单跳中继、贡献积分 |
+| **Phase 2** | 8-12 周 | P2P 增强 | 多跳路由、DHT、能力验证、NAT穿透 |
+| **Phase 3** | 12-16 周 | 自治网络 | 声誉系统、公证人去中心化、联邦治理 |
+
+---
+
+## 7. 版本兼容性策略
+
+### 7.1 向后兼容
+
+- Phase 0 的所有功能在后续版本中保持可用
+- 个人版模式永远不会被强制升级到共享版
+- API 接口保持 OpenAI 兼容
+
+### 7.2 升级路径
+
+```
+Phase 0 (v1.x)  →  Phase 1 (v2.x)  →  Phase 2 (v3.x)  →  Phase 3 (v4.x)
+个人版            + 共享版              + P2P               + 自治
+                  可选升级              自动升级             自动升级
+```
+
+### 7.3 密钥体系迁移
+
+- v4.0 废弃 `omsk_*` 系列密钥，迁移至助记词机制
+- Phase 0 用户的 Proxy API Key (`ompk_`) 和 Provider Key 保持不变
+- 加入共享网络时生成新的助记词和 Node ID
+
+---
+
+## 8. 历史变更记录
+
+| 日期 | 版本 | 变更内容 |
+|------|------|---------|
+| 2026-07-04 | v3.0 | 基于架构设计文档创建初始路线图 |
+| 2026-07-06 | v3.0 | 根据最终架构文档更新，拆分阶段，细化里程碑 |
+| 2026-07-11 | **v4.0** | **重大修订**：双模式架构、助记词机制、两级开关、密钥体系收敛（4种Key）、Contribution Credit、叙事更新、路线图从3阶段改为4阶段（Phase 0/1/2/3）、防共谋增强、传输路径加密替代E2EE |

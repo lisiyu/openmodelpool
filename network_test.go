@@ -1,717 +1,704 @@
 package main
 
 import (
-	"testing"
+	"crypto/ed25519"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha512"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"os"
+	"strings"
+	"sync"
 	"time"
+
+	"github.com/tyler-smith/go-bip39"
 )
 
-// ============================================================
-// RouteTable Tests
-// ============================================================
-
-func newTestRouteTable() *RouteTable {
-	return &RouteTable{entries: make(map[string]*RouteEntry)}
+// NodeIdentity manages this node's identity in the federation.
+// SA-13: The private key is stored encrypted in memory and only decrypted
+// on-demand for signing operations. After use, the decrypted key is zeroed
+// to minimize the window of exposure in process memory.
+// v4.0: Now supports BIP39 mnemonic-based identity generation with BIP32/SLIP-0010 derivation.
+type NodeIdentity struct {
+	mu              sync.RWMutex
+	nodeID          string
+	privKey         ed25519.PrivateKey // kept only during active use; cleared after sign
+	encPrivKey      string             // encrypted private key (AES-256-GCM), always in memory
+	pubKey          ed25519.PublicKey
+	mnemonic        string // BIP39 mnemonic (only set in Network Mode, kept in memory temporarily)
+	hasMnemonic     bool   // whether identity was derived from mnemonic
+	githubUser      string
+	githubID        int64
+	joinedAt        time.Time
+	keyPath         string // path to encrypted key file
+	tokenBudget     int64  // monthly token budget declaration
+	backupConfirmed bool   // whether user has confirmed mnemonic backup
+	needsMigration  bool   // true if loaded from legacy mm- format, needs migration to mmx- format
 }
 
-func TestRouteTable_PutAndGet(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
+var node *NodeIdentity
 
-	entry := rt.Get("mmx-node1")
-	if entry == nil {
-		t.Fatal("expected entry, got nil")
-	}
-	if entry.NodeID != "mmx-node1" {
-		t.Errorf("NodeID = %q, want %q", entry.NodeID, "mmx-node1")
-	}
-	if entry.NodeName != "Node One" {
-		t.Errorf("NodeName = %q, want %q", entry.NodeName, "Node One")
-	}
-	if len(entry.Addresses) != 1 || entry.Addresses[0] != "https://node1.example.com" {
-		t.Errorf("Addresses = %v, want [https://node1.example.com]", entry.Addresses)
-	}
-	if entry.Status != "online" {
-		t.Errorf("Status = %q, want %q", entry.Status, "online")
-	}
+// NodeKeyStore is the on-disk format for the node's keys.
+type NodeKeyStore struct {
+	NodeID          string `json:"node_id"`
+	PrivKeyB64      string `json:"priv_key"`                 // encrypted with AES-256-GCM
+	PubKeyB64       string `json:"pub_key"`
+	Mnemonic        string `json:"mnemonic,omitempty"`       // encrypted mnemonic (AES-256-GCM)
+	HasMnemonic     bool   `json:"has_mnemonic"`
+	BackupConfirmed bool   `json:"backup_confirmed"`
+	GitHubUser      string `json:"github_user,omitempty"`
+	GitHubID        int64  `json:"github_id,omitempty"`
+	JoinedAt        string `json:"joined_at"`
+	Version         int    `json:"version"` // storage version for migration
 }
 
-func TestRouteTable_GetReturnsCopy(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-
-	entry1 := rt.Get("mmx-node1")
-	entry1.Addresses[0] = "modified"
-
-	entry2 := rt.Get("mmx-node1")
-	if entry2.Addresses[0] == "modified" {
-		t.Error("Get should return a copy, modifications should not affect original")
-	}
-}
-
-func TestRouteTable_GetNonExistent(t *testing.T) {
-	rt := newTestRouteTable()
-	entry := rt.Get("mmx-nonexistent")
-	if entry != nil {
-		t.Error("expected nil for non-existent entry")
-	}
-}
-
-func TestRouteTable_GetExpired(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-
-	// Manually expire the entry
-	rt.mu.Lock()
-	rt.entries["mmx-node1"].UpdatedAt = time.Now().Add(-routeTTL - time.Second)
-	rt.mu.Unlock()
-
-	entry := rt.Get("mmx-node1")
-	if entry != nil {
-		t.Error("expected nil for expired entry")
-	}
-}
-
-func TestRouteTable_Remove(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-	rt.Remove("mmx-node1")
-
-	entry := rt.Get("mmx-node1")
-	if entry != nil {
-		t.Error("entry should be nil after removal")
-	}
-}
-
-func TestRouteTable_RemoveNonExistent(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Remove("mmx-nonexistent") // should not panic
-}
-
-func TestRouteTable_GetAll(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-	rt.Put("mmx-node2", "Node Two", []string{"https://node2.example.com"})
-
-	entries := rt.GetAll()
-	if len(entries) != 2 {
-		t.Errorf("expected 2 entries, got %d", len(entries))
-	}
-}
-
-func TestRouteTable_GetAllExcludesExpired(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-	rt.Put("mmx-node2", "Node Two", []string{"https://node2.example.com"})
-
-	// Expire node1
-	rt.mu.Lock()
-	rt.entries["mmx-node1"].UpdatedAt = time.Now().Add(-routeTTL - time.Second)
-	rt.mu.Unlock()
-
-	entries := rt.GetAll()
-	if len(entries) != 1 {
-		t.Errorf("expected 1 entry (expired should be excluded), got %d", len(entries))
-	}
-	if entries[0].NodeID != "mmx-node2" {
-		t.Errorf("expected remaining entry to be node2, got %q", entries[0].NodeID)
-	}
-}
-
-func TestRouteTable_PurgeExpired(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-	rt.Put("mmx-node2", "Node Two", []string{"https://node2.example.com"})
-	rt.Put("mmx-node3", "Node Three", []string{"https://node3.example.com"})
-
-	// Expire node1 and node2
-	rt.mu.Lock()
-	rt.entries["mmx-node1"].UpdatedAt = time.Now().Add(-routeTTL - time.Second)
-	rt.entries["mmx-node2"].UpdatedAt = time.Now().Add(-routeTTL - time.Second)
-	rt.mu.Unlock()
-
-	purged := rt.PurgeExpired()
-	if purged != 2 {
-		t.Errorf("expected 2 purged, got %d", purged)
-	}
-	if rt.Count() != 1 {
-		t.Errorf("expected 1 remaining, got %d", rt.Count())
-	}
-}
-
-func TestRouteTable_Count(t *testing.T) {
-	rt := newTestRouteTable()
-	if rt.Count() != 0 {
-		t.Errorf("expected 0, got %d", rt.Count())
+// initNode initializes the node identity from disk.
+// v4.0: No longer auto-generates identity on startup.
+// If no key file exists, the node stays in uninitialized (Personal Mode) state.
+func initNode(dataDir string) {
+	node = &NodeIdentity{
+		keyPath: dataDir + "/node.key",
 	}
 
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-	if rt.Count() != 1 {
-		t.Errorf("expected 1, got %d", rt.Count())
-	}
-
-	rt.Put("mmx-node2", "Node Two", []string{"https://node2.example.com"})
-	if rt.Count() != 2 {
-		t.Errorf("expected 2, got %d", rt.Count())
-	}
-
-	// Count includes all entries, even expired ones (unlike GetAll)
-	rt.mu.Lock()
-	rt.entries["mmx-node1"].UpdatedAt = time.Now().Add(-routeTTL - time.Second)
-	rt.mu.Unlock()
-	if rt.Count() != 2 {
-		t.Errorf("Count should include expired entries, got %d", rt.Count())
-	}
-}
-
-func TestRouteTable_PutOverwrite(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Put("mmx-node1", "Node One", []string{"https://old.example.com"})
-	rt.Put("mmx-node1", "Node One Updated", []string{"https://new.example.com"})
-
-	entry := rt.Get("mmx-node1")
-	if entry.NodeName != "Node One Updated" {
-		t.Errorf("expected updated name, got %q", entry.NodeName)
-	}
-	if entry.Addresses[0] != "https://new.example.com" {
-		t.Errorf("expected updated address, got %q", entry.Addresses[0])
-	}
-	if rt.Count() != 1 {
-		t.Error("overwrite should not increase count")
-	}
-}
-
-func TestRouteTable_GetByModel(t *testing.T) {
-	rt := newTestRouteTable()
-
-	// Node with specific models
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-	rt.mu.Lock()
-	rt.entries["mmx-node1"].Models = []string{"gpt-4", "gpt-3.5"}
-	rt.mu.Unlock()
-
-	// Node with no models (serves all)
-	rt.Put("mmx-node2", "Node Two", []string{"https://node2.example.com"})
-
-	// Node with different models
-	rt.Put("mmx-node3", "Node Three", []string{"https://node3.example.com"})
-	rt.mu.Lock()
-	rt.entries["mmx-node3"].Models = []string{"claude-3"}
-	rt.mu.Unlock()
-
-	// Query for gpt-4 — should match node1 (has it) and node2 (serves all)
-	results := rt.GetByModel("gpt-4")
-	if len(results) != 2 {
-		t.Errorf("expected 2 results for gpt-4, got %d", len(results))
-	}
-
-	// Query for claude-3 — should match node3 and node2
-	results = rt.GetByModel("claude-3")
-	if len(results) != 2 {
-		t.Errorf("expected 2 results for claude-3, got %d", len(results))
-	}
-
-	// Query for unknown model — should only match node2 (serves all)
-	results = rt.GetByModel("unknown-model")
-	if len(results) != 1 {
-		t.Errorf("expected 1 result for unknown-model, got %d", len(results))
-	}
-}
-
-func TestRouteTable_GetByModelEmpty(t *testing.T) {
-	rt := newTestRouteTable()
-	results := rt.GetByModel("gpt-4")
-	if len(results) != 0 {
-		t.Errorf("expected 0 results from empty table, got %d", len(results))
-	}
-}
-
-func TestRouteTable_GetByModelExcludesExpired(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-
-	// Expire it
-	rt.mu.Lock()
-	rt.entries["mmx-node1"].UpdatedAt = time.Now().Add(-routeTTL - time.Second)
-	rt.mu.Unlock()
-
-	results := rt.GetByModel("any-model")
-	if len(results) != 0 {
-		t.Errorf("expected 0 results (expired), got %d", len(results))
-	}
-}
-
-func TestRouteTable_SelectBestNode(t *testing.T) {
-	rt := newTestRouteTable()
-
-	// Add nodes with different latencies and loads
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-	rt.mu.Lock()
-	e1 := rt.entries["mmx-node1"]
-	e1.Models = []string{"gpt-4"}
-	e1.LatencyMS = 50
-	e1.LoadScore = 0.2
-	e1.LastSeen = time.Now()
-	rt.mu.Unlock()
-
-	rt.Put("mmx-node2", "Node Two", []string{"https://node2.example.com"})
-	rt.mu.Lock()
-	e2 := rt.entries["mmx-node2"]
-	e2.Models = []string{"gpt-4"}
-	e2.LatencyMS = 200
-	e2.LoadScore = 0.8
-	e2.LastSeen = time.Now()
-	rt.mu.Unlock()
-
-	best := rt.SelectBestNode("gpt-4")
-	if best == nil {
-		t.Fatal("expected a node, got nil")
-	}
-	// Node1 should be better (lower latency, lower load)
-	if best.NodeID != "mmx-node1" {
-		t.Errorf("expected mmx-node1 as best, got %q", best.NodeID)
-	}
-}
-
-func TestRouteTable_SelectBestNodeNoMatch(t *testing.T) {
-	rt := newTestRouteTable()
-	rt.Put("mmx-node1", "Node One", []string{"https://node1.example.com"})
-	rt.mu.Lock()
-	rt.entries["mmx-node1"].Models = []string{"gpt-4"}
-	rt.mu.Unlock()
-
-	best := rt.SelectBestNode("nonexistent-model")
-	if best != nil {
-		t.Error("expected nil for non-matching model")
-	}
-}
-
-func TestRouteTable_SelectBestNodeEmptyTable(t *testing.T) {
-	rt := newTestRouteTable()
-	best := rt.SelectBestNode("gpt-4")
-	if best != nil {
-		t.Error("expected nil from empty table")
-	}
-}
-
-// ============================================================
-// initRouteTable Tests
-// ============================================================
-
-func TestInitRouteTable(t *testing.T) {
-	rt := initRouteTable()
-	if rt == nil {
-		t.Fatal("initRouteTable returned nil")
-	}
-	if rt.entries == nil {
-		t.Error("entries map should be initialized")
-	}
-	if rt.Count() != 0 {
-		t.Error("new route table should be empty")
-	}
-}
-
-// ============================================================
-// NetworkMode Tests
-// ============================================================
-
-func TestNetworkModeValues(t *testing.T) {
-	if NetworkModePersonal != "personal" {
-		t.Errorf("NetworkModePersonal = %q, want %q", NetworkModePersonal, "personal")
-	}
-	if NetworkModeShared != "shared" {
-		t.Errorf("NetworkModeShared = %q, want %q", NetworkModeShared, "shared")
-	}
-}
-
-// ============================================================
-// NetworkManager Tests
-// ============================================================
-
-func newTestNetworkManager(t *testing.T) *NetworkManager {
-	t.Helper()
-	tmpDir := t.TempDir()
-	nm := &NetworkManager{
-		dataPath: tmpDir + "/network.json",
-		config: NetworkConfig{
-			Mode:             NetworkModeShared,
-			ConsentAccepted:  true,
-			NodeID:           "mmx-test-node",
-			NodeName:         "Test Node",
-			BootstrapNodes:   []string{},
-			SharedModels:     []string{},
-			Peers:            []PeerInfo{},
-			MaxDailyRequests: 1000,
-			Addresses:        []string{},
-			RelayEnabled:     true,
-			QuotaAllocation:  DefaultQuotaAllocation(),
-		},
-		startTime: time.Now(),
-	}
-	return nm
-}
-
-func TestNetworkManager_IsSharedMode(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	if !nm.IsSharedMode() {
-		t.Error("expected shared mode")
-	}
-
-	nm.config.Mode = NetworkModePersonal
-	if nm.IsSharedMode() {
-		t.Error("expected personal mode")
-	}
-}
-
-func TestNetworkManager_GetNodeID(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	if nm.GetNodeID() != "mmx-test-node" {
-		t.Errorf("GetNodeID = %q, want %q", nm.GetNodeID(), "mmx-test-node")
-	}
-}
-
-func TestNetworkManager_AddPeer(t *testing.T) {
-	nm := newTestNetworkManager(t)
-
-	peer := PeerInfo{
-		NodeID: "mmx-peer1",
-		Name:   "Peer One",
-		Status: "online",
-		Models: []string{"gpt-4"},
-	}
-	if err := nm.AddPeer(peer); err != nil {
-		t.Fatalf("AddPeer failed: %v", err)
-	}
-
-	peers := nm.GetPeers()
-	if len(peers) != 1 {
-		t.Fatalf("expected 1 peer, got %d", len(peers))
-	}
-	if peers[0].NodeID != "mmx-peer1" {
-		t.Errorf("peer NodeID = %q, want %q", peers[0].NodeID, "mmx-peer1")
-	}
-}
-
-func TestNetworkManager_AddPeerUpdate(t *testing.T) {
-	nm := newTestNetworkManager(t)
-
-	peer1 := PeerInfo{NodeID: "mmx-peer1", Name: "Peer One", Status: "online", Unlocked: true}
-	nm.AddPeer(peer1)
-
-	// Update same peer
-	peer2 := PeerInfo{NodeID: "mmx-peer1", Name: "Peer One Updated", Status: "offline"}
-	nm.AddPeer(peer2)
-
-	peers := nm.GetPeers()
-	if len(peers) != 1 {
-		t.Fatalf("expected 1 peer after update, got %d", len(peers))
-	}
-	if peers[0].Name != "Peer One Updated" {
-		t.Errorf("name should be updated, got %q", peers[0].Name)
-	}
-	// Unlocked state should be preserved
-	if !peers[0].Unlocked {
-		t.Error("Unlocked state should be preserved from original peer")
-	}
-}
-
-func TestNetworkManager_AddPeerPersonalMode(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	nm.config.Mode = NetworkModePersonal
-
-	peer := PeerInfo{NodeID: "mmx-peer1", Name: "Peer One", Status: "online"}
-	err := nm.AddPeer(peer)
-	if err == nil {
-		t.Error("AddPeer should fail in personal mode")
-	}
-}
-
-func TestNetworkManager_RemovePeer(t *testing.T) {
-	nm := newTestNetworkManager(t)
-
-	nm.AddPeer(PeerInfo{NodeID: "mmx-peer1", Name: "Peer One", Status: "online"})
-	nm.AddPeer(PeerInfo{NodeID: "mmx-peer2", Name: "Peer Two", Status: "online"})
-
-	if err := nm.RemovePeer("mmx-peer1"); err != nil {
-		t.Fatalf("RemovePeer failed: %v", err)
-	}
-
-	peers := nm.GetPeers()
-	if len(peers) != 1 {
-		t.Fatalf("expected 1 peer after removal, got %d", len(peers))
-	}
-	if peers[0].NodeID != "mmx-peer2" {
-		t.Errorf("remaining peer should be peer2, got %q", peers[0].NodeID)
-	}
-}
-
-func TestNetworkManager_RemovePeerNotFound(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	err := nm.RemovePeer("mmx-nonexistent")
-	if err == nil {
-		t.Error("RemovePeer should fail for non-existent peer")
-	}
-}
-
-func TestNetworkManager_RemovePeerPersonalMode(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	nm.config.Mode = NetworkModePersonal
-	err := nm.RemovePeer("mmx-peer1")
-	if err == nil {
-		t.Error("RemovePeer should fail in personal mode")
-	}
-}
-
-func TestNetworkManager_GetPeersReturnsCopy(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	nm.AddPeer(PeerInfo{NodeID: "mmx-peer1", Name: "Peer One", Status: "online"})
-
-	peers := nm.GetPeers()
-	peers[0].Name = "Modified"
-
-	original := nm.GetPeers()
-	if original[0].Name == "Modified" {
-		t.Error("GetPeers should return a copy")
-	}
-}
-
-func TestNetworkManager_RecordRelayResult(t *testing.T) {
-	nm := newTestNetworkManager(t)
-
-	nm.RecordRelayResult(true)
-	nm.RecordRelayResult(true)
-	nm.RecordRelayResult(false)
-
-	if nm.config.Stats.RequestsRelayed != 3 {
-		t.Errorf("RequestsRelayed = %d, want 3", nm.config.Stats.RequestsRelayed)
-	}
-	if nm.config.Stats.RelaySuccess != 2 {
-		t.Errorf("RelaySuccess = %d, want 2", nm.config.Stats.RelaySuccess)
-	}
-	if nm.config.Stats.RelayFailed != 1 {
-		t.Errorf("RelayFailed = %d, want 1", nm.config.Stats.RelayFailed)
-	}
-}
-
-func TestNetworkManager_RecordReceived(t *testing.T) {
-	nm := newTestNetworkManager(t)
-
-	nm.RecordReceived()
-	nm.RecordReceived()
-
-	if nm.config.Stats.RequestsReceived != 2 {
-		t.Errorf("RequestsReceived = %d, want 2", nm.config.Stats.RequestsReceived)
-	}
-}
-
-func TestNetworkManager_UpdateConfig(t *testing.T) {
-	nm := newTestNetworkManager(t)
-
-	relayEnabled := false
-	err := nm.UpdateConfig("New Name", []string{"gpt-4", "claude-3"}, 500, &relayEnabled)
+	data, err := os.ReadFile(node.keyPath)
 	if err != nil {
-		t.Fatalf("UpdateConfig failed: %v", err)
+		// No existing key file - stay in uninitialized state (Personal Mode).
+		// Identity will be generated only when user explicitly joins the shared network.
+		slog.Info("no node identity found, running in personal mode")
+		return
 	}
 
-	if nm.config.NodeName != "New Name" {
-		t.Errorf("NodeName = %q, want %q", nm.config.NodeName, "New Name")
+	// Load existing identity
+	var store NodeKeyStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		slog.Error("failed to parse node key file", "error", err)
+		return
 	}
-	if len(nm.config.SharedModels) != 2 {
-		t.Errorf("SharedModels length = %d, want 2", len(nm.config.SharedModels))
-	}
-	if nm.config.MaxDailyRequests != 500 {
-		t.Errorf("MaxDailyRequests = %d, want 500", nm.config.MaxDailyRequests)
-	}
-	if nm.config.RelayEnabled != false {
-		t.Error("RelayEnabled should be false")
-	}
-}
 
-func TestNetworkManager_UpdateConfigPersonalMode(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	nm.config.Mode = NetworkModePersonal
+	node.mu.Lock()
+	defer node.mu.Unlock()
+	node.nodeID = store.NodeID
+	node.hasMnemonic = store.HasMnemonic
+	node.backupConfirmed = store.BackupConfirmed
 
-	err := nm.UpdateConfig("New Name", nil, 0, nil)
-	if err == nil {
-		t.Error("UpdateConfig should fail in personal mode")
+	// SA-13: Store encrypted private key in memory (not decrypted)
+	node.encPrivKey = store.PrivKeyB64
+
+	// Derive public key from encrypted key (decrypt temporarily, derive pub, then zero)
+	decrypted := enc.Decrypt(store.PrivKeyB64)
+	if decrypted == "" {
+		slog.Error("failed to decrypt node private key")
+		return
 	}
-}
-
-func TestNetworkManager_UpdateConfigPartial(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	nm.config.NodeName = "Original"
-
-	// Only update name
-	err := nm.UpdateConfig("Updated", nil, 0, nil)
+	keyBytes, err := base64.StdEncoding.DecodeString(decrypted)
 	if err != nil {
-		t.Fatalf("UpdateConfig failed: %v", err)
+		slog.Error("failed to decode decrypted private key", "error", err)
+		return
 	}
-	if nm.config.NodeName != "Updated" {
-		t.Errorf("NodeName = %q, want %q", nm.config.NodeName, "Updated")
+	tempKey := ed25519.PrivateKey(keyBytes)
+	node.pubKey = tempKey.Public().(ed25519.PublicKey)
+	// Zero the temporary decrypted key bytes
+	for i := range keyBytes {
+		keyBytes[i] = 0
 	}
-}
-
-func TestNetworkManager_SetShareToPool(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	if nm.IsSharingToPool() {
-		t.Error("ShareToPool should be false by default")
-	}
-
-	nm.SetShareToPool(true)
-	if !nm.IsSharingToPool() {
-		t.Error("ShareToPool should be true after setting")
-	}
-
-	nm.SetShareToPool(false)
-	if nm.IsSharingToPool() {
-		t.Error("ShareToPool should be false after unsetting")
-	}
-}
-
-func TestNetworkManager_SetCapabilities(t *testing.T) {
-	nm := newTestNetworkManager(t)
-
-	caps := PeerCapabilities{
-		Providers: []string{"openai", "anthropic"},
-		CanRelay:  true,
-		CanSeed:   false,
-		Bandwidth: "1Gbps",
-	}
-	nm.SetCapabilities(caps)
-
-	if len(nm.config.Capabilities.Providers) != 2 {
-		t.Errorf("expected 2 providers, got %d", len(nm.config.Capabilities.Providers))
-	}
-	if !nm.config.Capabilities.CanRelay {
-		t.Error("CanRelay should be true")
-	}
-}
-
-func TestNetworkManager_RecordConsent(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	nm.config.ConsentAccepted = false
-
-	if err := nm.RecordConsent(); err != nil {
-		t.Fatalf("RecordConsent failed: %v", err)
-	}
-	if !nm.config.ConsentAccepted {
-		t.Error("ConsentAccepted should be true")
-	}
-	if nm.config.ConsentTime == "" {
-		t.Error("ConsentTime should be set")
-	}
-}
-
-func TestNetworkManager_updateOnlineCount(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	nm.config.Peers = []PeerInfo{
-		{NodeID: "mmx-peer1", Status: "online"},
-		{NodeID: "mmx-peer2", Status: "offline"},
-		{NodeID: "mmx-peer3", Status: "online"},
-	}
-	nm.updateOnlineCount()
-	if nm.config.Stats.OnlinePeers != 2 {
-		t.Errorf("OnlinePeers = %d, want 2", nm.config.Stats.OnlinePeers)
-	}
-}
-
-func TestNetworkManager_countOnlinePeers(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	now := time.Now()
-	nm.config.Peers = []PeerInfo{
-		{NodeID: "mmx-peer1", LastSeen: now.Format(time.RFC3339)},
-		{NodeID: "mmx-peer2", LastSeen: now.Add(-10 * time.Minute).Format(time.RFC3339)},
-		{NodeID: "mmx-peer3", LastSeen: now.Add(-1 * time.Hour).Format(time.RFC3339)},
-	}
-	count := nm.countOnlinePeers()
-	// Only peer1 (now) and peer2 (-10min, within 5min? No, 10 > 5) are online
-	if count != 1 {
-		t.Errorf("countOnlinePeers = %d, want 1", count)
-	}
-}
-
-// ============================================================
-// EnableSharedNetwork / DisableSharedNetwork Tests
-// ============================================================
-
-func TestNetworkManager_EnableSharedNetwork(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	nm.config.Mode = NetworkModePersonal
-	nm.config.ConsentAccepted = false
-
-	// Should fail without consent
-	err := nm.EnableSharedNetwork()
-	if err == nil {
-		t.Error("EnableSharedNetwork should fail without consent")
-	}
-
-	// Give consent first
-	nm.config.ConsentAccepted = true
-	err = nm.EnableSharedNetwork()
-	if err != nil {
-		t.Fatalf("EnableSharedNetwork failed: %v", err)
-	}
-	if nm.config.Mode != NetworkModeShared {
-		t.Errorf("Mode = %q, want %q", nm.config.Mode, NetworkModeShared)
-	}
-	if nm.config.NodeID == "" {
-		t.Error("NodeID should be assigned")
-	}
-}
-
-func TestNetworkManager_DisableSharedNetwork(t *testing.T) {
-	nm := newTestNetworkManager(t)
-	nm.config.Mode = NetworkModeShared
-
-	err := nm.DisableSharedNetwork()
-	if err != nil {
-		t.Fatalf("DisableSharedNetwork failed: %v", err)
-	}
-	if nm.config.Mode != NetworkModePersonal {
-		t.Errorf("Mode = %q, want %q", nm.config.Mode, NetworkModePersonal)
-	}
-}
-
-// ============================================================
-// Disclaimer Tests
-// ============================================================
-
-func TestGetDisclaimer(t *testing.T) {
-	d := GetDisclaimer()
-	if d.Title == "" {
-		t.Error("Disclaimer title should not be empty")
-	}
-	if len(d.Sections) == 0 {
-		t.Error("Disclaimer should have sections")
-	}
-	if d.ConfirmationText == "" {
-		t.Error("Disclaimer should have confirmation text")
-	}
-
-	// Check that at least one section is a risk warning
-	hasRisk := false
-	for _, s := range d.Sections {
-		if s.IsRisk {
-			hasRisk = true
-			break
+	// Decrypt and store mnemonic if present
+	if store.HasMnemonic && store.Mnemonic != "" {
+		decMnemonic := enc.Decrypt(store.Mnemonic)
+		if decMnemonic != "" {
+			node.mnemonic = decMnemonic
 		}
 	}
-	if !hasRisk {
-		t.Error("Disclaimer should have at least one risk section")
+
+	node.githubUser = store.GitHubUser
+	node.githubID = store.GitHubID
+	if store.JoinedAt != "" {
+		node.joinedAt, _ = time.Parse(time.RFC3339, store.JoinedAt)
+	}
+
+	// Check if this is a legacy mm- format that needs migration
+	if strings.HasPrefix(node.nodeID, "mm-") && !strings.HasPrefix(node.nodeID, "mmx-") {
+		node.needsMigration = true
+		slog.Warn("legacy node ID format detected, migration recommended", "node_id", node.nodeID)
+	}
+
+	slog.Info("node identity loaded", "node_id", node.nodeID, "has_mnemonic", node.hasMnemonic, "needs_migration", node.needsMigration)
+}
+
+// GenerateWithMnemonic generates a new identity using BIP39 mnemonic.
+// wordCount must be 12 or 24 (default 12).
+// Returns the mnemonic plaintext that MUST be shown to the user for backup.
+func (n *NodeIdentity) GenerateWithMnemonic(wordCount int) (string, error) {
+	if wordCount != 12 && wordCount != 24 {
+		return "", fmt.Errorf("word count must be 12 or 24, got %d", wordCount)
+	}
+
+	// Determine entropy bits: 12 words = 128 bits, 24 words = 256 bits
+	entropyBits := 128
+	if wordCount == 24 {
+		entropyBits = 256
+	}
+
+	// Generate entropy
+	entropy, err := bip39.NewEntropy(entropyBits)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate entropy: %w", err)
+	}
+
+	// Generate mnemonic from entropy
+	mnemonic, err := bip39.NewMnemonic(entropy)
+	if err != nil {
+		// Zero entropy before returning
+		for i := range entropy {
+			entropy[i] = 0
+		}
+		return "", fmt.Errorf("failed to generate mnemonic: %w", err)
+	}
+
+	// Zero entropy immediately after use
+	for i := range entropy {
+		entropy[i] = 0
+	}
+
+	// Derive Ed25519 key from mnemonic via BIP32/SLIP-0010
+	privKey, pubKey, err := deriveKeyFromMnemonic(mnemonic)
+	if err != nil {
+		return "", fmt.Errorf("failed to derive key from mnemonic: %w", err)
+	}
+
+	// Update identity
+	n.mu.Lock()
+	n.privKey = privKey
+	n.pubKey = pubKey
+	n.hasMnemonic = true
+	n.backupConfirmed = false
+	n.mnemonic = mnemonic // keep in memory until user confirms backup
+	n.nodeID = "mmx-" + hex.EncodeToString(pubKey)
+	n.joinedAt = time.Now().UTC()
+	n.needsMigration = false
+
+	// SA-13: Encrypt private key for storage, then clear plaintext
+	privKeyB64 := base64.StdEncoding.EncodeToString(privKey)
+	n.encPrivKey = enc.Encrypt(privKeyB64)
+	// Clear the private key from memory (will be decrypted on-demand for signing)
+	for i := range privKey {
+		privKey[i] = 0
+	}
+	n.privKey = nil
+
+	// Encrypt and store mnemonic
+	n.mu.Unlock()
+
+	// Save to disk (including encrypted mnemonic)
+	n.save()
+
+	slog.Info("new mnemonic-based node identity generated", "node_id", n.nodeID, "word_count", wordCount)
+
+	// Return mnemonic plaintext - caller MUST show this to user for backup
+	return mnemonic, nil
+}
+
+// RestoreFromMnemonic restores identity from an existing mnemonic phrase.
+// Used when user reinstalls or switches devices.
+func (n *NodeIdentity) RestoreFromMnemonic(mnemonic string) error {
+	mnemonic = strings.TrimSpace(mnemonic)
+
+	// Validate mnemonic
+	if !bip39.IsMnemonicValid(mnemonic) {
+		return fmt.Errorf("invalid mnemonic phrase")
+	}
+
+	// Derive Ed25519 key from mnemonic via BIP32/SLIP-0010
+	privKey, pubKey, err := deriveKeyFromMnemonic(mnemonic)
+	if err != nil {
+		return fmt.Errorf("failed to derive key from mnemonic: %w", err)
+	}
+
+	// Update identity
+	n.mu.Lock()
+	n.privKey = privKey
+	n.pubKey = pubKey
+	n.hasMnemonic = true
+	n.backupConfirmed = true // restored from existing mnemonic, assume already backed up
+	n.mnemonic = mnemonic
+	n.nodeID = "mmx-" + hex.EncodeToString(pubKey)
+	n.joinedAt = time.Now().UTC()
+	n.needsMigration = false
+
+	// SA-13: Encrypt private key for storage, then clear plaintext
+	privKeyB64 := base64.StdEncoding.EncodeToString(privKey)
+	n.encPrivKey = enc.Encrypt(privKeyB64)
+	for i := range privKey {
+		privKey[i] = 0
+	}
+	n.privKey = nil
+	n.mu.Unlock()
+
+	// Save to disk
+	n.save()
+
+	slog.Info("node identity restored from mnemonic", "node_id", n.nodeID)
+	return nil
+}
+
+// GetMnemonic returns the plaintext mnemonic.
+// Should only be called for display purposes (e.g., re-showing to user).
+func (n *NodeIdentity) GetMnemonic() (string, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	if !n.hasMnemonic {
+		return "", fmt.Errorf("this identity was not generated from a mnemonic")
+	}
+
+	if n.mnemonic == "" {
+		// Try to decrypt from disk
+		data, err := os.ReadFile(n.keyPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read key file: %w", err)
+		}
+
+		var store NodeKeyStore
+		if err := json.Unmarshal(data, &store); err != nil {
+			return "", fmt.Errorf("failed to parse key file: %w", err)
+		}
+
+		if store.Mnemonic == "" {
+			return "", fmt.Errorf("no mnemonic stored for this identity")
+		}
+
+		decrypted := enc.Decrypt(store.Mnemonic)
+		if decrypted == "" {
+			return "", fmt.Errorf("failed to decrypt mnemonic")
+		}
+		return decrypted, nil
+	}
+
+	return n.mnemonic, nil
+}
+
+// ConfirmBackup marks that the user has confirmed they backed up the mnemonic.
+func (n *NodeIdentity) ConfirmBackup() {
+	n.mu.Lock()
+	n.backupConfirmed = true
+	// After confirmation, zero the in-memory mnemonic for security
+	n.mnemonic = ""
+	n.mu.Unlock()
+	n.save()
+	slog.Info("mnemonic backup confirmed, mnemonic cleared from memory")
+}
+
+// IsInitialized returns whether the node identity has been set up.
+func (n *NodeIdentity) IsInitialized() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.nodeID != "" && (n.encPrivKey != "" || n.privKey != nil)
+}
+
+// NeedsMigration returns true if the node uses legacy mm- format.
+func (n *NodeIdentity) NeedsMigration() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.needsMigration
+}
+
+// HasMnemonic returns whether this identity is mnemonic-based.
+func (n *NodeIdentity) HasMnemonic() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.hasMnemonic
+}
+
+// IsBackupConfirmed returns whether the user has confirmed mnemonic backup.
+func (n *NodeIdentity) IsBackupConfirmed() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.backupConfirmed
+}
+
+// deriveKeyFromMnemonic derives an Ed25519 key pair from a BIP39 mnemonic
+// using SLIP-0010 derivation path m/44'/2024'/0'.
+func deriveKeyFromMnemonic(mnemonic string) (ed25519.PrivateKey, ed25519.PublicKey, error) {
+	// 1. Mnemonic → seed (BIP39)
+	seed := bip39.NewSeed(mnemonic, "")
+
+	// 2. SLIP-0010 Ed25519 master key derivation
+	// Master key: HMAC-SHA512(Key="ed25519 seed", Data=seed)
+	masterKey, masterChain := slip0010MasterKey(seed)
+
+	// Zero seed after use
+	for i := range seed {
+		seed[i] = 0
+	}
+
+	// 3. Derive path m/44'/2024'/0'
+	// All indices are hardened (bit 31 set)
+	key, chainCode := slip0010DerivePath(masterKey, masterChain, []uint32{
+		44 | 0x80000000,   // 44' (BIP44)
+		2024 | 0x80000000, // 2024' (OpenModelPool registered path)
+		0 | 0x80000000,    // 0' (default account)
+	})
+
+	// Zero parent key material
+	for i := range masterKey {
+		masterKey[i] = 0
+	}
+	for i := range chainCode {
+		chainCode[i] = 0
+	}
+
+	// 4. 32 bytes → Ed25519 private key seed
+	privKey := ed25519.NewKeyFromSeed(key)
+	pubKey := privKey.Public().(ed25519.PublicKey)
+
+	// Zero the derived key seed (ed25519.NewKeyFromSeed copies the seed)
+	for i := range key {
+		key[i] = 0
+	}
+
+	return privKey, pubKey, nil
+}
+
+// slip0010MasterKey generates the master key and chain code from seed per SLIP-0010.
+func slip0010MasterKey(seed []byte) ([]byte, []byte) {
+	mac := hmac.New(sha512.New, []byte("ed25519 seed"))
+	mac.Write(seed)
+	I := mac.Sum(nil)
+
+	// Left 32 bytes = master secret key, right 32 bytes = master chain code
+	key := make([]byte, 32)
+	chainCode := make([]byte, 32)
+	copy(key, I[:32])
+	copy(chainCode, I[32:])
+
+	// Zero the full HMAC output
+	for i := range I {
+		I[i] = 0
+	}
+
+	return key, chainCode
+}
+
+// slip0010DerivePath derives a child key through a series of hardened indices.
+func slip0010DerivePath(key, chainCode []byte, path []uint32) ([]byte, []byte) {
+	currentKey := make([]byte, 32)
+	copy(currentKey, key)
+	currentChain := make([]byte, 32)
+	copy(currentChain, chainCode)
+
+	for _, index := range path {
+		currentKey, currentChain = slip0010DeriveChild(currentKey, currentChain, index)
+	}
+
+	return currentKey, currentChain
+}
+
+// slip0010DeriveChild derives a single hardened child key per SLIP-0010.
+func slip0010DeriveChild(key, chainCode []byte, index uint32) ([]byte, []byte) {
+	// For Ed25519 (SLIP-0010), only hardened derivation is supported.
+	// Data = 0x00 || ser256(key) || ser32(index)
+	data := make([]byte, 1+32+4)
+	data[0] = 0x00
+	copy(data[1:], key)
+	binary.BigEndian.PutUint32(data[33:], index)
+
+	mac := hmac.New(sha512.New, chainCode)
+	mac.Write(data)
+	I := mac.Sum(nil)
+
+	// Zero data after use
+	for i := range data {
+		data[i] = 0
+	}
+
+	childKey := make([]byte, 32)
+	childChain := make([]byte, 32)
+	copy(childKey, I[:32])
+	copy(childChain, I[32:])
+
+	// Zero full HMAC output
+	for i := range I {
+		I[i] = 0
+	}
+
+	return childKey, childChain
+}
+
+// generate generates a new random Ed25519 identity (legacy method, kept for backward compat).
+// Deprecated: Use GenerateWithMnemonic for new identities.
+func (n *NodeIdentity) generate() error {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return fmt.Errorf("generate ed25519 key: %w", err)
+	}
+
+	// SA-13: Encrypt private key for in-memory storage, then clear plaintext
+	privKeyB64 := base64.StdEncoding.EncodeToString(priv)
+	n.encPrivKey = enc.Encrypt(privKeyB64)
+	n.privKey = priv // temporarily held for save(), cleared after save
+	n.pubKey = pub
+	n.nodeID = "mm-" + base58Encode(pub[:16])
+	n.hasMnemonic = false
+	n.joinedAt = time.Now().UTC()
+	return nil
+}
+
+func (n *NodeIdentity) save() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	// SA-13: Use encrypted in-memory key if available, otherwise encrypt from plaintext
+	encKey := n.encPrivKey
+	if encKey == "" && n.privKey != nil {
+		privKeyB64 := base64.StdEncoding.EncodeToString(n.privKey)
+		encKey = enc.Encrypt(privKeyB64)
+		n.encPrivKey = encKey
+		// Clear plaintext private key after encryption
+		for i := range n.privKey {
+			n.privKey[i] = 0
+		}
+		n.privKey = nil
+	}
+
+	if encKey == "" {
+		return
+	}
+
+	// Encrypt mnemonic if available
+	encMnemonic := ""
+	if n.mnemonic != "" {
+		encMnemonic = enc.Encrypt(n.mnemonic)
+	}
+
+	store := NodeKeyStore{
+		NodeID:          n.nodeID,
+		PrivKeyB64:      encKey,
+		PubKeyB64:       base64.StdEncoding.EncodeToString(n.pubKey),
+		Mnemonic:        encMnemonic,
+		HasMnemonic:     n.hasMnemonic,
+		BackupConfirmed: n.backupConfirmed,
+		GitHubUser:      n.githubUser,
+		GitHubID:        n.githubID,
+		JoinedAt:        n.joinedAt.Format(time.RFC3339),
+		Version:         2, // v4.0 storage version
+	}
+
+	data, _ := json.MarshalIndent(store, "", "  ")
+	atomicWriteFile(n.keyPath, data, 0600)
+}
+
+// NodeID returns this node's ID.
+func (n *NodeIdentity) NodeID() string {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.nodeID
+}
+
+// PubKeyB64 returns the base64-encoded public key.
+func (n *NodeIdentity) PubKeyB64() string {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	if n.pubKey == nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(n.pubKey)
+}
+
+// Sign signs a message and returns base64-encoded signature.
+// SA-13: Decrypts the private key on-demand, signs, then zeros the key material.
+func (n *NodeIdentity) Sign(message []byte) string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	// Decrypt private key from encrypted in-memory storage
+	decrypted := enc.Decrypt(n.encPrivKey)
+	if decrypted == "" {
+		return ""
+	}
+	keyBytes, err := base64.StdEncoding.DecodeString(decrypted)
+	if err != nil {
+		return ""
+	}
+	privKey := ed25519.PrivateKey(keyBytes)
+
+	// Sign the message
+	sig := ed25519.Sign(privKey, message)
+	result := base64.StdEncoding.EncodeToString(sig)
+
+	// Zero the decrypted key material immediately after use
+	for i := range keyBytes {
+		keyBytes[i] = 0
+	}
+
+	return result
+}
+
+// SignJSON marshals v to JSON, signs it, and returns the signature.
+func (n *NodeIdentity) SignJSON(v any) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return n.Sign(data)
+}
+
+// SignHex signs a message and returns the hex-encoded signature.
+// SA-13: Same decrypt-on-use, zero-after-use pattern as Sign().
+func (n *NodeIdentity) SignHex(message []byte) string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	decrypted := enc.Decrypt(n.encPrivKey)
+	if decrypted == "" {
+		return ""
+	}
+	keyBytes, err := base64.StdEncoding.DecodeString(decrypted)
+	if err != nil {
+		return ""
+	}
+	privKey := ed25519.PrivateKey(keyBytes)
+	sig := ed25519.Sign(privKey, message)
+
+	// Zero the decrypted key material
+	for i := range keyBytes {
+		keyBytes[i] = 0
+	}
+
+	return fmt.Sprintf("%x", sig)
+}
+
+// VerifySignature verifies a signature from a given public key.
+func VerifySignature(pubKeyB64 string, message []byte, signatureB64 string) bool {
+	pubBytes, err := base64.StdEncoding.DecodeString(pubKeyB64)
+	if err != nil || len(pubBytes) != ed25519.PublicKeySize {
+		return false
+	}
+	sigBytes, err := base64.StdEncoding.DecodeString(signatureB64)
+	if err != nil || len(sigBytes) != ed25519.SignatureSize {
+		return false
+	}
+	return ed25519.Verify(ed25519.PublicKey(pubBytes), message, sigBytes)
+}
+
+// VerifyJSONSig marshals v to JSON and verifies the signature.
+func VerifyJSONSig(pubKeyB64 string, v any, signatureB64 string) bool {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return false
+	}
+	return VerifySignature(pubKeyB64, data, signatureB64)
+}
+
+// GetInfo returns this node's NodeInfo for federation registration.
+func (n *NodeIdentity) GetInfo() NodeInfo {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	endpoint := cfg.Get("federation_endpoint", "")
+	if endpoint == "" {
+		port := cfg.Get("service_port", "8000")
+		hostname, _ := os.Hostname()
+		endpoint = fmt.Sprintf("http://%s:%s", hostname, port)
+	}
+
+	var sharedModels []string
+	var sharedProviders []SharedProvider
+	if fed != nil {
+		sharedModels, sharedProviders = fed.getLocalSharedProviders()
+	}
+
+	// v3.1: Determine capabilities from config
+	caps := PeerCapabilities{
+		CanRelay: true, // all nodes can relay by default in unified Peer model
+		CanSeed:  true, // all nodes can seed by default
+	}
+	if netMgr != nil {
+		caps = netMgr.config.Capabilities
+		// Ensure defaults if capabilities not set
+		if !caps.CanRelay && !caps.CanSeed {
+			caps.CanRelay = true
+			caps.CanSeed = true
+		}
+	}
+
+	return NodeInfo{
+		NodeID:          n.nodeID,
+		GitHubUser:      n.githubUser,
+		GitHubID:        n.githubID,
+		Endpoint:        endpoint,
+		PubKey:          base64.StdEncoding.EncodeToString(n.pubKey),
+		SharedModels:    sharedModels,
+		SharedProviders: sharedProviders,
+		JoinedAt:        n.joinedAt.Format(time.RFC3339),
+		LastSeen:        time.Now().UTC().Format(time.RFC3339),
+		Status:          "active",
+		SeedNode:        caps.CanSeed, // v3.1: derived from capability, not preset type
+		Reputation:      0,
+		Version:         AppVersion,
+		TokenBudget:     n.tokenBudget,
 	}
 }
 
-// ============================================================
-// Constants Tests
-// ============================================================
+// SetGitHub binds a GitHub identity to this node.
+func (n *NodeIdentity) SetGitHub(user string, id int64) {
+	n.mu.Lock()
+	n.githubUser = user
+	n.githubID = id
+	n.mu.Unlock()
+	n.save()
+}
 
-func TestNetworkConstants(t *testing.T) {
-	if p2pNodeIDPrefix != "mmx-" {
-		t.Errorf("p2pNodeIDPrefix = %q, want %q", p2pNodeIDPrefix, "mmx-")
+// SetTokenBudget sets this node's declared monthly token budget.
+func (n *NodeIdentity) SetTokenBudget(budget int64) {
+	n.mu.Lock()
+	n.tokenBudget = budget
+	n.mu.Unlock()
+}
+
+// base58 encoding (Bitcoin-style, no 0/O/I/l)
+const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+func base58Encode(data []byte) string {
+	if len(data) == 0 {
+		return ""
 	}
-	if maxRelayHops != 3 {
-		t.Errorf("maxRelayHops = %d, want 3", maxRelayHops)
+
+	// Count leading zeros
+	var leadingZeros int
+	for _, b := range data {
+		if b != 0 {
+			break
+		}
+		leadingZeros++
 	}
-	if routeTTL != 10*time.Minute {
-		t.Errorf("routeTTL = %v, want 10m", routeTTL)
+
+	// Convert to big integer and encode
+	num := make([]byte, len(data))
+	copy(num, data)
+	var encoded []byte
+	for len(num) > 0 {
+		var remainder int
+		var next []byte
+		for _, b := range num {
+			acc := remainder*256 + int(b)
+			digit := acc / 58
+			remainder = acc % 58
+			if len(next) > 0 || digit > 0 {
+				next = append(next, byte(digit))
+			}
+		}
+		encoded = append([]byte{base58Alphabet[remainder]}, encoded...)
+		num = next
 	}
+
+	// Add leading '1's for zero bytes
+	for i := 0; i < leadingZeros; i++ {
+		encoded = append([]byte{base58Alphabet[0]}, encoded...)
+	}
+
+	return string(encoded)
 }

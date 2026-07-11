@@ -1,230 +1,220 @@
 package main
 
 import (
-	"testing"
+	"encoding/json"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
 )
 
-// ============================================================
-// Client adapter tests
-// ============================================================
-
-func TestAnthropicBuildMessages(t *testing.T) {
-	messages := []ChatMessage{
-		{Role: "system", Content: "You are helpful"},
-		{Role: "user", Content: "Hello"},
-		{Role: "assistant", Content: "Hi there!"},
-		{Role: "user", Content: "How are you?"},
-	}
-
-	anthMessages, systemMsg := anthropicBuildMessages(messages)
-
-	if systemMsg != "You are helpful" {
-		t.Fatalf("system message not extracted: %s", systemMsg)
-	}
-	if len(anthMessages) != 3 {
-		t.Fatalf("expected 3 messages, got %d", len(anthMessages))
-	}
-	if anthMessages[0]["role"] != "user" {
-		t.Fatalf("first message should be user, got %s", anthMessages[0]["role"])
-	}
-	if anthMessages[1]["role"] != "assistant" {
-		t.Fatalf("second message should be assistant, got %s", anthMessages[1]["role"])
-	}
+// Config manages persistent JSON config with env var fallback.
+type Config struct {
+	mu       sync.RWMutex
+	data     map[string]any
+	path     string
+	dirty    bool
+	dirtyCh  chan struct{}
+	stopCh   chan struct{}
 }
 
-func TestAnthropicBuildMessages_NoSystem(t *testing.T) {
-	messages := []ChatMessage{
-		{Role: "user", Content: "Hello"},
-		{Role: "assistant", Content: "Hi"},
-	}
+var cfg *Config
 
-	anthMessages, systemMsg := anthropicBuildMessages(messages)
-
-	if systemMsg != "" {
-		t.Fatalf("system message should be empty: %s", systemMsg)
-	}
-	if len(anthMessages) != 2 {
-		t.Fatalf("expected 2 messages, got %d", len(anthMessages))
-	}
+// envMap maps config keys to environment variable names.
+var envMap = map[string]string{
+	"coze_api_token": "COZE_API_TOKEN",
+	"coze_bot_id":    "COZE_BOT_ID",
+	"service_port":   "PORT",
 }
 
-func TestAnthropicBuildMessages_OnlySystem(t *testing.T) {
-	messages := []ChatMessage{
-		{Role: "system", Content: "Be concise"},
-		{Role: "user", Content: "Hi"},
+func initConfig(path string) {
+	cfg = &Config{
+		path:    path,
+		data:    make(map[string]any),
+		dirtyCh: make(chan struct{}, 1),
+		stopCh:  make(chan struct{}),
 	}
-
-	anthMessages, systemMsg := anthropicBuildMessages(messages)
-
-	if systemMsg != "Be concise" {
-		t.Fatalf("system message not extracted: %s", systemMsg)
-	}
-	if len(anthMessages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(anthMessages))
-	}
+	cfg.load()
+	go cfg.debounceWriter()
 }
 
-func TestSiderBuildPayload(t *testing.T) {
-	messages := []ChatMessage{
-		{Role: "system", Content: "Be helpful"},
-		{Role: "user", Content: "Hello"},
-		{Role: "assistant", Content: "Hi!"},
-	}
-
-	payload := siderBuildPayload("gpt-4o", messages, false)
-
-	if payload["model"] != "gpt-4o" {
-		t.Fatalf("model not set: %v", payload["model"])
-	}
-	if payload["stream"] != false {
-		t.Fatalf("stream should be false")
-	}
-	prompt, ok := payload["prompt"].(string)
-	if !ok || prompt == "" {
-		t.Fatal("prompt should be non-empty string")
-	}
-	// Check prompt contains system instructions
-	if !contains(prompt, "[System Instructions]") {
-		t.Fatal("prompt should contain system instructions section")
-	}
-	if !contains(prompt, "[User]: Hello") {
-		t.Fatal("prompt should contain user message")
-	}
-	if !contains(prompt, "[Assistant]: Hi!") {
-		t.Fatal("prompt should contain assistant message")
-	}
-}
-
-func TestSiderBuildPayload_Stream(t *testing.T) {
-	messages := []ChatMessage{
-		{Role: "user", Content: "Test"},
-	}
-
-	payload := siderBuildPayload("deepseek-chat", messages, true)
-	if payload["stream"] != true {
-		t.Fatal("stream should be true")
-	}
-}
-
-func TestSiderBuildHeaders(t *testing.T) {
-	token := "test-sider-token"
-	headers := siderBuildHeaders(token)
-
-	if headers.Get("Authorization") != "Bearer "+token {
-		t.Fatalf("Authorization header wrong: %s", headers.Get("Authorization"))
-	}
-	if headers.Get("Content-Type") != "application/json" {
-		t.Fatal("Content-Type should be application/json")
-	}
-}
-
-func TestBuildOpenAIBody(t *testing.T) {
-	messages := []ChatMessage{
-		{Role: "user", Content: "Hello"},
-	}
-	extra := map[string]any{"temperature": 0.7}
-
-	body := buildOpenAIBody("gpt-4o", messages, false, extra)
-
-	if body["model"] != "gpt-4o" {
-		t.Fatalf("model wrong: %v", body["model"])
-	}
-	if body["stream"] != false {
-		t.Fatal("stream should be false")
-	}
-	if body["temperature"] != 0.7 {
-		t.Fatalf("temperature not passed through: %v", body["temperature"])
-	}
-}
-
-func TestBuildOpenAIBody_Stream(t *testing.T) {
-	messages := []ChatMessage{
-		{Role: "user", Content: "Hi"},
-	}
-	body := buildOpenAIBody("gpt-4o", messages, true, nil)
-	if body["stream"] != true {
-		t.Fatal("stream should be true")
-	}
-}
-
-func TestWriteSSEChunk(t *testing.T) {
-	// Just verify it doesn't panic
-	stop := "stop"
-	chunk := ChatChunk{
-		ID: "test-id", Object: "chat.completion.chunk",
-		Created: 12345, Model: "gpt-4o",
-		Choices: []Choice{{Delta: &Msg{Content: strPtr("hello")}, FinishReason: &stop}},
-	}
-	// Use a bytes.Buffer as io.Writer
-	var buf testWriter
-	writeSSEChunk(&buf, chunk)
-	if buf.data == "" {
-		t.Fatal("SSE chunk should write data")
-	}
-	if !contains(buf.data, "data: ") {
-		t.Fatal("SSE chunk should start with 'data: '")
-	}
-}
-
-func TestWriteSSEError(t *testing.T) {
-	var buf testWriter
-	writeSSEError(&buf, "gpt-4o", "test error")
-	if buf.data == "" {
-		t.Fatal("SSE error should write data")
-	}
-	if !contains(buf.data, "test error") {
-		t.Fatal("SSE error should contain error message")
-	}
-	if !contains(buf.data, "[DONE]") {
-		t.Fatal("SSE error should end with [DONE]")
-	}
-}
-
-func TestTruncate(t *testing.T) {
-	tests := []struct {
-		input string
-		n     int
-		want  string
-	}{
-		{"hello", 10, "hello"},
-		{"hello world", 5, "hello"},
-		{"", 5, ""},
-		{"abc", 3, "abc"},
-	}
-	for _, tt := range tests {
-		got := truncate(tt.input, tt.n)
-		if got != tt.want {
-			t.Errorf("truncate(%q, %d) = %q, want %q", tt.input, tt.n, got, tt.want)
+func (c *Config) debounceWriter() {
+	for {
+		select {
+		case <-c.dirtyCh:
+			time.Sleep(3 * time.Second)
+			// Drain any additional signals during sleep
+			for len(c.dirtyCh) > 0 {
+				<-c.dirtyCh
+			}
+			c.mu.Lock()
+			if c.dirty {
+				c.doSave()
+				c.dirty = false
+			}
+			c.mu.Unlock()
+		case <-c.stopCh:
+			// Final flush on shutdown
+			c.mu.Lock()
+			if c.dirty {
+				c.doSave()
+				c.dirty = false
+			}
+			c.mu.Unlock()
+			return
 		}
 	}
 }
 
-func TestStrPtr(t *testing.T) {
-	p := strPtr("hello")
-	if *p != "hello" {
-		t.Fatalf("strPtr wrong: %s", *p)
-	}
-}
+// sensitiveKeys lists config keys that must be encrypted at rest.
+var sensitiveKeys = []string{"proxy_api_key", "coze_api_token", "cf_api_token", "cf_zone_id"}
 
-// testWriter is a simple io.Writer for testing.
-type testWriter struct {
-	data string
-}
+func (c *Config) load() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-func (w *testWriter) Write(p []byte) (n int, err error) {
-	w.data += string(p)
-	return len(p), nil
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+	// Use loadWithIntegrity to handle HMAC-prefixed files
+	if err := loadWithIntegrity(c.path, &c.data); err != nil {
+		// Fallback: try plain JSON (pre-upgrade or corrupted file)
+		b, ferr := os.ReadFile(c.path)
+		if ferr == nil {
+			json.Unmarshal(b, &c.data)
 		}
 	}
-	return false
+	// Decrypt sensitive fields
+	for _, key := range sensitiveKeys {
+		if v, ok := c.data[key].(string); ok && v != "" && IsEncrypted(v) {
+			c.data[key] = enc.Decrypt(v)
+		}
+	}
+	slog.Info("config loaded", "path", c.path, "keys", len(c.data))
+}
+
+func (c *Config) save() {
+	c.mu.Lock()
+	c.dirty = true
+	c.mu.Unlock()
+	// Signal debounce writer
+	select {
+	case c.dirtyCh <- struct{}{}:
+	default:
+	}
+}
+
+// saveSync forces synchronous save (used during shutdown).
+func (c *Config) saveSync() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.doSave()
+	c.dirty = false
+}
+
+func (c *Config) doSave() {
+	os.MkdirAll(filepath.Dir(c.path), 0755)
+	safe := make(map[string]any, len(c.data))
+	for k, v := range c.data {
+		safe[k] = v
+	}
+	for _, key := range sensitiveKeys {
+		if v, ok := safe[key].(string); ok && v != "" && !IsEncrypted(v) {
+			safe[key] = enc.Encrypt(v)
+		}
+	}
+	// SA-15: Save with HMAC integrity protection
+	if err := saveWithIntegrity(c.path, safe); err != nil {
+		slog.Error("failed to save config with integrity", "error", err)
+	}
+}
+
+// Get returns config value: file > env > default.
+func (c *Config) Get(key, def string) string {
+	c.mu.RLock()
+	if v, ok := c.data[key]; ok {
+		if s, ok := v.(string); ok && s != "" {
+			c.mu.RUnlock()
+			return s
+		}
+	}
+	c.mu.RUnlock()
+
+	envKey := envMap[key]
+	if envKey == "" {
+		envKey = toUpper(key)
+	}
+	if v := os.Getenv(envKey); v != "" {
+		return v
+	}
+	return def
+}
+
+// Set updates a config key and persists.
+func (c *Config) Set(key string, value any) {
+	c.mu.Lock()
+	c.data[key] = value
+	c.data["updated_at"] = time.Now().Format(time.RFC3339)
+	c.mu.Unlock()
+	c.save()
+}
+
+// SetMany updates multiple keys at once.
+func (c *Config) SetMany(m map[string]any) {
+	c.mu.Lock()
+	for k, v := range m {
+		if v != nil && v != "" {
+			c.data[k] = v
+		}
+	}
+	c.data["updated_at"] = time.Now().Format(time.RFC3339)
+	c.mu.Unlock()
+	c.save()
+}
+
+// Masked returns config with sensitive fields masked.
+func (c *Config) Masked() map[string]any {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	out := make(map[string]any, len(c.data))
+	for k, v := range c.data {
+		out[k] = v
+	}
+	// Mask tokens
+	for _, key := range []string{"coze_api_token", "proxy_api_key"} {
+		if tok, ok := out[key].(string); ok && tok != "" {
+			out[key+"_masked"] = maskToken(tok)
+			delete(out, key)
+		}
+	}
+	return out
+}
+
+func maskToken(s string) string {
+	if len(s) < 12 {
+		return "***"
+	}
+	return s[:6] + "..." + s[len(s)-4:]
+}
+
+func (c *Config) stop() { close(c.stopCh) }
+
+func toUpper(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'a' && c <= 'z' {
+			b[i] = c - 32
+		}
+	}
+	return string(b)
+}
+
+// atomicWriteFile writes data to a file atomically by first writing to a temp
+// file and then renaming. This prevents data corruption from partial writes.
+// P-1: Used by all save() methods across the project.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

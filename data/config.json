@@ -1,17 +1,0 @@
-ñò‡¢Æ°ø†×‚(Om8„l53µG/Ä›ñŸ%ad0E{
-  "federation_enabled": "true",
-  "federation_registry_repo": "lisiyu/openmodelpool",
-  "federation_relay_enabled": "true",
-  "providers": {},
-  "proxy_api_key": "enc:pSZqpWpJ0bfN7QuLCKKnZlveg8F7vCYccTFAz2t6jp2JZ68//fv1oItp98xCDfURJS4dIbxphsap488Q3PaneFkLIhX560SDWcA5ODlZVA==",
-  "public_url": "https://example.com",
-  "routes": {},
-  "routing_mode": "priority",
-  "routing_weights": "{\"cost\":0.25,\"latency\":0.2,\"priority\":0.4,\"tokens\":0.15}",
-  "seed_nodes": "https://8ec2592a181a4d44-140-143-238-57.serveousercontent.com",
-  "service_port": "8000",
-  "tunnel_enabled": "true",
-  "tunnel_mode": "quick",
-  "tunnel_url": "http://144.34.248.96:8000",
-  "updated_at": "2026-07-09T11:57:52+08:00"
-}
