@@ -65,6 +65,10 @@ type GuestKeyRecord struct {
 	RandomPart string `json:"random_part"` // the random portion after node_id
 	IssuedAt   string `json:"issued_at"`
 	Revoked    bool   `json:"revoked"`
+	Quota      int64  `json:"quota,omitempty"`       // daily token quota (0=unlimited)
+	ExpDays    int    `json:"exp_days,omitempty"`    // validity in days (0=never expires)
+	ExpiresAt  string `json:"expires_at,omitempty"`  // expiry timestamp
+	Note       string `json:"note,omitempty"`        // optional note/label
 }
 
 // GuestKeyStore manages all guest keys issued by this node.
@@ -114,9 +118,16 @@ func (gks *GuestKeyStore) save() {
 	}
 }
 
+// GuestKeyOptions contains optional parameters for generating a guest key.
+type GuestKeyOptions struct {
+	Quota   int64  // daily token quota (0=unlimited)
+	ExpDays int    // validity in days (0=never expires)
+	Note    string // optional note/label
+}
+
 // GenerateGuestKey creates a new guest key for the given node.
 // Format: sk-guest-{node_id}-{random_hex}
-func GenerateGuestKey(nodeID string) (string, error) {
+func GenerateGuestKey(nodeID string, opts ...GuestKeyOptions) (string, error) {
 	if nodeID == "" {
 		return "", fmt.Errorf("node_id is required")
 	}
@@ -129,13 +140,25 @@ func GenerateGuestKey(nodeID string) (string, error) {
 
 	fullKey := fmt.Sprintf("sk-guest-%s-%s", nodeID, randomPart)
 
-	// Store record
+	// Build record
 	record := &GuestKeyRecord{
 		Key:        fullKey,
 		NodeID:     nodeID,
 		RandomPart: randomPart,
 		IssuedAt:   time.Now().Format(time.RFC3339),
 		Revoked:    false,
+	}
+
+	// Apply options if provided
+	if len(opts) > 0 {
+		opt := opts[0]
+		record.Quota = opt.Quota
+		record.ExpDays = opt.ExpDays
+		record.Note = opt.Note
+		if opt.ExpDays > 0 {
+			expiresAt := time.Now().AddDate(0, 0, opt.ExpDays)
+			record.ExpiresAt = expiresAt.Format(time.RFC3339)
+		}
 	}
 
 	guestKeyStore.mu.Lock()
@@ -232,7 +255,22 @@ func handleGuestKeyIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, err := GenerateGuestKey(nodeID)
+	// Parse optional parameters from request body
+	var opts GuestKeyOptions
+	if r.Body != nil && r.ContentLength > 0 {
+		var body struct {
+			Quota   int64  `json:"quota"`
+			ExpDays int    `json:"exp_days"`
+			Note    string `json:"note"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			opts.Quota = body.Quota
+			opts.ExpDays = body.ExpDays
+			opts.Note = body.Note
+		}
+	}
+
+	key, err := GenerateGuestKey(nodeID, opts)
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return
