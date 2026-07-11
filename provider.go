@@ -320,15 +320,29 @@ func (m *ProviderManager) Add(p Provider) Provider {
 // Delete removes a provider.
 func (m *ProviderManager) Delete(id string) bool {
 	m.mu.Lock()
-	_, ok := m.providers[id]
-	if ok {
+	_, inMemory := m.providers[id]
+	if inMemory {
 		delete(m.providers, id)
 	}
+	// For preset providers, add a disabled stub to override the preset
+	if !inMemory {
+		for _, p := range presetProviders {
+			if p.ID == id {
+				m.providers[id] = Provider{
+					ID: id, Name: p.Name, Type: p.Type,
+					BaseURL: p.BaseURL, Enabled: false, APIKey: "",
+					Models: []ModelDef{},
+				}
+				inMemory = true
+				break
+			}
+		}
+	}
 	m.mu.Unlock()
-	if ok {
+	if inMemory {
 		m.save()
 	}
-	return ok
+	return inMemory
 }
 
 // Enabled returns all enabled providers.
@@ -777,20 +791,36 @@ func (m *ProviderManager) AllModelsFiltered(keyType string) []ModelInfo {
 }
 
 // providerAllowsKeyType checks if a provider allows a given key type (v2.0).
-// Public keys (sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1) always access providers shared to the pool (ShareToPool).
+// Checks both provider-level and key-level access control.
 func providerAllowsKeyType(p Provider, keyType string) bool {
 	ac := p.AccessControl
 	switch keyType {
 	case "admin", "proxy":
 		return true // proxy/admin keys always allowed
 	case "guest":
-		return ac.AllowGuest
+		return ac.AllowGuest && hasNonPrivateKey(p)
 	case "public":
-		// Public key: accessible if provider is shared to the pool (default: true)
-		return ac.ShareToPool
+		// Public key: accessible if provider is shared to the pool AND has at least one non-private key
+		return ac.ShareToPool && hasNonPrivateKey(p)
 	default:
 		return false // unknown → deny (fail-closed)
 	}
+}
+
+// hasNonPrivateKey checks if a provider has at least one API key that is not "private".
+// If all keys are private, the provider's models should not be visible externally.
+func hasNonPrivateKey(p Provider) bool {
+	// Check multi-key array first
+	for _, k := range p.APIKeys {
+		if k.Enabled && k.AccessControl != "private" {
+			return true
+		}
+	}
+	// If no APIKeys array, check legacy APIKey field (assume shared if present)
+	if len(p.APIKeys) == 0 && p.APIKey != "" {
+		return true
+	}
+	return false
 }
 
 // RoutingAdvice returns comparison info for a model across providers.
@@ -864,7 +894,7 @@ func (m *ProviderManager) SyncModels(providerID string) (int, error) {
 
 	var newModels []ModelDef
 	for _, rm := range models {
-		enabled := true
+		enabled := false // new models default to disabled; users opt-in via UI
 		if wasEnabled, exists := existingModels[rm["id"]]; exists {
 			enabled = wasEnabled
 		}
@@ -1198,4 +1228,57 @@ func (m *ProviderManager) GetAPIKeys(providerID string) ([]APIKeyConfig, error) 
 		}
 	}
 	return result, nil
+}
+
+// enableLatestModels takes a list of models and only enables the "latest" ones.
+// Strategy: sort by name descending, enable top 3 that look like stable releases.
+// Models containing "preview", "beta", "experimental", "exp" are deprioritized.
+func enableLatestModels(models []ModelDef) []ModelDef {
+	if len(models) <= 3 {
+		return models // if 3 or fewer, enable all
+	}
+
+	// Separate stable and preview models
+	var stable, preview []ModelDef
+	for _, m := range models {
+		name := strings.ToLower(m.ID)
+		if strings.Contains(name, "preview") || strings.Contains(name, "beta") ||
+			strings.Contains(name, "experimental") || strings.Contains(name, "-exp") ||
+			strings.Contains(name, "emb") || strings.Contains(name, "embed") ||
+			strings.Contains(name, "tts") || strings.Contains(name, "image") ||
+			strings.Contains(name, "video") || strings.Contains(name, "reward") ||
+			strings.Contains(name, "safety") || strings.Contains(name, "guard") ||
+			strings.Contains(name, "vision") || strings.Contains(name, "retriever") {
+			preview = append(preview, m)
+		} else {
+			stable = append(stable, m)
+		}
+	}
+
+	// Sort stable models by name descending (newer versions sort later)
+	sort.Slice(stable, func(i, j int) bool {
+		return stable[i].ID > stable[j].ID
+	})
+
+	// Enable top 3 stable models
+	enabledSet := make(map[string]bool)
+	count := 0
+	for i := range stable {
+		if count >= 3 {
+			break
+		}
+		stable[i].Enabled = true
+		enabledSet[stable[i].ID] = true
+		count++
+	}
+
+	// Disable all others
+	for i := range models {
+		if !enabledSet[models[i].ID] {
+			models[i].Enabled = false
+		}
+	}
+
+	slog.Info("auto-enabled latest models", "count", count)
+	return models
 }

@@ -463,6 +463,15 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// For new providers: only enable the latest few models by default
+	isNew := false
+	if _, exists := pm.GetRaw(p.ID); !exists {
+		isNew = true
+	}
+	if isNew && len(p.Models) > 0 {
+		p.Models = enableLatestModels(p.Models)
+	}
+
 	// Validate VMess proxy link format
 	if strings.HasPrefix(p.Proxy, "vmess://") {
 		if _, err := ParseVMessLink(p.Proxy); err != nil {
@@ -1050,6 +1059,14 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			keyCount = 1
 		}
 		
+		// Count only enabled models
+		enabledModelCount := 0
+		for _, m := range p.Models {
+			if m.Enabled {
+				enabledModelCount++
+			}
+		}
+		
 		enriched = append(enriched, EnrichedHealth{
 			ProviderID:       h.ProviderID,
 			ProviderName:     h.ProviderName,
@@ -1057,7 +1074,7 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			LatencyMS:        h.LatencyMS,
 			ConsecutiveFails: h.ConsecutiveFails,
 			FailureReason:    h.FailureReason,
-			ModelCount:       len(p.Models),
+			ModelCount:       enabledModelCount,
 			TokenLimit:       p.TokenLimit,
 			TokenUsed:        totalUsed,
 			TodayRequests:    todayReqs,

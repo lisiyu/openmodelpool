@@ -90,7 +90,7 @@ select.form-input{appearance:none;cursor:pointer}
 .loading{display:inline-block;width:16px;height:16px;border:2px solid var(--border-color);border-top-color:var(--accent-start);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .section-note{font-size:12px;color:var(--text-muted);padding:10px 14px;background:rgba(108,99,255,.08);border-radius:8px;margin-bottom:16px;border-left:3px solid var(--accent-start)}
-.routing-btn{padding:6px 14px;border:1px solid var(--border-color);border-radius:8px;background:white;cursor:pointer;font-size:12px;transition:all .2s}
+.routing-btn{padding:6px 14px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;font-size:12px;transition:all .2s}
 .routing-btn:hover{border-color:var(--accent-start)}
 .routing-btn.active{background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:white;border-color:transparent}
 .usage-table{width:100%;border-collapse:collapse;font-size:12px}
@@ -329,34 +329,33 @@ select.form-input{appearance:none;cursor:pointer}
       <div style="display:flex;gap:8px">
         <button class="btn btn-secondary btn-sm" onclick="addAllDiscoveredAsPreset()" style="border-color:rgba(52,211,153,.4);color:#34d399" id="batchAddDiscoveredBtn">📥 一键添加全部发现</button>
         <button class="btn btn-secondary btn-sm" onclick="syncAllUrls()">🔄 一键同步全部地址</button>
-        <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()" style="border-color:rgba(52,211,153,.4);color:#34d399" id="discoveryToggleBtn">🔍 新发现</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()" style="border-color:rgba(52,211,153,.4);color:#34d399" id="discoveryToggleBtn">🔍 新发现</button>
         <button class="btn btn-primary btn-sm" onclick="showAddProvider()">+ 添加平台</button>
       </div>
     </div>
     <div class="section-note">添加 AI 平台并配置 API Key，请求将根据模型名称自动路由到对应平台</div>
+    <!-- Discovery Card (full card style, at top of platform list) -->
+    <div id="discoveryPanel" style="display:none;border:1px solid rgba(52,211,153,.3);background:linear-gradient(135deg,rgba(52,211,153,.04),rgba(108,99,255,.04));border-radius:var(--radius);padding:20px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border-color)">
+        <span style="font-weight:600;font-size:15px"><span style="margin-right:6px">🔍</span>新发现的 AI 平台</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="triggerDiscovery()" id="triggerScanBtn">🔄 扫描新平台</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()">✕ 收起</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">系统自动发现的免费 AI 平台，管理员可审核、忽略或添加。</div>
+      <div id="discoveredList" style="display:grid;gap:10px">
+        <div style="text-align:center;color:var(--text-muted);padding:20px">点击「🔄 扫描新平台」开始发现</div>
+      </div>
+    </div>
     <div class="provider-list" id="providerList">
       <div style="text-align:center;color:var(--text-muted);padding:30px"><div class="loading"></div><br>加载中...</div>
     </div>
-    <!-- Discovery Panel -->
-    
   </div>
 
 
 
-  <!-- 新发现的 AI 平台 -->
-    <div id="discoveryPanel" class="card" style="display:none">
-      <div class="card-title" style="justify-content:space-between">
-        <span><span class="icon">🔍</span> 新发现的 AI 平台</span>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary btn-sm" onclick="triggerDiscovery()" id="triggerScanBtn">🔄 扫描新平台</button>
-          <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()">✕ 关闭</button>
-        </div>
-      </div>
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">系统自动发现的免费 AI 平台，管理员可审核、忽略或添加。注册和 API Key 获取需手动完成。</div>
-      <div id="discoveredList" style="display:grid;gap:12px">
-        <div style="text-align:center;color:var(--text-muted);padding:20px">点击「🔄 扫描新平台」开始发现</div>
-      </div>
-    </div>
+
 
     <!-- 邮件服务 -->
   <div class="card">
@@ -618,7 +617,7 @@ select.form-input{appearance:none;cursor:pointer}
   <div style="margin-top:32px;padding:24px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius);text-align:center">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">🚀 OpenModelPool — 开源 AI 聚合网关</div>
     <div style="font-size:12px;color:var(--text-muted);line-height:1.8;max-width:600px;margin:0 auto">
-      多模型聚合路由 · 共享密钥网络 · 一键接入全球 AI 平台<br>
+      多模型聚合路由 · 共享剩余AI模型算力 · 一键接入全球 AI 平台<br>
       支持 OpenAI 兼容 API，多 Key 轮询，故障转移，公共池共享
     </div>
     <div style="margin-top:14px;display:flex;justify-content:center;gap:16px;flex-wrap:wrap">
@@ -1133,9 +1132,21 @@ async function toggleModel(pid, mid) {
   const p = allProviders.find(x => x.id === pid);
   if (!p) return;
   const m = (p.models||[]).find(x => x.id === mid);
-  if (m) { m.enabled = !m.enabled; }
-  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: p.models}) });
-  await loadProviders();
+  if (!m) return;
+  // Flip locally first for instant visual feedback
+  m.enabled = !m.enabled;
+  // Update toggle visual state without re-rendering the whole list
+  const toggleEl = event.currentTarget;
+  if (toggleEl) {
+    toggleEl.classList.toggle('active', m.enabled);
+  }
+  // Save to server in background
+  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: p.models}) }).catch(e => {
+    // Revert on failure
+    m.enabled = !m.enabled;
+    if (toggleEl) toggleEl.classList.toggle('active', m.enabled);
+    toast('保存失败: ' + e.message, 'error');
+  });
 }
 
 async function testProvider(pid) {
@@ -1149,7 +1160,11 @@ async function testProvider(pid) {
 
 async function deleteProvider(pid) {
   if (!confirm('确定删除此平台？')) return;
-  await authFetch(`/api/providers/${pid}`, { method: 'DELETE' });
+  const r = await authFetch(`/api/providers/${pid}`, { method: 'DELETE' });
+  if (!r.ok) {
+    toast('删除失败', 'error');
+    return;
+  }
   toast('已删除');
   await loadProviders(); await loadStatus();
 }
@@ -2456,9 +2471,15 @@ if (authToken) {
     function renderNetworkUI() {
       if (!networkStatus) return;
       const s = networkStatus;
-      const isShared = s.mode === 'shared';
+      const isShared = s.mode === 'shared' || s.network_enabled;
       const panel = document.getElementById('networkActivePanel');
       const toggle = document.getElementById('sharedNetworkToggle');
+      // Update the status badge to reflect actual shared network state (not federation)
+      const statusBadge = document.getElementById('fedEnabledStatus');
+      if (statusBadge) {
+        statusBadge.textContent = isShared ? '✅ 已加入' : '未加入';
+        statusBadge.style.color = isShared ? 'var(--success)' : 'var(--text-muted)';
+      }
 
       if (isShared) {
         if (panel) panel.style.display = '';
@@ -3333,8 +3354,18 @@ function toggleSharedNetwork() {
     document.getElementById('sharedNetworkToggle').checked = false;
     showNetworkDisclaimer();
   } else {
-    // Disabling - confirm first
-    if (!confirm('确定要退出共享网络吗？所有连接节点将被清除，回到个人模式。')) {
+    // Disabling - show backup reminder with NodeID
+    const nodeId = (networkStatus && networkStatus.node_id) || '-';
+    const backupMsg = `⚠️ 退出共享网络提醒
+
+您的节点身份信息将被清除：
+NodeID: ${nodeId}
+
+请备份以上 NodeID，重新加入时可用于恢复节点身份和贡献积分。
+
+确定要退出吗？`;
+    
+    if (!confirm(backupMsg)) {
       document.getElementById('sharedNetworkToggle').checked = true;
       return;
     }
@@ -3342,7 +3373,7 @@ function toggleSharedNetwork() {
       method: 'POST'
     }).then(r => {
       if (r.ok) {
-        toast('已退出共享网络', 'success');
+        toast('已退出共享网络，回到个人模式', 'success');
         updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', false);
         document.getElementById('quotaAllocation').style.display = 'none';
         document.getElementById('networkActivePanel').style.display = 'none';
@@ -3513,9 +3544,14 @@ let discoveredPlatforms = [];
 function toggleDiscoveryPanel() {
   const panel = document.getElementById('discoveryPanel');
   const isVisible = panel.style.display !== 'none';
-  panel.style.display = isVisible ? 'none' : '';
-  if (!isVisible && discoveredPlatforms.length === 0) {
-    loadDiscoveredPlatforms();
+  if (isVisible) {
+    panel.style.display = 'none';
+  } else {
+    panel.style.display = '';
+    if (discoveredPlatforms.length === 0) {
+      loadDiscoveredPlatforms();
+    }
+    setTimeout(() => panel.scrollIntoView({behavior:'smooth', block:'start'}), 100);
   }
 }
 
