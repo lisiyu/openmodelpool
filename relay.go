@@ -160,6 +160,10 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 			p := c.Provider
 			actualModel := c.Model
 
+			// Resolve multi-key: populate legacy APIKey field from APIKeys array
+			if p.APIKey == "" && len(p.APIKeys) > 0 {
+				p.APIKey = p.GetEffectiveAPIKey()
+			}
 			if p.APIKey == "" && p.Type != "coze" {
 				continue
 			}
@@ -194,6 +198,10 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		p := c.Provider
 		actualModel := c.Model
 
+		// Resolve multi-key
+		if p.APIKey == "" && len(p.APIKeys) > 0 {
+			p.APIKey = p.GetEffectiveAPIKey()
+		}
 		if p.APIKey == "" && p.Type != "coze" {
 			continue
 		}

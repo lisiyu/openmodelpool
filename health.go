@@ -57,7 +57,7 @@ func (h *HealthChecker) run() {
 }
 
 func (h *HealthChecker) checkAll() {
-	providers := pm.Enabled()
+	providers := pm.EnabledRaw()
 	// Update statuses map for new providers
 	h.mu.Lock()
 	for _, p := range providers {
@@ -93,8 +93,15 @@ func (h *HealthChecker) checkProvider(p Provider) {
 
 	switch p.Type {
 	case "coze":
-		// Check Coze API token
-		token := cfg.Get("coze_api_token", "")
+		// Resolve multi-key for coze provider
+		if p.APIKey == "" && len(p.APIKeys) > 0 {
+			p.APIKey = p.GetEffectiveAPIKey()
+		}
+		// Check Coze API token (provider key first, then global fallback)
+		token := p.APIKey
+		if token == "" {
+			token = cfg.Get("coze_api_token", "")
+		}
 		if token == "" {
 			failReason = "Coze API token not configured"
 			break
@@ -120,11 +127,22 @@ func (h *HealthChecker) checkProvider(p Provider) {
 
 	default:
 		// OpenAI-compatible: check via /models or fallback endpoint
+		// Resolve multi-key
+		if p.APIKey == "" && len(p.APIKeys) > 0 {
+			p.APIKey = p.GetEffectiveAPIKey()
+		}
 		if p.APIKey == "" {
 			failReason = "no API key"
 			break
 		}
+		// Decrypt API key if still encrypted (safety net)
+		if IsEncrypted(p.APIKey) {
+			if decrypted, err := decryptAPIKey(p.APIKey); err == nil {
+				p.APIKey = decrypted
+			}
+		}
 		client := proxyHTTPClient(p, 15*time.Second)
+
 
 		// Determine health check endpoint
 		hcEndpoint := p.HealthCheckEndpoint
@@ -150,30 +168,45 @@ func (h *HealthChecker) checkProvider(p Provider) {
 
 		// Fallback: if /models returned 404, try lightweight /chat/completions probe
 		// This handles providers like TokenHub that don't support /models
-		if !healthy && resp.StatusCode == 404 && (hcEndpoint == "/models" || hcEndpoint == "") {
-			slog.Debug("health check /models 404, falling back to /chat/completions probe", "provider", p.ID)
-			probeBody, _ := json.Marshal(map[string]any{
-				"model":       "gpt-4o-mini",
-				"max_tokens":  1,
-				"messages":    []map[string]string{{"role": "user", "content": "hi"}},
-			})
-			probeReq, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", bytes.NewReader(probeBody))
-			probeReq.Header.Set("Authorization", "Bearer "+p.APIKey)
-			probeReq.Header.Set("Content-Type", "application/json")
-			start = time.Now()
-			probeResp, err := client.Do(probeReq)
-			if err != nil {
-				failReason = err.Error()
-				break
+		if !healthy && (resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 || resp.StatusCode == 405) && (hcEndpoint == "/models" || hcEndpoint == "") {
+			slog.Debug("health check /models non-standard response, falling back to /chat/completions probe", "provider", p.ID)
+			// Build model list: provider's own models first, then common fallbacks
+			var probeModels []string
+			for _, m := range p.Models {
+				if m.Enabled {
+					probeModels = append(probeModels, m.ID)
+				}
 			}
-			io.Copy(io.Discard, probeResp.Body)
-			probeResp.Body.Close()
-			latencyMS = float64(time.Since(start).Milliseconds())
-			// 200 from chat/completions means provider is healthy
-			healthy = probeResp.StatusCode == 200
-			if healthy {
-				failReason = ""
-			} else {
+			probeModels = append(probeModels, "gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0")
+			// Try each model until one succeeds
+			for _, model := range probeModels {
+				probeBody, _ := json.Marshal(map[string]any{
+					"model":       model,
+					"max_tokens":  1,
+					"messages":    []map[string]string{{"role": "user", "content": "hi"}},
+				})
+				probeReq, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", bytes.NewReader(probeBody))
+				probeReq.Header.Set("Authorization", "Bearer "+p.APIKey)
+				probeReq.Header.Set("Content-Type", "application/json")
+				start = time.Now()
+				probeResp, err := client.Do(probeReq)
+				if err != nil {
+					failReason = err.Error()
+					continue
+				}
+				io.Copy(io.Discard, probeResp.Body)
+				probeResp.Body.Close()
+				latencyMS = float64(time.Since(start).Milliseconds())
+				if probeResp.StatusCode == 200 {
+					healthy = true
+					failReason = ""
+					break
+				}
+				// 401 means key is truly invalid, stop trying
+				if probeResp.StatusCode == 401 {
+					failReason = "HTTP 401"
+					break
+				}
 				failReason = "HTTP " + strconv.Itoa(probeResp.StatusCode)
 			}
 		}

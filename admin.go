@@ -397,39 +397,81 @@ func handleGetPresets(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
-	var p Provider
-	if err := readJSON(r, &p); err != nil {
+	var body map[string]any
+	if err := readJSON(r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
-	if p.ID == "" {
+
+	// Extract ID
+	id, _ := body["id"].(string)
+	if id == "" {
 		writeError(w, 400, "provider ID required")
 		return
 	}
 
-	// Set owner based on authenticated user
-	owner := getRequestOwner(r)
-	p.Owner = owner // "" for admin, consumer_id for consumers
+	// Extract models before unmarshaling (accept both string[] and ModelDef[])
+	var models []ModelDef
+	if rawModels, ok := body["models"]; ok {
+		switch v := rawModels.(type) {
+		case []any:
+			for _, item := range v {
+				switch mv := item.(type) {
+				case string:
+					models = append(models, ModelDef{ID: mv, Enabled: true})
+				case map[string]any:
+					md := ModelDef{Enabled: true}
+					if mid, ok := mv["id"].(string); ok { md.ID = mid }
+					if mname, ok := mv["name"].(string); ok { md.Name = mname }
+					if menabled, ok := mv["enabled"].(bool); ok { md.Enabled = menabled }
+					models = append(models, md)
+				}
+			}
+		}
+	}
+	// Remove models from body to avoid unmarshal type conflict
+	delete(body, "models")
 
-	// If updating existing provider, preserve real API key when incoming is empty or masked
+	// Unmarshal remaining fields into Provider
+	bodyJSON, _ := json.Marshal(body)
+	var p Provider
+	if err := json.Unmarshal(bodyJSON, &p); err != nil {
+		writeError(w, 400, "invalid provider data: "+err.Error())
+		return
+	}
+	p.ID = id
+	if len(models) > 0 {
+		p.Models = models
+	}
+
+	// Set owner
+	owner := getRequestOwner(r)
+	p.Owner = owner
+
+	// If provider already exists, merge fields
 	if existing, ok := pm.GetRaw(p.ID); ok {
 		if p.APIKey == "" || strings.Contains(p.APIKey, "...") {
 			p.APIKey = existing.APIKey
 		}
+		if p.Proxy == "" || p.Proxy == "vmess://***" {
+			p.Proxy = existing.Proxy
+		}
+		p.AccessControl.AllowGuest = existing.AccessControl.AllowGuest
+		p.AccessControl.ShareToPool = existing.AccessControl.ShareToPool
+		if len(p.Models) == 0 {
+			p.Models = existing.Models
+		}
 	}
 
-	// Validate VMess proxy link
+	// Validate VMess proxy link format
 	if strings.HasPrefix(p.Proxy, "vmess://") {
 		if _, err := ParseVMessLink(p.Proxy); err != nil {
 			writeError(w, 400, "Invalid VMess link: "+err.Error())
 			return
 		}
-		if _, err := ResolveProxy(p.ID, p.Proxy); err != nil {
-			slog.Warn("failed to start VMess proxy", "provider", p.ID, "error", err)
-			writeError(w, 400, "VMess proxy failed: "+err.Error())
-			return
-		}
+		slog.Info("VMess proxy link saved, will start on first use", "provider", p.ID)
 	}
+
 	result := pm.Add(p)
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
@@ -479,6 +521,13 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	if apiKey, ok := updates["api_key"]; ok {
 		if keyStr, isStr := apiKey.(string); isStr && strings.Contains(keyStr, "...") {
 			delete(updates, "api_key")
+		}
+	}
+
+	// Remove masked VMess proxy to prevent overwriting real link
+	if proxy, ok := updates["proxy"]; ok {
+		if proxyStr, isStr := proxy.(string); isStr && proxyStr == "vmess://***" {
+			delete(updates, "proxy")
 		}
 	}
 
@@ -566,9 +615,12 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	
 	// Default: test with effective key
 	result := testConnection(p)
-	// Sanitize error messages to avoid leaking internal details
+	// Sanitize error messages but keep HTTP status for debugging
 	if errMsg, ok := result["error"].(string); ok && errMsg != "" {
-		result["error"] = "upstream error"
+		// Keep the error if it contains HTTP status info, otherwise generic
+		if !strings.Contains(errMsg, "HTTP ") {
+			result["error"] = "上游服务错误"
+		}
 	}
 	writeJSON(w, 200, result)
 }
@@ -782,19 +834,29 @@ func handleSiderTest(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func handleUsageSummary(w http.ResponseWriter, r *http.Request) {
-	stats := tracker.ProviderStats(30)
-	totalReqs, totalTok, totalCost := 0, 0, 0.0
-	for _, s := range stats {
-		totalReqs += s["request_count"].(int)
-		totalTok += s["total_tokens"].(int)
-		totalCost += s["total_cost_usd"].(float64)
+	stats30 := tracker.ProviderStats(30)
+	stats1 := tracker.ProviderStats(1)
+	totalReqs30, totalTok30, totalCost30 := 0, 0, 0.0
+	totalReqs1, totalTok1, totalCost1 := 0, 0, 0.0
+	for _, s := range stats30 {
+		totalReqs30 += s["request_count"].(int)
+		totalTok30 += s["total_tokens"].(int)
+		totalCost30 += s["total_cost_usd"].(float64)
+	}
+	for _, s := range stats1 {
+		totalReqs1 += s["request_count"].(int)
+		totalTok1 += s["total_tokens"].(int)
+		totalCost1 += s["total_cost_usd"].(float64)
 	}
 	writeJSON(w, 200, map[string]any{
-		"total_requests_30d": totalReqs,
-		"total_tokens_30d":   totalTok,
-		"total_cost_usd_30d": round4(totalCost),
-		"providers_active":   len(stats),
-		"total_records":      len(tracker.records),
+		"today_requests":      totalReqs1,
+		"today_tokens":        totalTok1,
+		"today_cost_usd":      round4(totalCost1),
+		"total_requests_30d":  totalReqs30,
+		"total_tokens_30d":    totalTok30,
+		"total_cost_usd_30d":  round4(totalCost30),
+		"providers_active":    len(stats30),
+		"total_records":       len(tracker.records),
 	})
 }
 
@@ -935,7 +997,77 @@ func handleRequestLogs(w http.ResponseWriter, r *http.Request) {
 
 func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 	health := healthChecker.GetHealth()
-	writeJSON(w, 200, map[string]any{"providers": health})
+	
+	// Get today's usage stats
+	todayStats := tracker.ProviderStats(1)
+	
+	type EnrichedHealth struct {
+		ProviderID       string  `json:"provider_id"`
+		ProviderName     string  `json:"provider_name"`
+		Status           string  `json:"status"`
+		LatencyMS        float64 `json:"latency_ms"`
+		ConsecutiveFails int     `json:"consecutive_fails"`
+		FailureReason    string  `json:"failure_reason,omitempty"`
+		ModelCount       int     `json:"model_count"`
+		TokenLimit       int64   `json:"token_limit"`
+		TokenUsed        int64   `json:"token_used"`
+		TodayRequests    int     `json:"today_requests"`
+		TodayTokens      int     `json:"today_tokens"`
+		KeyCount         int     `json:"key_count"`
+		Enabled          bool    `json:"enabled"`
+	}
+	
+	enriched := make([]EnrichedHealth, 0, len(health))
+	for _, h := range health {
+		p, ok := pm.GetRaw(h.ProviderID)
+		if !ok {
+			continue
+		}
+		
+		// Only show providers with API keys configured
+		hasKey := (p.APIKey != "" && p.APIKey != "your-api-key-here") || len(p.APIKeys) > 0
+		if !hasKey {
+			continue
+		}
+		
+		// Get today's usage from stats
+		todayReqs := 0
+		todayTokens := 0
+		if stats, ok := todayStats[h.ProviderID]; ok {
+			if count, ok := stats["request_count"].(int); ok {
+				todayReqs = count
+			}
+			if tokens, ok := stats["total_tokens"].(int); ok {
+				todayTokens = tokens
+			}
+		}
+		
+		// Get total usage
+		totalUsed := tracker.TotalTokensByProvider()[h.ProviderID]
+		
+		keyCount := len(p.APIKeys)
+		if keyCount == 0 && p.APIKey != "" && p.APIKey != "your-api-key-here" {
+			keyCount = 1
+		}
+		
+		enriched = append(enriched, EnrichedHealth{
+			ProviderID:       h.ProviderID,
+			ProviderName:     h.ProviderName,
+			Status:           h.Status,
+			LatencyMS:        h.LatencyMS,
+			ConsecutiveFails: h.ConsecutiveFails,
+			FailureReason:    h.FailureReason,
+			ModelCount:       len(p.Models),
+			TokenLimit:       p.TokenLimit,
+			TokenUsed:        totalUsed,
+			TodayRequests:    todayReqs,
+			TodayTokens:      todayTokens,
+			KeyCount:         keyCount,
+			Enabled:          p.Enabled,
+		})
+	}
+	
+	writeJSON(w, 200, map[string]any{"providers": enriched})
 }
 
 // ============================================================
@@ -1476,5 +1608,58 @@ func handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{
 		"access_token": newAccessToken,
 		"token_type":   "bearer",
+	})
+}
+
+// ============================================================
+// Collaborator Registration API (public, no auth required)
+// ============================================================
+
+// GET /api/collaborator/check-key?key=xxx — validate guest key for registration
+func handleCollaboratorCheckKey(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		writeError(w, 400, "key parameter required")
+		return
+	}
+	valid := auth.ValidateGuestKeyForRegistration(key)
+	writeJSON(w, 200, map[string]any{"valid": valid})
+}
+
+// POST /api/collaborator/register — register collaborator account
+func handleCollaboratorRegister(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		GuestKey string `json:"guest_key"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if body.Username == "" || body.Password == "" || body.GuestKey == "" {
+		writeError(w, 400, "username, password and guest_key are required")
+		return
+	}
+	if !auth.ValidateGuestKeyForRegistration(body.GuestKey) {
+		writeError(w, 400, "invalid or already used guest key")
+		return
+	}
+	if err := auth.RegisterCollaborator(body.Username, body.Password, body.GuestKey); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	// Mark guest key as collaborator type
+	if guestKeyStore != nil {
+		guestKeyStore.SetShareType(body.GuestKey, "collaborator")
+		guestKeyStore.MarkAsCollaborator(body.GuestKey)
+	}
+	// Create JWT token for auto-login
+	accessToken, _ := auth.CreateToken(body.Username, true)
+	writeJSON(w, 200, map[string]any{
+		"success":      true,
+		"access_token": accessToken,
+		"role":         "collaborator",
+		"username":     body.Username,
 	})
 }
