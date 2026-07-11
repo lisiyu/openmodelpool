@@ -138,7 +138,7 @@ select.form-input{appearance:none;cursor:pointer}
       <div>
         <label class="form-label" style="font-size:12px;margin-bottom:6px">🏠 局域网地址</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input class="form-input" id="lanApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制')">
+          <input class="form-input" id="lanApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="copyText(this.value)">
           <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('lanApiUrl').value)">📋</button>
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:3px">同一局域网内的设备可直接访问</div>
@@ -146,7 +146,7 @@ select.form-input{appearance:none;cursor:pointer}
       <div>
         <label class="form-label" style="font-size:12px;margin-bottom:6px">🌍 公网地址 <span id="publicUrlBadge" style="font-size:10px;font-weight:normal"></span></label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input class="form-input" id="publicApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted)" onclick="this.select();document.execCommand('copy');toast('已复制')" placeholder="未启用公网访问">
+          <input class="form-input" id="publicApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted)" onclick="copyText(this.value)" placeholder="未启用公网访问">
           <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('publicApiUrl').value)">📋</button>
         </div>
         <div id="publicUrlHint" style="font-size:11px;color:var(--text-muted);margin-top:3px">未启用公网访问</div>
@@ -154,7 +154,7 @@ select.form-input{appearance:none;cursor:pointer}
       <div>
         <label class="form-label" style="font-size:12px;margin-bottom:6px">🔗 固定域名地址 <span id="domainUrlBadge" style="font-size:10px;font-weight:normal"></span></label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input class="form-input" id="domainApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted)" onclick="this.select();document.execCommand('copy');toast('已复制')" placeholder="需先绑定自定义域名">
+          <input class="form-input" id="domainApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted)" onclick="copyText(this.value)" placeholder="需先绑定自定义域名">
           <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('domainApiUrl').value)">📋</button>
         </div>
         <div id="domainUrlHint" style="font-size:11px;color:var(--text-muted);margin-top:3px">绑定自己的域名后获得固定不变的公网地址</div>
@@ -236,20 +236,14 @@ select.form-input{appearance:none;cursor:pointer}
         <span style="font-size:10px;padding:2px 6px;background:rgba(52,199,89,.12);color:var(--accent-green);border-radius:4px">零门槛</span>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-        <input class="form-input" value="sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制全球公共 Key')">
+        <input class="form-input" value="sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="copyText(this.value)">
         <button class="btn btn-secondary btn-sm" onclick="copyText('sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1')">📋</button>
       </div>
       <div style="font-size:11px;color:var(--text-muted)">无需搭建节点即可使用，访问全网共享的公共模型算力资源（有基础额度上限）</div>
     </div>
 
-    <!-- Guest Key 管理 -->
-    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <span style="font-size:13px;font-weight:500">🎫 Guest Key 管理</span>
-        <button class="btn btn-primary btn-sm" onclick="generateGuestKey()">+ 签发新 Key</button>
-      </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">签发给他人使用。可设置本地资源额度（访问本节点 Provider 的上限）和有效期。公共池额度由全网均分。</div>
-      <div id="guestKeysList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
+    <div style="font-size:11px;color:var(--text-muted);padding-top:12px;border-top:1px solid var(--border-color);margin-top:12px">
+      🎫 Guest Key 管理已移至下方「分享中心」
     </div>
   </div>
 
@@ -338,12 +332,27 @@ select.form-input{appearance:none;cursor:pointer}
       <span><span class="icon">🔌</span> 平台管理</span>
       <div style="display:flex;gap:8px">
         <button class="btn btn-secondary btn-sm" onclick="syncAllUrls()">🔄 一键同步全部地址</button>
+        <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()" style="border-color:rgba(52,211,153,.4);color:#34d399" id="discoveryToggleBtn">🔍 新发现</button>
         <button class="btn btn-primary btn-sm" onclick="showAddProvider()">+ 添加平台</button>
       </div>
     </div>
     <div class="section-note">添加 AI 平台并配置 API Key，请求将根据模型名称自动路由到对应平台</div>
     <div class="provider-list" id="providerList">
       <div style="text-align:center;color:var(--text-muted);padding:30px"><div class="loading"></div><br>加载中...</div>
+    </div>
+    <!-- Discovery Panel -->
+    <div id="discoveryPanel" style="display:none;margin-top:16px;padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:15px;font-weight:600;color:var(--text-primary)">🔍 新发现的 AI 平台</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="triggerDiscovery()" id="triggerScanBtn">🔄 扫描新平台</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()">✕ 关闭</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">系统自动发现的免费 AI 平台，管理员可审核、忽略或添加。注册和 API Key 获取需手动完成。</div>
+      <div id="discoveredList" style="display:grid;gap:12px">
+        <div style="text-align:center;color:var(--text-muted);padding:20px">点击「🔄 扫描新平台」开始发现</div>
+      </div>
     </div>
   </div>
 
@@ -366,91 +375,26 @@ select.form-input{appearance:none;cursor:pointer}
 
   <!-- 分享中心 -->
   <div class="card" id="shareCenterCard">
-    <div class="card-title"><span class="icon">🔗</span> 分享中心</div>
-
-    <!-- Tab 切换 -->
-    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border-color);padding-bottom:12px;flex-wrap:wrap">
-      <button class="btn btn-sm btn-primary share-tab active" data-tab="consumer" onclick="switchShareTab('consumer')">🔑 分享 API 给使用者</button>
-      <button class="btn btn-sm btn-secondary share-tab" data-tab="collaborator" onclick="switchShareTab('collaborator')">🤝 邀请协作者</button>
-    </div>
-
-    <!-- 模式 A：消费者分享 -->
-    <div id="shareTab-consumer" class="share-tab-content">
-      <div class="section-note">把你的 API 地址和 Key 分享给朋友，对方直接拿来调用 API 即可。适合临时分享，无需注册。</div>
-      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-        <div style="flex:1;min-width:260px">
-          <div class="form-group">
-            <label class="form-label">📡 API 接口地址</label>
-            <div style="display:flex;gap:8px">
-              <input class="form-input" id="shareApiUrl" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)">
-              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('shareApiUrl').value)">📋</button>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">🔑 Proxy API Key</label>
-            <div style="display:flex;gap:8px">
-              <input class="form-input" id="shareApiKey" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)" placeholder="未设置（无需认证）">
-              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('shareApiKey').value)">📋</button>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">💬 预设文案</label>
-            <div style="display:flex;gap:8px">
-              <textarea class="form-input" id="shareConsumerText" rows="2" style="font-size:12px;resize:none;background:var(--bg-secondary)" readonly></textarea>
-              <button class="btn btn-primary btn-sm" onclick="copyText(document.getElementById('shareConsumerText').value)" style="flex-shrink:0">📋 复制</button>
-            </div>
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="copyConsumerCombo()">📋 一键复制 API 地址 + Key</button>
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">扫码获取 API 信息</div>
-          <div id="qrConsumer" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
-        </div>
+    <div class="card-title">
+      <span><span class="icon">🔗</span> 分享中心</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="generateGuestKey()">+ 创建 Guest Key</button>
       </div>
     </div>
 
-    <!-- 模式 B：协作者邀请 -->
-    <div id="shareTab-collaborator" class="share-tab-content" style="display:none">
-      <div class="section-note">通过 Guest Key 邀请他人注册管理账号，一起维护你的节点。受邀方使用 Guest Key 首次登录验证身份并设置密码，之后即可登录管理面板。</div>
-      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-        <div style="flex:1;min-width:260px">
-          <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
-            <div class="form-group" style="flex:1;min-width:120px;margin:0">
-              <label class="form-label">协作者备注</label>
-              <input class="form-input" id="collabNote" type="text" value="" placeholder="如：Alice" style="font-size:12px">
-            </div>
-            <div class="form-group" style="width:100px;margin:0">
-              <label class="form-label">有效期（天）</label>
-              <input class="form-input" id="collabExpDays" type="number" value="30" min="1" style="font-size:12px">
-            </div>
-            <button class="btn btn-primary btn-sm" onclick="createCollabInviteCode()" style="margin-bottom:0;white-space:nowrap">+ 创建协作邀请</button>
-          </div>
-          <div id="collabInviteLink" style="display:none;margin-bottom:16px">
-            <label class="form-label">🔗 邀请链接</label>
-            <div style="display:flex;gap:8px;margin-bottom:10px">
-              <input class="form-input" id="collabLinkInput" readonly style="font-family:monospace;font-size:12px;background:var(--bg-secondary)">
-              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('collabLinkInput').value)">📋</button>
-            </div>
-            <label class="form-label">🔑 Guest Key（受邀方凭证）</label>
-            <div style="display:flex;gap:8px">
-              <input class="form-input" id="collabGuestKey" readonly style="font-family:monospace;font-size:11px;background:var(--bg-secondary)">
-              <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('collabGuestKey').value)">📋</button>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">💬 预设文案</label>
-            <div style="display:flex;gap:8px">
-              <textarea class="form-input" id="shareCollabText" rows="3" style="font-size:12px;resize:none;background:var(--bg-secondary)" readonly>邀请你一起维护我的 OpenModelPool Agent 节点 👇</textarea>
-              <button class="btn btn-primary btn-sm" onclick="copyText(document.getElementById('shareCollabText').value)" style="flex-shrink:0">📋 复制</button>
-            </div>
-          </div>
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">扫码跳转登录页</div>
-          <div id="qrCollaborator" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"><div style="color:#999;font-size:11px;padding:30px">创建邀请后生成</div></div>
-        </div>
-      </div>
+    <!-- 筛选 tabs -->
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-primary share-filter active" data-filter="all" onclick="filterShareKeys('all')">全部</button>
+      <button class="btn btn-sm btn-secondary share-filter" data-filter="consumer" onclick="filterShareKeys('consumer')">🔑 使用者</button>
+      <button class="btn btn-sm btn-secondary share-filter" data-filter="collaborator" onclick="filterShareKeys('collaborator')">🤝 协作者</button>
     </div>
+
+    <!-- 分享面板（创建 Key 后动态显示） -->
+    <div id="sharePanel" style="display:none;margin-bottom:16px"></div>
+
+    <!-- Key 列表 -->
+    <div id="guestKeysList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
+  </div>
 
   <!-- 配置管理 -->
   <div class="card">
@@ -491,21 +435,29 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
       <label style="position:relative;display:inline-block;width:52px;height:28px;flex-shrink:0">
         <input type="checkbox" id="sharedNetworkToggle" onchange="toggleSharedNetwork()" style="opacity:0;width:0;height:0">
-        <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--text-muted);border-radius:28px;transition:.3s"></span>
+        <span id="sharedNetworkToggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:28px;transition:.3s">
+          <span style="position:absolute;content:'';height:22px;width:22px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>
+        </span>
       </label>
     </div>
 
-    <!-- 中继设置（加入后显示） -->
-    <div id="relaySettings" style="display:none;margin-bottom:16px">
+    <!-- 中继设置（独立于共享网络） -->
+    <div style="margin-bottom:16px">
       <div style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:rgba(16,185,129,.04);border:1px solid rgba(16,185,129,.15);border-radius:10px">
         <div style="flex:1">
-          <div style="font-size:13px;font-weight:500">🔀 开启中继（Relay）</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">允许您的节点帮助其他节点转发请求</div>
+          <div style="font-size:13px;font-weight:600">🔀 开启中继（Relay）</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;line-height:1.5">
+            开启后，您的节点将作为中继帮助其他节点转发请求，增加网络连通性。<br>
+            <span style="color:var(--warning)">⚠️ 会消耗额外带宽。建议在网络条件较好时开启。</span><br>
+            <span style="color:var(--text-muted);font-size:11px">💡 中继可独立于共享网络开启——您可以只做中继而不加入共享网络。</span>
+          </div>
         </div>
-        <select class="form-input" id="relayEnabled" style="width:100px">
-          <option value="false">关闭</option>
-          <option value="true">开启</option>
-        </select>
+        <label style="position:relative;display:inline-block;width:52px;height:28px;flex-shrink:0">
+          <input type="checkbox" id="relayToggle" onchange="saveRelayToggle()" style="opacity:0;width:0;height:0">
+          <span id="relayToggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:28px;transition:.3s">
+            <span style="position:absolute;content:'';height:22px;width:22px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>
+          </span>
+        </label>
       </div>
     </div>
 
@@ -531,64 +483,84 @@ select.form-input{appearance:none;cursor:pointer}
 
     <!-- 已加入共享网络后显示的面板 -->
     <div id="networkActivePanel" style="display:none">
-      <!-- 网络状态 -->
-      <div class="status-grid" style="margin-bottom:16px">
-        <div class="status-item">
-          <div class="status-dot green"></div>
-          <div>
-            <div class="status-label">网络模式</div>
-            <div class="status-value" id="netMode">共享网络</div>
-          </div>
+      <!-- 🏆 我的贡献 - 突出显示 -->
+      <div style="background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(16,185,129,.04));border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:20px;margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700;color:var(--success)">🏆 我的贡献</div>
+          <div style="font-size:11px;color:var(--text-muted)">持续贡献，提升信誉等级</div>
         </div>
-        <div class="status-item">
-          <div class="status-dot" style="background:var(--accent-start)"></div>
-          <div>
-            <div class="status-label">节点 ID</div>
-            <div class="status-value" id="netNodeId" style="font-family:monospace;font-size:12px">-</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+          <div style="text-align:center;padding:12px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:28px;font-weight:800;color:var(--success);line-height:1" id="netCredits">0</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">贡献积分</div>
           </div>
-        </div>
-        <div class="status-item">
-          <div>
-            <div class="status-label">连接节点</div>
-            <div class="status-value" id="netPeers">0</div>
+          <div style="text-align:center;padding:12px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:28px;font-weight:800;color:var(--accent-start);line-height:1" id="netRelayRequests">0</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">中继转发</div>
           </div>
-        </div>
-        <div class="status-item">
-          <div>
-            <div class="status-label">运行时长</div>
-            <div class="status-value" id="netUptime">-</div>
-          </div>
-        </div>
-        <div class="status-item">
-          <div>
-            <div class="status-label">贡献积分</div>
-            <div class="status-value" id="netCredits" style="color:var(--success)">0</div>
-          </div>
-        </div>
-        <div class="status-item">
-          <div>
-            <div class="status-label">本月消耗 Token</div>
-            <div class="status-value" id="netMonthlyTokens">0</div>
-          </div>
-        </div>
-        <div class="status-item">
-          <div>
-            <div class="status-label">来自其他节点的请求</div>
-            <div class="status-value" id="netRelayRequests">0</div>
+          <div style="text-align:center;padding:12px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:28px;font-weight:800;color:var(--accent-end);line-height:1" id="netRequestsReceived">0</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">接收请求</div>
           </div>
         </div>
       </div>
 
-      <!-- 已连接节点列表 -->
-      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+      <!-- 📊 网络概览 -->
+      <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">📊 网络概览</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary);border-radius:8px">
+            <span style="font-size:12px;color:var(--text-muted)">节点 ID</span>
+            <span style="font-size:12px;font-family:monospace;font-weight:500" id="netNodeId">-</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary);border-radius:8px">
+            <span style="font-size:12px;color:var(--text-muted)">运行时长</span>
+            <span style="font-size:12px;font-weight:500" id="netUptime">-</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary);border-radius:8px">
+            <span style="font-size:12px;color:var(--text-muted)">连接节点</span>
+            <span style="font-size:12px;font-weight:500" id="netPeers">0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary);border-radius:8px">
+            <span style="font-size:12px;color:var(--text-muted)">网络模式</span>
+            <span style="font-size:12px;font-weight:500;color:var(--success)" id="netMode">共享网络</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 🌐 全局网络指标 -->
+      <div id="networkDashboard" style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🌐 全局网络指标</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;text-align:center">
+          <div style="padding:10px 6px;background:var(--bg-secondary);border-radius:8px">
+            <div style="font-size:18px;font-weight:700;color:var(--accent-start)" id="dashTotalNodes">-</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">在线节点</div>
+          </div>
+          <div style="padding:10px 6px;background:var(--bg-secondary);border-radius:8px">
+            <div style="font-size:18px;font-weight:700" id="dashSuccessRate">-</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">成功率</div>
+          </div>
+          <div style="padding:10px 6px;background:var(--bg-secondary);border-radius:8px">
+            <div style="font-size:18px;font-weight:700" id="dashModelsShared">-</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">共享模型</div>
+          </div>
+          <div style="padding:10px 6px;background:var(--bg-secondary);border-radius:8px">
+            <div style="font-size:18px;font-weight:700" id="dashTotalRequests">-</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">总请求数</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 👥 已连接节点列表 -->
+      <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px">👥 已连接节点</div>
         <div id="netPeersList" style="font-size:12px;color:var(--text-muted)">暂无连接节点</div>
       </div>
 
-      <!-- 邀请管理 -->
-      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+      <!-- 邀请管理（仅 seed 节点可见） -->
+      <div id="fedInviteSection" style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px;display:none">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px">📨 邀请节点加入联邦</div>
-        <div class="section-note" style="margin-bottom:12px">生成邀请码，邀请他人部署独立节点并加入共享网络（联邦）。被邀请方将拥有自己的独立节点，与您的节点是平等关系。这与上方「邀请协作者」不同——协作者是通过 Guest Key 注册管理账号来共同管理你的节点。</div>
+        <div class="section-note" style="margin-bottom:12px">生成邀请码，邀请他人部署独立节点并加入共享网络（联邦）。被邀请方将拥有自己的独立节点，与您的节点是平等关系。</div>
         <div style="display:flex;gap:12px;margin-bottom:12px">
           <div style="flex:1">
             <label class="form-label" style="font-size:12px">邀请码</label>
@@ -645,6 +617,7 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
     <div id="modalStep2" style="display:none">
       <button class="btn btn-secondary btn-sm" onclick="backToStep1()" style="margin-bottom:16px">← 返回选择</button>
+      <div id="presetRegLink" style="display:none;margin-bottom:12px;padding:10px 14px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.15);border-radius:8px"></div>
       <div class="form-group"><label class="form-label">平台 ID</label><input class="form-input" id="pId" placeholder="deepseek"></div>
       <div class="form-group"><label class="form-label">显示名称</label><input class="form-input" id="pName" placeholder="DeepSeek"></div>
       <div class="form-group"><label class="form-label">API Base URL</label><input class="form-input" id="pUrl" placeholder="https://api.deepseek.com/v1"></div>
@@ -1039,6 +1012,7 @@ function renderProviders() {
           <div class="provider-meta">${keyStatus} <span>· ${models.length} 个模型</span> <span>· 📊 额度: ${p.token_limit > 0 ? p.token_limit.toLocaleString() + ' tokens' : '无限'}</span> <span>· 优先级 <input type="number" class="priority-input" value="${p.priority||5}" min="1" max="99" onclick="event.stopPropagation()" onchange="updatePriority('${p.id}', this.value)" title="数字越小优先级越高"></span></div>
         </div>
         <div class="provider-actions">
+          ${(function(){const preset=presets.find(x=>x.id===p.id);const u=preset?.api_key_url||'';return u?`<a href="${u}" target="_blank" class="btn btn-secondary btn-sm" onclick="event.stopPropagation()" style="text-decoration:none;display:inline-flex;align-items:center" title="前往官网注册获取 API Key">🔗 官网</a>`:''})()}
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleApiKeys('${p.id}')" title="管理 API Keys，支持多 Key 轮询和故障转移" style="border-color:rgba(108,99,255,.4);color:var(--primary)">🔑 Keys${keyCount > 0 ? '('+keyCount+')' : ''}</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncProviderUrl('${p.id}')">同步地址</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncModels('${p.id}')">同步模型</button>
@@ -1216,6 +1190,16 @@ function selectPreset(pid) {
   document.getElementById('editKeysSection').style.display = 'none';
   document.getElementById('modalStep1').style.display = 'none';
   document.getElementById('modalStep2').style.display = '';
+  // Show registration link if available
+  const regLinkEl = document.getElementById('presetRegLink');
+  if (regLinkEl) {
+    if (p.api_key_url) {
+      regLinkEl.innerHTML = `<a href="${p.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+      regLinkEl.style.display = '';
+    } else {
+      regLinkEl.style.display = 'none';
+    }
+  }
   document.getElementById('pId').value = p.id;
   document.getElementById('pId').readOnly = false;
   document.getElementById('pName').value = p.name;
@@ -1258,9 +1242,9 @@ async function saveProvider() {
   if (rateLimit > 0) data.rate_limit_per_min = rateLimit;
   const key = document.getElementById('pKey').value.trim();
   if (key) data.api_key = key;
+  else if (!editingId) { toast('请填写 API Key', 'error'); return; }
   const proxy = document.getElementById('pProxy').value.trim();
   if (proxy) data.proxy = proxy;
-  else if (!editingId) { toast('请填写 API Key', 'error'); return; }
   // Carry over models from existing if editing
   if (editingId) {
     const existing = allProviders.find(x => x.id === editingId);
@@ -1304,7 +1288,7 @@ function selectCustomPreset() {
 }
 
 function getIcon(id) {
-  const icons = {openai:'🟢',deepseek:'🔵',qwen:'🟠',zhipu:'🟣',moonshot:'🌙',lingyiwanwu:'🔶',minimax:'⬛',siliconflow:'💎',groq:'⚡',xai:'🤖',together:'🔗',mistral:'🇪🇺',doubao:'🫘',spark:'✨',hunyuan:'🐧','tokenhub-coding':'🐧','tokenhub-plan':'🐧','tokenhub-enterprise':'🐧',gemini:'♊',openrouter:'🌐',poe:'🎭',sid:'🧠',sider:'🌐',ollama:'🦙',coze:'🎯',nvidia:'🟩',anthropic:'🟠',qianfan:'🔴',novita:'🔮',fireworks:'🎆',cohere:'🔷',cerebras:'⚡',stepfun:'🌟',baichuan:'🌊'};
+  const icons = {openai:'🟢',deepseek:'🔵',qwen:'🟠',zhipu:'🟣',moonshot:'🌙',lingyiwanwu:'🔶',minimax:'⬛',siliconflow:'💎',groq:'⚡',xai:'🤖',together:'🔗',mistral:'🇪🇺',doubao:'🫘',spark:'✨',hunyuan:'🐧','tokenhub-coding':'🐧','tokenhub-plan':'🐧','tokenhub-enterprise':'🐧',gemini:'♊',openrouter:'🌐',poe:'🎭',sid:'🧠',sider:'🌐',ollama:'🦙',coze:'🎯',nvidia:'🟩',anthropic:'🟠',qianfan:'🔴',novita:'🔮',fireworks:'🎆',cohere:'🔷',cerebras:'⚡',stepfun:'🌟',baichuan:'🌊',agnes:'🎨'};
   return icons[id] || '🔌';
 }
 
@@ -1868,7 +1852,7 @@ async function loadNodeQuotaInfo() {
     const r = await authFetch('/api/network/status');
     const d = await r.json();
     if (d.enabled) {
-      const cp = d.contribution_points || 0;
+      const cp = d.contrib_points || 0;
       const quota = cp > 0 ? (cp * 10).toLocaleString() + ' tokens' : '需先积累贡献积分';
       el.innerHTML = '🌐 节点可用额度: ' + quota + ' <span style="margin-left:12px">📡 已广播到网络</span>';
     } else {
@@ -1909,37 +1893,73 @@ async function loadFederationConfig() {
     const res = await authFetch('/api/federation/config');
     const data = await res.json();
     const fedOn = data.federation_enabled === 'true';
-    if (document.getElementById('relaySettings')) document.getElementById('relaySettings').style.display = fedOn ? 'block' : 'none';
+    const relayOn = data.federation_relay_enabled === 'true';
+
+    // 更新中继 toggle（独立显示，始终可见）
+    const relayToggle = document.getElementById('relayToggle');
+    if (relayToggle) {
+      relayToggle.checked = relayOn;
+      updateToggleSlider('relayToggle', 'relayToggleSlider', relayOn);
+    }
+
+    // 更新共享网络 toggle 状态
+    const netToggle = document.getElementById('sharedNetworkToggle');
+    if (netToggle) {
+      netToggle.checked = fedOn;
+      updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', fedOn);
+    }
+
+    // 额度分配和面板仍受共享网络控制
     if (document.getElementById('quotaAllocation')) document.getElementById('quotaAllocation').style.display = fedOn ? 'block' : 'none';
+    if (document.getElementById('networkActivePanel')) document.getElementById('networkActivePanel').style.display = fedOn ? 'block' : 'none';
+
+    // 邀请功能仅 seed 节点可见
+    if (document.getElementById('fedInviteSection')) {
+      document.getElementById('fedInviteSection').style.display = data.federation_seed_node === 'true' ? 'block' : 'none';
+    }
   } catch(e) {
     console.error('load federation config error:', e);
   }
 }
 
-
-
-async function saveFederationConfig() {
-  try {
-    const body = {
-      relay_enabled: document.getElementById('relayEnabled') ? document.getElementById('relayEnabled').value : 'false',
-    };
-    const res = await authFetch('/api/federation/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (res.ok) {
-      toast('联邦配置已保存', 'success');
-      loadFederationConfig();
-      loadFederationStatus();
-    } else {
-      toast('保存失败', 'error');
-    }
-  } catch(e) {
-    console.error('save federation config error:', e);
-    toast('保存失败', 'error');
+function updateToggleSlider(checkboxId, sliderId, checked) {
+  const slider = document.getElementById(sliderId);
+  if (!slider) return;
+  if (checked) {
+    slider.style.background = 'var(--success)';
+    slider.querySelector('span').style.left = 'calc(100% - 25px)';
+  } else {
+    slider.style.background = '#555';
+    slider.querySelector('span').style.left = '3px';
   }
 }
+
+async function saveRelayToggle() {
+  const enabled = document.getElementById('relayToggle').checked;
+  updateToggleSlider('relayToggle', 'relayToggleSlider', enabled);
+  try {
+    const r = await authFetch('/api/federation/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({federation_relay_enabled: enabled ? 'true' : 'false'})
+    });
+    if (r.ok) {
+      toast(enabled ? '中继已开启' : '中继已关闭', 'success');
+    } else {
+      toast('保存失败', 'error');
+      document.getElementById('relayToggle').checked = !enabled;
+      updateToggleSlider('relayToggle', 'relayToggleSlider', !enabled);
+    }
+  } catch(e) {
+    toast('操作失败: ' + e.message, 'error');
+    document.getElementById('relayToggle').checked = !enabled;
+    updateToggleSlider('relayToggle', 'relayToggleSlider', !enabled);
+  }
+}
+
+
+
+
 
 
 function refreshFederation() {
@@ -1976,8 +1996,8 @@ async function createInvite() {
       // Show the encoded invite code
       const code = data.encoded;
       if (code) {
-        const copyText = `OpenModelPool Agent 联邦邀请码：\n${code}\n\n请在 OpenModelPool Agent 管理页面中导入此邀请码加入网络。`;
-        alert('邀请码已生成，请复制以下内容发送给对方：\n\n' + copyText);
+        const inviteMsg = `OpenModelPool Agent 联邦邀请码：\n${code}\n\n请在 OpenModelPool Agent 管理页面中导入此邀请码加入网络。`;
+        copyText(inviteMsg);
       }
     } else {
       const data = await res.json().catch(() => ({}));
@@ -2022,18 +2042,8 @@ const FEDERATION_DOC_VERSION = '3.0.0';
 // Module: ShareCenter - Share center functionality
 // ================================================================
 let shareInfoData = null;
-
-function switchShareTab(tab) {
-  document.querySelectorAll('.share-tab').forEach(btn => {
-    btn.classList.remove('btn-primary', 'active');
-    btn.classList.add('btn-secondary');
-  });
-  document.querySelectorAll('.share-tab-content').forEach(el => el.style.display = 'none');
-  const activeBtn = document.querySelector(`.share-tab[data-tab="${tab}"]`);
-  if (activeBtn) { activeBtn.classList.add('btn-primary', 'active'); activeBtn.classList.remove('btn-secondary'); }
-  const tabContent = document.getElementById('shareTab-' + tab);
-  if (tabContent) tabContent.style.display = '';
-}
+let _currentKeyPurpose = 'consumer';
+let _shareFilter = 'all';
 
 function generateQRCode(containerId, text) {
   const container = document.getElementById(containerId);
@@ -2055,48 +2065,9 @@ async function loadShareInfo() {
   try {
     const r = await authFetch('/api/share/info');
     shareInfoData = await r.json();
-    populateShareCenter(shareInfoData);
   } catch(e) { console.error('Failed to load share info:', e); }
 }
 
-function populateShareCenter(data) {
-  const apiUrl = data.public_api_url || data.proxy_api_url || '';
-  const apiKey = data.proxy_api_key || '';
-  const baseUrl = window.location.origin;
-
-  // Tab A: Consumer
-  document.getElementById('shareApiUrl').value = apiUrl;
-  document.getElementById('shareApiKey').value = apiKey || '';
-  document.getElementById('shareConsumerText').value = '我用 OpenModelPool Agent 搭了个 AI 聚合网关，34+ 模型一个地址调用，拿去用 👇\n\nAPI 地址: ' + apiUrl + (apiKey ? '\nAPI Key: ' + apiKey : '');
-
-  // QR code: JSON with API info
-  const qrConsumerData = JSON.stringify({ api_url: apiUrl, api_key: apiKey, platform: "OpenModelPool Agent" });
-  generateQRCode('qrConsumer', qrConsumerData);
-
-  // Tab C: Federation
-  const genesis = data.genesis || {};
-  const genesisHash = genesis.network_id || '';
-  const networkName = genesis.network_name || '';
-  const tunnelUrl = data.tunnel_url || '';
-  const seedNodes = data.seed_nodes || [];
-  const seedNode = tunnelUrl || (seedNodes.length > 0 ? seedNodes[0] : '');
-
-  document.getElementById('shareGenesisHash').value = genesisHash;
-  document.getElementById('shareNetworkName').value = networkName;
-  document.getElementById('shareSeedNode').value = seedNode;
-
-  // Deploy command
-  const deployCmd = 'curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.sh | GENESIS_HASH=' + genesisHash + ' bash';
-  document.getElementById('shareDeployCmd').value = deployCmd;
-
-  // QR code: JSON with federation info
-  const qrFedData = JSON.stringify({
-    genesis_hash: genesisHash,
-    seed_nodes: seedNode ? [seedNode] : [],
-    docs: "https://github.com/lisiyu/openmodelpool"
-  });
-  generateQRCode('qrFederation', qrFedData);
-}
 
 function copyText(text) {
   if (!text) return toast('没有可复制的内容', 'error');
@@ -2108,35 +2079,6 @@ function copyText(text) {
   });
 }
 
-function copyConsumerCombo() {
-  const url = document.getElementById('shareApiUrl').value;
-  const key = document.getElementById('shareApiKey').value;
-  const combo = url + (key ? '\nAPI Key: ' + key : '');
-  copyText(combo);
-}
-
-async function createCollabInviteCode() {
-  const note = document.getElementById('collabNote').value.trim() || '协作者';
-  const expDays = parseInt(document.getElementById('collabExpDays').value) || 30;
-  try {
-    const r = await authFetch('/api/network/guest-keys', { method: 'POST', body: JSON.stringify({ note: '协作邀请:' + note, exp_days: expDays }) });
-    const d = await r.json();
-    if (d.key) {
-      toast('✅ 协作邀请已创建');
-      const baseUrl = window.location.origin;
-      const inviteLink = baseUrl + '/login?collaborate=' + encodeURIComponent(d.key);
-      document.getElementById('collabInviteLink').style.display = '';
-      document.getElementById('collabLinkInput').value = inviteLink;
-      document.getElementById('collabGuestKey').value = d.key;
-      // Update QR code
-      generateQRCode('qrCollaborator', inviteLink);
-      // Update preset text
-      document.getElementById('shareCollabText').value = '邀请你一起维护我的 OpenModelPool Agent 节点 👇\n\n邀请链接: ' + inviteLink + '\n\n你的身份凭证 (Guest Key): ' + d.key + '\n\n首次登录时可用此 Key 验证身份并设置密码。';
-    } else {
-      toast('创建失败', 'error');
-    }
-  } catch(e) { toast('创建失败: ' + e.message, 'error'); }
-}
 
 // ===== Start (only if authenticated) =====
 if (authToken) {
@@ -2287,17 +2229,20 @@ if (authToken) {
       if (isShared) {
         if (panel) panel.style.display = '';
         if (toggle) toggle.checked = true;
+        updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', true);
         setText('netNodeId', s.node_id || '-');
         setText('netUptime', formatUptime(s.uptime_seconds || 0));
         setText('netPeers', (s.peers_count || 0) + ' / ' + ((s.stats && s.stats.online_peers) || 0) + ' 在线');
         setText('netMode', '共享网络');
-        setText('netCredits', (s.contribution_points || 0).toLocaleString());
-        setText('netMonthlyTokens', (s.monthly_tokens_used || 0).toLocaleString());
-        setText('netRelayRequests', (s.relay_requests_served || 0).toLocaleString());
+        setText('netCredits', (s.contrib_points || 0).toLocaleString());
+        setText('netRelayRequests', ((s.stats && s.stats.requests_relayed) || 0).toLocaleString());
+        setText('netRequestsReceived', ((s.stats && s.stats.requests_received) || 0).toLocaleString());
         loadNetworkPeers();
+        loadNetworkDashboard();
       } else {
         if (panel) panel.style.display = 'none';
         if (toggle) toggle.checked = false;
+        updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', false);
       }
     }
 
@@ -2332,6 +2277,19 @@ if (authToken) {
         html += '</div>';
         list.innerHTML = html;
       } catch(e) { console.warn('load peers failed', e); }
+    }
+
+    async function loadNetworkDashboard() {
+      try {
+        const r = await authFetch('/api/network/stats');
+        const d = await r.json();
+        setText('dashTotalNodes', d.total_nodes || '-');
+        setText('dashSuccessRate', d.success_rate ? (d.success_rate * 100).toFixed(1) + '%' : '-');
+        setText('dashModelsShared', d.models_shared || 0);
+        setText('dashTotalRequests', (d.total_requests || 0).toLocaleString());
+      } catch(e) {
+        console.warn('network dashboard load failed', e);
+      }
     }
 
     // Disclaimer modal
@@ -2408,7 +2366,7 @@ if (authToken) {
 
         // Update UI state
         document.getElementById('sharedNetworkToggle').checked = true;
-        document.getElementById('relaySettings').style.display = 'block';
+        updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', true);
         document.getElementById('quotaAllocation').style.display = 'block';
         
         closeNetworkDisclaimer();
@@ -2445,43 +2403,6 @@ if (authToken) {
         toast('移除失败: ' + e.message, 'error');
       }
     }
-
-    async function issueSignedKey() {
-      const consumerId = document.getElementById('mkConsumerId').value.trim();
-      if (!consumerId) { toast('请输入 Consumer ID', 'error'); return; }
-      const quota = parseInt(document.getElementById('mkQuota').value) || 15000;
-      const modelsStr = document.getElementById('mkModels').value.trim();
-      const models = modelsStr ? modelsStr.split(',').map(m => m.trim()).filter(m => m) : [];
-      const expDays = parseInt(document.getElementById('mkExpDays').value) || 30;
-      try {
-        const r = await authFetch('/api/network/keys/issue', {
-          method: 'POST',
-          body: JSON.stringify({ consumer_id: consumerId, quota, models, exp_days: expDays })
-        });
-        const d = await r.json();
-        if (!r.ok) { toast('签发失败: ' + (d.error || d.message || '未知错误'), 'error'); return; }
-        // Show the key
-        const keyText = d.key;
-        toast('密钥签发成功', 'success');
-        // Copy to clipboard
-        try { await navigator.clipboard.writeText(keyText); } catch(e) {}
-        // Show in a prompt for manual copy
-        prompt('密钥已签发，请复制保存（此密钥仅显示一次）:', keyText);
-        // Clear form
-        document.getElementById('mkConsumerId').value = '';
-        document.getElementById('mkQuota').value = '';
-        document.getElementById('mkModels').value = '';
-        document.getElementById('mkExpDays').value = '';
-        // Refresh list
-      } catch(e) {
-        toast('签发失败: ' + e.message, 'error');
-      }
-    }
-
-    
-    
-    
-
 
 
     function formatUptime(seconds) {
@@ -2533,34 +2454,77 @@ if (authToken) {
           return;
         }
         const data = await res.json();
-        const keys = data.keys || [];
+        let keys = data.keys || [];
+
+        // Sort by issued_at descending (newest first)
+        keys.sort((a, b) => {
+          const ta = a.issued_at || '';
+          const tb = b.issued_at || '';
+          return tb.localeCompare(ta);
+        });
+
+        // Filter by type
+        if (_shareFilter && _shareFilter !== 'all') {
+          keys = keys.filter(k => {
+            const note = k.note || '';
+            const isCollab = note.startsWith('[协作]');
+            return _shareFilter === 'collaborator' ? isCollab : !isCollab;
+          });
+        }
+
         if (keys.length === 0) {
-          el.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px">暂无 Guest Key，点击「+ 签发新 Key」创建<br><span style="font-size:10px;margin-top:4px;display:block">💡 公共池额度全网均分，本地额度可逐 Key 设定</span></div>';
+          const filterText = _shareFilter === 'consumer' ? '使用者' : _shareFilter === 'collaborator' ? '协作者' : '';
+          el.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:16px">' + (filterText ? '暂无' + filterText + '类型的 Key' : '暂无 Guest Key') + '，点击上方按钮创建<br><span style="font-size:10px;margin-top:4px;display:block">💡 公共池额度全网均分，本地额度可逐 Key 设定</span></div>';
           return;
         }
         el.innerHTML = keys.map(k => {
           const keyVal = k.key || k;
-          const issuedAt = k.issued_at || '-';
-          const revoked = k.revoked ? ' <span class="badge badge-red">已撤销</span>' : '';
+          const revoked = !!k.revoked;
+          const note = k.note || '';
+          const isCollab = note.startsWith('[协作]');
+          const displayNote = isCollab ? note.replace(/^\[协作\]\s*/, '') : note;
+          const displayName = displayNote || ('🔑 ' + keyVal.substring(0, 20) + '...');
+          const pubPoolBadge = k.access_public_pool
+            ? '<span style="font-size:10px;padding:1px 6px;background:rgba(34,197,94,.12);color:#22c55e;border-radius:4px">🌐 公共池</span>'
+            : '';
+          const typeBadge = isCollab
+            ? '<span style="font-size:10px;padding:1px 6px;background:rgba(99,102,241,.12);color:#6366f1;border-radius:4px">🤝 协作者</span>'
+            : '<span style="font-size:10px;padding:1px 6px;background:rgba(108,99,255,.12);color:var(--accent-start);border-radius:4px">🔑 使用者</span>';
           const parts = [];
           if (k.quota > 0) parts.push(k.quota.toLocaleString() + '/天');
           if (k.quota_hourly > 0) parts.push(k.quota_hourly.toLocaleString() + '/时');
           if (k.quota_per_request > 0) parts.push(k.quota_per_request.toLocaleString() + '/次');
           if (k.rpm > 0) parts.push(k.rpm + ' RPM');
           const quota = parts.length > 0 ? parts.join(' · ') : '不限';
-          const expires = k.expires_at ? ' · 到期: ' + k.expires_at.substring(0,10) : '';
-          const note = k.note ? ' · ' + k.note : '';
+          const issuedAt = k.issued_at ? k.issued_at.substring(0, 10) : '';
+          const expires = k.expires_at ? k.expires_at.substring(0, 10) : '永久';
+          const statusBadge = revoked
+            ? '<span style="font-size:10px;padding:1px 6px;background:rgba(239,68,68,.12);color:#ef4444;border-radius:4px">❌ 已撤销</span>'
+            : '<span style="font-size:10px;padding:1px 6px;background:rgba(34,197,94,.12);color:#22c55e;border-radius:4px">✅ 有效</span>';
           const safeKey = keyVal.replace(/'/g, "\\'");
+          const escapedKey = keyVal.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+          const dateInfo = issuedAt ? '创建于 ' + issuedAt + (expires !== '永久' ? ' · 到期 ' + expires : ' · 永久有效') : (expires !== '永久' ? '到期 ' + expires : '永久有效');
           return `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;margin-bottom:4px;background:var(--bg-secondary);border-radius:6px;${k.revoked ? 'opacity:0.5;' : ''}">
-            <div style="flex:1;min-width:0">
-              <div style="font-family:monospace;font-size:11px;word-break:break-all">${keyVal}${revoked}</div>
-              <div style="color:var(--text-muted);font-size:10px">签发: ${issuedAt} · 额度: ${quota}${expires}${note}</div>
+          <div data-gk-key="${escapedKey}" style="padding:10px 14px;margin-bottom:6px;background:var(--bg-secondary);border-radius:8px;border:1px solid ${revoked ? 'rgba(239,68,68,.15)' : 'var(--border-color, rgba(255,255,255,.08))'};${revoked ? 'opacity:0.55;' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;min-width:0;flex:1">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏷️ ${displayName}</span>
+                ${typeBadge}
+                ${pubPoolBadge}
+              </div>
+              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px">
+                ${statusBadge}
+              </div>
             </div>
-            <div style="display:flex;gap:4px;flex-shrink:0;margin-left:8px">
-              <button class="btn btn-secondary btn-sm" onclick="copyText('${safeKey}')" style="font-size:10px;padding:3px 8px">📋</button>
-              ${!k.revoked ? `<button class="btn btn-secondary btn-sm" onclick="editGuestKeyQuota('${safeKey}', ${k.quota || 0})" style="font-size:10px;padding:3px 8px">✏️ 额度</button>` : ''}
-              ${!k.revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeGuestKey('${safeKey}')" style="font-size:10px;padding:3px 8px">撤销</button>` : ''}
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="color:var(--text-muted);font-size:10px">${dateInfo} · ${quota}</div>
+              <div style="display:flex;gap:4px;flex-shrink:0">
+                <button class="btn btn-secondary btn-sm" onclick="copyText('${safeKey}')" title="复制 Key" style="font-size:10px;padding:3px 8px">📋</button>
+                ${!revoked ? `<button class="btn btn-primary btn-sm" onclick="shareExistingKey('${safeKey}')" title="分享" style="font-size:10px;padding:3px 8px">📤 分享</button>` : ''}
+                ${!revoked ? `<button class="btn btn-secondary btn-sm" onclick="editGuestKeyQuota('${safeKey}')" title="编辑额度" style="font-size:10px;padding:3px 8px">✏️</button>` : ''}
+                ${!revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeGuestKey('${safeKey}')" title="撤销" style="font-size:10px;padding:3px 8px">撤销</button>` : ''}
+                ${revoked ? `<button class="btn btn-danger btn-sm" onclick="deleteGuestKey('${safeKey}')" title="永久删除" style="font-size:10px;padding:3px 8px">🗑️ 删除</button>` : ''}
+              </div>
             </div>
           </div>`;
         }).join('');
@@ -2569,27 +2533,58 @@ if (authToken) {
       }
     }
 
-    async function editGuestKeyQuota(key, currentQuota) {
-      // Find the key record for current values
+    async function editGuestKeyQuota(key) {
+      const panelId = 'gkEdit_' + key.replace(/[^a-zA-Z0-9]/g, '_');
+      const existing = document.getElementById(panelId);
+      if (existing) { existing.remove(); return; }
       let rec = {};
       try {
         const res = await authFetch('/api/network/guest-keys');
         const data = await res.json();
         rec = (data.keys || []).find(k => k.key === key) || {};
       } catch(e) {}
-      const input = prompt(
-        '设置额度（每行一项，0=不限）：\n' +
-        '格式: 每日tokens/时tokens/单次tokens/RPM\n' +
-        '示例: 50000/5000/2000/30',
-        [rec.quota||0, rec.quota_hourly||0, rec.quota_per_request||0, rec.rpm||0].join('/')
-      );
-      if (input === null) return;
-      const parts = input.split('/').map(s => parseInt(s.trim(), 10) || 0);
+      const note = rec.note || key.substring(0, 16) + '...';
+      const panel = document.createElement('div');
+      panel.id = panelId;
+      panel.style.cssText = 'margin:4px 0 8px 0;padding:14px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.2);border-radius:8px';
+      panel.innerHTML = `
+        <div style="font-size:12px;font-weight:600;margin-bottom:10px">✏️ 编辑额度: ${note}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">每日上限 (tokens)</label>
+            <input id="${panelId}_quota" class="form-input" type="number" value="${rec.quota||0}" min="0" style="font-size:12px;height:32px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">每小时上限 (tokens)</label>
+            <input id="${panelId}_hourly" class="form-input" type="number" value="${rec.quota_hourly||0}" min="0" style="font-size:12px;height:32px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">单次上限 (tokens)</label>
+            <input id="${panelId}_perReq" class="form-input" type="number" value="${rec.quota_per_request||0}" min="0" style="font-size:12px;height:32px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">每分钟请求数 (RPM)</label>
+            <input id="${panelId}_rpm" class="form-input" type="number" value="${rec.rpm||0}" min="0" style="font-size:12px;height:32px">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${panelId}').remove()" style="font-size:11px;padding:4px 12px">取消</button>
+          <button class="btn btn-primary btn-sm" onclick="saveGuestKeyQuota('${key.replace(/'/g, "\\'")}', '${panelId}')" style="font-size:11px;padding:4px 12px">💾 保存</button>
+        </div>`;
+      const keyDiv = document.querySelector('[data-gk-key="' + CSS.escape(key) + '"]');
+      if (keyDiv) {
+        keyDiv.insertAdjacentElement('afterend', panel);
+      } else {
+        document.getElementById('guestKeysList').insertAdjacentElement('beforebegin', panel);
+      }
+    }
+
+    async function saveGuestKeyQuota(key, panelId) {
       const body = {
-        quota: parts[0] || 0,
-        quota_hourly: parts[1] || 0,
-        quota_per_request: parts[2] || 0,
-        rpm: parts[3] || 0
+        quota: parseInt(document.getElementById(panelId + '_quota').value, 10) || 0,
+        quota_hourly: parseInt(document.getElementById(panelId + '_hourly').value, 10) || 0,
+        quota_per_request: parseInt(document.getElementById(panelId + '_perReq').value, 10) || 0,
+        rpm: parseInt(document.getElementById(panelId + '_rpm').value, 10) || 0
       };
       try {
         const res = await authFetch('/api/network/guest-keys/' + encodeURIComponent(key) + '/quota', {
@@ -2599,6 +2594,7 @@ if (authToken) {
         });
         if (res.ok) {
           toast('额度已更新', 'success');
+          document.getElementById(panelId).remove();
           await loadGuestKeys();
         } else {
           const err = await res.json().catch(() => ({}));
@@ -2614,58 +2610,115 @@ if (authToken) {
         document.getElementById('guestKeyForm').remove();
         return;
       }
-      const card = document.getElementById('guestKeysList').parentElement;
+      const purposeLabel = '🔑 创建 Guest Key';
+      const purposeColor = 'rgba(108,99,255,.06)';
+      const purposeBorder = 'rgba(108,99,255,.2)';
       const formHtml = `
-        <div id="guestKeyForm" style="padding:14px;margin-bottom:8px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.2);border-radius:8px">
-          <div style="font-size:13px;font-weight:500;margin-bottom:10px">🎫 签发新 Guest Key</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:6px 10px;background:rgba(108,99,255,.04);border-radius:6px">💡 公共池额度由全网 Guest Key 均分。此处设置的是该 Key 访问本节点自身资源的额度上限。</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:500">📊 额度控制（0 或留空 = 不限）</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-            <div>
-              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">每日额度（tokens/天）</label>
-              <input id="gkQuota" class="form-input" type="number" value="0" min="0" style="font-size:12px;height:32px" placeholder="0=不限">
+        <div id="guestKeyForm" style="padding:16px;margin-bottom:8px;background:${purposeColor};border:1px solid ${purposeBorder};border-radius:10px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:6px">${purposeLabel}</div>
+
+          <div style="margin-bottom:14px;padding:12px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.12);border-radius:8px">
+            <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px">备注名称 <span style="color:var(--error)">*</span></label>
+            <input id="gkNote" class="form-input" style="font-size:12px;height:34px;width:100%;box-sizing:border-box" placeholder="如：给小明的试用 Key">
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">💡 给 Key 起个名字方便后续管理</div>
+          </div>
+
+          <div style="margin-bottom:14px;padding:12px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.12);border-radius:8px">
+            <div style="margin-bottom:10px">
+              <label style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="gkUnlimited" onchange="document.getElementById('gkQuota').disabled=this.checked;document.getElementById('gkQuotaHourly').disabled=this.checked;if(this.checked){document.getElementById('gkQuota').value=0;document.getElementById('gkQuotaHourly').value=0;}" style="width:15px;height:15px;cursor:pointer">
+                不限额度
+              </label>
+            </div>
+            <div style="margin-bottom:10px">
+              <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px">每日上限 (tokens)</label>
+              <input id="gkQuota" class="form-input" type="number" value="50000" min="0" style="font-size:12px;height:34px;width:100%;box-sizing:border-box">
+              <div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap">
+                <span style="font-size:10px;color:var(--text-muted);line-height:24px">快捷:</span>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkQuota').value=10000" style="font-size:10px;padding:2px 8px;height:24px">1万</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkQuota').value=100000" style="font-size:10px;padding:2px 8px;height:24px">10万</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkQuota').value=1000000" style="font-size:10px;padding:2px 8px;height:24px">100万</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkQuota').value=0" style="font-size:10px;padding:2px 8px;height:24px">不限</button>
+              </div>
             </div>
             <div>
-              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">每小时额度（tokens/时）</label>
-              <input id="gkQuotaHourly" class="form-input" type="number" value="0" min="0" style="font-size:12px;height:32px" placeholder="0=不限">
+              <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px">每小时上限 (tokens)</label>
+              <input id="gkQuotaHourly" class="form-input" type="number" value="0" min="0" style="font-size:12px;height:34px;width:100%;box-sizing:border-box">
+              <div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap">
+                <span style="font-size:10px;color:var(--text-muted);line-height:24px">快捷:</span>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkQuotaHourly').value=5000" style="font-size:10px;padding:2px 8px;height:24px">5千</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkQuotaHourly').value=10000" style="font-size:10px;padding:2px 8px;height:24px">1万</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkQuotaHourly').value=50000" style="font-size:10px;padding:2px 8px;height:24px">5万</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkQuotaHourly').value=0" style="font-size:10px;padding:2px 8px;height:24px">不限</button>
+              </div>
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
-            <div>
-              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">单次请求上限（tokens）</label>
-              <input id="gkQuotaPerRequest" class="form-input" type="number" value="0" min="0" style="font-size:12px;height:32px" placeholder="0=不限">
+
+          <div style="margin-bottom:14px;border:1px solid rgba(108,99,255,.12);border-radius:8px;overflow:hidden">
+            <div onclick="var el=document.getElementById('gkRateDetails');if(el.style.display==='none'){el.style.display='block';this.querySelector('span.arrow').textContent='▾';}else{el.style.display='none';this.querySelector('span.arrow').textContent='▸';}" style="padding:10px 12px;background:rgba(108,99,255,.06);cursor:pointer;font-size:12px;font-weight:500;display:flex;align-items:center;gap:4px;user-select:none">
+              <span class="arrow" style="font-size:10px">▸</span> 速率控制 <span style="font-size:10px;color:var(--text-muted);font-weight:400">(可选)</span>
             </div>
-            <div>
-              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">每分钟请求数（RPM）</label>
-              <input id="gkRpm" class="form-input" type="number" value="0" min="0" style="font-size:12px;height:32px" placeholder="0=不限">
-            </div>
-            <div>
-              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">有效期（天）</label>
-              <input id="gkExpDays" class="form-input" type="number" value="30" min="0" style="font-size:12px;height:32px" placeholder="0=永不过期">
+            <div id="gkRateDetails" style="display:none;padding:12px;background:rgba(108,99,255,.02)">
+              <div style="margin-bottom:10px">
+                <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px">单次请求上限 (tokens)</label>
+                <input id="gkQuotaPerRequest" class="form-input" type="number" value="0" min="0" style="font-size:12px;height:34px;width:100%;box-sizing:border-box" placeholder="0=不限">
+              </div>
+              <div>
+                <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px">每分钟请求数 (RPM)</label>
+                <input id="gkRpm" class="form-input" type="number" value="0" min="0" style="font-size:12px;height:34px;width:100%;box-sizing:border-box" placeholder="0=不限">
+              </div>
             </div>
           </div>
-          <div style="margin-bottom:10px">
-            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">备注（可选）</label>
-            <input id="gkNote" class="form-input" style="font-size:12px;height:32px" placeholder="如：给小明的试用 Key">
+
+          <div style="margin-bottom:14px;padding:12px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.12);border-radius:8px">
+            <label style="font-size:12px;font-weight:500;display:block;margin-bottom:6px">有效期</label>
+            <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkExpDays').value=7" style="font-size:10px;padding:2px 10px;height:26px">7天</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkExpDays').value=30" style="font-size:10px;padding:2px 10px;height:26px">30天</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkExpDays').value=90" style="font-size:10px;padding:2px 10px;height:26px">90天</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gkExpDays').value=0" style="font-size:10px;padding:2px 10px;height:26px">永久</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:11px;color:var(--text-muted)">自定义:</span>
+              <input id="gkExpDays" class="form-input" type="number" value="30" min="0" style="font-size:12px;height:34px;width:80px">
+              <span style="font-size:11px;color:var(--text-muted)">天 <span style="font-size:10px">(0=永久)</span></span>
+            </div>
           </div>
+
+          <div style="padding:10px 14px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.12);border-radius:8px;margin-top:0;margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-size:12px;font-weight:500">🌐 公共池访问权限</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">开启后，此 Key 可在共享网络任意节点访问全网资源</div>
+              </div>
+              <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
+                <input type="checkbox" id="gkAccessPublicPool" onchange="var s=this.nextElementSibling,d=s.firstElementChild;if(this.checked){s.style.background='#6c63ff';d.style.transform='translateX(20px)';}else{s.style.background='#555';d.style.transform='translateX(0)';}" style="opacity:0;width:0;height:0">
+                <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:24px;transition:.3s">
+                  <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
+                </span>
+              </label>
+            </div>
+          </div>
+
           <div style="display:flex;gap:8px;justify-content:flex-end">
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('guestKeyForm').remove()" style="font-size:11px;padding:4px 12px">取消</button>
-            <button class="btn btn-primary btn-sm" onclick="doGenerateGuestKey()" style="font-size:11px;padding:4px 12px">✅ 签发</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('guestKeyForm').remove()" style="font-size:12px;padding:6px 16px">取消</button>
+            <button class="btn btn-primary btn-sm" onclick="doGenerateGuestKey()" style="font-size:12px;padding:6px 16px">✅ 签发</button>
           </div>
         </div>`;
       document.getElementById('guestKeysList').insertAdjacentHTML('beforebegin', formHtml);
     }
 
     async function doGenerateGuestKey() {
-      const expDays = parseInt(document.getElementById('gkExpDays').value) || 30;
-      const note = document.getElementById('gkNote').value.trim();
-      try {
-        const quota = parseInt(document.getElementById('gkQuota').value, 10) || 0;
-      const quotaHourly = parseInt(document.getElementById('gkQuotaHourly').value, 10) || 0;
+      const expDays = parseInt(document.getElementById('gkExpDays').value) || 0;
+      let note = document.getElementById('gkNote').value.trim();
+      const unlimited = document.getElementById('gkUnlimited').checked;
+      const quota = unlimited ? 0 : (parseInt(document.getElementById('gkQuota').value, 10) || 0);
+      const quotaHourly = unlimited ? 0 : (parseInt(document.getElementById('gkQuotaHourly').value, 10) || 0);
       const quotaPerRequest = parseInt(document.getElementById('gkQuotaPerRequest').value, 10) || 0;
       const rpm = parseInt(document.getElementById('gkRpm').value, 10) || 0;
-      const body = { exp_days: expDays, quota: quota, quota_hourly: quotaHourly, quota_per_request: quotaPerRequest, rpm: rpm };
-        if (note) body.note = note;
+      if (!note) { toast('请填写备注名称', 'error'); return; }
+      try {
+        const body = { exp_days: expDays, quota: quota, quota_hourly: quotaHourly, quota_per_request: quotaPerRequest, rpm: rpm, note: note, access_public_pool: document.getElementById('gkAccessPublicPool')?.checked || false };
         const res = await authFetch('/api/network/guest-keys', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -2676,25 +2729,261 @@ if (authToken) {
           const formEl = document.getElementById('guestKeyForm');
           if (formEl) formEl.remove();
           if (d.key) {
-            const safeKey = d.key.replace(/'/g, "\\'");
-            const keyDisplay = document.createElement('div');
-            keyDisplay.style.cssText = 'padding:14px;margin-bottom:8px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:8px';
-            keyDisplay.innerHTML = `
-              <div style="font-size:12px;font-weight:500;color:var(--success);margin-bottom:6px">✅ Guest Key 签发成功（仅此显示一次，请复制保存）</div>
-              <div style="display:flex;gap:8px;align-items:center">
-                <input class="form-input" value="${d.key}" readonly style="flex:1;font-family:monospace;font-size:12px;background:var(--bg-secondary)">
-                <button class="btn btn-primary btn-sm" onclick="copyText(this.previousElementSibling.value);this.textContent=&quot;已复制!&quot;" style="flex-shrink:0">📋 复制</button>
-              </div>`;
-            document.getElementById('guestKeysList').insertAdjacentElement('beforebegin', keyDisplay);
-            setTimeout(() => keyDisplay.remove(), 30000);
+            toast('Guest Key 已签发，点击 Key 右侧的 📤 按钮进行分享', 'success');
+            await loadGuestKeys();
           }
-          toast('Guest Key 已签发', 'success');
+        } else {
+          const err = await res.json();
+          toast('签发失败: ' + (err.error || '未知错误'), 'error');
+        }
+      } catch(e) { toast('签发失败: ' + e.message, 'error'); }
+    }
+
+    function filterShareKeys(filter) {
+      _shareFilter = filter;
+      document.querySelectorAll('.share-filter').forEach(btn => {
+        if (btn.dataset.filter === filter) {
+          btn.classList.remove('btn-secondary');
+          btn.classList.add('btn-primary', 'active');
+        } else {
+          btn.classList.remove('btn-primary', 'active');
+          btn.classList.add('btn-secondary');
+        }
+      });
+      loadGuestKeys();
+    }
+
+    function showSharePanel(keyData, purpose) {
+      const panel = document.getElementById('sharePanel');
+      if (!panel) return;
+      const apiUrl = (shareInfoData && shareInfoData.public_api_url) || (shareInfoData && shareInfoData.proxy_api_url) || window.location.origin + '/v1';
+      const apiKey = (shareInfoData && shareInfoData.proxy_api_key) || '';
+      const guestKey = keyData.key || '';
+      const baseUrl = window.location.origin;
+      const purposeLabel = purpose === 'collaborator' ? '🤝 协作者' : '🔑 使用者';
+
+      let shareText = '';
+      let inviteLink = '';
+      let qrContent = '';
+      let showInviteLink = false;
+
+      if (purpose === 'collaborator') {
+        inviteLink = baseUrl + '/login?collaborate=' + encodeURIComponent(guestKey);
+        qrContent = inviteLink;
+        showInviteLink = true;
+        shareText = '邀请你一起维护我的 OpenModelPool Agent 节点 👇\n\n邀请链接: ' + inviteLink + '\n\n你的身份凭证 (Guest Key): ' + guestKey + '\n\n首次登录时可用此 Key 验证身份并设置密码。';
+        // Mark key as collaborator type
+        authFetch('/api/network/guest-keys/' + encodeURIComponent(guestKey) + '/mark-collaborator', { method: 'POST' }).catch(()=>{});
+      } else {
+        qrContent = JSON.stringify({ api_url: apiUrl, api_key: guestKey, platform: "OpenModelPool Agent" });
+        shareText = '我用 OpenModelPool 搭了个 AI 聚合网关，拿去用 👇\n\nAPI 地址: ' + apiUrl + '\nAPI Key: ' + guestKey;
+      }
+
+      const escapedKey = guestKey.replace(/'/g, "\\'");
+      const escapedText = shareText.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+      const escapedInviteLink = inviteLink.replace(/'/g, "\\'");
+
+      let panelHtml = `
+        <div style="padding:16px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:10px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+            <span>🎉 Key 已创建: ${guestKey.substring(0, 24)}...</span>
+            <span style="font-size:10px;padding:2px 8px;background:rgba(108,99,255,.12);color:var(--accent-start);border-radius:4px">${purposeLabel}</span>
+          </div>
+
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">📡 API 地址</label>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" value="${apiUrl}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${apiUrl.replace(/'/g, "\\'")}')" style="flex-shrink:0">📋</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">🔑 Guest Key</label>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" value="${guestKey}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${escapedKey}')" style="flex-shrink:0">📋</button>
+            </div>
+          </div>`;
+
+      if (showInviteLink) {
+        panelHtml += `
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">🔗 邀请链接</label>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" value="${inviteLink}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${escapedInviteLink}')" style="flex-shrink:0">📋</button>
+            </div>
+          </div>`;
+      }
+
+      panelHtml += `
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:6px">📡 分享渠道</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到微信发送'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📱 微信</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到 Telegram 发送'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">✈️ Telegram</button>
+              <button class="btn btn-secondary btn-sm" onclick="window.location.href='mailto:?subject=' + encodeURIComponent('OpenModelPool 分享') + '&body=' + encodeURIComponent(this.dataset.text)" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📧 邮件</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制全部内容'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📋 复制全部</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">💬 预设文案</label>
+            <textarea class="form-input" rows="3" readonly style="font-size:11px;resize:none;background:var(--bg-secondary);width:100%;box-sizing:border-box">${shareText}</textarea>
+          </div>
+
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="text-align:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">扫码获取</div>
+              <div id="qrSharePanel" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px;text-align:right">
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('sharePanel').style.display='none';document.getElementById('sharePanel').innerHTML=''" style="font-size:11px;padding:4px 12px">收起分享面板</button>
+          </div>
+        </div>`;
+
+      panel.innerHTML = panelHtml;
+      panel.style.display = '';
+
+      // Generate QR code
+      setTimeout(() => { generateQRCode('qrSharePanel', qrContent); }, 100);
+
+      // Scroll to panel
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function shareExistingKey(escapedKey) {
+      // Show a dialog to choose share type
+      const dialogId = 'shareDialog_' + escapedKey.replace(/[^a-zA-Z0-9]/g, '_');
+      const existing = document.getElementById(dialogId);
+      if (existing) { existing.remove(); return; }
+      const dialogHtml = `
+        <div id="${dialogId}" style="padding:12px;margin-top:8px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.2);border-radius:8px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:10px">📤 选择分享方式</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="document.getElementById('${dialogId}').remove();showSharePanelForExistingKey('${escapedKey}','consumer')" style="font-size:11px;padding:6px 14px">🔑 分享给使用者</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${dialogId}').remove();showSharePanelForExistingKey('${escapedKey}','collaborator')" style="font-size:11px;padding:6px 14px">🤝 邀请协作者</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${dialogId}').remove()" style="font-size:11px;padding:6px 14px">取消</button>
+          </div>
+        </div>`;
+      const keyRow = document.querySelector('[data-gk-key="' + escapedKey.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') + '"]');
+      if (keyRow) keyRow.insertAdjacentHTML('afterend', dialogHtml);
+    }
+
+    function showSharePanelForExistingKey(guestKey, purpose) {
+      const keyData = { key: guestKey };
+      const panel = document.getElementById('sharePanel');
+      if (!panel) return;
+      const apiUrl = (shareInfoData && shareInfoData.public_api_url) || (shareInfoData && shareInfoData.proxy_api_url) || window.location.origin + '/v1';
+      const baseUrl = window.location.origin;
+      const purposeLabel = purpose === 'collaborator' ? '🤝 协作者' : '🔑 使用者';
+
+      let shareText = '';
+      let inviteLink = '';
+      let qrContent = '';
+      let showInviteLink = false;
+
+      if (purpose === 'collaborator') {
+        inviteLink = baseUrl + '/login?collaborate=' + encodeURIComponent(guestKey);
+        qrContent = inviteLink;
+        showInviteLink = true;
+        shareText = '邀请你一起维护我的 OpenModelPool Agent 节点 👇\n\n邀请链接: ' + inviteLink + '\n\n你的身份凭证 (Guest Key): ' + guestKey + '\n\n首次登录时可用此 Key 验证身份并设置密码。';
+        // Mark key as collaborator type
+        authFetch('/api/network/guest-keys/' + encodeURIComponent(guestKey) + '/mark-collaborator', { method: 'POST' }).catch(()=>{});
+      } else {
+        qrContent = JSON.stringify({ api_url: apiUrl, api_key: guestKey, platform: "OpenModelPool Agent" });
+        shareText = '我用 OpenModelPool 搭了个 AI 聚合网关，拿去用 👇\n\nAPI 地址: ' + apiUrl + '\nAPI Key: ' + guestKey;
+      }
+
+      const escapedKey = guestKey.replace(/'/g, "\\'");
+      const escapedInviteLink = inviteLink.replace(/'/g, "\\'");
+
+      let panelHtml = `
+        <div style="padding:16px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:10px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+            <span>📤 分享 Key: ${guestKey.substring(0, 24)}...</span>
+            <span style="font-size:10px;padding:2px 8px;background:rgba(108,99,255,.12);color:var(--accent-start);border-radius:4px">${purposeLabel}</span>
+          </div>
+
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">📡 API 地址</label>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" value="${apiUrl}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${apiUrl.replace(/'/g, "\\'")}')" style="flex-shrink:0">📋</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">🔑 Guest Key</label>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" value="${guestKey}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${escapedKey}')" style="flex-shrink:0">📋</button>
+            </div>
+          </div>`;
+
+      if (showInviteLink) {
+        panelHtml += `
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">🔗 邀请链接</label>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" value="${inviteLink}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${escapedInviteLink}')" style="flex-shrink:0">📋</button>
+            </div>
+          </div>`;
+      }
+
+      const escapedText = shareText.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+      panelHtml += `
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:6px">📡 分享渠道</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到微信发送'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📱 微信</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到 Telegram 发送'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">✈️ Telegram</button>
+              <button class="btn btn-secondary btn-sm" onclick="window.location.href='mailto:?subject=' + encodeURIComponent('OpenModelPool 分享') + '&body=' + encodeURIComponent(this.dataset.text)" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📧 邮件</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制全部内容'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📋 复制全部</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">💬 预设文案</label>
+            <textarea class="form-input" rows="3" readonly style="font-size:11px;resize:none;background:var(--bg-secondary);width:100%;box-sizing:border-box">${shareText}</textarea>
+          </div>
+
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="text-align:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">扫码获取</div>
+              <div id="qrSharePanel" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px;text-align:right">
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('sharePanel').style.display='none';document.getElementById('sharePanel').innerHTML=''" style="font-size:11px;padding:4px 12px">收起分享面板</button>
+          </div>
+        </div>`;
+
+      panel.innerHTML = panelHtml;
+      panel.style.display = '';
+      setTimeout(() => { generateQRCode('qrSharePanel', qrContent); }, 100);
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function deleteGuestKey(key) {
+      if (!confirm('确定永久删除此已撤销的 Guest Key？此操作不可恢复。')) return;
+      try {
+        const res = await authFetch('/api/network/guest-keys/' + encodeURIComponent(key) + '/permanent', { method: 'DELETE' });
+        if (res.ok) {
+          toast('已永久删除', 'success');
           await loadGuestKeys();
         } else {
           const err = await res.json();
-          toast('生成失败: ' + (err.error || '未知错误'), 'error');
+          toast('删除失败: ' + (err.error || '未知错误'), 'error');
         }
-      } catch(e) { toast('生成失败: ' + e.message, 'error'); }
+      } catch(e) {
+        toast('删除失败: ' + e.message, 'error');
+      }
     }
 
     async function revokeGuestKey(key) {
@@ -2749,7 +3038,7 @@ function toggleSharedNetwork() {
     }).then(r => {
       if (r.ok) {
         toast('已退出共享网络', 'success');
-        document.getElementById('relaySettings').style.display = 'none';
+        updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', false);
         document.getElementById('quotaAllocation').style.display = 'none';
         document.getElementById('networkActivePanel').style.display = 'none';
         loadNetworkStatus();
@@ -2911,6 +3200,130 @@ async function generateFedInvite() {
         }
       }).catch(() => {});
     }, 500);
+
+
+// ===== Discovery Functions =====
+let discoveredPlatforms = [];
+
+function toggleDiscoveryPanel() {
+  const panel = document.getElementById('discoveryPanel');
+  const isVisible = panel.style.display !== 'none';
+  panel.style.display = isVisible ? 'none' : '';
+  if (!isVisible && discoveredPlatforms.length === 0) {
+    loadDiscoveredPlatforms();
+  }
+}
+
+async function loadDiscoveredPlatforms() {
+  const el = document.getElementById('discoveredList');
+  el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px"><div class="loading"></div><br>加载中...</div>';
+  try {
+    const r = await authFetch('/api/discovered-platforms');
+    const d = await r.json();
+    discoveredPlatforms = d.platforms || [];
+    renderDiscoveredPlatforms();
+  } catch(e) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function renderDiscoveredPlatforms() {
+  const el = document.getElementById('discoveredList');
+  if (!discoveredPlatforms.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无发现，点击「🔄 扫描新平台」开始</div>';
+    return;
+  }
+  const statusMap = {
+    'new': {label: '新发现', color: '#3b82f6', bg: 'rgba(59,130,246,.1)'},
+    'reviewed': {label: '已审核', color: '#22c55e', bg: 'rgba(34,197,94,.1)'},
+    'dismissed': {label: '已忽略', color: '#6b7280', bg: 'rgba(107,114,128,.1)'},
+    'added': {label: '已添加', color: '#a855f7', bg: 'rgba(168,85,247,.1)'}
+  };
+  el.innerHTML = discoveredPlatforms.map(p => {
+    const st = statusMap[p.status] || statusMap['new'];
+    const models = (p.models || []).slice(0, 4).join(', ');
+    const modelsExtra = (p.models || []).length > 4 ? ` +${p.models.length - 4}个` : '';
+    return `<div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:10px;display:grid;gap:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="font-size:14px;font-weight:600">${p.name}</div>
+        <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${st.bg};color:${st.color}">${st.label}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary)">${p.description || ''}</div>
+      <div style="font-size:12px;color:var(--text-muted);font-family:monospace;word-break:break-all">${p.base_url}</div>
+      ${models ? `<div style="font-size:11px;color:var(--text-muted)">模型: ${models}${modelsExtra}</div>` : ''}
+      <div style="font-size:11px;color:var(--text-muted)">来源: ${p.source} · 发现时间: ${new Date(p.discovered_at).toLocaleString()}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+        ${p.api_key_url ? `<a href="${p.api_key_url}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;font-size:11px">🔗 官网注册</a>` : ''}
+        ${p.status === 'new' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px" onclick="updateDiscoveredStatus('${p.id}','reviewed')">✅ 标记已审核</button>` : ''}
+        ${p.status !== 'dismissed' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px;border-color:rgba(239,68,68,.3);color:#ef4444" onclick="updateDiscoveredStatus('${p.id}','dismissed')">❌ 忽略</button>` : ''}
+        <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="addDiscoveredAsPreset('${p.id}')">+ 添加为预设</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function updateDiscoveredStatus(id, status) {
+  try {
+    const r = await authFetch(`/api/discovered-platforms/${id}`, {
+      method: 'POST',
+      body: JSON.stringify({status: status})
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || e.error?.message || '操作失败'); }
+    toast(status === 'reviewed' ? '已标记为已审核' : status === 'dismissed' ? '已忽略' : '已更新');
+    await loadDiscoveredPlatforms();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function addDiscoveredAsPreset(id) {
+  const p = discoveredPlatforms.find(x => x.id === id);
+  if (!p) return;
+  // Update status to added
+  updateDiscoveredStatus(id, 'added');
+  // Open add provider modal with pre-filled info
+  editingId = null;
+  document.getElementById('editKeysSection').style.display = 'none';
+  document.getElementById('modalTitle').textContent = '添加平台（来自发现）';
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  document.getElementById('pId').value = p.id;
+  document.getElementById('pId').readOnly = false;
+  document.getElementById('pName').value = p.name;
+  document.getElementById('pUrl').value = p.base_url;
+  document.getElementById('pKey').value = '';
+  document.getElementById('pKey').placeholder = '输入 API Key（需先在官网注册获取）';
+  document.getElementById('pDesc').value = p.description || '';
+  document.getElementById('pPriority').value = 5;
+  document.getElementById('pEnabled').checked = true;
+  document.getElementById('pAccessPrivate').checked = true;
+  // Show registration link
+  const regLinkEl = document.getElementById('presetRegLink');
+  if (regLinkEl && p.api_key_url) {
+    regLinkEl.innerHTML = `<a href="${p.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+    regLinkEl.style.display = '';
+  }
+  document.getElementById('providerModal').classList.add('open');
+}
+
+async function triggerDiscovery() {
+  const btn = document.getElementById('triggerScanBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 扫描中...';
+  try {
+    const r = await authFetch('/api/discovered-platforms/trigger', {method: 'POST'});
+    const d = await r.json();
+    if (d.status === 'already_running') {
+      toast('扫描已在进行中');
+    } else {
+      toast('扫描已启动');
+      // Wait a bit then reload
+      setTimeout(() => loadDiscoveredPlatforms(), 3000);
+    }
+  } catch(e) {
+    toast('扫描失败: ' + e.message, 'error');
+  } finally {
+    setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 扫描新平台'; }, 2000);
+  }
+}
 
 </script>
 </body>

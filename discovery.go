@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"strconv"
 	"time"
 )
@@ -125,8 +126,63 @@ func (f *FederationManager) fetchFromPeers() {
 	slog.Warn("failed to fetch trust pool from any peer")
 }
 
+// fetchFromSeedNodes queries known bootstrap/seed nodes for the trust pool.
+// This serves as a fallback when the GitHub registry is unreachable.
+func (f *FederationManager) fetchFromSeedNodes() (*TrustPool, error) {
+	if netMgr == nil {
+		return nil, fmt.Errorf("network manager not available")
+	}
+
+	netMgr.mu.RLock()
+	bootstrapNodes := make([]string, len(netMgr.config.BootstrapNodes))
+	copy(bootstrapNodes, netMgr.config.BootstrapNodes)
+	netMgr.mu.RUnlock()
+
+	if len(bootstrapNodes) == 0 {
+		return nil, fmt.Errorf("no bootstrap nodes configured")
+	}
+
+	client := GetSharedHTTPClient()
+	for _, bootstrapURL := range bootstrapNodes {
+		poolURL := fmt.Sprintf("%s/federation/pool", strings.TrimRight(bootstrapURL, "/"))
+		resp, err := client.Get(poolURL)
+		if err != nil {
+			slog.Debug("seed node unreachable", "url", bootstrapURL, "error", err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		var pool TrustPool
+		if err := json.Unmarshal(body, &pool); err != nil {
+			slog.Debug("invalid trust pool from seed", "url", bootstrapURL, "error", err)
+			continue
+		}
+
+		if len(pool.Nodes) > 0 {
+			slog.Info("fetched trust pool from seed node",
+				"url", bootstrapURL, "version", pool.Version, "nodes", len(pool.Nodes))
+			return &pool, nil
+		}
+	}
+
+	return nil, fmt.Errorf("all seed nodes unreachable or returned no data")
+}
+
 // refreshLoop runs in a goroutine and periodically refreshes the trust pool.
-// It first tries the GitHub registry; on failure it falls back to peer fetching.
+// Trust sources (in priority order):
+//  1. GitHub Registry (canonical source)
+//  2. Bootstrap/seed nodes (fallback when registry is unreachable)
+//  3. Active peers (P2P fallback)
 func (f *FederationManager) refreshLoop() {
 	intervalSecs := cfg.Get("federation_refresh_interval_s", "300")
 	interval := parseDurationSecs(intervalSecs, 300)
@@ -137,24 +193,45 @@ func (f *FederationManager) refreshLoop() {
 	slog.Info("federation refresh loop started", "interval_s", interval.Seconds())
 
 	// Perform an initial refresh immediately
-	if err := f.refreshFromGitHub(); err != nil {
-		slog.Warn("initial federation refresh failed, falling back to peers", "error", err)
-		f.fetchFromPeers()
-	}
+	f.doRefresh()
 
 	for {
 		select {
 		case <-ticker.C:
-			if err := f.refreshFromGitHub(); err != nil {
-				slog.Warn("federation refresh from GitHub failed, falling back to peers",
-					"error", err)
-				f.fetchFromPeers()
-			}
+			f.doRefresh()
 		case <-f.stopCh:
 			slog.Info("federation refresh loop exiting")
 			return
 		}
 	}
+}
+
+// doRefresh performs a single refresh cycle: GitHub → seed nodes → peers
+func (f *FederationManager) doRefresh() {
+	// 1. Try GitHub Registry (canonical source)
+	if err := f.refreshFromGitHub(); err == nil {
+		return
+	} else {
+		slog.Warn("GitHub registry unreachable, trying seed nodes", "error", err)
+	}
+
+	// 2. Try bootstrap/seed nodes
+	if pool, err := f.fetchFromSeedNodes(); err == nil && pool != nil {
+		f.mu.Lock()
+		if pool.Version > f.trustPool.Version {
+			f.trustPool = *pool
+			slog.Info("trust pool refreshed from seed nodes",
+				"version", pool.Version, "nodes", len(pool.Nodes))
+			_ = f.saveLocked()
+		}
+		f.mu.Unlock()
+		return
+	} else {
+		slog.Warn("seed nodes unavailable, falling back to peers", "error", err)
+	}
+
+	// 3. Try active peers (P2P fallback)
+	f.fetchFromPeers()
 }
 
 // handleFederationPool is the HTTP handler for GET /federation/pool.

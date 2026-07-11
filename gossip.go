@@ -112,7 +112,7 @@ func (g *GossipManager) selectPeers(count int) []NodeInfo {
 	var seeds, regular []NodeInfo
 
 	for _, n := range allActive {
-		if n.NodeID == myID || n.Endpoint == "" {
+		if n.NodeID == myID || (n.Endpoint == "" && len(n.Addresses) == 0) {
 			continue
 		}
 		if n.SeedNode {
@@ -144,39 +144,62 @@ func (g *GossipManager) selectPeers(count int) []NodeInfo {
 	return result
 }
 
-// exchange sends a signed GossipMessage to a peer's /federation/gossip endpoint
-// and returns the peer's response message.
-func (g *GossipManager) exchange(peer NodeInfo, msg GossipMessage) (*GossipMessage, error) {
-	url := fmt.Sprintf("%s/federation/gossip", peer.Endpoint)
+// peerEndpoints returns the list of endpoints to try for a peer,
+// preferring Addresses (multi-address) over the legacy single Endpoint.
+func peerEndpoints(peer NodeInfo) []string {
+	if len(peer.Addresses) > 0 {
+		return peer.Addresses
+	}
+	if peer.Endpoint != "" {
+		return []string{peer.Endpoint}
+	}
+	return nil
+}
 
+// exchange sends a signed GossipMessage to a peer, trying all available addresses.
+// Returns the peer's response message on first successful attempt.
+func (g *GossipManager) exchange(peer NodeInfo, msg GossipMessage) (*GossipMessage, error) {
 	body, err := json.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("marshal gossip message: %w", err)
 	}
 
 	client := GetSharedHTTPClient()
-	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("POST to peer gossip: %w", err)
-	}
-	defer resp.Body.Close()
+	endpoints := peerEndpoints(peer)
+	var lastErr error
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("peer returned HTTP %d: %s", resp.StatusCode, string(respBody))
+	for _, addr := range endpoints {
+		gossipURL := fmt.Sprintf("%s/federation/gossip", addr)
+		resp, err := client.Post(gossipURL, "application/json", bytes.NewReader(body))
+		if err != nil {
+			lastErr = fmt.Errorf("POST to %s: %w", addr, err)
+			continue // try next address
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("peer returned HTTP %d from %s: %s", resp.StatusCode, addr, string(respBody))
+			continue // try next address
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("read response from %s: %w", addr, err)
+			continue
+		}
+
+		var respMsg GossipMessage
+		if err := json.Unmarshal(respBody, &respMsg); err != nil {
+			lastErr = fmt.Errorf("parse response from %s: %w", addr, err)
+			continue
+		}
+
+		return &respMsg, nil
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read gossip response: %w", err)
-	}
-
-	var respMsg GossipMessage
-	if err := json.Unmarshal(respBody, &respMsg); err != nil {
-		return nil, fmt.Errorf("parse gossip response: %w", err)
-	}
-
-	return &respMsg, nil
+	return nil, fmt.Errorf("all addresses failed for peer %s: %v", peer.NodeID, lastErr)
 }
 
 // isSeen checks if a message hash has been seen before. If not, it marks it
@@ -277,40 +300,47 @@ func (g *GossipManager) processGossipResponse(msg *GossipMessage, peer NodeInfo)
 	}
 }
 
-// fetchFullPoolFromPeer retrieves the complete trust pool from a peer.
+// fetchFullPoolFromPeer retrieves the complete trust pool from a peer,
+// trying all available addresses until one succeeds.
 func (g *GossipManager) fetchFullPoolFromPeer(peer NodeInfo) {
-	url := fmt.Sprintf("%s/federation/pool", peer.Endpoint)
-
 	client := GetSharedHTTPClient()
-	resp, err := client.Get(url)
-	if err != nil {
-		slog.Debug("failed to fetch full pool from peer",
-			"peer_id", peer.NodeID, "error", err)
+	endpoints := peerEndpoints(peer)
+
+	for _, addr := range endpoints {
+		poolURL := fmt.Sprintf("%s/federation/pool", addr)
+		resp, err := client.Get(poolURL)
+		if err != nil {
+			slog.Debug("failed to fetch pool from peer address",
+				"peer_id", peer.NodeID, "addr", addr, "error", err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		var pool TrustPool
+		if err := json.Unmarshal(body, &pool); err != nil {
+			slog.Debug("failed to parse pool from peer",
+				"peer_id", peer.NodeID, "addr", addr, "error", err)
+			continue
+		}
+
+		fed.UpdateTrustPool(pool)
+		slog.Info("fetched full trust pool from peer",
+			"peer_id", peer.NodeID, "version", pool.Version, "addr", addr)
 		return
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		slog.Debug("peer returned non-200 for pool fetch",
-			"peer_id", peer.NodeID, "status", resp.StatusCode)
-		return
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-
-	var pool TrustPool
-	if err := json.Unmarshal(body, &pool); err != nil {
-		slog.Debug("failed to parse pool from peer",
-			"peer_id", peer.NodeID, "error", err)
-		return
-	}
-
-	fed.UpdateTrustPool(pool)
-	slog.Info("fetched full trust pool from peer",
-		"peer_id", peer.NodeID, "version", pool.Version)
+	slog.Debug("failed to fetch pool from all peer addresses",
+		"peer_id", peer.NodeID)
 }
 
 // messageHash computes a SHA-256 hash of a GossipMessage for dedup purposes.
@@ -493,7 +523,7 @@ func handleFederationAnnounce(w http.ResponseWriter, r *http.Request) {
 }
 
 // broadcastAnnouncement sends a ProviderAnnouncement to all known active peers
-// asynchronously. The announcement is signed before broadcasting.
+// asynchronously. Tries all available addresses per peer. The announcement is signed before broadcasting.
 func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 	peers := fed.GetActiveNodes()
 	if len(peers) == 0 {
@@ -516,7 +546,7 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 	client := GetSharedHTTPClient()
 
 	for _, peer := range peers {
-		if peer.NodeID == node.NodeID() || peer.Endpoint == "" {
+		if peer.NodeID == node.NodeID() || len(peerEndpoints(peer)) == 0 {
 			continue
 		}
 
@@ -524,22 +554,24 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 		go func(p NodeInfo) {
 			defer wg.Done()
 
-			url := fmt.Sprintf("%s/federation/announce", p.Endpoint)
-			resp, err := client.Post(url, "application/json", bytes.NewReader(body))
-			if err != nil {
-				slog.Debug("failed to broadcast announcement to peer",
-					"peer_id", p.NodeID, "error", err)
+			endpoints := peerEndpoints(p)
+			for _, addr := range endpoints {
+				announceURL := fmt.Sprintf("%s/federation/announce", addr)
+				resp, err := client.Post(announceURL, "application/json", bytes.NewReader(body))
+				if err != nil {
+					continue // try next address
+				}
+				resp.Body.Close()
+
+				if resp.StatusCode != http.StatusOK {
+					continue // try next address
+				}
+
+				slog.Debug("announcement delivered to peer", "peer_id", p.NodeID, "addr", addr)
 				return
 			}
-			resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				slog.Debug("peer rejected announcement",
-					"peer_id", p.NodeID, "status", resp.StatusCode)
-				return
-			}
-
-			slog.Debug("announcement delivered to peer", "peer_id", p.NodeID)
+			slog.Debug("failed to deliver announcement to peer on all addresses",
+				"peer_id", p.NodeID)
 		}(peer)
 	}
 
