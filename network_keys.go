@@ -72,6 +72,7 @@ type GuestKeyRecord struct {
 	ExpDays    int    `json:"exp_days,omitempty"`    // validity in days (0=never expires)
 	ExpiresAt  string `json:"expires_at,omitempty"`  // expiry timestamp
 	Note       string `json:"note,omitempty"`        // optional note/label
+	ShareType  string `json:"share_type,omitempty"`  // consumer, collaborator, or empty (unlocked)
 	AccessPublicPool bool `json:"access_public_pool,omitempty"` // 是否授予公共池访问权
 }
 
@@ -324,6 +325,36 @@ func (gks *GuestKeyStore) MarkAsCollaborator(key string) error {
 	return fmt.Errorf("guest key not found")
 }
 
+// SetShareType sets the share type for a guest key (consumer/collaborator). Once set, it cannot be changed.
+func (gks *GuestKeyStore) SetShareType(key, shareType string) error {
+	gks.mu.Lock()
+	defer gks.mu.Unlock()
+
+	for _, rec := range gks.keys {
+		if rec.Key == key {
+			if rec.ShareType != "" {
+				return fmt.Errorf("share type already locked as: %s", rec.ShareType)
+			}
+			rec.ShareType = shareType
+			gks.doSaveLocked()
+			return nil
+		}
+	}
+	return fmt.Errorf("guest key not found")
+}
+
+// GetShareType returns the share type for a guest key.
+func (gks *GuestKeyStore) GetShareType(key string) string {
+	gks.mu.RLock()
+	defer gks.mu.RUnlock()
+	for _, rec := range gks.keys {
+		if rec.Key == key {
+			return rec.ShareType
+		}
+	}
+	return ""
+}
+
 // GetAllGuestKeys returns all guest keys.
 func (gks *GuestKeyStore) GetAllGuestKeys() []*GuestKeyRecord {
 	gks.mu.RLock()
@@ -568,6 +599,39 @@ func handleGuestKeyMarkCollaborator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, 200, map[string]any{"status": "ok"})
+}
+
+// POST /api/network/guest-keys/{key}/share-type (JWT) — set share type (consumer/collaborator). Locks once set.
+func handleGuestKeyShareType(w http.ResponseWriter, r *http.Request) {
+	if guestKeyStore == nil {
+		writeError(w, 500, "guest key store not initialized")
+		return
+	}
+
+	keyParam := r.PathValue("key")
+	if keyParam == "" {
+		writeError(w, 400, "key parameter is required")
+		return
+	}
+
+	var body struct {
+		ShareType string `json:"share_type"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if body.ShareType != "consumer" && body.ShareType != "collaborator" {
+		writeError(w, 400, "share_type must be consumer or collaborator")
+		return
+	}
+
+	if err := guestKeyStore.SetShareType(keyParam, body.ShareType); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+
+	writeJSON(w, 200, map[string]any{"status": "ok", "share_type": body.ShareType})
 }
 
 // PUT /api/network/guest-keys/{key}/quota (JWT) — update guest key local quota

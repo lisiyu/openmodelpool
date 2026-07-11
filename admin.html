@@ -49,7 +49,7 @@ select.form-input{appearance:none;cursor:pointer}
 .toast.error{background:rgba(239,68,68,.9);color:#fff}
 .toast.info{background:rgba(59,130,246,.9);color:#fff}
 @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
-.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap;flex-shrink:0}
 .badge-green{background:rgba(34,197,94,.15);color:var(--success);border:1px solid rgba(34,197,94,.3)}
 .badge-red{background:rgba(239,68,68,.15);color:var(--error);border:1px solid rgba(239,68,68,.3)}
 .badge-blue{background:rgba(59,130,246,.15);color:var(--info);border:1px solid rgba(59,130,246,.3)}
@@ -60,7 +60,7 @@ select.form-input{appearance:none;cursor:pointer}
 .provider-item:hover{border-color:rgba(108,99,255,.3)}
 .provider-header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:12px}
 .provider-info{flex:1;min-width:0}
-.provider-name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px}
+.provider-name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .provider-url{font-size:12px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .provider-meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:12px;color:var(--text-secondary)}
 .provider-actions{display:flex;gap:6px;flex-shrink:0}
@@ -111,7 +111,7 @@ select.form-input{appearance:none;cursor:pointer}
 <div class="container">
   <div class="header">
     <div class="logo">OpenModelPool</div>
-    <div class="logo-sub">v4.0.1 · 去中心化 AI 模型联邦管理</div>
+    <div class="logo-sub">v4.1 · AI 聚合网关 · 共享模型网络</div>
     <div class="header-actions">
       <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
@@ -165,7 +165,7 @@ select.form-input{appearance:none;cursor:pointer}
     <div id="domainBindingQuickCard" style="display:none;margin-bottom:16px;padding:16px;background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(178,75,243,.06));border:1px solid rgba(108,99,255,.2);border-radius:10px">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">🔗 获得固定公网地址</div>
       <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;line-height:1.7">
-        您的公网地址目前会随服务器重启变化。绑定域名或 IP 后可获得固定地址，方便分享给他人使用。<br>
+        绑定域名或 IP 后可获得固定地址，方便分享给他人使用。<br>
         <span style="color:var(--text-muted)">💡 <b>绑定域名</b>：适合有自己域名的用户，通过 CNAME 解析获得固定 HTTPS 地址<br>
         💡 <b>绑定 IP</b>：适合有固定公网 IP 的用户，直接绑定无需域名。如果服务器没有固定 IP，推荐用绑定域名更简单</span>
       </div>
@@ -182,9 +182,10 @@ select.form-input{appearance:none;cursor:pointer}
           <div style="font-size:12px;font-weight:500;margin-bottom:6px">📋 域名绑定分步指引：</div>
           <div style="font-size:11px;color:var(--text-secondary);line-height:1.8">
             <div>1️⃣ 准备一个域名（推荐在 Cloudflare / 阿里云 / 腾讯云购买）</div>
-            <div>2️⃣ 添加 DNS 记录：类型 <b>CNAME</b>，名称如 <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px">api</code>，值填服务器地址</div>
-            <div>3️⃣ 在下方输入完整域名（如 api.yourdomain.com）</div>
-            <div>4️⃣ 点击绑定，等待 DNS 生效（通常 1-5 分钟）</div>
+            <div>2️⃣ <b>先在域名 DNS 管理后台</b>，添加 A 记录，将域名解析指向您服务器的公网 IP</div>
+            <div>3️⃣ <b>等待 DNS 生效</b>（通常几分钟，最长可能 24 小时）</div>
+            <div>4️⃣ DNS 生效后，在下方输入完整域名并点击绑定</div>
+            <div style="color:var(--accent-orange);margin-top:4px">⚠️ 注意：必须先完成 DNS 解析配置，再在此处绑定域名，否则绑定后无法访问</div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -251,7 +252,7 @@ select.form-input{appearance:none;cursor:pointer}
   <div class="card" id="usageCard">
     <div class="card-title" style="justify-content:space-between">
       <span><span class="icon">📈</span> 使用量 & 动态路由</span>
-      <button class="btn btn-secondary btn-sm" onclick="refreshUsage()">🔄 刷新</button>
+      <button class="btn btn-secondary btn-sm" id="btnRefreshUsage" onclick="var b=this;b.disabled=true;b.textContent='加载中...';refreshUsage().finally(function(){b.disabled=false;b.textContent='🔄 刷新';toast('✅ 使用量已更新','success')})">🔄 刷新</button>
     </div>
     <!-- 路由模式 -->
     <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
@@ -282,12 +283,7 @@ select.form-input{appearance:none;cursor:pointer}
         <button class="btn btn-sm btn-primary" onclick="saveWeights()" style="font-size:11px;padding:4px 12px">保存权重</button>
       </div>
     </div>
-    <!-- Sider Token 状态 -->
-    <div id="siderStatusBox" style="margin-bottom:16px;padding:10px 14px;border-radius:8px;display:flex;align-items:center;gap:10px;font-size:13px;background:rgba(108,99,255,.04);border:1px solid var(--border-color)">
-      <span id="siderStatusIcon" style="font-size:18px">🔄</span>
-      <span id="siderStatusText" style="flex:1">Sider Token 状态：检测中...</span>
-      <button class="btn btn-sm btn-secondary" onclick="testSiderToken()" id="siderTestBtn" style="font-size:11px;padding:4px 10px">测试连接</button>
-    </div>
+
     <!-- 概览统计 -->
     <div class="status-grid" id="usageGrid" style="margin-bottom:16px">
       <div class="status-item"><div><div class="status-label">今日请求</div><div class="status-value" id="todayRequests">-</div></div></div>
@@ -308,7 +304,7 @@ select.form-input{appearance:none;cursor:pointer}
   <div class="card">
     <div class="card-title" style="justify-content:space-between">
       <span><span class="icon">📋</span> 请求日志</span>
-      <button class="btn btn-secondary btn-sm" onclick="refreshLogs()">🔄 刷新</button>
+      <button class="btn btn-secondary btn-sm" id="btnRefreshLogs" onclick="var b=this;b.disabled=true;b.textContent='加载中...';refreshLogs().finally(function(){b.disabled=false;b.textContent='🔄 刷新';toast('✅ 日志已更新','success')})">🔄 刷新</button>
     </div>
     <div id="logList" style="font-size:12px;max-height:400px;overflow-y:auto">
       <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
@@ -319,7 +315,7 @@ select.form-input{appearance:none;cursor:pointer}
   <div class="card">
     <div class="card-title" style="justify-content:space-between">
       <span><span class="icon">🏥</span> Provider 健康状态</span>
-      <button class="btn btn-secondary btn-sm" onclick="refreshHealth()">🔄 刷新</button>
+      <button class="btn btn-secondary btn-sm" id="btnRefreshHealth" onclick="var b=this;b.disabled=true;b.textContent='加载中...';refreshHealth().finally(function(){b.disabled=false;b.textContent='🔄 刷新';toast('✅ 健康状态已更新','success')})">🔄 刷新</button>
     </div>
     <div id="healthList" style="font-size:12px">
       <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
@@ -331,6 +327,7 @@ select.form-input{appearance:none;cursor:pointer}
     <div class="card-title" style="justify-content:space-between">
       <span><span class="icon">🔌</span> 平台管理</span>
       <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="addAllDiscoveredAsPreset()" style="border-color:rgba(52,211,153,.4);color:#34d399" id="batchAddDiscoveredBtn">📥 一键添加全部发现</button>
         <button class="btn btn-secondary btn-sm" onclick="syncAllUrls()">🔄 一键同步全部地址</button>
         <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()" style="border-color:rgba(52,211,153,.4);color:#34d399" id="discoveryToggleBtn">🔍 新发现</button>
         <button class="btn btn-primary btn-sm" onclick="showAddProvider()">+ 添加平台</button>
@@ -341,9 +338,15 @@ select.form-input{appearance:none;cursor:pointer}
       <div style="text-align:center;color:var(--text-muted);padding:30px"><div class="loading"></div><br>加载中...</div>
     </div>
     <!-- Discovery Panel -->
-    <div id="discoveryPanel" style="display:none;margin-top:16px;padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div style="font-size:15px;font-weight:600;color:var(--text-primary)">🔍 新发现的 AI 平台</div>
+    
+  </div>
+
+
+
+  <!-- 新发现的 AI 平台 -->
+    <div id="discoveryPanel" class="card" style="display:none">
+      <div class="card-title" style="justify-content:space-between">
+        <span><span class="icon">🔍</span> 新发现的 AI 平台</span>
         <div style="display:flex;gap:8px">
           <button class="btn btn-secondary btn-sm" onclick="triggerDiscovery()" id="triggerScanBtn">🔄 扫描新平台</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()">✕ 关闭</button>
@@ -354,11 +357,8 @@ select.form-input{appearance:none;cursor:pointer}
         <div style="text-align:center;color:var(--text-muted);padding:20px">点击「🔄 扫描新平台」开始发现</div>
       </div>
     </div>
-  </div>
 
-
-
-  <!-- 邮件服务 -->
+    <!-- 邮件服务 -->
   <div class="card">
     <div class="card-title"><span class="icon">📧</span> 邮件服务配置</div>
     <div class="form-group"><label class="form-label">SMTP 服务器</label><input class="form-input" id="smtpHost" placeholder="smtp.gmail.com"></div>
@@ -505,6 +505,36 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
       </div>
 
+      <!-- 💰 公共池额度 -->
+      <div style="background:linear-gradient(135deg,rgba(108,99,255,.06),rgba(178,75,243,.03));border:1px solid rgba(108,99,255,.2);border-radius:12px;padding:20px;margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700;color:var(--accent-start)">💰 公共池额度</div>
+          <div style="font-size:11px;color:var(--text-muted)">我的节点向公共池贡献的额度</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--success);line-height:1" id="poolDailyContrib">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">每日贡献额度</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">节点总配额</div>
+          </div>
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--accent-end);line-height:1" id="poolPublicShare">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">公共池分配比例</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px" id="poolPublicDaily">-</div>
+          </div>
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--accent-start);line-height:1" id="poolGlobalQuota">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">公共池总额度</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">全网汇总</div>
+          </div>
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--warning);line-height:1" id="poolMyQuota">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">我的可用额度</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">占池 <span id="poolSharePercent">-</span>%</div>
+          </div>
+        </div>
+      </div>
+
       <!-- 📊 网络概览 -->
       <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px">📊 网络概览</div>
@@ -581,6 +611,30 @@ select.form-input{appearance:none;cursor:pointer}
       <div style="border-top:1px solid var(--border-color);padding-top:16px;text-align:center">
         <button class="btn btn-danger" onclick="disableNetwork()" style="padding:10px 24px">🚪 退出共享网络</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 项目介绍 & GitHub -->
+  <div style="margin-top:32px;padding:24px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius);text-align:center">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">🚀 OpenModelPool — 开源 AI 聚合网关</div>
+    <div style="font-size:12px;color:var(--text-muted);line-height:1.8;max-width:600px;margin:0 auto">
+      多模型聚合路由 · 共享密钥网络 · 一键接入全球 AI 平台<br>
+      支持 OpenAI 兼容 API，多 Key 轮询，故障转移，公共池共享
+    </div>
+    <div style="margin-top:14px;display:flex;justify-content:center;gap:16px;flex-wrap:wrap">
+      <a href="https://github.com/lisiyu/openmodelpool" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(255,255,255,.06);border:1px solid var(--border-color);border-radius:20px;color:var(--text-secondary);text-decoration:none;font-size:12px;transition:all .2s" onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'" onmouseout="this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub 仓库
+      </a>
+      <a href="https://github.com/lisiyu/openmodelpool/issues" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(255,255,255,.06);border:1px solid var(--border-color);border-radius:20px;color:var(--text-secondary);text-decoration:none;font-size:12px;transition:all .2s" onmouseover="this.style.borderColor='var(--warning)';this.style.color='var(--warning)'" onmouseout="this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+        💡 问题反馈
+      </a>
+      <a href="https://github.com/lisiyu/openmodelpool/pulls" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(255,255,255,.06);border:1px solid var(--border-color);border-radius:20px;color:var(--text-secondary);text-decoration:none;font-size:12px;transition:all .2s" onmouseover="this.style.borderColor='var(--success)';this.style.color='var(--success)'" onmouseout="this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+        🔀 提交 PR
+      </a>
+    </div>
+    <div style="margin-top:16px;font-size:11px;color:var(--text-muted);opacity:.6">
+      OpenModelPool v4.1 · Made with ❤️ · 开源协议 MIT
     </div>
   </div>
 
@@ -673,15 +727,9 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
       <div class="form-group">
         <label class="form-label">🔐 访问权限控制</label>
-        <div style="display:flex;gap:16px;margin-top:6px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
-            <input type="radio" name="pAccessControl" value="private" id="pAccessPrivate" checked>
-            🔒 仅私有 Key
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
-            <input type="radio" name="pAccessControl" value="shared" id="pAccessShared">
-            🌐 允许共享/公共 Key
-          </label>
+        <div class="btn-group" style="display:flex;gap:0;margin-top:6px;border-radius:8px;overflow:hidden;border:1px solid var(--border-color)">
+          <button type="button" id="btnAccessPrivate" class="routing-btn" onclick="setAccessControl('private')" style="flex:1;padding:8px 16px;font-size:13px;border-radius:0;border-right:1px solid var(--border-color)">🔒 仅私有 Key</button>
+          <button type="button" id="btnAccessShared" class="routing-btn" onclick="setAccessControl('shared')" style="flex:1;padding:8px 16px;font-size:13px;border-radius:0">🌐 允许共享/公共 Key</button>
         </div>
         <div class="section-note" style="margin-top:4px;font-size:11px">⚠️ 每个平台的 Key 只能选择一种模式（私有或共享）。如需同时共享和私有使用，请添加两个相同的平台分别配置。<br>Guest Key（sk-guest-{node_id}-{random}）由节点管理员签发；Proxy Key（sk-{48位随机字符}）为节点主密钥。</div>
       </div>
@@ -713,6 +761,7 @@ async function authFetch(url, opts = {}) {
 }
 function logout() { localStorage.removeItem('admin_token'); location.href = '/login'; }
 function toast(msg, type = 'success') { const t = document.createElement('div'); t.className = `toast ${type}`; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
+function extractError(d) { if (!d) return '未知错误'; if (typeof d.error === 'string') return d.error; if (d.error && typeof d.error === 'object') return d.error.message || d.error.type || JSON.stringify(d.error); if (d.detail) return typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail); return '未知错误'; }
 
 // ===== Init =====
 // Auth guard — show message instead of immediate redirect to prevent loops
@@ -828,10 +877,20 @@ async function setRoutingMode(mode) {
       document.querySelectorAll('.routing-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.mode === mode);
       });
-      alert(`路由模式已切换为: ${mode === 'priority' ? '优先级优先' : mode === 'cheapest' ? '成本最低' : '速度最快'}`);
+      // 立即显示/隐藏权重滑块
+      const weightBox = document.getElementById('weightSliders');
+      if (weightBox) {
+        if (mode === 'auto') {
+          weightBox.style.display = 'block';
+          loadWeights();
+        } else {
+          weightBox.style.display = 'none';
+        }
+      }
+      toast(`✅ 路由模式已切换为: ${mode === 'priority' ? '优先级优先' : mode === 'cheapest' ? '成本最低' : mode === 'fastest' ? '速度最快' : '综合权重'}`, 'success');
     }
   } catch (e) {
-    alert('切换失败: ' + e.message);
+    toast('切换失败: ' + e.message, 'error');
   }
 }
 
@@ -841,11 +900,11 @@ async function resetUsage() {
     const r = await authFetch('/api/usage/reset', { method: 'DELETE' });
     const d = await r.json();
     if (d.success) {
-      alert('使用记录已清空');
+      toast('✅ 使用记录已清空', 'success');
       refreshUsage();
     }
   } catch (e) {
-    alert('清空失败: ' + e.message);
+    toast('清空失败: ' + e.message, 'error');
   }
 }
 
@@ -912,30 +971,28 @@ async function refreshSiderStatus() {
 }
 
 function updateSiderStatusUI(status) {
-  const icon = document.getElementById('siderStatusIcon');
-  const text = document.getElementById('siderStatusText');
-  const box = document.getElementById('siderStatusBox');
-  if (!icon || !text) return;
+  const badge = document.getElementById('siderStatusBadge');
+  if (!badge) return;
 
   const st = status.token_status || 'unknown';
   if (st === 'ok') {
-    icon.textContent = '✅';
-    text.innerHTML = '<b>Sider Token 正常</b>' + (status.last_success_at ? ' · 上次成功: ' + formatTime(status.last_success_at) : '');
-    box.style.background = 'rgba(34,197,94,.06)';
-    box.style.borderColor = 'rgba(34,197,94,.3)';
+    badge.innerHTML = '✅ Token 正常';
+    badge.style.background = 'rgba(34,197,94,.12)';
+    badge.style.color = '#22c55e';
+    badge.title = 'Sider Token 正常' + (status.last_success_at ? ' · 上次成功: ' + formatTime(status.last_success_at) : '');
   } else if (st === 'expired') {
-    icon.textContent = '🔴';
     const failCount = status.consecutive_failures || 0;
-    text.innerHTML = '<b>Sider Token 已过期！</b> 连续失败 ' + failCount + ' 次'
+    badge.innerHTML = '🔴 Token 过期';
+    badge.style.background = 'rgba(239,68,68,.12)';
+    badge.style.color = '#ef4444';
+    badge.title = 'Sider Token 已过期！连续失败 ' + failCount + ' 次'
       + (status.last_failure_at ? ' · 最近: ' + formatTime(status.last_failure_at) : '')
-      + '<br><span style="font-size:11px;color:var(--text-muted)">请打开浏览器登录 sider.ai，然后重新获取 Cookie 中的 Token</span>';
-    box.style.background = 'rgba(239,68,68,.06)';
-    box.style.borderColor = 'rgba(239,68,68,.3)';
+      + '。请打开浏览器登录 sider.ai，重新获取 Cookie 中的 Token';
   } else {
-    icon.textContent = '⚪';
-    text.textContent = 'Sider Token 状态：未检测';
-    box.style.background = 'rgba(108,99,255,.04)';
-    box.style.borderColor = 'var(--border-color)';
+    badge.innerHTML = '⚪ 未检测';
+    badge.style.background = 'rgba(108,99,255,.1)';
+    badge.style.color = 'var(--text-muted)';
+    badge.title = 'Sider Token 状态：未检测（点击刷新）';
   }
 }
 
@@ -956,13 +1013,13 @@ async function testSiderToken() {
     const r = await authFetch('/api/providers/sider/test', { method: 'POST' });
     const d = await r.json();
     if (d.valid) {
-      alert('✅ ' + d.message);
+      toast('✅ ' + d.message, 'success');
     } else {
-      alert('❌ ' + d.message);
+      toast('❌ ' + d.message, 'error');
     }
     refreshSiderStatus();
   } catch (e) {
-    alert('测试失败: ' + e.message);
+    toast('测试失败: ' + e.message, 'error');
   } finally {
     btn.textContent = oldText;
     btn.disabled = false;
@@ -1017,7 +1074,7 @@ function renderProviders() {
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncProviderUrl('${p.id}')">同步地址</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncModels('${p.id}')">同步模型</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();editProvider('${p.id}')">编辑</button>
-          <button class="btn btn-success btn-sm" onclick="event.stopPropagation();testProvider('${p.id}')">测试</button>
+          ${p.id === 'sider' ? '<span id="siderStatusBadge" style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(108,99,255,.1);color:var(--text-muted);cursor:help" title="Sider Token 状态加载中..." onclick="event.stopPropagation();refreshSiderStatus()">🔄 检测中</span>' : ''}<button class="btn btn-success btn-sm" onclick="event.stopPropagation();testProvider('${p.id}')">测试</button>
           <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();toggleProvider('${p.id}',${!enabled})">${enabled?'禁用':'启用'}</button>
           <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteProvider('${p.id}')">删除</button>
         </div>
@@ -1035,6 +1092,16 @@ function renderProviders() {
 }
 
 function toggleModels(pid) { const el = document.getElementById('models-' + pid); el.classList.toggle('open'); }
+function setAccessControl(mode) {
+  const priv = document.getElementById('btnAccessPrivate');
+  const shared = document.getElementById('btnAccessShared');
+  if (priv) priv.classList.toggle('active', mode === 'private');
+  if (shared) shared.classList.toggle('active', mode === 'shared');
+  // Store in hidden input for form submission
+  let hidden = document.getElementById('pAccessControlValue');
+  if (!hidden) { hidden = document.createElement('input'); hidden.type='hidden'; hidden.id='pAccessControlValue'; hidden.name='pAccessControl'; const modal = document.getElementById('editModal'); if (modal) modal.appendChild(hidden); else document.body.appendChild(hidden); }
+  hidden.value = mode;
+}
 
 async function updatePriority(pid, value) {
   const priority = parseInt(value, 10);
@@ -1122,7 +1189,7 @@ async function syncModels(pid) {
   try {
     const r = await authFetch(`/api/providers/${pid}/sync-models`, { method: 'POST' });
     const d = await r.json();
-    if (d.success) { toast(`✅ 已同步 ${d.models_synced} 个模型`, 'success'); } else { toast(d.error || '同步失败', 'error'); }
+    if (d.success) { toast(`✅ 已同步 ${d.models_synced} 个模型`, 'success'); } else { toast(extractError(d) || '同步失败', 'error'); }
     await loadProviders();
   } catch(e) { toast('同步失败: ' + e.message, 'error'); }
 }
@@ -1139,13 +1206,23 @@ async function syncAllUrls() {
 
 // ===== Add/Edit Provider Modal =====
 let editingId = null;
-function showAddProvider() {
+let selectedPresetKeyOptional = false; // true when selecting a discovered platform
+async function showAddProvider() {
   editingId = null;
+  selectedPresetKeyOptional = false;
   document.getElementById('editKeysSection').style.display = 'none';
   document.getElementById('modalTitle').textContent = '添加平台';
   document.getElementById('modalStep1').style.display = '';
   document.getElementById('modalStep2').style.display = 'none';
   document.getElementById('presetSearch').value = '';
+  // Load discovered platforms if not yet loaded (for 🆕 badges in preset grid)
+  if (discoveredPlatforms.length === 0) {
+    try {
+      const r = await authFetch('/api/discovered-platforms');
+      const d = await r.json();
+      discoveredPlatforms = d.platforms || [];
+    } catch(e) {}
+  }
   renderPresets();
   document.getElementById('providerModal').classList.add('open');
 }
@@ -1154,6 +1231,7 @@ function editProvider(pid) {
   const p = allProviders.find(x => x.id === pid);
   if (!p) return;
   editingId = pid;
+  selectedPresetKeyOptional = false;
   document.getElementById('modalTitle').textContent = '编辑平台';
   document.getElementById('modalStep1').style.display = 'none';
   document.getElementById('modalStep2').style.display = '';
@@ -1172,10 +1250,18 @@ function editProvider(pid) {
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = p.rate_limit_per_min || 0;
   // Load access control state
   const ac = p.access_control || {};
-  if (ac.allow_shared_key) {
-    document.getElementById('pAccessShared').checked = true;
-  } else {
-    document.getElementById('pAccessPrivate').checked = true;
+  setAccessControl(ac.allow_shared_key ? 'shared' : 'private');
+  // Show registration link if available (from presets)
+  const regLinkEl = document.getElementById('presetRegLink');
+  if (regLinkEl) {
+    const preset = presets.find(x => x.id === pid);
+    const apiKeyUrl = preset?.api_key_url || '';
+    if (apiKeyUrl) {
+      regLinkEl.innerHTML = `<a href="${apiKeyUrl}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+      regLinkEl.style.display = '';
+    } else {
+      regLinkEl.style.display = 'none';
+    }
   }
   document.getElementById('providerModal').classList.add('open');
   // Show multi-key management section when editing
@@ -1209,7 +1295,7 @@ function selectPreset(pid) {
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.id === 'openai' ? 10 : p.id === 'openrouter' ? 20 : p.id === 'ollama' ? 50 : 5;
   document.getElementById('pEnabled').checked = true;
-  document.getElementById('pAccessPrivate').checked = true; // default: private only
+  setAccessControl('private'); // default: private only
   if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
 }
@@ -1224,7 +1310,7 @@ function closeModal() { document.getElementById('providerModal').classList.remov
 async function saveProvider() {
   const id = document.getElementById('pId').value.trim();
   if (!id) { toast('请填写平台 ID', 'error'); return; }
-  const accessMode = document.querySelector('input[name="pAccessControl"]:checked').value;
+  const accessMode = document.getElementById('pAccessControlValue')?.value || 'private';
   const data = {
     id, name: document.getElementById('pName').value.trim() || id,
     type: 'openai_compatible', base_url: document.getElementById('pUrl').value.trim(),
@@ -1234,6 +1320,8 @@ async function saveProvider() {
     access_control: {
       allow_private_key: true,
       allow_shared_key: accessMode === 'shared',
+      allow_guest: editingId ? (allProviders.find(x=>x.id===editingId)?.access_control?.allow_guest ?? true) : true,
+      share_to_pool: editingId ? (allProviders.find(x=>x.id===editingId)?.access_control?.share_to_pool ?? true) : true,
     },
   };
   const dailyLimit = parseInt(document.getElementById('pDailyTokenLimit')?.value) || 0;
@@ -1242,7 +1330,7 @@ async function saveProvider() {
   if (rateLimit > 0) data.rate_limit_per_min = rateLimit;
   const key = document.getElementById('pKey').value.trim();
   if (key) data.api_key = key;
-  else if (!editingId) { toast('请填写 API Key', 'error'); return; }
+  else if (!editingId && !selectedPresetKeyOptional) { toast('请填写 API Key', 'error'); return; }
   const proxy = document.getElementById('pProxy').value.trim();
   if (proxy) data.proxy = proxy;
   // Carry over models from existing if editing
@@ -1253,9 +1341,21 @@ async function saveProvider() {
   if (!data.models) data.models = (presets.find(p=>p.id===id)||{}).default_models || [];
 
   try {
-    const r = await authFetch('/api/providers', { method: 'POST', body: JSON.stringify(data) });
-    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || '保存失败'); }
+    const url = editingId ? '/api/providers/' + editingId : '/api/providers';
+    const method = editingId ? 'PUT' : 'POST';
+    const r = await authFetch(url, { method, body: JSON.stringify(data) });
+    if (!r.ok) { const e = await r.json(); throw new Error(extractError(e) || '保存失败'); }
     toast(editingId ? '已更新' : '已添加');
+    // Mark as added in discovery if it was a discovered platform
+    if (!editingId) {
+      const disc = (discoveredPlatforms || []).find(x => x.id === id);
+      if (disc) {
+        try { await authFetch('/api/discovered-platforms/' + id, { method: 'POST', body: JSON.stringify({status: 'added'}) }); } catch(e) {}
+        discoveredPlatforms = discoveredPlatforms.filter(x => x.id !== id);
+        renderDiscoveredPlatforms();
+        renderPresets();
+      }
+    }
     closeModal();
     await loadProviders(); await loadStatus();
   } catch(e) { toast(e.message, 'error'); }
@@ -1265,7 +1365,23 @@ function renderPresets() {
   const grid = document.getElementById('presetGrid');
   const search = document.getElementById('presetSearch').value.toLowerCase();
   const filtered = presets.filter(p => !search || p.name.toLowerCase().includes(search) || p.id.includes(search) || (p.description||'').toLowerCase().includes(search));
-  grid.innerHTML = filtered.map(p => `<div class="preset-card" onclick="selectPreset('${p.id}')"><div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${p.description||''}</div></div>`).join('') + `<div class="preset-card" onclick="selectCustomPreset()" style="border-style:dashed"><div class="preset-icon">🔌</div><div class="preset-name">自定义平台</div><div class="preset-desc">手动填写地址</div></div>`;
+  // Merge discovered platforms (not dismissed/ignored/added) into preset grid
+  const addedProviderIds = new Set((allProviders||[]).map(p => p.id));
+  const discovered = (typeof discoveredPlatforms !== 'undefined' ? discoveredPlatforms : []).filter(p => {
+    if (p.status === 'dismissed' || p.status === 'ignored' || p.status === 'added') return false;
+    if (addedProviderIds.has(p.id)) return false;
+    // Also filter if base name matches an existing provider (e.g. openrouter-free vs openrouter)
+    const baseId = p.id.split('-').slice(0, -1).join('-') || p.id;
+    for (const eid of addedProviderIds) {
+      if (eid === baseId || baseId === eid || p.id.startsWith(eid + '-') || eid.startsWith(p.id.replace(/-.+$/, ''))) return false;
+    }
+    return true;
+  });
+  const discoveredHtml = discovered.map(p => {
+    const badge = '<span style="position:absolute;top:4px;right:6px;font-size:9px;background:var(--success);color:#fff;padding:1px 5px;border-radius:8px">🆕 新发现</span>';
+    return `<div class="preset-card" onclick="selectDiscoveredPreset('${p.id}')" style="position:relative;border-color:var(--success)">${badge}<div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${(p.description||'').substring(0,40)}</div></div>`;
+  }).join('');
+  grid.innerHTML = filtered.map(p => `<div class="preset-card" onclick="selectPreset('${p.id}')"><div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${p.description||''}</div></div>`).join('') + discoveredHtml + `<div class="preset-card" onclick="selectCustomPreset()" style="border-style:dashed"><div class="preset-icon">🔌</div><div class="preset-name">自定义平台</div><div class="preset-desc">手动填写地址</div></div>`;
 }
 function filterPresets() { renderPresets(); }
 
@@ -1280,11 +1396,40 @@ function selectCustomPreset() {
   document.getElementById('pDesc').value = '';
   document.getElementById('pPriority').value = '5';
   document.getElementById('pEnabled').checked = true;
-  document.getElementById('pAccessPrivate').checked = true; // default: private only
+  setAccessControl('private'); // default: private only
   document.getElementById('editKeysSection').style.display = 'none';
   if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
   editingId = '';
+  selectedPresetKeyOptional = false;
+}
+
+function selectDiscoveredPreset(id) {
+  const dp = (typeof discoveredPlatforms !== 'undefined' ? discoveredPlatforms : []).find(x => x.id === id);
+  if (!dp) return;
+  editingId = null;
+  selectedPresetKeyOptional = true;
+  document.getElementById('editKeysSection').style.display = 'none';
+  document.getElementById('modalTitle').textContent = '添加平台（来自发现）';
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  document.getElementById('pId').value = dp.id;
+  document.getElementById('pId').readOnly = false;
+  document.getElementById('pName').value = dp.name;
+  document.getElementById('pUrl').value = dp.base_url;
+  document.getElementById('pKey').value = '';
+  document.getElementById('pKey').placeholder = '可选：输入 API Key（也可稍后在编辑中添加）';
+  document.getElementById('pDesc').value = dp.description || '';
+  document.getElementById('pPriority').value = 5;
+  document.getElementById('pEnabled').checked = true;
+  setAccessControl('private');
+  const regLinkEl = document.getElementById('presetRegLink');
+  if (regLinkEl && dp.api_key_url) {
+    regLinkEl.innerHTML = `<a href="${dp.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 前往官网注册获取 API Key →</a>`;
+    regLinkEl.style.display = '';
+  } else if (regLinkEl) { regLinkEl.style.display = 'none'; }
+  if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
+  if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
 }
 
 function getIcon(id) {
@@ -1306,9 +1451,9 @@ function initApiUrls() {
   authFetch('/api/federation/config').then(r => r.json()).then(d => {
     const lanIP = d.lan_ip || '';
     const servicePort = d.service_port || '8000';
-    const tunnelUrl = d.tunnel_url || '';
     const tunnelDomain = d.tunnel_domain || '';
-    const tunnelEnabled = d.tunnel_enabled === 'true';
+    const boundIP = d.bound_ip || '';
+    const boundPort = d.bound_port || '8000';
 
     // 1. 局域网地址
     if (lanEl) {
@@ -1321,50 +1466,55 @@ function initApiUrls() {
       }
     }
 
-    // 2. 公网地址（Cloudflare 随机隧道）
-    if (tunnelUrl && tunnelEnabled) {
-      if (pubEl) pubEl.value = tunnelUrl + '/v1';
-      if (hintEl) {
-        if (tunnelDomain) {
-          hintEl.textContent = '✅ 服务运行期间一直可用，重启后会变化（已绑定固定域名，见下方）';
-          if (badgeEl) badgeEl.textContent = '(隧道)';
-          if (pubEl) pubEl.style.color = 'var(--text-muted)';
-        } else {
-          hintEl.textContent = '✅ 服务运行期间一直可用，重启后会变化。建议绑定自定义域名获得永久固定地址';
-          if (badgeEl) badgeEl.textContent = '(临时)';
-          if (pubEl) pubEl.style.color = 'var(--text-primary)';
-        }
+    // 2. 公网地址（固定IP）- 独立于域名
+    if (boundIP) {
+      if (pubEl) {
+        pubEl.value = 'http://' + boundIP + ':' + boundPort + '/v1';
+        pubEl.style.color = 'var(--text-primary)';
       }
+      if (hintEl) hintEl.innerHTML = '✅ 固定公网IP地址，可<a href="javascript:void(0)" onclick="showBindMode(\'ip\')" style="color:var(--accent);text-decoration:underline">修改</a>';
+      if (badgeEl) badgeEl.textContent = '(已绑定)';
     } else {
-      if (pubEl) { pubEl.value = ''; pubEl.placeholder = '未启用公网访问'; }
-      if (hintEl) hintEl.textContent = '未启用公网隧道';
-      if (pubEl) pubEl.style.color = 'var(--text-muted)';
+      if (pubEl) { pubEl.value = ''; pubEl.placeholder = '未绑定公网IP'; pubEl.style.color = 'var(--text-muted)'; }
+      if (hintEl) hintEl.textContent = '在下方绑定您的公网IP获得固定地址';
+      if (badgeEl) badgeEl.textContent = '';
     }
 
-    // 3. 固定域名地址
-    if (tunnelDomain && tunnelEnabled && tunnelUrl) {
+    // 3. 固定域名地址 - 独立于IP
+    if (tunnelDomain) {
       const domainUrl = 'https://' + tunnelDomain + '/v1';
       if (domainUrlEl) {
         domainUrlEl.value = domainUrl;
         domainUrlEl.style.color = 'var(--accent-green)';
       }
-      if (domainHintEl) domainHintEl.textContent = '✅ 已绑定自定义域名，地址固定不变';
-      if (domainBadgeEl) domainBadgeEl.textContent = '(固定)';
-      if (domainQuickCard) domainQuickCard.style.display = 'none';
-    } else if (tunnelUrl && tunnelEnabled) {
-      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '需先绑定自定义域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
-      if (domainHintEl) domainHintEl.textContent = '当前未绑定域名，点击下方引导进行绑定';
-      if (domainBadgeEl) domainBadgeEl.textContent = '';
-      if (domainQuickCard) domainQuickCard.style.display = 'block';
+      if (domainHintEl) domainHintEl.innerHTML = '✅ 已绑定域名，地址永久固定，可<a href="javascript:void(0)" onclick="showBindMode(\'domain\')" style="color:var(--accent);text-decoration:underline">修改</a>';
+      if (domainBadgeEl) domainBadgeEl.textContent = '(已绑定)';
     } else {
-      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '需先启用公网隧道并绑定域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
-      if (domainHintEl) domainHintEl.textContent = '需先启用公网隧道';
-      if (domainQuickCard) domainQuickCard.style.display = 'none';
+      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '未绑定域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
+      if (domainHintEl) domainHintEl.textContent = '在下方绑定域名获得固定地址';
+      if (domainBadgeEl) domainBadgeEl.textContent = '';
+    }
+
+    // 4. 绑定引导卡片 - 只要有一个未绑定就显示
+    if (domainQuickCard) {
+      if (!boundIP || !tunnelDomain) {
+        domainQuickCard.style.display = 'block';
+        if (boundIP && !tunnelDomain) switchBindMode('domain');
+        if (!boundIP && tunnelDomain) switchBindMode('ip');
+      } else {
+        domainQuickCard.style.display = 'none';
+      }
     }
   }).catch(() => {
     if (hintEl) hintEl.textContent = '获取地址信息失败';
     if (domainHintEl) domainHintEl.textContent = '获取地址信息失败';
   });
+}
+
+function showBindMode(mode) {
+  var card = document.getElementById('domainBindingQuickCard');
+  if (card) { card.style.display = 'block'; card.scrollIntoView({behavior:'smooth'}); }
+  switchBindMode(mode);
 }
 
     function switchBindMode(mode) {
@@ -1402,7 +1552,7 @@ function initApiUrls() {
           resultDiv.innerHTML = '<span style="color:var(--success)">✅ IP已绑定！Base URL：<code>http://' + ip + ':8000/v1</code></span>';
           setTimeout(() => { initApiUrls(); }, 2000);
         } else {
-          resultDiv.innerHTML = '<span style="color:var(--error)">❌ ' + (d.error || '绑定失败') + '</span>';
+          resultDiv.innerHTML = '<span style="color:var(--error)">❌ ' + extractError(d) || '绑定失败' + '</span>';
         }
       } catch(e) {
         resultDiv.innerHTML = '<span style="color:var(--error)">❌ 请求失败：' + e.message + '</span>';
@@ -1422,22 +1572,22 @@ function initApiUrls() {
     toast('域名格式不正确', 'error');
     return;
   }
-  resultEl.innerHTML = '<span style="color:var(--text-muted)">正在提交绑定请求...</span>';
+  resultEl.innerHTML = '<span style="color:var(--text-muted)">正在绑定域名...</span>';
   try {
-    const res = await authFetch('/api/federation/config', {
+    const res = await authFetch('/api/domain/manual-bind', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ tunnel_domain: domain, tunnel_enabled: true })
+      body: JSON.stringify({ domain: domain })
     });
     const d = await res.json();
-    if (res.ok) {
-      resultEl.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定请求已提交！请将 <strong>' + domain + '</strong> CNAME 解析到 <strong>' + (d.tunnel_url || '当前隧道地址') + ' 后等待生效</span>';
-      setTimeout(() => { initApiUrls(); }, 3000);
+    if (d.success) {
+      resultEl.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定成功！<br>如已配置 DNS 解析，可通过 <strong>https://' + domain + '</strong> 访问。<br><span style=\"font-size:10px;color:var(--text-muted)\">如无法访问，请检查 DNS 是否已正确解析到服务器 IP</span></span>';
+      setTimeout(() => { loadStatus(); initApiUrls(); }, 1500);
     } else {
-      resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定失败: ' + (d.error || '未知错误') + '</span>';
+      resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定失败: ' + extractError(d) + '</span>';
     }
   } catch(e) {
-    resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定请求失败</span>';
+    resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定请求失败: ' + e.message + '</span>';
   }
 }
 
@@ -1556,7 +1706,7 @@ async function refreshLogs() {
     for (const l of logs) {
       const statusBadge = l.success ? '<span class="badge badge-green">成功</span>' : '<span class="badge badge-red">失败</span>';
       const time = l.timestamp ? new Date(l.timestamp).toLocaleString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
-      html += `<tr><td>${time}</td><td>${l.model||'-'}</td><td>${l.provider||'-'}</td><td>${l.tokens||0}</td><td>${l.latency_ms||0}ms</td><td>${statusBadge}</td></tr>`;
+      html += `<tr><td>${time}</td><td>${l.model||'-'}</td><td>${l.provider_name||'-'}</td><td>${l.tokens||0}</td><td>${l.latency_ms||0}ms</td><td>${statusBadge}</td></tr>`;
     }
     html += '</tbody></table>';
     container.innerHTML = html;
@@ -1568,22 +1718,77 @@ async function refreshHealth() {
   try {
     const r = await authFetch('/api/health');
     const d = await r.json();
-    const health = d.health || {};
+    const providers = d.providers || [];
     const container = document.getElementById('healthList');
-    const keys = Object.keys(health);
-    if (!keys.length) {
-      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无健康检测数据</div>';
+    if (!providers.length) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无已配置 API Key 的平台</div>';
       return;
     }
-    let html = '<table class="usage-table"><thead><tr><th>平台</th><th>状态</th><th>延迟</th><th>上次检查</th><th>连续失败</th></tr></thead><tbody>';
-    for (const [k, v] of Object.entries(health)) {
-      const dot = v.healthy ? '<span class="status-dot green" style="width:8px;height:8px;display:inline-block"></span>' : '<span class="status-dot red" style="width:8px;height:8px;display:inline-block"></span>';
-      const checkTime = v.last_check ? new Date(v.last_check).toLocaleString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
-      html += `<tr><td>${dot} ${k}</td><td>${v.healthy?'正常':'异常'}</td><td>${v.latency_ms||0}ms</td><td>${checkTime}</td><td>${v.consecutive_failures||0}</td></tr>`;
+    
+    let html = '<div style="display:grid;gap:12px">';
+    for (const p of providers) {
+      const isHealthy = p.status === 'healthy';
+      const statusColor = isHealthy ? '#22c55e' : (p.status === 'degraded' ? '#f59e0b' : '#ef4444');
+      const statusText = isHealthy ? '✅ 正常' : (p.status === 'degraded' ? '⚠️ 异常' : '❌ 离线');
+      const statusBg = isHealthy ? 'rgba(34,197,94,.1)' : (p.status === 'degraded' ? 'rgba(245,158,11,.1)' : 'rgba(239,68,68,.1)');
+      
+      // Calculate quota usage percentage
+      const quotaPercent = p.token_limit > 0 ? Math.min((p.token_used / p.token_limit) * 100, 100) : 0;
+      const quotaColor = quotaPercent > 80 ? '#ef4444' : (quotaPercent > 50 ? '#f59e0b' : '#22c55e');
+      const quotaText = p.token_limit > 0 
+        ? `${(p.token_used/1000).toFixed(1)}K / ${(p.token_limit/1000).toFixed(0)}K`
+        : '无限';
+      
+      const enabledBadge = p.enabled 
+        ? '<span class="badge badge-green">启用</span>'
+        : '<span class="badge badge-red">禁用</span>';
+      
+      html += `
+        <div style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:11px;padding:3px 10px;border-radius:20px;background:${statusBg};color:${statusColor};font-weight:600">${statusText}</span>
+              <span style="font-size:15px;font-weight:600">${p.provider_name || p.provider_id}</span>
+              ${enabledBadge}
+            </div>
+            <div style="display:flex;gap:12px;font-size:12px;color:var(--text-muted)">
+              <span>🔑 ${p.key_count} 个 Key</span>
+              <span>📦 ${p.model_count} 个模型</span>
+              <span>⚡ ${p.latency_ms ? p.latency_ms.toFixed(0) + 'ms' : '-'}</span>
+            </div>
+          </div>
+          
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;font-size:12px">
+            <div style="padding:10px;background:var(--bg-primary);border-radius:8px">
+              <div style="color:var(--text-muted);margin-bottom:4px">今日请求</div>
+              <div style="font-size:18px;font-weight:600;color:var(--text-primary)">${p.today_requests || 0}</div>
+            </div>
+            <div style="padding:10px;background:var(--bg-primary);border-radius:8px">
+              <div style="color:var(--text-muted);margin-bottom:4px">今日 Token</div>
+              <div style="font-size:18px;font-weight:600;color:var(--text-primary)">${p.today_tokens ? (p.today_tokens/1000).toFixed(1) + 'K' : '0'}</div>
+            </div>
+            <div style="padding:10px;background:var(--bg-primary);border-radius:8px">
+              <div style="color:var(--text-muted);margin-bottom:4px">总 Token</div>
+              <div style="font-size:18px;font-weight:600;color:var(--text-primary)">${p.token_used ? (p.token_used/1000).toFixed(1) + 'K' : '0'}</div>
+            </div>
+            <div style="padding:10px;background:var(--bg-primary);border-radius:8px">
+              <div style="color:var(--text-muted);margin-bottom:4px">额度使用</div>
+              <div style="font-size:14px;font-weight:600;color:${quotaColor}">${quotaText}</div>
+              ${p.token_limit > 0 ? `<div style="margin-top:6px;height:4px;background:rgba(0,0,0,.05);border-radius:2px;overflow:hidden"><div style="height:100%;width:${quotaPercent}%;background:${quotaColor};transition:width .3s"></div></div>` : '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">无限制</div>'}
+            </div>
+          </div>
+          
+          ${p.failure_reason ? `<div style="margin-top:10px;padding:8px 12px;background:rgba(239,68,68,.05);border-left:3px solid #ef4444;border-radius:4px;font-size:11px;color:#ef4444">❌ ${p.failure_reason}</div>` : ''}
+          ${p.consecutive_fails > 0 ? `<div style="margin-top:8px;font-size:11px;color:var(--text-muted)">连续失败: ${p.consecutive_fails} 次</div>` : ''}
+        </div>
+      `;
     }
-    html += '</tbody></table>';
+    html += '</div>';
     container.innerHTML = html;
-  } catch(e) { console.error(e); }
+  } catch(e) { 
+    console.error(e); 
+    document.getElementById('healthList').innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + e.message + '</div>';
+  }
 }
 
 // ============================================================
@@ -1659,7 +1864,7 @@ async function showAddApiKey(pid) {
       await loadApiKeys(pid);
       await loadProviders();
     } else {
-      toast('添加失败: ' + (d.error || '未知错误'), 'error');
+      toast('添加失败: ' + extractError(d) || '未知错误', 'error');
     }
   } catch(e) { toast('添加失败: ' + e.message, 'error'); }
 }
@@ -1714,7 +1919,12 @@ async function testAllKeys(pid) {
       let label = k.alias || ('Key#' + k.index);
       return status + ' ' + label + (k.error ? ': ' + k.error : '');
     }).join('\n');
-    alert('Key 测试结果:\n' + msg);
+    
+    const lines = msg.split('\n');
+    const successCount = lines.filter(l => l.startsWith('✅')).length;
+    const failCount = lines.filter(l => l.startsWith('❌')).length;
+    toast(`Key 测试完成: ${successCount} 成功, ${failCount} 失败`, failCount > 0 ? 'error' : 'success');
+
   } catch(e) { toast('测试失败: ' + e.message, 'error'); }
 }
 
@@ -1765,7 +1975,7 @@ async function saveInlineKey() {
       await loadEditKeys(editingId);
       await loadProviders();
     } else {
-      toast('添加失败: ' + (d.error || '未知错误'), 'error');
+      toast('添加失败: ' + extractError(d) || '未知错误', 'error');
     }
   } catch(e) { toast('添加失败: ' + e.message, 'error'); }
 }
@@ -1839,7 +2049,12 @@ async function testAllEditKeys() {
       let label = k.alias || ('Key#' + k.index);
       return status + ' ' + label + (k.error ? ': ' + k.error : '');
     }).join('\n');
-    alert('Key 测试结果:\n' + msg);
+    
+    const lines = msg.split('\n');
+    const successCount = lines.filter(l => l.startsWith('✅')).length;
+    const failCount = lines.filter(l => l.startsWith('❌')).length;
+    toast(`Key 测试完成: ${successCount} 成功, ${failCount} 失败`, failCount > 0 ? 'error' : 'success');
+
   } catch(e) { toast('测试失败: ' + e.message, 'error'); }
 }
 
@@ -2001,7 +2216,7 @@ async function createInvite() {
       }
     } else {
       const data = await res.json().catch(() => ({}));
-      toast(data.error || '创建失败', 'error');
+      toast(extractError(data) || '创建失败', 'error');
     }
   } catch(e) { toast('创建失败', 'error'); }
 }
@@ -2071,12 +2286,30 @@ async function loadShareInfo() {
 
 function copyText(text) {
   if (!text) return toast('没有可复制的内容', 'error');
-  navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板')).catch(() => {
-    // Fallback
-    const ta = document.createElement('textarea');
-    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
-    toast('已复制到剪贴板');
-  });
+  function doFallbackCopy(t) {
+    var ta = document.createElement('textarea');
+    ta.value = t;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+      toast('已复制到剪贴板');
+    } catch(e) {
+      toast('复制失败，请手动复制', 'error');
+    }
+    document.body.removeChild(ta);
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(function() {
+      toast('已复制到剪贴板');
+    }).catch(function() {
+      doFallbackCopy(text);
+    });
+  } else {
+    doFallbackCopy(text);
+  }
 }
 
 
@@ -2121,6 +2354,7 @@ if (authToken) {
         const r = await authFetch('/api/domain/status');
         const d = await r.json();
         const el = document.getElementById('domainStatus');
+        if (!el) return;
         el.style.display = 'block';
         if (d.bound) {
           el.innerHTML = '✅ 已绑定: <strong>' + d.domain + '</strong> | 公网地址: <a href="' + d.public_url + '" target="_blank">' + d.public_url + '</a> | Tunnel ID: ' + d.tunnel_id;
@@ -2147,7 +2381,7 @@ if (authToken) {
           el.innerHTML = '✅ Token 有效，Account ID: ' + d.account_id;
           el.style.color = 'var(--success-color, #10b981)';
         } else {
-          el.innerHTML = '❌ Token 无效: ' + (d.error || '未知错误');
+          el.innerHTML = '❌ Token 无效: ' + extractError(d) || '未知错误';
           el.style.color = 'var(--danger-color, #ef4444)';
         }
       } catch(e) {
@@ -2176,7 +2410,7 @@ if (authToken) {
           // Also refresh the tunnel URL in the config section
           setTimeout(() => loadConfig(), 1000);
         } else {
-          toast('绑定失败: ' + (d.error || '未知错误'), 'error');
+          toast('绑定失败: ' + extractError(d), 'error');
         }
       } catch(e) {
         toast('绑定失败: ' + e.message, 'error');
@@ -2290,6 +2524,30 @@ if (authToken) {
       } catch(e) {
         console.warn('network dashboard load failed', e);
       }
+      // Load pool quota data
+      try {
+        const [quotaR, statusR] = await Promise.all([
+          authFetch('/api/network/open-key-quota'),
+          authFetch('/api/network/status')
+        ]);
+        const quota = await quotaR.json();
+        const status = await statusR.json();
+        const maxDaily = status.max_daily_requests || 0;
+        const pubPercent = (status.quota_allocation && status.quota_allocation.public_key_percent) || 0;
+        const pubDaily = Math.round(maxDaily * pubPercent / 100);
+        const globalQuota = quota.global_quota || 0;
+        const userQuota = quota.user_quota || 0;
+        const contribShare = quota.contribution_share || 0;
+        const sharePercent = globalQuota > 0 ? (contribShare * 100).toFixed(1) : '0';
+        setText('poolDailyContrib', maxDaily.toLocaleString());
+        setText('poolPublicShare', pubPercent + '%');
+        setText('poolPublicDaily', pubDaily > 0 ? pubDaily.toLocaleString() + '/天' : '-');
+        setText('poolGlobalQuota', globalQuota.toLocaleString());
+        setText('poolMyQuota', userQuota.toLocaleString());
+        setText('poolSharePercent', sharePercent);
+      } catch(e) {
+        console.warn('pool quota load failed', e);
+      }
     }
 
     // Disclaimer modal
@@ -2362,7 +2620,7 @@ if (authToken) {
         // Step 2: Enable shared network
         const r2 = await authFetch('/api/network/enable', {method:'POST'});
         const d = await r2.json();
-        if (!r2.ok) { toast(d.error || '启用失败', 'error'); return; }
+        if (!r2.ok) { toast(extractError(d) || '启用失败', 'error'); return; }
 
         // Update UI state
         document.getElementById('sharedNetworkToggle').checked = true;
@@ -2505,7 +2763,7 @@ if (authToken) {
           const escapedKey = keyVal.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
           const dateInfo = issuedAt ? '创建于 ' + issuedAt + (expires !== '永久' ? ' · 到期 ' + expires : ' · 永久有效') : (expires !== '永久' ? '到期 ' + expires : '永久有效');
           return `
-          <div data-gk-key="${escapedKey}" style="padding:10px 14px;margin-bottom:6px;background:var(--bg-secondary);border-radius:8px;border:1px solid ${revoked ? 'rgba(239,68,68,.15)' : 'var(--border-color, rgba(255,255,255,.08))'};${revoked ? 'opacity:0.55;' : ''}">
+          <div data-gk-key="${escapedKey}" style="padding:12px 16px;margin-bottom:8px;background:var(--bg-secondary);border-radius:10px;border:1px solid ${revoked ? 'rgba(239,68,68,.2)' : 'var(--border-color, rgba(255,255,255,.1))'};box-shadow:0 2px 8px rgba(0,0,0,.1);transition:all .2s ease;cursor:default;${revoked ? 'opacity:0.55;' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
               <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;min-width:0;flex:1">
                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏷️ ${displayName}</span>
@@ -2598,7 +2856,7 @@ if (authToken) {
           await loadGuestKeys();
         } else {
           const err = await res.json().catch(() => ({}));
-          toast('更新失败: ' + (err.error || res.statusText), 'error');
+          toast('更新失败: ' + extractError(err), 'error');
         }
       } catch(e) {
         toast('更新失败: ' + e.message, 'error');
@@ -2734,7 +2992,7 @@ if (authToken) {
           }
         } else {
           const err = await res.json();
-          toast('签发失败: ' + (err.error || '未知错误'), 'error');
+          toast('签发失败: ' + extractError(err), 'error');
         }
       } catch(e) { toast('签发失败: ' + e.message, 'error'); }
     }
@@ -2784,7 +3042,7 @@ if (authToken) {
       const escapedInviteLink = inviteLink.replace(/'/g, "\\'");
 
       let panelHtml = `
-        <div style="padding:16px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:10px">
+        <div style="padding:20px;background:linear-gradient(135deg,rgba(34,197,94,.06),rgba(34,197,94,.02));border:1px solid rgba(34,197,94,.25);border-radius:12px;box-shadow:0 4px 20px rgba(34,197,94,.08)">
           <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
             <span>🎉 Key 已创建: ${guestKey.substring(0, 24)}...</span>
             <span style="font-size:10px;padding:2px 8px;background:rgba(108,99,255,.12);color:var(--accent-start);border-radius:4px">${purposeLabel}</span>
@@ -2821,10 +3079,10 @@ if (authToken) {
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:6px">📡 分享渠道</label>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到微信发送'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📱 微信</button>
-              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到 Telegram 发送'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">✈️ Telegram</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到微信发送')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📱 微信</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到 Telegram 发送')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">✈️ Telegram</button>
               <button class="btn btn-secondary btn-sm" onclick="window.location.href='mailto:?subject=' + encodeURIComponent('OpenModelPool 分享') + '&body=' + encodeURIComponent(this.dataset.text)" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📧 邮件</button>
-              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制全部内容'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📋 复制全部</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制全部内容')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📋 复制全部</button>
             </div>
           </div>
 
@@ -2840,13 +3098,21 @@ if (authToken) {
             </div>
           </div>
 
-          <div style="margin-top:12px;text-align:right">
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('sharePanel').style.display='none';document.getElementById('sharePanel').innerHTML=''" style="font-size:11px;padding:4px 12px">收起分享面板</button>
+          <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+            <span id="shareLockStatus" style="font-size:11px;color:var(--text-muted)"></span>
+            <button class="btn btn-primary btn-sm" id="confirmShareTypeBtn" onclick="confirmShareType('${escapedKey}','${purpose}')" style="font-size:11px;padding:6px 16px;background:linear-gradient(135deg,var(--accent-start),var(--accent-end))">✅ 确认分享方式</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('sharePanel').style.display='none';document.getElementById('sharePanel').innerHTML=''" style="font-size:11px;padding:4px 12px">收起</button>
           </div>
         </div>`;
 
       panel.innerHTML = panelHtml;
       panel.style.display = '';
+
+      // Check if already locked
+      const lockedType = _shareTypeLocks['${escapedKey}'];
+      if (lockedType) {
+        _applyShareLock(lockedType);
+      }
 
       // Generate QR code
       setTimeout(() => { generateQRCode('qrSharePanel', qrContent); }, 100);
@@ -2855,22 +3121,56 @@ if (authToken) {
       panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
+    // Share type lock state
+    const _shareTypeLocks = {};
+
+    async function confirmShareType(guestKey, purpose) {
+      try {
+        // Call backend to lock the share type
+        const endpoint = purpose === 'collaborator' 
+          ? '/api/network/guest-keys/' + encodeURIComponent(guestKey) + '/mark-collaborator'
+          : '/api/network/guest-keys/' + encodeURIComponent(guestKey) + '/share-type';
+        const body = purpose === 'collaborator' ? undefined : JSON.stringify({share_type: 'consumer'});
+        const opts = { method: 'POST' };
+        if (body) opts.body = body;
+        const r = await authFetch(endpoint, opts);
+        if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error || e.detail || '锁定失败'); }
+        _shareTypeLocks[guestKey] = purpose;
+        _applyShareLock(purpose);
+        toast('分享方式已锁定：' + (purpose === 'collaborator' ? '🤝 协作者' : '🔑 使用者'), 'success');
+      } catch(e) {
+        toast('锁定失败: ' + e.message, 'error');
+      }
+    }
+
+    function _applyShareLock(purpose) {
+      const btn = document.getElementById('confirmShareTypeBtn');
+      const status = document.getElementById('shareLockStatus');
+      if (btn) { btn.disabled = true; btn.textContent = '✅ 已锁定'; btn.style.opacity = '0.6'; }
+      if (status) { status.textContent = '🔒 已锁定为' + (purpose === 'collaborator' ? '协作者' : '使用者'); status.style.color = 'var(--success)'; }
+    }
+
     function shareExistingKey(escapedKey) {
       // Show a dialog to choose share type
       const dialogId = 'shareDialog_' + escapedKey.replace(/[^a-zA-Z0-9]/g, '_');
       const existing = document.getElementById(dialogId);
       if (existing) { existing.remove(); return; }
       const dialogHtml = `
-        <div id="${dialogId}" style="padding:12px;margin-top:8px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.2);border-radius:8px">
-          <div style="font-size:12px;font-weight:600;margin-bottom:10px">📤 选择分享方式</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div id="${dialogId}" style="padding:12px 16px;background:var(--bg-secondary);border:1px solid var(--border-color, rgba(255,255,255,.1));border-top:none;border-radius:0 0 10px 10px;margin-top:-9px;margin-bottom:8px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--accent-start)">📤 选择分享方式</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <button class="btn btn-primary btn-sm" onclick="document.getElementById('${dialogId}').remove();showSharePanelForExistingKey('${escapedKey}','consumer')" style="font-size:11px;padding:6px 14px">🔑 分享给使用者</button>
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${dialogId}').remove();showSharePanelForExistingKey('${escapedKey}','collaborator')" style="font-size:11px;padding:6px 14px">🤝 邀请协作者</button>
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${dialogId}').remove()" style="font-size:11px;padding:6px 14px">取消</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${dialogId}').remove();showSharePanelForExistingKey('${escapedKey}','collaborator')" style="font-size:11px;padding:6px 14px;border-color:rgba(99,102,241,.4);color:#818cf8">🤝 邀请协作者</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${dialogId}').remove()" style="font-size:11px;padding:4px 10px;opacity:.7">✕ 关闭</button>
           </div>
         </div>`;
       const keyRow = document.querySelector('[data-gk-key="' + escapedKey.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') + '"]');
-      if (keyRow) keyRow.insertAdjacentHTML('afterend', dialogHtml);
+      if (keyRow) {
+        // Remove rounded bottom corners from key card so it merges with the dialog
+        keyRow.style.borderRadius = '10px 10px 0 0';
+        keyRow.style.marginBottom = '0';
+        keyRow.insertAdjacentHTML('afterend', dialogHtml);
+      }
     }
 
     function showSharePanelForExistingKey(guestKey, purpose) {
@@ -2902,7 +3202,7 @@ if (authToken) {
       const escapedInviteLink = inviteLink.replace(/'/g, "\\'");
 
       let panelHtml = `
-        <div style="padding:16px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:10px">
+        <div style="padding:20px;background:linear-gradient(135deg,rgba(34,197,94,.06),rgba(34,197,94,.02));border:1px solid rgba(34,197,94,.25);border-radius:12px;box-shadow:0 4px 20px rgba(34,197,94,.08)">
           <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
             <span>📤 分享 Key: ${guestKey.substring(0, 24)}...</span>
             <span style="font-size:10px;padding:2px 8px;background:rgba(108,99,255,.12);color:var(--accent-start);border-radius:4px">${purposeLabel}</span>
@@ -2940,10 +3240,10 @@ if (authToken) {
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:6px">📡 分享渠道</label>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到微信发送'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📱 微信</button>
-              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到 Telegram 发送'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">✈️ Telegram</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到微信发送')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📱 微信</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到 Telegram 发送')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">✈️ Telegram</button>
               <button class="btn btn-secondary btn-sm" onclick="window.location.href='mailto:?subject=' + encodeURIComponent('OpenModelPool 分享') + '&body=' + encodeURIComponent(this.dataset.text)" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📧 邮件</button>
-              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制全部内容'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📋 复制全部</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制全部内容')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📋 复制全部</button>
             </div>
           </div>
 
@@ -2959,13 +3259,18 @@ if (authToken) {
             </div>
           </div>
 
-          <div style="margin-top:12px;text-align:right">
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('sharePanel').style.display='none';document.getElementById('sharePanel').innerHTML=''" style="font-size:11px;padding:4px 12px">收起分享面板</button>
+          <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+            <span id="shareLockStatus" style="font-size:11px;color:var(--text-muted)"></span>
+            <button class="btn btn-primary btn-sm" id="confirmShareTypeBtn" onclick="confirmShareType('${escapedKey}','${purpose}')" style="font-size:11px;padding:6px 16px;background:linear-gradient(135deg,var(--accent-start),var(--accent-end))">✅ 确认分享方式</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('sharePanel').style.display='none';document.getElementById('sharePanel').innerHTML=''" style="font-size:11px;padding:4px 12px">收起</button>
           </div>
         </div>`;
 
       panel.innerHTML = panelHtml;
       panel.style.display = '';
+      // Check if already locked
+      const lockedType = _shareTypeLocks['${escapedKey}'];
+      if (lockedType) { _applyShareLock(lockedType); }
       setTimeout(() => { generateQRCode('qrSharePanel', qrContent); }, 100);
       panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -2979,7 +3284,7 @@ if (authToken) {
           await loadGuestKeys();
         } else {
           const err = await res.json();
-          toast('删除失败: ' + (err.error || '未知错误'), 'error');
+          toast('删除失败: ' + extractError(err), 'error');
         }
       } catch(e) {
         toast('删除失败: ' + e.message, 'error');
@@ -2995,7 +3300,7 @@ if (authToken) {
           await loadGuestKeys();
         } else {
           const err = await res.json().catch(() => ({}));
-          toast('撤销失败: ' + (err.error || res.statusText), 'error');
+          toast('撤销失败: ' + extractError(err), 'error');
           await loadGuestKeys();
         }
       } catch(e) {
@@ -3080,7 +3385,7 @@ async function generateFedInvite() {
       document.getElementById('fedInviteCode').value = d.code;
       toast('✅ 邀请码已生成');
     } else {
-      toast('生成失败: ' + (d.error || '未知错误'), 'error');
+      toast('生成失败: ' + extractError(d) || '未知错误', 'error');
     }
   } catch(e) { toast('生成失败: ' + e.message, 'error'); }
 }
@@ -3229,8 +3534,11 @@ async function loadDiscoveredPlatforms() {
 
 function renderDiscoveredPlatforms() {
   const el = document.getElementById('discoveredList');
-  if (!discoveredPlatforms.length) {
-    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无发现，点击「🔄 扫描新平台」开始</div>';
+  // Filter out added AND already-configured providers
+  const existingIds = new Set((allProviders || []).map(p => p.id));
+  const visible = discoveredPlatforms.filter(p => p.status !== 'added' && !existingIds.has(p.id));
+  if (!visible.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无新发现，所有平台已添加或处理</div>';
     return;
   }
   const statusMap = {
@@ -3239,7 +3547,7 @@ function renderDiscoveredPlatforms() {
     'dismissed': {label: '已忽略', color: '#6b7280', bg: 'rgba(107,114,128,.1)'},
     'added': {label: '已添加', color: '#a855f7', bg: 'rgba(168,85,247,.1)'}
   };
-  el.innerHTML = discoveredPlatforms.map(p => {
+  el.innerHTML = visible.map(p => {
     const st = statusMap[p.status] || statusMap['new'];
     const models = (p.models || []).slice(0, 4).join(', ');
     const modelsExtra = (p.models || []).length > 4 ? ` +${p.models.length - 4}个` : '';
@@ -3268,40 +3576,16 @@ async function updateDiscoveredStatus(id, status) {
       method: 'POST',
       body: JSON.stringify({status: status})
     });
-    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || e.error?.message || '操作失败'); }
+    if (!r.ok) { const e = await r.json(); throw new Error(extractError(e)); }
     toast(status === 'reviewed' ? '已标记为已审核' : status === 'dismissed' ? '已忽略' : '已更新');
     await loadDiscoveredPlatforms();
   } catch(e) { toast(e.message, 'error'); }
 }
 
 function addDiscoveredAsPreset(id) {
-  const p = discoveredPlatforms.find(x => x.id === id);
-  if (!p) return;
-  // Update status to added
-  updateDiscoveredStatus(id, 'added');
-  // Open add provider modal with pre-filled info
-  editingId = null;
-  document.getElementById('editKeysSection').style.display = 'none';
-  document.getElementById('modalTitle').textContent = '添加平台（来自发现）';
-  document.getElementById('modalStep1').style.display = 'none';
-  document.getElementById('modalStep2').style.display = '';
-  document.getElementById('pId').value = p.id;
-  document.getElementById('pId').readOnly = false;
-  document.getElementById('pName').value = p.name;
-  document.getElementById('pUrl').value = p.base_url;
-  document.getElementById('pKey').value = '';
-  document.getElementById('pKey').placeholder = '输入 API Key（需先在官网注册获取）';
-  document.getElementById('pDesc').value = p.description || '';
-  document.getElementById('pPriority').value = 5;
-  document.getElementById('pEnabled').checked = true;
-  document.getElementById('pAccessPrivate').checked = true;
-  // Show registration link
-  const regLinkEl = document.getElementById('presetRegLink');
-  if (regLinkEl && p.api_key_url) {
-    regLinkEl.innerHTML = `<a href="${p.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
-    regLinkEl.style.display = '';
-  }
-  document.getElementById('providerModal').classList.add('open');
+  // Open the add-provider modal at Step 1 so user can see it in the preset list
+  showAddProvider();
+  toast('已在预设列表中标记为 🆕 新发现，点击它即可添加');
 }
 
 async function triggerDiscovery() {
@@ -3322,6 +3606,109 @@ async function triggerDiscovery() {
     toast('扫描失败: ' + e.message, 'error');
   } finally {
     setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 扫描新平台'; }, 2000);
+  }
+}
+
+
+async function addAllDiscoveredAsPreset() {
+  // Ensure we have the latest discovered platforms list
+  try {
+    const dr = await authFetch('/api/discovered-platforms');
+    const dd = await dr.json();
+    discoveredPlatforms = dd.platforms || [];
+  } catch(e) {}
+
+  const pending = discoveredPlatforms.filter(p => p.status !== 'added' && p.status !== 'dismissed' && p.status !== 'ignored');
+  if (!pending.length) { toast('没有待添加的发现平台', 'error'); return; }
+
+  const btn = document.getElementById('batchAddDiscoveredBtn');
+  btn.disabled = true;
+  btn.textContent = `⏳ 添加中 (0/${pending.length})...`;
+
+  let added = 0, skipped = 0, incompatible = 0, errors = [];
+  for (const p of pending) {
+    btn.textContent = `⏳ 添加中 (${added}/${pending.length})...`;
+    try {
+      // Check if already exists as provider
+      const existingProviders = document.querySelectorAll('[data-provider-id]');
+      const ids = Array.from(existingProviders).map(el => el.getAttribute('data-provider-id'));
+      if (ids.includes(p.id)) {
+        await authFetch(`/api/discovered-platforms/${p.id}`, {
+          method: 'POST', body: JSON.stringify({status: 'added'})
+        });
+        skipped++;
+        continue;
+      }
+
+      // Compatibility check: verify OpenAI API format
+      btn.textContent = `🔍 检测 ${p.name}...`;
+      try {
+        const checkR = await authFetch(`/api/discovered-platforms/${p.id}/check`, { method: 'POST' });
+        const checkD = await checkR.json();
+        if (!checkD.compatible && !checkD.skipped) {
+          incompatible++;
+          errors.push(`${p.name}: 不支持 OpenAI API 标准格式（${extractError(checkD) || '未知'}）`);
+          continue;
+        }
+      } catch(ce) {
+        // If check itself fails, still try to add
+        console.warn('Compatibility check failed for', p.name, ce);
+      }
+
+      const data = {
+        id: p.id,
+        name: p.name,
+        type: 'openai_compatible',
+        base_url: p.base_url,
+        description: p.description || '',
+        priority: 5,
+        enabled: true,
+        access_control: { allow_private_key: true, allow_shared_key: false },
+        models: p.models || []
+      };
+
+      const r = await authFetch('/api/providers', { method: 'POST', body: JSON.stringify(data) });
+      if (r.ok) {
+        await authFetch(`/api/discovered-platforms/${p.id}`, {
+          method: 'POST', body: JSON.stringify({status: 'added'})
+        });
+        added++;
+      } else {
+        const e = await r.json().catch(() => ({}));
+        errors.push(p.name + ': ' + extractError(e));
+      }
+    } catch(e) {
+      errors.push(p.name + ': ' + e.message);
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = '📥 一键添加全部发现';
+
+  let msg = `✅ 已添加 ${added} 个平台`;
+  if (skipped > 0) msg += `，${skipped} 个已存在跳过`;
+  if (incompatible > 0) msg += `，${incompatible} 个不兼容`;
+  if (errors.length > 0) msg += `，${errors.length} 个问题`;
+  toast(msg, (errors.length > 0 || incompatible > 0) ? 'warning' : 'success');
+  if (incompatible > 0) {
+    setTimeout(() => {
+      toast('不兼容的平台暂不支持，欢迎到 GitHub 提 PR 增加适配', 'info', 8000);
+    }, 1500);
+  }
+  if (errors.length > 0) console.warn('Batch add errors:', errors);
+
+  // Refresh provider list
+  await loadProviders();
+  // Refresh discovered platforms data (no loading spinner) and re-render
+  try {
+    const dr = await authFetch('/api/discovered-platforms');
+    const dd = await dr.json();
+    discoveredPlatforms = dd.platforms || [];
+  } catch(e) {}
+  renderDiscoveredPlatforms();
+  // Also refresh preset grid if the modal is open
+  if (document.getElementById('providerModal')?.classList.contains('open')) {
+    renderPresets();
   }
 }
 

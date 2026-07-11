@@ -479,4 +479,28 @@ var presetProviders = []Provider{
 			{ID: "agnes-video-v2.0", Name: "Agnes Video V2.0 (视频)"},
 		},
 	},
+	{
+		ID: "aihubmix", Name: "AIHubMix", Type: "openai_compatible",
+		BaseURL:    "https://aihubmix.com/v1",
+		Priority:   5,
+		Description: "聚合平台，提供免费额度，OpenAI 兼容 API",
+		Icon:        "aihubmix",
+		APIKeyURL:   "https://aihubmix.com/",
+		Models: []ModelDef{
+			{ID: "gpt-4o", Name: "GPT-4o"},
+			{ID: "claude-3.5-sonnet", Name: "Claude 3.5 Sonnet"},
+			{ID: "gemini-2.0-flash", Name: "Gemini 2.0 Flash"},
+		},
+	},
+	{
+		ID: "lmstudio-local", Name: "LM Studio (本地)", Type: "openai_compatible",
+		BaseURL:    "http://localhost:1234/v1",
+		Priority:   1,
+		Description: "LM Studio 本地模型推理，OpenAI 兼容 API",
+		Icon:        "lmstudio",
+		APIKeyURL:   "https://lmstudio.ai/",
+		Models: []ModelDef{
+			{ID: "local-model", Name: "本地模型（自动加载）"},
+		},
+	},
 }

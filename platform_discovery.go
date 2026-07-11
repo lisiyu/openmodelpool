@@ -79,9 +79,46 @@ func saveDiscoveredPlatforms() error {
 // handleGetDiscoveredPlatforms returns all discovered platforms.
 func handleGetDiscoveredPlatforms(w http.ResponseWriter, r *http.Request) {
 	platforms := loadDiscoveredPlatforms()
+	// Build set of existing provider IDs (configured + presets)
+	existingIDs := make(map[string]bool)
+	for _, p := range presetProviders {
+		existingIDs[p.ID] = true
+	}
+	for _, p := range pm.GetAllRaw() {
+		existingIDs[p.ID] = true
+	}
+	// Filter out already-added platforms (exact + partial ID match)
+	filtered := make([]DiscoveredPlatform, 0)
+	for _, p := range platforms {
+		if p.Status == "added" || existingIDs[p.ID] {
+			if p.Status != "added" {
+				p.Status = "added"
+			}
+			continue
+		}
+		// Partial match: e.g. "openrouter-free" should be filtered if "openrouter" exists
+		baseID := p.ID
+		if idx := strings.LastIndex(baseID, "-"); idx > 0 {
+			baseID = baseID[:idx]
+		}
+		skip := false
+		for eid := range existingIDs {
+			if eid == baseID || strings.HasPrefix(p.ID, eid+"-") || strings.HasPrefix(eid, baseID) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			if p.Status != "added" {
+				p.Status = "added"
+			}
+			continue
+		}
+		filtered = append(filtered, p)
+	}
 	writeJSON(w, 200, map[string]any{
-		"platforms": platforms,
-		"count":     len(platforms),
+		"platforms": filtered,
+		"count":     len(filtered),
 	})
 }
 
@@ -164,6 +201,12 @@ func runDiscovery() {
 	}
 	for _, p := range loadDiscoveredPlatforms() {
 		existingIDs[p.ID] = true
+	}
+	// Also check actual configured providers - don't re-discover what's already added
+	if pm != nil {
+		for _, p := range pm.GetAllRaw() {
+			existingIDs[p.ID] = true
+		}
 	}
 
 	var filtered []DiscoveredPlatform
@@ -340,4 +383,94 @@ func parseMarkdownForPlatforms(content string, source string) []DiscoveredPlatfo
 		platforms = platforms[:20]
 	}
 	return platforms
+}
+
+// handleCheckDiscoveredPlatform checks if a discovered platform is OpenAI API compatible.
+func handleCheckDiscoveredPlatform(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/discovered-platforms/")
+	id := strings.TrimSuffix(path, "/check")
+	id = strings.TrimSpace(id)
+	if id == "" {
+		writeError(w, 400, "platform ID required")
+		return
+	}
+
+	platforms := loadDiscoveredPlatforms()
+	var found *DiscoveredPlatform
+	for i, p := range platforms {
+		if p.ID == id {
+			found = &platforms[i]
+			break
+		}
+	}
+	if found == nil {
+		writeError(w, 404, "platform not found")
+		return
+	}
+
+	baseURL := strings.TrimRight(found.BaseURL, "/")
+	// Template variables like {ACCOUNT_ID} - skip check, assume compatible
+	if strings.Contains(baseURL, "{") || strings.Contains(baseURL, "}") {
+		writeJSON(w, 200, map[string]any{
+			"compatible": true,
+			"message":    "URL 包含模板变量，跳过自动检测",
+			"skipped":    true,
+		})
+		return
+	}
+
+	modelsURL := baseURL + "/v1/models"
+	if strings.HasSuffix(baseURL, "/v1") {
+		modelsURL = baseURL + "/models"
+	}
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	req, _ := http.NewRequest("GET", modelsURL, nil)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		// Network error / timeout / connection refused = unreachable, NOT incompatible
+		writeJSON(w, 200, map[string]any{
+			"compatible": true,
+			"message":    "无法访问端点，跳过检测",
+			"skipped":    true,
+			"warning":    err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+
+	if resp.StatusCode == 200 {
+		var result map[string]any
+		if err := json.Unmarshal(body, &result); err == nil {
+			if _, ok := result["data"]; ok {
+				writeJSON(w, 200, map[string]any{"compatible": true, "message": "OpenAI 兼容 API"})
+				return
+			}
+		}
+		// 200 but response is NOT OpenAI format
+		writeJSON(w, 200, map[string]any{
+			"compatible": false,
+			"error":      "API 响应格式不兼容 OpenAI 标准",
+		})
+		return
+	}
+
+	// 401/403/404 = endpoint exists, likely compatible
+	if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 {
+		writeJSON(w, 200, map[string]any{
+			"compatible": true,
+			"message":    fmt.Sprintf("端点响应 HTTP %d，兼容 OpenAI 格式", resp.StatusCode),
+		})
+		return
+	}
+
+	// Other HTTP errors - likely incompatible
+	writeJSON(w, 200, map[string]any{
+		"compatible": false,
+		"error":      fmt.Sprintf("HTTP %d", resp.StatusCode),
+	})
 }

@@ -342,6 +342,27 @@ func (m *ProviderManager) Enabled() []Provider {
 	return out
 }
 
+// EnabledRaw returns enabled providers with unmasked fields (internal use: health check, routing).
+func (m *ProviderManager) EnabledRaw() []Provider {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	seen := make(map[string]bool)
+	var out []Provider
+	for _, p := range m.providers {
+		if p.Enabled {
+			out = append(out, p)
+			seen[p.ID] = true
+		}
+	}
+	for _, p := range presetProviders {
+		if p.Enabled && !seen[p.ID] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // ============================================================
 // Routing
 // ============================================================
