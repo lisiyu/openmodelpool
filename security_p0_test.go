@@ -21,7 +21,7 @@ func TestP0_1_HandleVerifyAuth_ValidToken(t *testing.T) {
 	env := setupTestEnv(t)
 	env.authInst.SetupAdmin("admin", "Test12345!@#$", "admin@test.com")
 
-	token := env.authInst.CreateToken("admin", false)
+	token, _ := env.authInst.CreateToken("admin", false)
 
 	req := httptest.NewRequest("GET", "/api/auth/verify", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -88,7 +88,7 @@ func TestP0_1_HandleVerifyAuth_ExpiredToken(t *testing.T) {
 	env := setupTestEnv(t)
 	env.authInst.SetupAdmin("admin", "Test12345!@#$", "admin@test.com")
 
-	token := env.authInst.CreateToken("admin", false)
+	token, _ := env.authInst.CreateToken("admin", false)
 
 	// Simulate token expiration by modifying the secret
 	// (the token signed with old secret will fail with new secret)
@@ -323,7 +323,7 @@ func TestP0_3_AuthConcurrentTokenOps(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			token := env.authInst.CreateToken("admin", false)
+			token, _ := env.authInst.CreateToken("admin", false)
 			username, err := env.authInst.VerifyToken(token)
 			if err != nil {
 				t.Errorf("VerifyToken failed: %v", err)
@@ -554,7 +554,7 @@ func TestP0_Integration_VerifyAuthFlow(t *testing.T) {
 	env.authInst.SetupAdmin("admin", "Test12345!@#$", "admin@test.com")
 
 	// Create a valid token
-	token := env.authInst.CreateToken("admin", false)
+	token, _ := env.authInst.CreateToken("admin", false)
 
 	// Verify with valid token
 	verifyReq := httptest.NewRequest("GET", "/api/auth/verify", nil)

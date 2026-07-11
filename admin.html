@@ -243,7 +243,7 @@ select.form-input{appearance:none;cursor:pointer}
         <span style="font-size:13px;font-weight:500">🎫 Guest Key 管理</span>
         <button class="btn btn-primary btn-sm" onclick="generateGuestKey()">+ 签发新 Key</button>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">签发给他人使用，可设置有效期。Guest Key 由全网 Pool 均分额度，无需单独设定。</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">签发给他人使用。可设置本地资源额度（访问本节点 Provider 的上限）和有效期。公共池额度由全网均分。</div>
       <div id="guestKeysList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
     </div>
   </div>
@@ -2628,28 +2628,55 @@ if (authToken) {
         const data = await res.json();
         const keys = data.keys || [];
         if (keys.length === 0) {
-          el.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px">暂无 Guest Key，点击「+ 签发新 Key」创建<br><span style="font-size:10px;margin-top:4px;display:block">💡 Guest Key 额度由全网 Pool 均分，无需单独设定</span></div>';
+          el.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px">暂无 Guest Key，点击「+ 签发新 Key」创建<br><span style="font-size:10px;margin-top:4px;display:block">💡 公共池额度全网均分，本地额度可逐 Key 设定</span></div>';
           return;
         }
         el.innerHTML = keys.map(k => {
           const keyVal = k.key || k;
           const issuedAt = k.issued_at || '-';
           const revoked = k.revoked ? ' <span class="badge badge-red">已撤销</span>' : '';
+          const quota = (k.quota && k.quota > 0) ? k.quota.toLocaleString() + ' tokens/天' : '不限';
+          const expires = k.expires_at ? ' · 到期: ' + k.expires_at.substring(0,10) : '';
+          const note = k.note ? ' · ' + k.note : '';
           const safeKey = keyVal.replace(/'/g, "\\'");
           return `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;margin-bottom:4px;background:var(--bg-secondary);border-radius:6px;${k.revoked ? 'opacity:0.5;' : ''}">
             <div style="flex:1;min-width:0">
               <div style="font-family:monospace;font-size:11px;word-break:break-all">${keyVal}${revoked}</div>
-              <div style="color:var(--text-muted);font-size:10px">签发时间: ${issuedAt}</div>
+              <div style="color:var(--text-muted);font-size:10px">签发: ${issuedAt} · 本地额度: ${quota}${expires}${note}</div>
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;margin-left:8px">
               <button class="btn btn-secondary btn-sm" onclick="copyText('${safeKey}')" style="font-size:10px;padding:3px 8px">📋</button>
+              ${!k.revoked ? `<button class="btn btn-secondary btn-sm" onclick="editGuestKeyQuota('${safeKey}', ${k.quota || 0})" style="font-size:10px;padding:3px 8px">✏️ 额度</button>` : ''}
               ${!k.revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeGuestKey('${safeKey}')" style="font-size:10px;padding:3px 8px">撤销</button>` : ''}
             </div>
           </div>`;
         }).join('');
       } catch(e) {
         el.innerHTML = '<span style="color:var(--error)">加载失败: ' + e.message + ' <button class="btn btn-secondary btn-sm" onclick="loadGuestKeys()" style="font-size:10px;padding:2px 8px">重试</button></span>';
+      }
+    }
+
+    async function editGuestKeyQuota(key, currentQuota) {
+      const newQuota = prompt('设置该 Guest Key 的本地额度（tokens/天，0=不限）:', currentQuota || 0);
+      if (newQuota === null) return;
+      const quotaVal = parseInt(newQuota, 10);
+      if (isNaN(quotaVal) || quotaVal < 0) { toast('请输入有效的额度数字', 'error'); return; }
+      try {
+        const res = await authFetch('/api/network/guest-keys/' + encodeURIComponent(key) + '/quota', {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ quota: quotaVal })
+        });
+        if (res.ok) {
+          toast('额度已更新', 'success');
+          await loadGuestKeys();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          toast('更新失败: ' + (err.error || res.statusText), 'error');
+        }
+      } catch(e) {
+        toast('更新失败: ' + e.message, 'error');
       }
     }
 
@@ -2662,8 +2689,12 @@ if (authToken) {
       const formHtml = `
         <div id="guestKeyForm" style="padding:14px;margin-bottom:8px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.2);border-radius:8px">
           <div style="font-size:13px;font-weight:500;margin-bottom:10px">🎫 签发新 Guest Key</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:6px 10px;background:rgba(108,99,255,.04);border-radius:6px">💡 Guest Key 额度由全网 Pool 均分，无需单独设定。所有 Guest Key 共享同一额度池。</div>
-          <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:10px">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:6px 10px;background:rgba(108,99,255,.04);border-radius:6px">💡 公共池额度由全网 Guest Key 均分。此处设置的是该 Key 访问本节点自身资源的额度上限。</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">本地额度（tokens/天）</label>
+              <input id="gkQuota" class="form-input" type="number" value="0" min="0" style="font-size:12px;height:32px" placeholder="0=不限">
+            </div>
             <div>
               <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">有效期（天）</label>
               <input id="gkExpDays" class="form-input" type="number" value="30" min="0" style="font-size:12px;height:32px" placeholder="0=永不过期">
@@ -2685,7 +2716,8 @@ if (authToken) {
       const expDays = parseInt(document.getElementById('gkExpDays').value) || 30;
       const note = document.getElementById('gkNote').value.trim();
       try {
-        const body = { exp_days: expDays };
+        const quota = parseInt(document.getElementById('gkQuota').value, 10) || 0;
+      const body = { exp_days: expDays, quota: quota };
         if (note) body.note = note;
         const res = await authFetch('/api/network/guest-keys', {
           method: 'POST',

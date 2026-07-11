@@ -80,6 +80,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/addresses", handleGetAddresses)
 	mux.HandleFunc("POST /api/setup", rateLimitByIP(3, "setup")(handleSetup))
 	mux.HandleFunc("POST /api/login", rateLimitByIP(5, "login")(handleLogin))
+	mux.HandleFunc("POST /api/refresh", rateLimitByIP(10, "refresh")(handleRefreshToken))
 	mux.HandleFunc("POST /api/forgot-password", rateLimitByIP(3, "forgot_password")(handleForgotPassword))
 	mux.HandleFunc("POST /api/reset-password", rateLimitByIP(5, "reset_password")(handleResetPassword))
 	mux.HandleFunc("POST /api/reset-password/verify", rateLimitByIP(10, "reset_verify")(handleVerifyResetToken))
@@ -235,6 +236,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/network/guest-keys", withAuth(handleGuestKeyList))
 	mux.HandleFunc("DELETE /api/network/guest-keys/{key}", withAuth(handleGuestKeyRevoke))
 	mux.HandleFunc("POST /api/network/keys/validate", rateLimitByIP(30, "key_validate")(handleNetworkKeyValidate))
+	mux.HandleFunc("PUT /api/network/guest-keys/{key}/quota", withAuth(handleGuestKeyUpdateQuota))
 
 	// Node Heartbeat & Discovery (Phase 2)
 	mux.HandleFunc("POST /api/network/heartbeat", rateLimitByIP(30, "heartbeat")(handleNetworkHeartbeat))

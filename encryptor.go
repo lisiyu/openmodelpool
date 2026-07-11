@@ -51,7 +51,7 @@ func (e *encryptor) loadOrCreateKey() {
 	}
 	encoded := base64.StdEncoding.EncodeToString(key)
 	os.MkdirAll(filepath.Dir(e.keyPath), 0755)
-	if err := os.WriteFile(e.keyPath, []byte(encoded), 0600); err != nil {
+	if err := atomicWriteFile(e.keyPath, []byte(encoded), 0600); err != nil {
 		slog.Error("failed to save encryption key", "error", err)
 		return
 	}

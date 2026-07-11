@@ -488,7 +488,7 @@ func (n *NodeIdentity) save() {
 	}
 
 	data, _ := json.MarshalIndent(store, "", "  ")
-	os.WriteFile(n.keyPath, data, 0600)
+	atomicWriteFile(n.keyPath, data, 0600)
 }
 
 // NodeID returns this node's ID.

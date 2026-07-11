@@ -834,7 +834,7 @@ func (w *WAFManager) saveBanList() {
 		return
 	}
 	os.MkdirAll(filepath.Dir(w.banListPath), 0755)
-	if err := os.WriteFile(w.banListPath, data, 0600); err != nil {
+	if err := atomicWriteFile(w.banListPath, data, 0600); err != nil {
 		slog.Error("WAF: failed to write ban list", "error", err)
 	}
 }

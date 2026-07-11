@@ -13,6 +13,7 @@ import (
 	"time"
 )
 
+
 // ============================================================
 // Phase 4 — Dynamic Load Balancer with Health-Aware Routing
 // ============================================================
@@ -22,6 +23,10 @@ import (
 // a weighted scoring algorithm to select the optimal next-hop node
 // when relaying requests. A background health-check loop
 // periodically pings all known nodes to keep metrics fresh.
+
+// S-12: Package-level random source with explicit seed for safer randomness.
+// While Go 1.20+ auto-seeds the global source, using a local source is explicit.
+var lbRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 // NodeMetrics holds real-time performance data for a single node.
 type NodeMetrics struct {
@@ -435,7 +440,7 @@ func (lb *LoadBalancer) SelectNode(reqs RouteRequirements) (string, error) {
 	}
 
 	// Weighted random selection
-	r := rand.Float64() * totalWeight
+	r := lbRand.Float64() * totalWeight
 	cumulative := 0.0
 	selected := top[0]
 	for _, c := range top {

@@ -105,88 +105,60 @@ func (m *OpenKeyQuotaManager) CalculateGlobalQuota() int64 {
 }
 
 // CalculateUserQuota computes the quota for a specific node.
-// Formula: userQuota = globalQuota * (trustWeight * repShare + contribWeight * contribShare)
+// D-1 Fix: Uses equal distribution (均分) — Pool ÷ Node count
+// Each active node gets an equal share of the global quota.
 func (m *OpenKeyQuotaManager) CalculateUserQuota(nodeID string) *QuotaInfo {
 	globalQuota := m.CalculateGlobalQuota()
-	params := m.chain.GetCurrentParams()
 
-	// Get network-wide totals
-	var (
-		totalReputation float64
-		totalContrib    float64
-		nodeReputation  float64
-		nodeContrib     float64
-	)
+	// Count total active nodes
+	nodeCount := 0
+	var reputationShare, contributionShare float64
 
 	if netMgr != nil {
 		netMgr.mu.RLock()
 
-		// Self stats
-		selfContrib := float64(netMgr.config.ContribPoints)
-		totalContrib += selfContrib
-		totalReputation += 50.0 // baseline reputation for self
-
-		if nodeID == netMgr.config.NodeID {
-			nodeContrib = selfContrib
-			nodeReputation = 50.0
+		// Count self
+		if netMgr.config.NodeID != "" {
+			nodeCount++
 		}
-
-		// Peer stats
+		// Count peers
 		for _, peer := range netMgr.config.Peers {
-			peerContrib := peer.TrustScore * 100 // approximate contribution from trust
-			peerRep := peer.TrustScore
-
-			totalContrib += peerContrib
-			totalReputation += peerRep
-
-			if peer.NodeID == nodeID {
-				nodeContrib = peerContrib
-				nodeReputation = peerRep
+			if peer.Status == "online" {
+				nodeCount++
 			}
 		}
-
 		netMgr.mu.RUnlock()
 	}
 
-	// Also check reputation manager for more accurate data
-	if repMgr != nil {
-		allReps := repMgr.GetAllReputations()
-		for nid, rep := range allReps {
-			if nid == nodeID {
-				nodeReputation = rep.OverallScore
+	// Also count nodes from federation trust pool
+	if fed != nil {
+		pool := fed.GetTrustPool()
+		for _, n := range pool.Nodes {
+			if n.Status == "active" {
+				nodeCount++
 			}
-			totalReputation += rep.OverallScore
-		}
-		// If this node has a reputation entry, use the more accurate value
-		if rep := repMgr.GetReputation(nodeID); rep != nil {
-			nodeReputation = rep.OverallScore
 		}
 	}
 
-	// Avoid division by zero
-	if totalReputation == 0 {
-		totalReputation = 1
-	}
-	if totalContrib == 0 {
-		totalContrib = 1
+	// Minimum 1 node to avoid division by zero
+	if nodeCount < 1 {
+		nodeCount = 1
 	}
 
-	reputationShare := nodeReputation / totalReputation
-	contributionShare := nodeContrib / totalContrib
+	// D-1: Equal distribution — each node gets Pool ÷ Node count
+	userQuota := globalQuota / int64(nodeCount)
 
-	// Calculate weighted share
-	weightedShare := params.TrustWeight*reputationShare + params.ContribWeight*contributionShare
-
-	// Apply to global quota
-	userQuota := int64(float64(globalQuota) * weightedShare)
-
-	// Enforce minimum and maximum bounds
+	// Enforce minimum
 	if userQuota < 100 {
 		userQuota = 100
 	}
 	if userQuota > globalQuota {
 		userQuota = globalQuota
 	}
+
+	// Legacy fields for backward compatibility
+	reputationShare = 1.0 / float64(nodeCount)
+	contributionShare = 1.0 / float64(nodeCount)
 
 	info := &QuotaInfo{
 		NodeID:            nodeID,

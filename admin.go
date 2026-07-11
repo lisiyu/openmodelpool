@@ -63,7 +63,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, "invalid credentials")
 		return
 	}
-	token := auth.CreateToken(body.Username, body.Remember)
+	accessToken, refreshToken := auth.CreateToken(body.Username, body.Remember)
 	maxAge := 86400
 	if body.Remember {
 		maxAge = 7 * 86400
@@ -73,14 +73,14 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	c := &http.Cookie{
 		Name:     "admin_token",
 		Path:     "/",
-		Value:    token,
+		Value:    accessToken,
 		HttpOnly: true,
 		MaxAge:   maxAge,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   isHTTPS,
 	}
 	http.SetCookie(w, c)
-	writeJSON(w, 200, map[string]string{"access_token": token, "token_type": "bearer"})
+	writeJSON(w, 200, map[string]string{"access_token": accessToken, "refresh_token": refreshToken, "token_type": "bearer"})
 }
 
 func handleVerifyAuth(w http.ResponseWriter, r *http.Request) {
@@ -134,17 +134,19 @@ func handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	if r.TLS == nil {
 		scheme = "http"
 	}
-	resetURL := fmt.Sprintf("%s://%s/forgot-password?token=%s", scheme, r.Host, token)
+	resetURL := fmt.Sprintf("%s://%s/forgot-password", scheme, r.Host)
 
 	subject := "OpenModelPool Agent 密码重置"
+	// S-6: Token is included in email body, NOT in URL. User copies token to reset page.
 	msgBody := fmt.Sprintf("Subject: %s\r\nFrom: %s\r\nTo: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n"+
 		"<h3>OpenModelPool Agent 密码重置</h3>"+
-		"<p>点击下方链接重置密码（30 分钟内有效）：</p>"+
+		"<p>点击下方链接进入密码重置页面（30 分钟内有效）：</p>"+
 		`<p><a href="%s" style="padding:10px 20px;background:#6c63ff;color:white;text-decoration:none;border-radius:6px;">重置密码</a></p>`+
-		"<p>如果按钮无法点击，请手动复制以下链接：</p>"+
+		"<p>或复制以下重置令牌粘贴到重置页面：</p>"+
+		"<p style='font-size:18px;font-weight:bold;letter-spacing:2px;color:#333;'>%s</p>"+
 		"<p style='word-break:break-all;color:#666;'>%s</p>"+
 		"<p style='color:#999;font-size:12px;'>如非本人操作，请忽略此邮件。</p>",
-		subject, s.FromEmail, adminEmail, resetURL, resetURL)
+		subject, s.FromEmail, adminEmail, resetURL, token, resetURL)
 
 	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
 	var smtpAuth smtp.Auth
@@ -1449,4 +1451,29 @@ func handleRestart(w http.ResponseWriter, r *http.Request) {
 		
 		// Current process will be killed by the script
 	}()
+}
+
+// handleRefreshToken accepts a refresh_token and returns a new access_token.
+// S-3: JWT refresh token flow.
+func handleRefreshToken(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if body.RefreshToken == "" {
+		writeError(w, 400, "refresh_token is required")
+		return
+	}
+	newAccessToken, err := auth.RefreshAccessToken(body.RefreshToken)
+	if err != nil {
+		writeJSON(w, 401, map[string]string{"error": "invalid or expired refresh token"})
+		return
+	}
+	writeJSON(w, 200, map[string]string{
+		"access_token": newAccessToken,
+		"token_type":   "bearer",
+	})
 }

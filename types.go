@@ -289,7 +289,8 @@ type ResetToken struct {
 
 type AdminStore struct {
 	Admin     AdminData  `json:"admin"`
-	JWTSecret string     `json:"jwt_secret"`
+	JWTSecret        string     `json:"jwt_secret"`
+	JWTRefreshSecret string     `json:"jwt_refresh_secret"`
 	SMTP      SMTPConfig `json:"smtp"`
 	Reset     *ResetToken `json:"reset_token,omitempty"`
 	Initialized bool     `json:"initialized"`

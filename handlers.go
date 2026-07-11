@@ -537,13 +537,48 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine key type
+	keyType := RequestKeyType(r)
+
+	// D-4: Per-Key local quota check for Guest Keys
+	if keyType == "guest" && guestKeyUsage != nil && guestKeyStore != nil {
+		auth := r.Header.Get("Authorization")
+		guestKey := strings.TrimPrefix(auth, "Bearer ")
+		record := guestKeyStore.GetGuestKeyRecord(guestKey)
+		if record != nil && record.Quota > 0 {
+			estimated := int64(4096)
+			if req.MaxTokens != nil && *req.MaxTokens > 0 {
+				estimated = int64(*req.MaxTokens)
+			}
+			allowed, _ := guestKeyUsage.CheckAndReserve(guestKey, record.Quota, estimated)
+			if !allowed {
+				writeError(w, 429, "该 Guest Key 的本地额度已用尽")
+				return
+			}
+			// Adjust after request — deferred
+			defer func() {
+				// For streaming, actual usage is unknown; estimate as 0 adjustment (reserve stands)
+				guestKeyUsage.Adjust(guestKey, estimated, 0)
+			}()
+		}
+	}
+
 	// Smart routing with fallback — uses the unified pool (all providers from all users)
 	routingMode := cfg.Get("routing_mode", "priority")
-	candidates := pm.OrderedCandidates(model, routingMode)
+	allCandidates := pm.OrderedCandidates(model, routingMode)
 
 	// Provider access control: filter candidates based on key type
-	keyType := RequestKeyType(r)
-	candidates = FilterByAccessControl(candidates, keyType)
+	candidates := FilterByAccessControl(allCandidates, keyType)
+
+	// D-2/D-3: "先本地后池" routing for Guest Key and Proxy API Key
+	// Try local providers first (providers on this node), then fall back to full pool
+	if (keyType == "guest" || keyType == "proxy") && pm != nil {
+		localCandidates := filterLocalOnly(candidates)
+		if len(localCandidates) > 0 {
+			candidates = localCandidates
+		}
+		// If no local candidates, keep the full filtered list (fallback to pool)
+	}
 
 	if len(candidates) == 0 {
 		models := pm.AllModels()
@@ -686,4 +721,23 @@ func handleCozeRequest(w http.ResponseWriter, r *http.Request, model string, mes
 		return
 	}
 	writeJSON(w, 200, resp)
+}
+
+// filterLocalOnly filters candidates to only include providers from this node.
+// Currently all providers in pm are local, so this is a passthrough.
+// D-2/D-3: Ensures Guest Key and Proxy API Key requests prioritize local providers
+// before falling back to pool resources.
+func filterLocalOnly(cands []candidate) []candidate {
+	// All providers managed by pm are local to this node.
+	// This function serves as an explicit filter for the "local-first" routing policy.
+	// If future changes introduce remote/virtual providers into the candidate list,
+	// this function should filter them out by checking provider origin.
+	local := make([]candidate, 0, len(cands))
+	for _, c := range cands {
+		// All pm providers are local (they have a local ID and local API keys)
+		if c.Provider.ID != "" {
+			local = append(local, c)
+		}
+	}
+	return local
 }

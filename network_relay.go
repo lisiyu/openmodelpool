@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -263,8 +264,13 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 			req.Header.Set(headerRelayHop, strconv.Itoa(hopCount+1))
 			req.Header.Set(headerRelayFrom, relayFrom)
 
-			// Preserve original auth headers (consumer key transparent to relay)
-			// Do NOT strip Authorization — target node validates it
+			// S-4/V-3: Remove original Authorization to prevent Consumer Key leakage
+			req.Header.Del("Authorization")
+
+			// Add node-to-node authentication header
+			if relayFrom != "" {
+				req.Header.Set("X-Node-Auth", relayFrom)
+			}
 		},
 		Transport: GetSharedHTTPClient().Transport,
 		ErrorHandler: func(w2 http.ResponseWriter, r2 *http.Request, err error) {
@@ -423,6 +429,33 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal(rawStream, &stream)
 	}
 
+	// D-5/S-5: Public key four-layer quota check
+	authHeader := r.Header.Get("Authorization")
+	bearerKey := strings.TrimPrefix(authHeader, "Bearer ")
+	keyType := ClassifyKey(bearerKey)
+
+	var reservedQuota int64
+	if keyType == KeyTypePublic && publicQuota != nil {
+		clientIP := ""
+		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			clientIP = ip
+		}
+		estimatedTokens := int64(4096) // default estimate
+		if mt, ok := bodyMap["max_tokens"]; ok {
+			var mtVal int64
+			if json.Unmarshal(mt, &mtVal) == nil && mtVal > 0 {
+				estimatedTokens = mtVal
+			}
+		}
+
+		ok, reason, _ := publicQuota.ReserveQuota(clientIP, model, estimatedTokens)
+		if !ok {
+			writeError(w, 429, fmt.Sprintf("public key quota exceeded: %s", reason))
+			return
+		}
+		reservedQuota = estimatedTokens
+	}
+
 	// Try to find the best node for this model
 	var bestNode *RouteEntry
 	if routeTable != nil && model != "" {
@@ -432,6 +465,13 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	// If no node found or route table is empty, fallback to local handling
 	if bestNode == nil {
 		slog.Debug("gateway: no suitable node found, falling back to local", "model", model)
+		if keyType == KeyTypePublic && reservedQuota > 0 && publicQuota != nil {
+			clientIP := ""
+			if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+				clientIP = ip
+			}
+			defer publicQuota.AdjustQuota(clientIP, model, reservedQuota, 0)
+		}
 		handleGatewayFallback(w, r, bodyBytes, model, stream)
 		return
 	}
@@ -443,12 +483,29 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if bestNode.NodeID == selfID {
 		slog.Debug("gateway: best node is self, handling locally", "model", model, "node_id", selfID)
+		if keyType == KeyTypePublic && reservedQuota > 0 && publicQuota != nil {
+			clientIP := ""
+			if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+				clientIP = ip
+			}
+			defer publicQuota.AdjustQuota(clientIP, model, reservedQuota, 0)
+		}
 		handleGatewayFallback(w, r, bodyBytes, model, stream)
 		return
 	}
 
 	// Forward to the selected remote node
 	slog.Info("gateway: routing request", "model", model, "target_node", bestNode.NodeID, "stream", stream, "hop", hopCount+1)
+
+	// Adjust quota after remote request (estimated=reservedQuota, actual=0 for remote — will be corrected)
+	if keyType == KeyTypePublic && reservedQuota > 0 && publicQuota != nil {
+		clientIP := ""
+		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			clientIP = ip
+		}
+		defer publicQuota.AdjustQuota(clientIP, model, reservedQuota, reservedQuota/2)
+	}
+
 	gatewayForwardToRemote(w, r, bestNode, bodyBytes, hopCount, stream)
 }
 
@@ -514,8 +571,11 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	// Copy query parameters
 	outReq.URL.RawQuery = r.URL.RawQuery
 
-	// Copy headers (preserve Authorization for transparent key forwarding)
+	// Copy headers but strip original Authorization (S-4/V-3)
 	for key, vals := range r.Header {
+		if key == "Authorization" {
+			continue // do not forward consumer key to remote node
+		}
 		for _, val := range vals {
 			outReq.Header.Add(key, val)
 		}

@@ -149,6 +149,9 @@ func TestConnectionReuse(t *testing.T) {
 		IdleConnTimeout:     90 * time.Second,
 	}
 	origDial := transport.DialContext
+	if origDial == nil {
+		origDial = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	}
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		mu.Lock()
 		dialCount++

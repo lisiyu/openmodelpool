@@ -65,7 +65,7 @@ type GuestKeyRecord struct {
 	RandomPart string `json:"random_part"` // the random portion after node_id
 	IssuedAt   string `json:"issued_at"`
 	Revoked    bool   `json:"revoked"`
-	Quota      int64  `json:"quota,omitempty"`       // daily token quota (0=unlimited)
+	Quota      int64  `json:"quota,omitempty"`       // 本地资源访问额度上限 (0=不限，仅约束访问本节点自身资源)
 	ExpDays    int    `json:"exp_days,omitempty"`    // validity in days (0=never expires)
 	ExpiresAt  string `json:"expires_at,omitempty"`  // expiry timestamp
 	Note       string `json:"note,omitempty"`        // optional note/label
@@ -86,6 +86,7 @@ func initGuestKeyStore(dataDir string) {
 		dataPath: filepath.Join(dataDir, "guest_keys.json"),
 	}
 	guestKeyStore.load()
+	initGuestKeyUsageTracker()
 	slog.Info("guest key store initialized", "keys", len(guestKeyStore.keys))
 }
 
@@ -120,7 +121,7 @@ func (gks *GuestKeyStore) save() {
 
 // GuestKeyOptions contains optional parameters for generating a guest key.
 type GuestKeyOptions struct {
-	Quota   int64  // daily token quota (0=unlimited)
+	Quota   int64  // 本地资源访问额度上限 (0=不限)
 	ExpDays int    // validity in days (0=never expires)
 	Note    string // optional note/label
 }
@@ -172,6 +173,7 @@ func GenerateGuestKey(nodeID string, opts ...GuestKeyOptions) (string, error) {
 
 // ValidateGuestKey extracts the node_id from a guest key and checks validity.
 // Returns the issuer node_id and whether the key is valid.
+// Security fix (S-1, S-11): Key MUST exist in store, and ExpiresAt is checked.
 func ValidateGuestKey(key string) (nodeID string, valid bool) {
 	if !strings.HasPrefix(key, "sk-guest-") {
 		return "", false
@@ -185,25 +187,40 @@ func ValidateGuestKey(key string) (nodeID string, valid bool) {
 
 	candidateNodeID := parts[0]
 
-	// Check if the key has been revoked
+	// Key MUST be found in store — unknown keys are rejected
 	if guestKeyStore != nil {
 		guestKeyStore.mu.RLock()
+		found := false
 		for _, rec := range guestKeyStore.keys {
 			if rec.Key == key {
+				found = true
+				// Check if revoked
 				if rec.Revoked {
 					guestKeyStore.mu.RUnlock()
 					return "", false
+				}
+				// Check if expired
+				if rec.ExpiresAt != "" {
+					expTime, err := time.Parse(time.RFC3339, rec.ExpiresAt)
+					if err == nil && time.Now().After(expTime) {
+						guestKeyStore.mu.RUnlock()
+						return "", false
+					}
 				}
 				guestKeyStore.mu.RUnlock()
 				return rec.NodeID, true
 			}
 		}
 		guestKeyStore.mu.RUnlock()
+		// Key not found in store — reject
+		if !found {
+			slog.Warn("guest key not found in store, rejecting", "node_id", candidateNodeID)
+			return "", false
+		}
 	}
 
-	// Key not found in store but format is valid — accept it
-	// (supports guest keys issued before this node started)
-	return candidateNodeID, true
+	// No store initialized — reject (fail-closed)
+	return "", false
 }
 
 // RevokeGuestKey marks a guest key as revoked.
@@ -229,6 +246,98 @@ func (gks *GuestKeyStore) GetAllGuestKeys() []*GuestKeyRecord {
 	result := make([]*GuestKeyRecord, len(gks.keys))
 	copy(result, gks.keys)
 	return result
+}
+
+// GetGuestKeyRecord returns the record for a specific guest key, or nil if not found.
+func (gks *GuestKeyStore) GetGuestKeyRecord(key string) *GuestKeyRecord {
+	gks.mu.RLock()
+	defer gks.mu.RUnlock()
+	for _, rec := range gks.keys {
+		if rec.Key == key {
+			cp := *rec
+			return &cp
+		}
+	}
+	return nil
+}
+
+// UpdateGuestKeyQuota updates the quota for a specific guest key.
+func (gks *GuestKeyStore) UpdateGuestKeyQuota(key string, quota int64) error {
+	gks.mu.Lock()
+	defer gks.mu.Unlock()
+	for _, rec := range gks.keys {
+		if rec.Key == key {
+			rec.Quota = quota
+			gks.doSaveLocked()
+			slog.Info("updated guest key quota", "key_prefix", key[:min(len(key), 30)]+"...", "quota", quota)
+			return nil
+		}
+	}
+	return fmt.Errorf("guest key not found")
+}
+
+// ============================================================
+// Per-Key Usage Tracker (D-4: 逐 Key 本地额度执行)
+// ============================================================
+
+// guestKeyUsageTracker tracks per-key usage for local quota enforcement.
+type guestKeyUsageTracker struct {
+	mu    sync.Mutex
+	usage map[string]int64 // key -> tokens used
+}
+
+var guestKeyUsage *guestKeyUsageTracker
+
+func initGuestKeyUsageTracker() {
+	guestKeyUsage = &guestKeyUsageTracker{
+		usage: make(map[string]int64),
+	}
+}
+
+// CheckAndReserve checks if the key has remaining local quota and reserves estimated tokens.
+// Returns (allowed, remaining).
+func (t *guestKeyUsageTracker) CheckAndReserve(key string, quota int64, estimated int64) (bool, int64) {
+	if quota <= 0 {
+		return true, 0 // no local quota limit
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	used := t.usage[key]
+	remaining := quota - used
+	if remaining <= 0 {
+		return false, 0
+	}
+	// Reserve (pre-deduct)
+	if estimated > 0 && estimated <= remaining {
+		t.usage[key] = used + estimated
+		return true, remaining - estimated
+	} else if estimated <= 0 {
+		// No estimate — just check
+		return true, remaining
+	}
+	// estimated > remaining
+	return false, remaining
+}
+
+// Adjust adjusts the reserved quota after a request completes.
+func (t *guestKeyUsageTracker) Adjust(key string, reserved, actual int64) {
+	if reserved <= 0 && actual <= 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	diff := actual - reserved
+	t.usage[key] += diff
+	if t.usage[key] < 0 {
+		t.usage[key] = 0
+	}
+}
+
+// GetUsage returns the current usage for a key.
+func (t *guestKeyUsageTracker) GetUsage(key string) int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.usage[key]
 }
 
 func (gks *GuestKeyStore) doSaveLocked() {
@@ -315,6 +424,39 @@ func handleGuestKeyRevoke(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, 200, map[string]any{"status": "revoked"})
+}
+
+// PUT /api/network/guest-keys/{key}/quota (JWT) — update guest key local quota
+func handleGuestKeyUpdateQuota(w http.ResponseWriter, r *http.Request) {
+	if guestKeyStore == nil {
+		writeError(w, 500, "guest key store not initialized")
+		return
+	}
+
+	keyParam := r.PathValue("key")
+	if keyParam == "" {
+		writeError(w, 400, "key parameter is required")
+		return
+	}
+
+	var body struct {
+		Quota int64 `json:"quota"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if body.Quota < 0 {
+		writeError(w, 400, "quota must be >= 0")
+		return
+	}
+
+	if err := guestKeyStore.UpdateGuestKeyQuota(keyParam, body.Quota); err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+
+	writeJSON(w, 200, map[string]any{"status": "updated", "quota": body.Quota})
 }
 
 // POST /api/network/keys/validate (no auth) — validate any key type

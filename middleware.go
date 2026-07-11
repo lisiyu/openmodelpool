@@ -36,7 +36,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// isOriginAllowed checks if an origin matches the whitelist.
+// isOriginAllowed checks if an origin match the whitelist.
 // Supports exact match and wildcard subdomain (*.example.com).
 func isOriginAllowed(origin, whitelist string) bool {
 	origins := strings.Split(whitelist, ",")
@@ -122,8 +122,9 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 
+		// S-9: Generic error message - do not expose internal details
 		writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
-			Message: "Invalid API key",
+			Message: "请求处理失败，请稍后重试",
 			Type:    "authentication_error",
 			Code:    "invalid_api_key",
 		}})

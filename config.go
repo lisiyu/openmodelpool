@@ -207,3 +207,14 @@ func toUpper(s string) string {
 	}
 	return string(b)
 }
+
+// atomicWriteFile writes data to a file atomically by first writing to a temp
+// file and then renaming. This prevents data corruption from partial writes.
+// P-1: Used by all save() methods across the project.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}

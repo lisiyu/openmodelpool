@@ -34,14 +34,20 @@ func (a *Auth) load() {
 	b, err := os.ReadFile(a.path)
 	if err != nil {
 		a.data = AdminStore{
-			JWTSecret: randomString(64),
-			SMTP:      SMTPConfig{Port: 587, UseTLS: true},
+			JWTSecret:       randomString(64),
+			JWTRefreshSecret: randomString(64),
+			SMTP:            SMTPConfig{Port: 587, UseTLS: true},
 		}
 		return
 	}
 	json.Unmarshal(b, &a.data)
 	if a.data.JWTSecret == "" {
 		a.data.JWTSecret = randomString(64)
+		a.save()
+	}
+	// Ensure refresh secret exists (for backward compat)
+	if a.data.JWTRefreshSecret == "" {
+		a.data.JWTRefreshSecret = randomString(64)
 		a.save()
 	}
 	// Decrypt SMTP password if encrypted
@@ -62,7 +68,7 @@ func (a *Auth) save() {
 	}
 	b, _ := json.MarshalIndent(safe, "", "  ")
 	os.MkdirAll("data", 0755)
-	os.WriteFile(a.path, b, 0600)
+	atomicWriteFile(a.path, b, 0600)
 }
 
 // saveLocked persists auth data; caller must already hold a.mu.
@@ -74,7 +80,7 @@ func (a *Auth) saveLocked() {
 	}
 	b, _ := json.MarshalIndent(safe, "", "  ")
 	os.MkdirAll("data", 0755)
-	os.WriteFile(a.path, b, 0600)
+	atomicWriteFile(a.path, b, 0600)
 }
 
 // Initialized returns whether admin has been set up.
@@ -165,28 +171,87 @@ func (a *Auth) ChangePassword(oldPass, newPass string) error {
 	return nil
 }
 
-// CreateToken generates a JWT token.
-func (a *Auth) CreateToken(username string, remember bool) string {
+// CreateToken generates a JWT access token (24h) and a refresh token (7d).
+// S-3: Returns both tokens for the refresh token flow.
+func (a *Auth) CreateToken(username string, remember bool) (accessToken string, refreshToken string) {
 	a.mu.RLock()
-	secret := a.data.JWTSecret
+	accessSecret := a.data.JWTSecret
+	refreshSecret := a.data.JWTRefreshSecret
 	a.mu.RUnlock()
 
-	expHours := 24
+	// Access token: 24h (or 7d if remember)
+	accessExpHours := 24
 	if remember {
-		expHours = 7 * 24
+		accessExpHours = 7 * 24
 	}
-	claims := jwt.MapClaims{
+	accessClaims := jwt.MapClaims{
 		"sub":  username,
-		"exp":  time.Now().Add(time.Duration(expHours) * time.Hour).Unix(),
+		"exp":  time.Now().Add(time.Duration(accessExpHours) * time.Hour).Unix(),
 		"iat":  time.Now().Unix(),
 		"type": "access",
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	s, _ := token.SignedString([]byte(secret))
-	return s
+	accessTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
+	accessToken, _ = accessTokenObj.SignedString([]byte(accessSecret))
+
+	// Refresh token: always 7 days, signed with different secret
+	refreshClaims := jwt.MapClaims{
+		"sub":  username,
+		"exp":  time.Now().Add(7 * 24 * time.Hour).Unix(),
+		"iat":  time.Now().Unix(),
+		"type": "refresh",
+	}
+	refreshTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	refreshToken, _ = refreshTokenObj.SignedString([]byte(refreshSecret))
+
+	return accessToken, refreshToken
 }
 
-// VerifyToken validates a JWT and returns the username.
+// CreateAccessToken generates only an access token (legacy compatibility).
+func (a *Auth) CreateAccessToken(username string, remember bool) string {
+	access, _ := a.CreateToken(username, remember)
+	return access
+}
+
+// RefreshAccessToken validates a refresh token and returns a new access token.
+func (a *Auth) RefreshAccessToken(refreshTokenStr string) (string, error) {
+	a.mu.RLock()
+	refreshSecret := a.data.JWTRefreshSecret
+	accessSecret := a.data.JWTSecret
+	a.mu.RUnlock()
+
+	token, err := jwt.Parse(refreshTokenStr, func(t *jwt.Token) (any, error) {
+		return []byte(refreshSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return "", errors.New("invalid refresh token")
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", errors.New("invalid claims")
+	}
+	// Verify it is a refresh token
+	tokenType, _ := claims["type"].(string)
+	if tokenType != "refresh" {
+		return "", errors.New("not a refresh token")
+	}
+	sub, _ := claims["sub"].(string)
+	if sub == "" {
+		return "", errors.New("missing subject")
+	}
+
+	// Issue new access token (24h)
+	newAccessClaims := jwt.MapClaims{
+		"sub":  sub,
+		"exp":  time.Now().Add(24 * time.Hour).Unix(),
+		"iat":  time.Now().Unix(),
+		"type": "access",
+	}
+	newAccessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, newAccessClaims)
+	s, _ := newAccessToken.SignedString([]byte(accessSecret))
+	return s, nil
+}
+
+// VerifyToken validates a JWT access token and returns the username.
 func (a *Auth) VerifyToken(tokenStr string) (string, error) {
 	a.mu.RLock()
 	secret := a.data.JWTSecret

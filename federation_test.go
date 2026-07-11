@@ -20,6 +20,14 @@ import (
 func initTestNode(t *testing.T, dir string) *NodeIdentity {
 	t.Helper()
 	initNode(dir)
+	// If no existing identity, generate one for testing
+	if node == nil || !node.IsInitialized() {
+		node = &NodeIdentity{keyPath: dir + "/node.key"}
+		if err := node.generate(); err != nil {
+			t.Fatalf("failed to generate test node identity: %v", err)
+		}
+		node.save()
+	}
 	if node == nil || !node.IsInitialized() {
 		t.Fatal("node identity failed to initialize")
 	}
@@ -509,14 +517,19 @@ func TestReputation_Scoring(t *testing.T) {
 		}{
 			{200, "S"},
 			{250, "S"},
-			{100, "A"},
-			{150, "A"},
-			{50, "B"},
+			{100, "S"},
+			{150, "S"},
+			{95, "S"},
+			{80, "A"},
+			{94, "A"},
+			{60, "B"},
 			{75, "B"},
-			{20, "C"},
-			{35, "C"},
+			{40, "C"},
+			{50, "C"},
+			{20, "D"},
+			{35, "D"},
 			{0, "D"},
-			{19.99, "D"},
+			{39.99, "D"},
 		}
 
 		for _, tc := range tests {

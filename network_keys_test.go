@@ -166,7 +166,7 @@ func TestGuestKeyStore_ValidateGuestKey(t *testing.T) {
 		wantValid bool
 	}{
 		{"valid generated key", key, "mmx-node1", true},
-		{"valid format unknown key", "sk-guest-mmx-unknown-abc123", "mmx-unknown", true},
+		{"valid format unknown key", "sk-guest-mmx-unknown-abc123", "", false},  // unknown keys rejected (S-1 fix)
 		{"not guest key", "sk-abc123", "", false},
 		{"empty key", "", "", false},
 		{"guest key no random part", "sk-guest-node1", "", false},
@@ -188,6 +188,9 @@ func TestGuestKeyStore_ValidateGuestKey(t *testing.T) {
 
 func TestGuestKeyStore_RevokeGuestKey(t *testing.T) {
 	store, _ := setupGuestKeyStore(t)
+	oldStore := guestKeyStore
+	guestKeyStore = store
+	defer func() { guestKeyStore = oldStore }()
 
 	key, _ := GenerateGuestKey("mmx-node1")
 	
@@ -217,6 +220,9 @@ func TestGuestKeyStore_RevokeNonexistent(t *testing.T) {
 
 func TestGuestKeyStore_GetAllGuestKeys(t *testing.T) {
 	store, _ := setupGuestKeyStore(t)
+	oldStore := guestKeyStore
+	guestKeyStore = store
+	defer func() { guestKeyStore = oldStore }()
 
 	// Empty store
 	keys := store.GetAllGuestKeys()

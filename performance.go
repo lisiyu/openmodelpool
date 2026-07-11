@@ -311,6 +311,9 @@ func runCleanup() {
 	// 4. Compact contribution records (keep last 1000)
 	compactContribRecords()
 
+	// P-4: Clean up stale IP rate limiters (older than 10 minutes)
+	cleanupIPRateLimiters(10 * time.Minute)
+
 	// 5. Force GC if memory is above threshold
 	mem := getMemoryUsage()
 	if mem.AllocMB > 150 {

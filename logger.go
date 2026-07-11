@@ -36,7 +36,8 @@ func initLogger(dataDir string) {
 	os.MkdirAll(dataDir, 0755)
 
 	logPath := filepath.Join(dataDir, "access.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// V-7: Use 0600 permissions for log files (owner read/write only)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		slog.Warn("failed to open access log file, using stdout only", "error", err)
 		appLogger = &Logger{
@@ -122,8 +123,8 @@ func (l *Logger) rotate() {
 	// Keep only the last 5 rotated files (cleanup old ones)
 	l.cleanupOldLogs(5)
 
-	// Open new file
-	f, err := os.OpenFile(l.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// V-7: Open new file with 0600 permissions
+	f, err := os.OpenFile(l.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		slog.Error("failed to open new log file after rotation", "error", err)
 		// Re-create with stdout-only fallback
@@ -185,6 +186,44 @@ func parseLogLevel(s string) slog.Level {
 	}
 }
 
+// maskIP masks the last segment of an IP address for privacy (V-4).
+// IPv4: "192.168.1.42" -> "192.168.1.xxx"
+// IPv6: returns first 3 groups + ":xxx"
+// Handles host:port format by first extracting the IP.
+func maskIP(remoteAddr string) string {
+	// Strip port if present
+	ip := remoteAddr
+	if strings.HasPrefix(ip, "[") {
+		// IPv6 with port: [::1]:8080
+		if idx := strings.LastIndex(ip, "]"); idx != -1 {
+			ip = ip[1:idx]
+		}
+	} else if strings.Count(ip, ":") == 1 {
+		// IPv4 with port: 1.2.3.4:8080
+		if idx := strings.LastIndex(ip, ":"); idx != -1 {
+			ip = ip[:idx]
+		}
+	}
+
+	// Mask IPv4
+	if strings.Contains(ip, ".") && !strings.Contains(ip, ":") {
+		parts := strings.Split(ip, ".")
+		if len(parts) == 4 {
+			return parts[0] + "." + parts[1] + "." + parts[2] + ".xxx"
+		}
+	}
+
+	// Mask IPv6 - keep first 3 groups
+	if strings.Contains(ip, ":") {
+		parts := strings.Split(ip, ":")
+		if len(parts) >= 3 {
+			return parts[0] + ":" + parts[1] + ":" + parts[2] + ":xxx"
+		}
+	}
+
+	return "xxx"
+}
+
 // RequestLog is a structured middleware that logs every HTTP request.
 // It records method, path, status code, latency, and consumer info.
 func requestLogMiddleware(next http.Handler) http.Handler {
@@ -202,13 +241,16 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			consumer = "admin"
 		}
 
+		// V-4: Mask IP address in logs
+		maskedIP := maskIP(r.RemoteAddr)
+
 		slog.Info("http request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", sw.status,
 			"latency_ms", latency.Milliseconds(),
 			"consumer", consumer,
-			"remote", r.RemoteAddr,
+			"remote", maskedIP,
 			"user_agent", r.Header.Get("User-Agent"),
 		)
 	})

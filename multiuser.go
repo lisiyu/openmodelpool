@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,20 +19,59 @@ type MultiUserManager struct {
 	mu         sync.RWMutex
 	invites    map[string]*InviteCode // code -> InviteCode
 	consumers  map[string]*Consumer   // id -> Consumer
-	apiKeyMap  map[string]string      // api_key -> consumer_id
+	apiKeyMap  map[string]string      // sha256(api_key) -> consumer_id (hashed for security)
 	dataPath   string
+
+	// Batch save fields (P-3)
+	dirtyCount atomic.Int64
+	saveStopCh chan struct{}
 }
 
 var multiUser *MultiUserManager
 
 func initMultiUser(dataDir string) {
 	multiUser = &MultiUserManager{
-		invites:   make(map[string]*InviteCode),
-		consumers: make(map[string]*Consumer),
-		apiKeyMap: make(map[string]string),
-		dataPath:  filepath.Join(dataDir, "consumers.json"),
+		invites:    make(map[string]*InviteCode),
+		consumers:  make(map[string]*Consumer),
+		apiKeyMap:  make(map[string]string),
+		dataPath:   filepath.Join(dataDir, "consumers.json"),
+		saveStopCh: make(chan struct{}),
 	}
 	multiUser.load()
+	// Start batch save goroutine
+	go multiUser.batchSaveLoop()
+}
+
+// batchSaveLoop flushes consumer stats to disk periodically.
+func (m *MultiUserManager) batchSaveLoop() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if m.dirtyCount.Load() > 0 {
+				m.mu.Lock()
+				m.dirtyCount.Store(0)
+				m.mu.Unlock()
+				m.save()
+			}
+		case <-m.saveStopCh:
+			// Final flush on shutdown
+			if m.dirtyCount.Load() > 0 {
+				m.mu.Lock()
+				m.dirtyCount.Store(0)
+				m.mu.Unlock()
+				m.save()
+			}
+			return
+		}
+	}
+}
+
+// hashAPIKey returns the SHA-256 hex digest of an API key.
+func hashAPIKey(apiKey string) string {
+	h := sha256.Sum256([]byte(apiKey))
+	return fmt.Sprintf("%x", h[:])
 }
 
 func (m *MultiUserManager) load() {
@@ -52,13 +93,13 @@ func (m *MultiUserManager) load() {
 		m.consumers = data.Consumers
 		for id, c := range m.consumers {
 			if c.APIKey != "" {
-				// Decrypt stored key for apiKeyMap lookup
+				// Decrypt stored key, then store SHA-256 hash in apiKeyMap
 				plaintext := c.APIKey
 				if IsEncrypted(c.APIKey) {
 					plaintext = enc.Decrypt(c.APIKey)
 				}
 				if plaintext != "" {
-					m.apiKeyMap[plaintext] = id
+					m.apiKeyMap[hashAPIKey(plaintext)] = id
 				}
 			}
 		}
@@ -76,7 +117,7 @@ func (m *MultiUserManager) save() {
 		Consumers: m.consumers,
 	}
 	b, _ := json.MarshalIndent(data, "", "  ")
-	os.WriteFile(m.dataPath, b, 0600)
+	atomicWriteFile(m.dataPath, b, 0600)
 }
 
 // CreateInviteCode generates a new invite code with optional role.
@@ -170,7 +211,8 @@ func (m *MultiUserManager) CreateConsumer(name, inviteCode string) (*Consumer, e
 		Enabled:    true,
 	}
 	m.consumers[id] = consumer
-	m.apiKeyMap[apiKey] = id  // plaintext key for fast lookup
+	// Store SHA-256 hash of the API key instead of plaintext
+	m.apiKeyMap[hashAPIKey(apiKey)] = id
 
 	// Update invite code usage
 	inv.UseCount++
@@ -191,7 +233,8 @@ func (m *MultiUserManager) ValidateAPIKey(apiKey string) (*Consumer, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	consumerID, ok := m.apiKeyMap[apiKey]
+	// Look up by SHA-256 hash
+	consumerID, ok := m.apiKeyMap[hashAPIKey(apiKey)]
 	if !ok {
 		return nil, false
 	}
@@ -202,7 +245,7 @@ func (m *MultiUserManager) ValidateAPIKey(apiKey string) (*Consumer, bool) {
 	return consumer, true
 }
 
-// RecordConsumerUsage updates a consumer's usage stats.
+// RecordConsumerUsage updates a consumer's usage stats (batched save).
 func (m *MultiUserManager) RecordConsumerUsage(consumerID string, tokens int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -210,7 +253,15 @@ func (m *MultiUserManager) RecordConsumerUsage(consumerID string, tokens int) {
 	if c, ok := m.consumers[consumerID]; ok {
 		c.TotalTokens += int64(tokens)
 		c.TotalRequests++
-		m.save()
+		// Batch save: increment dirty counter, let batchSaveLoop handle disk write
+		count := m.dirtyCount.Add(1)
+		if count >= 10 {
+			// Immediate save if 10+ changes accumulated
+			m.dirtyCount.Store(0)
+			m.mu.Unlock()
+			m.save()
+			m.mu.Lock()
+		}
 	}
 }
 
@@ -274,13 +325,12 @@ func (m *MultiUserManager) DeleteConsumer(id string) bool {
 	if !ok {
 		return false
 	}
-	// Remove all API key mappings for this consumer
-	// Since apiKeyMap uses plaintext keys, iterate to find and remove
+	// Remove the SHA-256 hash from apiKeyMap
 	plaintextKey := c.APIKey
 	if IsEncrypted(c.APIKey) {
 		plaintextKey = enc.Decrypt(c.APIKey)
 	}
-	delete(m.apiKeyMap, plaintextKey)
+	delete(m.apiKeyMap, hashAPIKey(plaintextKey))
 	delete(m.consumers, id)
 	m.save()
 
@@ -317,6 +367,24 @@ func (m *MultiUserManager) DeleteInviteCode(code string) bool {
 	delete(m.invites, code)
 	m.save()
 	return true
+}
+
+// FlushSaves forces a save of any pending consumer usage data.
+func (m *MultiUserManager) FlushSaves() {
+	if m.dirtyCount.Load() > 0 {
+		m.mu.Lock()
+		m.dirtyCount.Store(0)
+		m.mu.Unlock()
+		m.save()
+	}
+}
+
+// StopBatchSave stops the batch save goroutine.
+func (m *MultiUserManager) StopBatchSave() {
+	select {
+	case m.saveStopCh <- struct{}{}:
+	default:
+	}
 }
 
 // ============================================================
