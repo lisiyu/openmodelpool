@@ -1648,7 +1648,7 @@ async function createInviteCode() {
       display.innerHTML = '<div style="font-size:12px;font-weight:500;color:var(--success);margin-bottom:6px">✅ 邀请码已创建（复制发送给对方）</div>' +
         '<div style="display:flex;gap:8px;align-items:center">' +
         '<input class="form-input" value="' + d.code + '" readonly style="flex:1;font-family:monospace;font-size:14px;background:var(--bg-secondary);font-weight:600">' +
-        '<button class="btn btn-primary btn-sm" onclick="copyText(this.previousElementSibling.value);this.textContent='已复制!'" style="flex-shrink:0">📋 复制</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="copyText(this.previousElementSibling.value);this.textContent=&quot;已复制!&quot;" style="flex-shrink:0">📋 复制</button>' +
         '</div>';
       container.insertAdjacentElement('beforebegin', display);
       setTimeout(() => display.remove(), 20000);
@@ -2708,7 +2708,7 @@ if (authToken) {
               <div style="font-size:12px;font-weight:500;color:var(--success);margin-bottom:6px">✅ Guest Key 签发成功（仅此显示一次，请复制保存）</div>
               <div style="display:flex;gap:8px;align-items:center">
                 <input class="form-input" value="${d.key}" readonly style="flex:1;font-family:monospace;font-size:12px;background:var(--bg-secondary)">
-                <button class="btn btn-primary btn-sm" onclick="copyText(this.previousElementSibling.value);this.textContent='已复制!'" style="flex-shrink:0">📋 复制</button>
+                <button class="btn btn-primary btn-sm" onclick="copyText(this.previousElementSibling.value);this.textContent=&quot;已复制!&quot;" style="flex-shrink:0">📋 复制</button>
               </div>`;
             document.getElementById('guestKeysList').insertAdjacentElement('beforebegin', keyDisplay);
             setTimeout(() => keyDisplay.remove(), 30000);
