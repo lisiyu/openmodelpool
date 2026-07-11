@@ -362,7 +362,7 @@ func (nm *NetworkManager) load() {
 		nm.config.Addresses = []string{}
 	}
 	// v2.0: Initialize quota allocation with defaults if not set
-	if nm.config.QuotaAllocation.FreeConsumerPercent == 0 && nm.config.QuotaAllocation.NetworkNodePercent == 0 {
+	if nm.config.QuotaAllocation.GuestKeyPercent == 0 && nm.config.QuotaAllocation.PublicKeyPercent == 0 {
 		nm.config.QuotaAllocation = DefaultQuotaAllocation()
 	}
 	// v3.2: Backward compat — old configs may not have network_enabled.
