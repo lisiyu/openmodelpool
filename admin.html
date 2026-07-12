@@ -1221,6 +1221,7 @@ async function syncAllUrls() {
 
 // ===== Add/Edit Provider Modal =====
 let editingId = null;
+let editingKeyId = null; // null = adding new key, string = editing existing key ID
 let selectedPresetKeyOptional = false; // true when selecting a discovered platform
 async function showAddProvider() {
   editingId = null;
@@ -1948,51 +1949,73 @@ async function testAllKeys(pid) {
 // ============================================================
 
 // ===== Multi-Key Inline Editor =====
-function showInlineKeyForm() {
-  document.getElementById('editKeysInlineRow').style.display = 'block';
-  document.getElementById('newKeyAlias').value = '';
-  document.getElementById('newKeyValue').value = '';
-  document.getElementById('newKeyQuota').value = '0';
-  document.getElementById('newKeyPriority').value = '1';
-  document.getElementById('newKeyAccess').value = 'private';
-  document.getElementById('newKeyValue').focus();
-  // Add a "+" button row at bottom of key list if not exists
-  if (!document.getElementById('addKeyRow')) {
-    const addBtn = document.createElement('div');
-    addBtn.id = 'addKeyRow';
-    addBtn.style.cssText = 'margin-top:10px;text-align:center';
-    addBtn.innerHTML = '<button class="btn btn-primary btn-sm" onclick="showInlineKeyForm()" style="font-size:11px;padding:4px 14px;border:1px dashed var(--border-color)">+ 添加新 Key</button>';
-    document.getElementById('editKeysList').appendChild(addBtn);
+function showInlineKeyForm(existingKey) {
+  const row = document.getElementById('editKeysInlineRow');
+  row.style.display = 'block';
+  if (existingKey) {
+    // Edit mode: pre-fill with existing key data
+    editingKeyId = existingKey.id;
+    document.getElementById('newKeyAlias').value = existingKey.alias || '';
+    document.getElementById('newKeyValue').value = existingKey.key || '';
+    document.getElementById('newKeyValue').placeholder = '留空保持不变';
+    document.getElementById('newKeyQuota').value = existingKey.quota || 0;
+    document.getElementById('newKeyPriority').value = existingKey.priority || 1;
+    document.getElementById('newKeyAccess').value = existingKey.access_control || 'private';
+  } else {
+    // Add mode: clear all fields
+    editingKeyId = null;
+    document.getElementById('newKeyAlias').value = '';
+    document.getElementById('newKeyValue').value = '';
+    document.getElementById('newKeyValue').placeholder = 'sk-...';
+    document.getElementById('newKeyQuota').value = '0';
+    document.getElementById('newKeyPriority').value = '1';
+    document.getElementById('newKeyAccess').value = 'private';
   }
+  document.getElementById('newKeyAlias').focus();
 }
 
 function cancelInlineKey() {
   document.getElementById('editKeysInlineRow').style.display = 'none';
+  editingKeyId = null;
 }
 
 async function saveInlineKey() {
   if (!editingId) return;
   const alias = document.getElementById('newKeyAlias').value.trim();
   const key = document.getElementById('newKeyValue').value.trim();
-  if (!key) { toast('请输入 API Key', 'error'); return; }
   const quota = parseInt(document.getElementById('newKeyQuota').value, 10) || 0;
   const priority = parseInt(document.getElementById('newKeyPriority').value, 10) || 1;
   const access = document.getElementById('newKeyAccess').value;
+  const isEdit = !!editingKeyId;
+
+  if (!isEdit && !key) { toast('请输入 API Key', 'error'); return; }
+
   try {
-    const r = await authFetch('/api/providers/' + editingId + '/keys', {
-      method: 'POST',
-      body: JSON.stringify({ key: key, alias: alias, quota: quota, access_control: access, priority: priority, enabled: true })
-    });
+    let url, method, body;
+    if (isEdit) {
+      // Update existing key
+      url = '/api/providers/' + editingId + '/keys/' + editingKeyId;
+      method = 'PUT';
+      body = { alias: alias, quota: quota, access_control: access, priority: priority };
+      if (key) body.key = key; // only update key value if provided
+    } else {
+      // Add new key
+      url = '/api/providers/' + editingId + '/keys';
+      method = 'POST';
+      body = { key: key, alias: alias, quota: quota, access_control: access, priority: priority, enabled: true };
+    }
+    const r = await authFetch(url, { method: method, body: JSON.stringify(body) });
     const d = await r.json();
     if (d.success) {
-      toast('✅ Key 已添加', 'success');
+      toast(isEdit ? '✅ Key 已更新' : '✅ Key 已添加', 'success');
       document.getElementById('editKeysInlineRow').style.display = 'none';
+      editingKeyId = null;
       await loadEditKeys(editingId);
       await loadProviders();
     } else {
-      toast('添加失败: ' + extractError(d) || '未知错误', 'error');
+      toast((isEdit ? '更新' : '添加') + '失败: ' + (extractError(d) || '未知错误'), 'error');
     }
-  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+  } catch(e) { toast((isEdit ? '更新' : '添加') + '失败: ' + e.message, 'error'); }
 }
 
 async function loadEditKeys(pid) {
@@ -2001,11 +2024,14 @@ async function loadEditKeys(pid) {
     const r = await authFetch('/api/providers/' + pid + '/keys');
     const d = await r.json();
     const keys = d.keys || [];
+    // Store keys data globally for edit button access
+    window._editKeysData = keys;
     let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>别名</th><th>Key</th><th>状态</th><th>额度</th><th>优先级</th><th>权限</th><th>操作</th></tr></thead><tbody>';
     if (!keys.length) {
       html += '<tr><td colspan="7" style="color:var(--text-muted);text-align:center;padding:16px">暂无 Key，点击下方按钮添加</td></tr>';
     } else {
-      for (const k of keys) {
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
         const quotaText = k.quota > 0 ? (k.used.toLocaleString() + '/' + k.quota.toLocaleString()) : '无限';
         const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
         const accessLabel = k.access_control === 'shared' ? '共享' : '私有';
@@ -2018,6 +2044,7 @@ async function loadEditKeys(pid) {
         html += '<td>' + k.priority + '</td>';
         html += '<td>' + accessLabel + '</td>';
         html += '<td style="white-space:nowrap">';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="editInlineKey(' + i + ')">编辑</button> ';
         html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testEditKey(\'' + pid + '\',\'' + k.id + '\')">测试</button> ';
         html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteKeyInEdit(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
         html += '</td>';
@@ -2031,6 +2058,12 @@ async function loadEditKeys(pid) {
   } catch(e) {
     container.innerHTML = '<div style="color:var(--error);font-size:12px">加载失败: ' + e.message + '</div>';
   }
+}
+
+function editInlineKey(index) {
+  const k = window._editKeysData && window._editKeysData[index];
+  if (!k) { toast('Key 数据未找到', 'error'); return; }
+  showInlineKeyForm(k);
 }
 
 async function deleteKeyInEdit(pid, keyId) {
