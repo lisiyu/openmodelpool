@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenModelPool V8 完整设计交付</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  background: #0a0a0a;
+  color: #e5e5e5;
+  padding: 40px 20px;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container { max-width: 960px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 700; color: #f5f5f7; margin-bottom: 8px; }
+.subtitle { font-size: 13px; color: #64748b; margin-bottom: 32px; }
+.section-title { font-size: 14px; font-weight: 600; color: #94a3b8; margin: 28px 0 12px; }
+
+/* ===== CARD ===== */
+.card {
+  background: #1c1c1e;
+  border: 1px solid rgba(148,163,184,.12);
+  border-left: 4px solid #334155;
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  transition: all .3s;
+}
+.card:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+.card.accent-0 { border-left-color: #3b82f6; }
+.card.accent-1 { border-left-color: #8b5cf6; }
+.card.accent-2 { border-left-color: #f97316; }
+.card.accent-3 { border-left-color: #22c55e; }
+.card.accent-4 { border-left-color: #ec4899; }
+.card.accent-5 { border-left-color: #06b6d4; }
+.card.disabled { opacity: .4; }
+
+/* ===== ROW HEADER (Row 1) ===== */
+.row-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.on { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,.4); }
+.status-dot.off { background: #64748b; }
+.status-dot.warn { background: #fbbf24; box-shadow: 0 0 6px rgba(251,191,36,.3); }
+
+.priority-badge {
+  display: inline-flex; align-items: center;
+  height: 28px; padding: 0 10px;
+  font-size: 13px; font-weight: 500;
+  color: #94a3b8;
+  background: rgba(51,65,85,.12);
+  border: 1px solid rgba(148,163,184,.25);
+  border-radius: 8px;
+  white-space: nowrap; line-height: 1;
+  flex-shrink: 0;
+}
+.priority-badge b { font-weight: 600; color: #e5e5e5; margin-left: 4px; }
+
+.platform-name {
+  font-size: 18px; font-weight: 700;
+  white-space: nowrap; letter-spacing: .5px;
+  color: #f5f5f7; flex-shrink: 0;
+}
+.platform-name a {
+  color: #f5f5f7; text-decoration: none;
+  border-bottom: 1px dashed rgba(148,163,184,.4);
+  transition: all .2s;
+}
+.platform-name a:hover { color: #60a5fa; border-bottom-color: #60a5fa; }
+
+/* Model stats pills in row-header */
+.model-stats {
+  display: inline-flex; align-items: center;
+  gap: 3px; flex-shrink: 0;
+  margin-left: auto;
+}
+.model-stats .label {
+  font-size: 12px; font-weight: 500;
+  color: #94a3b8; margin-right: 4px;
+  white-space: nowrap;
+}
+.model-stat {
+  display: inline-flex; align-items: center;
+  height: 22px; padding: 0 7px;
+  font-size: 11px; font-weight: 500;
+  border-radius: 6px;
+  white-space: nowrap; line-height: 1;
+}
+.model-stat .val {
+  font-weight: 700; font-size: 12px;
+  margin-left: 3px; font-variant-numeric: tabular-nums;
+}
+.model-stat.private { background: rgba(96,165,250,.08); color: #60a5fa; border: 1px solid rgba(96,165,250,.18); }
+.model-stat.shared { background: rgba(168,85,247,.08); color: #a855f7; border: 1px solid rgba(168,85,247,.18); }
+.model-stat.enabled { background: rgba(34,197,94,.08); color: #22c55e; border: 1px solid rgba(34,197,94,.18); cursor: pointer; transition: all .2s; }
+.model-stat.enabled:hover { background: rgba(34,197,94,.18); border-color: rgba(34,197,94,.4); }
+.model-stat.total { background: rgba(148,163,184,.08); color: #94a3b8; border: 1px solid rgba(148,163,184,.18); }
+
+.type-badge {
+  font-size: 10px; font-weight: 500;
+  padding: 2px 8px; border-radius: 6px;
+  background: rgba(148,163,184,.1);
+  color: #94a3b8;
+  border: 1px solid rgba(148,163,184,.15);
+  white-space: nowrap; flex-shrink: 0;
+}
+.platform-type-badge {
+  font-size: 10px; font-weight: 500;
+  padding: 2px 8px; border-radius: 6px;
+  background: rgba(96,165,250,.08);
+  color: #60a5fa;
+  border: 1px solid rgba(96,165,250,.2);
+  white-space: nowrap; flex-shrink: 0;
+}
+.overview-version {
+  font-size: 10px; font-weight: 500;
+  padding: 2px 8px; border-radius: 6px;
+  background: rgba(59,130,246,.08);
+  color: #60a5fa;
+  border: 1px solid rgba(59,130,246,.2);
+  white-space: nowrap; flex-shrink: 0;
+}
+
+/* ===== MERGED ROW (Row 2) ===== */
+.merged-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: nowrap;
+  margin-top: 10px;
+}
+.stats-group {
+  display: inline-flex; align-items: center;
+  gap: 4px; flex-shrink: 0;
+}
+.stat-pill {
+  display: inline-flex; align-items: center;
+  height: 28px; padding: 0 10px;
+  font-size: 12px; font-weight: 500;
+  color: #94a3b8;
+  background: rgba(51,65,85,.12);
+  border: 1px solid rgba(148,163,184,.25);
+  border-radius: 8px;
+  white-space: nowrap; line-height: 1;
+  transition: all .2s;
+}
+.stat-pill b {
+  font-weight: 600; color: #e5e5e5;
+  margin-left: 3px; font-variant-numeric: tabular-nums;
+}
+.stat-pill b.green { color: #22c55e; }
+.stat-pill b.yellow { color: #fbbf24; }
+.stat-pill b.blue { color: #3b82f6; }
+.stat-pill b.purple { color: #a855f7; }
+
+/* Keys pill with sub-badges */
+.keys-pill {
+  display: inline-flex; align-items: center;
+  height: 28px; padding: 0 10px;
+  font-size: 12px; font-weight: 500;
+  color: #94a3b8;
+  background: rgba(51,65,85,.12);
+  border: 1px solid rgba(148,163,184,.25);
+  border-radius: 8px;
+  white-space: nowrap; line-height: 1;
+  gap: 6px;
+}
+.keys-pill b { font-weight: 600; color: #e5e5e5; margin-left: 3px; }
+.keys-pill .key-sub {
+  font-size: 10px; font-weight: 600;
+  padding: 1px 5px; border-radius: 4px;
+}
+.keys-pill .key-sub.private { background: rgba(96,165,250,.12); color: #60a5fa; }
+.keys-pill .key-sub.shared { background: rgba(168,85,247,.12); color: #a855f7; }
+
+.separator {
+  width: 1px; height: 18px;
+  background: rgba(148,163,184,.2);
+  margin: 0 8px; flex-shrink: 0;
+}
+
+/* ===== BUTTONS ===== */
+.v7-btn {
+  display: inline-flex; align-items: center;
+  height: 28px; padding: 0 12px;
+  font-size: 12px; font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid rgba(148,163,184,.25);
+  background: rgba(51,65,85,.08);
+  color: #94a3b8;
+  cursor: pointer; white-space: nowrap;
+  transition: all .2s; gap: 4px;
+}
+.v7-btn:hover { background: rgba(51,65,85,.18); border-color: rgba(148,163,184,.5); color: #e5e5e5; }
+.v7-btn.danger { background: rgba(239,68,68,.06); border-color: rgba(239,68,68,.2); color: rgba(239,68,68,.9); }
+.v7-btn.danger:hover { background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.4); }
+.v7-btn.success { background: rgba(34,197,94,.06); border-color: rgba(34,197,94,.2); color: rgba(34,197,94,.9); }
+.v7-btn.success:hover { background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.4); }
+
+/* ===== QUOTA BAR (Row 3) ===== */
+.quota-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148,163,184,.08);
+}
+.quota-cell {
+  display: flex; flex-direction: column;
+  gap: 6px;
+}
+.quota-label {
+  font-size: 11px; font-weight: 600;
+  color: #94a3b8;
+  text-align: center;
+  letter-spacing: .3px;
+}
+.quota-traffic {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+.traffic-item, .quota-connect-item {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+}
+.traffic-num {
+  font-size: 14px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.traffic-sub { font-size: 9px; color: #64748b; font-weight: 500; }
+.traffic-num.blue { color: #3b82f6; }
+.traffic-num.purple { color: #a855f7; }
+.traffic-num.emerald { color: #10b981; }
+
+.quota-connect-num {
+  font-size: 14px; font-weight: 700;
+  color: #e5e5e5;
+  font-variant-numeric: tabular-nums;
+}
+.quota-connect-sub { font-size: 9px; color: #64748b; font-weight: 500; }
+
+.quota-value {
+  font-size: 12px; font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.quota-value.blue { color: #3b82f6; }
+.quota-value.purple { color: #a855f7; }
+.quota-value.emerald { color: #10b981; }
+
+.quota-bar-wrap {
+  height: 4px;
+  background: rgba(148,163,184,.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.quota-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width .6s ease;
+}
+.quota-bar-fill.blue { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.quota-bar-fill.purple { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.quota-bar-fill.emerald { background: linear-gradient(90deg, #10b981, #34d399); }
+
+/* ===== MODAL ===== */
+.modal-backdrop {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,.6);
+  backdrop-filter: blur(8px);
+  display: none; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.modal-backdrop.show { display: flex; }
+.modal {
+  background: #1c1c1e;
+  border: 1px solid rgba(148,163,184,.15);
+  border-radius: 16px;
+  width: 720px; max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,.5);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(148,163,184,.1);
+}
+.modal-header h2 {
+  font-size: 16px; font-weight: 700; color: #f5f5f7;
+  display: flex; align-items: center; gap: 8px;
+}
+.platform-icon { font-size: 20px; }
+.close-btn {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; border: 1px solid rgba(148,163,184,.2);
+  background: rgba(51,65,85,.1);
+  color: #94a3b8; font-size: 14px;
+  cursor: pointer; transition: all .2s;
+}
+.close-btn:hover { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.3); color: #ef4444; }
+
+.toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid rgba(148,163,184,.08);
+}
+.toolbar-left { display: flex; gap: 6px; }
+.toolbar-btn {
+  height: 28px; padding: 0 12px;
+  font-size: 12px; font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid rgba(148,163,184,.2);
+  background: rgba(51,65,85,.08);
+  color: #94a3b8;
+  cursor: pointer; transition: all .2s;
+}
+.toolbar-btn:hover { background: rgba(51,65,85,.18); color: #e5e5e5; }
+.search-box {
+  height: 28px; padding: 0 12px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(148,163,184,.2);
+  background: rgba(51,65,85,.08);
+  color: #e5e5e5;
+  outline: none; width: 200px;
+}
+
+.matrix-wrap { padding: 16px 24px; max-height: 400px; overflow-y: auto; }
+.matrix-table { width: 100%; border-collapse: collapse; }
+.matrix-table th {
+  position: sticky; top: 0;
+  background: #1c1c1e;
+  padding: 8px 12px;
+  font-size: 11px; font-weight: 600;
+  color: #94a3b8; text-align: left;
+  border-bottom: 1px solid rgba(148,163,184,.15);
+}
+.matrix-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(148,163,184,.06);
+}
+.section-row td {
+  padding: 8px 12px 4px;
+  font-size: 10px; font-weight: 600;
+  color: #64748b; text-transform: uppercase;
+  letter-spacing: .5px;
+  border-bottom: 1px solid rgba(148,163,184,.08);
+}
+
+.key-label { display: flex; flex-direction: column; gap: 2px; }
+.key-name { font-size: 11px; font-weight: 600; color: #e5e5e5; }
+.key-mask { font-size: 9px; color: #64748b; font-family: 'SF Mono', Monaco, Consolas, monospace; }
+.key-count { font-size: 9px; color: #22c55e; font-weight: 500; }
+
+.model-name {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; color: #e5e5e5;
+}
+.model-tag {
+  font-size: 9px; font-weight: 600;
+  padding: 1px 5px; border-radius: 4px;
+}
+.model-tag.system { background: rgba(59,130,246,.12); color: #60a5fa; }
+.model-tag.synced { background: rgba(34,197,94,.1); color: #22c55e; }
+
+.toggle-wrap { display: flex; justify-content: center; }
+.toggle {
+  width: 36px; height: 20px;
+  border-radius: 10px;
+  background: rgba(148,163,184,.2);
+  position: relative;
+  cursor: pointer;
+  transition: all .2s;
+}
+.toggle.on { background: #22c55e; }
+.toggle .knob {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: white;
+  position: absolute;
+  top: 2px; left: 2px;
+  transition: all .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.toggle.on .knob { left: 18px; }
+
+.modal-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(148,163,184,.1);
+}
+.footer-stats { font-size: 12px; color: #94a3b8; }
+.footer-stats b { color: #e5e5e5; font-weight: 600; }
+.save-btn {
+  height: 32px; padding: 0 20px;
+  font-size: 13px; font-weight: 600;
+  border-radius: 8px; border: none;
+  background: #3b82f6; color: white;
+  cursor: pointer; transition: all .2s;
+}
+.save-btn:hover { background: #2563eb; }
+
+.demo-trigger {
+  display: inline-flex; align-items: center;
+  height: 32px; padding: 0 16px;
+  font-size: 13px; font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid rgba(59,130,246,.3);
+  background: rgba(59,130,246,.1);
+  color: #60a5fa;
+  cursor: pointer; transition: all .2s;
+}
+.demo-trigger:hover { background: rgba(59,130,246,.2); }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>OpenModelPool V8 完整设计交付</h1>
+  <p class="subtitle">Apple 设计风格 · 统一尺寸/字体/边框 · 卡片 + 模型矩阵编辑</p>
+
+  <!-- ============ 节点概览卡片 ============ -->
+  <div class="card accent-0" style="border-left:4px solid #3b82f6">
+    <!-- Row 1: Header -->
+    <div class="row-header">
+      <span class="status-dot on"></span>
+      <span class="platform-name" style="font-size:14px;font-weight:700">节点概览</span>
+      <span style="font-size:10px;color:#64748b;font-family:'SF Mono',Monaco,Consolas,monospace">mmx-88f1816f</span>
+      <span class="overview-version">v1.0.0</span>
+      <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0">
+        <button class="v7-btn" style="border-color:rgba(52,211,153,.4);color:#34d399">📥 一键添加全部发现</button>
+        <button class="v7-btn">🔄 一键同步全部地址</button>
+        <button class="v7-btn" style="border-color:rgba(52,211,153,.4);color:#34d399">🔍 新发现</button>
+        <button class="v7-btn" style="background:rgba(96,165,250,.15);border-color:rgba(96,165,250,.4);color:#60a5fa">+ 添加平台</button>
+      </div>
+    </div>
+    <!-- Row 2: 统计药丸行 — 全部统一 stat-pill 风格 -->
+    <div class="merged-row" style="gap:12px">
+      <div class="stats-group">
+        <span class="stat-pill" style="background:transparent;border-color:transparent;color:#94a3b8;font-weight:600">模型统计：</span>
+        <span class="stat-pill">私有 <b class="blue">4</b></span>
+        <span class="stat-pill">共享 <b class="purple">7</b></span>
+        <span class="stat-pill">启用 <b class="green">11</b></span>
+        <span class="stat-pill">总计 <b class="yellow">22</b></span>
+        <div class="keys-pill">
+          Provider keys <b>3</b>
+          <span class="key-sub private">私有 2</span>
+          <span class="key-sub shared">共享 1</span>
+        </div>
+        <span class="stat-pill">平均延迟 <b class="purple">128ms</b></span>
+        <span class="stat-pill">成功率 <b class="green">98.7%</b></span>
+      </div>
+    </div>
+    <!-- Row 3: 三池 Quota Bar -->
+    <div class="quota-bar">
+      <!-- 私有池 -->
+      <div class="quota-cell">
+        <div class="quota-label">私有池</div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num blue">367</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num blue">97.4K</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">12</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value blue">∞ / ∞</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill emerald" style="width:15%"></div></div>
+      </div>
+      <!-- 公共池 -->
+      <div class="quota-cell">
+        <div class="quota-label">公共池 <span style="font-size:9px;color:#64748b;font-weight:400">(50%)</span></div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num purple">150</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num purple">42.6K</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">5</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value purple">8.0K / 16.0K</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill blue" style="width:50%"></div></div>
+      </div>
+      <!-- Guest池 -->
+      <div class="quota-cell">
+        <div class="quota-label">Guest池 <span style="font-size:9px;color:#64748b;font-weight:400">(50%)</span></div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num emerald">45</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num emerald">11.2K</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">2</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value emerald">2.1K / 8.0K</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill emerald" style="width:26%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Card 1: Google Gemini ============ -->
+  <div class="card accent-1">
+    <div class="row-header">
+      <span class="status-dot on"></span>
+      <span class="priority-badge">P<b>1</b></span>
+      <span class="platform-name"><a href="#">Google Gemini</a></span>
+      <div class="model-stats">
+        <span class="label">模型统计：</span>
+        <span class="model-stat private">私有<span class="val">3</span></span>
+        <span class="model-stat shared">共享<span class="val">5</span></span>
+        <span class="model-stat enabled" onclick="document.getElementById('modelModal').classList.add('show')">启用<span class="val">6</span></span>
+        <span class="model-stat total">总计<span class="val">9</span></span>
+      </div>
+      <span class="type-badge">openai_compatible</span>
+    </div>
+    <div class="merged-row">
+      <div class="stats-group">
+        <div class="keys-pill">
+          Provider keys <b>2</b>
+          <span class="key-sub private">私有 1</span>
+          <span class="key-sub shared">共享 1</span>
+        </div>
+        <span class="stat-pill">延迟 <b class="green">399ms</b></span>
+        <span class="stat-pill">成功率 <b class="green">98.5%</b></span>
+      </div>
+      <div class="separator"></div>
+      <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:auto">
+        <button class="v7-btn">同步地址</button>
+        <button class="v7-btn">同步模型</button>
+        <button class="v7-btn">编辑</button>
+        <button class="v7-btn success">测试</button>
+        <button class="v7-btn danger">禁用</button>
+        <button class="v7-btn danger">删除</button>
+      </div>
+    </div>
+    <div class="quota-bar">
+      <div class="quota-cell">
+        <div class="quota-label">私有池</div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num blue">120</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num blue">31.2K</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">8</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value blue">∞ / ∞</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill emerald" style="width:10%"></div></div>
+      </div>
+      <div class="quota-cell">
+        <div class="quota-label">公共池 <span style="font-size:9px;color:#64748b;font-weight:400">(50%)</span></div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num purple">50</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num purple">14.8K</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">3</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value purple">3.2K / 8.0K</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill blue" style="width:40%"></div></div>
+      </div>
+      <div class="quota-cell">
+        <div class="quota-label">Guest池 <span style="font-size:9px;color:#64748b;font-weight:400">(50%)</span></div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num emerald">18</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num emerald">4.1K</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">1</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value emerald">1.0K / 4.0K</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill emerald" style="width:25%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Card 2: Agnes AI ============ -->
+  <div class="card accent-2">
+    <div class="row-header">
+      <span class="status-dot on"></span>
+      <span class="priority-badge">P<b>2</b></span>
+      <span class="platform-name"><a href="#">Agnes AI</a></span>
+      <div class="model-stats">
+        <span class="label">模型统计：</span>
+        <span class="model-stat private">私有<span class="val">2</span></span>
+        <span class="model-stat shared">共享<span class="val">4</span></span>
+        <span class="model-stat enabled" onclick="document.getElementById('modelModal').classList.add('show')">启用<span class="val">5</span></span>
+        <span class="model-stat total">总计<span class="val">8</span></span>
+      </div>
+      <span class="type-badge">openai_compatible</span>
+    </div>
+    <div class="merged-row">
+      <div class="stats-group">
+        <div class="keys-pill">
+          Provider keys <b>1</b>
+          <span class="key-sub private">私有 1</span>
+        </div>
+        <span class="stat-pill">延迟 <b class="yellow">820ms</b></span>
+        <span class="stat-pill">成功率 <b class="yellow">91.2%</b></span>
+      </div>
+      <div class="separator"></div>
+      <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:auto">
+        <button class="v7-btn">同步地址</button>
+        <button class="v7-btn">同步模型</button>
+        <button class="v7-btn">编辑</button>
+        <button class="v7-btn success">测试</button>
+        <button class="v7-btn danger">禁用</button>
+        <button class="v7-btn danger">删除</button>
+      </div>
+    </div>
+    <div class="quota-bar">
+      <div class="quota-cell">
+        <div class="quota-label">私有池</div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num blue">247</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num blue">66.2K</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">4</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value blue">∞ / ∞</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill emerald" style="width:8%"></div></div>
+      </div>
+      <div class="quota-cell">
+        <div class="quota-label">公共池 <span style="font-size:9px;color:#64748b;font-weight:400">(50%)</span></div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num purple">100</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num purple">27.8K</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">2</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value purple">4.8K / 8.0K</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill blue" style="width:60%"></div></div>
+      </div>
+      <div class="quota-cell">
+        <div class="quota-label">Guest池 <span style="font-size:9px;color:#64748b;font-weight:400">(50%)</span></div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num emerald">27</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num emerald">7.1K</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">1</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value emerald">1.1K / 4.0K</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill emerald" style="width:28%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Card 3: NVIDIA ============ -->
+  <div class="card accent-3">
+    <div class="row-header">
+      <span class="status-dot on"></span>
+      <span class="priority-badge">P<b>3</b></span>
+      <span class="platform-name"><a href="#">NVIDIA NIM</a></span>
+      <div class="model-stats">
+        <span class="label">模型统计：</span>
+        <span class="model-stat private">私有<span class="val">1</span></span>
+        <span class="model-stat shared">共享<span class="val">0</span></span>
+        <span class="model-stat enabled" onclick="document.getElementById('modelModal').classList.add('show')">启用<span class="val">1</span></span>
+        <span class="model-stat total">总计<span class="val">1</span></span>
+      </div>
+      <span class="type-badge">openai_compatible</span>
+    </div>
+    <div class="merged-row">
+      <div class="stats-group">
+        <div class="keys-pill">
+          Provider keys <b>1</b>
+          <span class="key-sub private">私有 1</span>
+        </div>
+        <span class="stat-pill">延迟 <b class="green">256ms</b></span>
+        <span class="stat-pill">成功率 <b class="green">100%</b></span>
+      </div>
+      <div class="separator"></div>
+      <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:auto">
+        <button class="v7-btn">同步地址</button>
+        <button class="v7-btn">同步模型</button>
+        <button class="v7-btn">编辑</button>
+        <button class="v7-btn success">测试</button>
+        <button class="v7-btn danger">禁用</button>
+        <button class="v7-btn danger">删除</button>
+      </div>
+    </div>
+    <div class="quota-bar">
+      <div class="quota-cell">
+        <div class="quota-label">私有池</div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num blue">36</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num blue">12.8K</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">0</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value blue">48 / 1K</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill blue" style="width:5%"></div></div>
+      </div>
+      <div class="quota-cell">
+        <div class="quota-label">公共池 <span style="font-size:9px;color:#64748b;font-weight:400">(50%)</span></div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num purple">—</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num purple">—</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">0</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value purple">— / —</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill purple" style="width:0%"></div></div>
+      </div>
+      <div class="quota-cell">
+        <div class="quota-label">Guest池 <span style="font-size:9px;color:#64748b;font-weight:400">(50%)</span></div>
+        <div class="quota-traffic">
+          <div class="traffic-item"><span class="traffic-num emerald">—</span><span class="traffic-sub">今日请求</span></div>
+          <div class="traffic-item"><span class="traffic-num emerald">—</span><span class="traffic-sub">今日 Token</span></div>
+          <div class="quota-connect-item"><span class="quota-connect-num">0</span><span class="quota-connect-sub">连接数</span></div>
+        </div>
+        <div class="quota-value emerald">— / —</div>
+        <div class="quota-bar-wrap"><div class="quota-bar-fill emerald" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Card 4: Disabled ============ -->
+  <div class="card disabled">
+    <div class="row-header">
+      <span class="status-dot off"></span>
+      <span class="priority-badge">P<b>5</b></span>
+      <span class="platform-name">OpenAI Test</span>
+      <div class="model-stats">
+        <span class="label">模型统计：</span>
+        <span class="model-stat private">私有<span class="val">0</span></span>
+        <span class="model-stat shared">共享<span class="val">0</span></span>
+        <span class="model-stat enabled" onclick="document.getElementById('modelModal').classList.add('show')">启用<span class="val">0</span></span>
+        <span class="model-stat total">总计<span class="val">0</span></span>
+      </div>
+      <span class="type-badge">openai_compatible</span>
+    </div>
+    <div class="merged-row">
+      <div class="stats-group">
+        <span class="stat-pill">Provider keys <b>0</b></span>
+        <span class="stat-pill">延迟 <b>—</b></span>
+        <span class="stat-pill">成功率 <b>—</b></span>
+      </div>
+      <div class="separator"></div>
+      <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:auto">
+        <button class="v7-btn">同步地址</button>
+        <button class="v7-btn">同步模型</button>
+        <button class="v7-btn">编辑</button>
+        <button class="v7-btn success">测试</button>
+        <button class="v7-btn danger">启用</button>
+        <button class="v7-btn danger">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 模型编辑弹窗 ============ -->
+  <p class="section-title">🧩 模型编辑弹窗</p>
+  <p style="font-size:12px;color:#64748b;margin-bottom:16px">点击上方卡片标题栏中的 <b style="color:#22c55e">「启用 N」</b> 绿色标签即可打开 ↓</p>
+  <button class="demo-trigger" onclick="document.getElementById('modelModal').classList.add('show')">📐 打开模型编辑弹窗</button>
+</div>
+
+<!-- Model Editor Modal -->
+<div class="modal-backdrop" id="modelModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>
+        <span class="platform-icon">🔗</span>
+        Google Gemini — 模型管理
+      </h2>
+      <button class="close-btn" onclick="document.getElementById('modelModal').classList.remove('show')">✕</button>
+    </div>
+
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <button class="toolbar-btn">全选</button>
+        <button class="toolbar-btn">反选</button>
+        <button class="toolbar-btn">全部启用</button>
+        <button class="toolbar-btn">全部禁用</button>
+      </div>
+      <input class="search-box" type="text" placeholder="🔍 搜索模型...">
+    </div>
+
+    <div class="matrix-wrap">
+      <table class="matrix-table">
+        <thead>
+          <tr>
+            <th>模型名称</th>
+            <th>
+              <div class="key-label">
+                <span class="key-name">🔑 Key 1</span>
+                <span class="key-mask">sk-***a3f8</span>
+                <span class="key-count">已选 5/7</span>
+              </div>
+            </th>
+            <th>
+              <div class="key-label">
+                <span class="key-name">🔑 Key 2</span>
+                <span class="key-mask">sk-***b7d2</span>
+                <span class="key-count">已选 4/7</span>
+              </div>
+            </th>
+            <th>
+              <div class="key-label">
+                <span class="key-name">🔑 Key 3</span>
+                <span class="key-mask">sk-***c1e9</span>
+                <span class="key-count">已选 6/7</span>
+              </div>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="section-row"><td colspan="4">系统默认模型</td></tr>
+          <tr>
+            <td><div class="model-name">gemini-2.0-flash <span class="model-tag system">默认</span></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+          </tr>
+          <tr>
+            <td><div class="model-name">gemini-2.0-flash-lite <span class="model-tag system">默认</span></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+          </tr>
+          <tr class="section-row"><td colspan="4">同步模型（6）</td></tr>
+          <tr>
+            <td><div class="model-name">gemini-2.5-pro <span class="model-tag synced">同步</span></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+          </tr>
+          <tr>
+            <td><div class="model-name">gemini-2.5-flash <span class="model-tag synced">同步</span></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle off"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+          </tr>
+          <tr>
+            <td><div class="model-name">gemini-1.5-pro <span class="model-tag synced">同步</span></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+          </tr>
+          <tr>
+            <td><div class="model-name">gemini-1.5-flash-8b <span class="model-tag synced">同步</span></div></td>
+            <td><div class="toggle-wrap"><div class="toggle off"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle off"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+          </tr>
+          <tr>
+            <td><div class="model-name">text-embedding-004 <span class="model-tag synced">同步</span></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+          </tr>
+          <tr>
+            <td><div class="model-name">imagen-3.0-generate-002 <span class="model-tag synced">同步</span></div></td>
+            <td><div class="toggle-wrap"><div class="toggle off"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+            <td><div class="toggle-wrap"><div class="toggle on"><div class="knob"></div></div></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="modal-footer">
+      <div class="footer-stats">共 <b>9</b> 个模型 · 已启用 <b>15</b> / 27 项配置</div>
+      <button class="save-btn">保存更改</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.toggle').forEach(function(t) {
+  t.addEventListener('click', function() { this.classList.toggle('on'); });
+});
+</script>
+
+</body>
+</html>
