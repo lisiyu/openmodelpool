@@ -76,11 +76,12 @@ func initAllFederation() {
 	initInviteManager("data")
 }
 
-// initAllNetwork initializes P2P networking, DHT, event bus, metrics, rate limiting, and load balancing.
+// initAllNetwork initializes P2P networking, event bus, metrics, rate limiting, and load balancing.
+//
+// NOTE: DHT (Kademlia) is not yet implemented — the earlier initDHT() call
+// referenced an undefined symbol and the DHT package was a non-functional
+// placeholder. Network discovery currently relies on the seed/gossip layer.
 func initAllNetwork() {
-	// DHT routing table (Phase 3 hybrid discovery)
-	initDHT()
-
 	// Event bus for real-time push
 	initEventBus()
 

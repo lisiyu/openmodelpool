@@ -272,6 +272,16 @@ select.form-input{appearance:none;cursor:pointer}
       <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
   </div>
+  <!-- 诚实状态提示：仅说明当前代码真实完成度，不破坏任何功能/结构 -->
+  <div class="card" style="border-style:dashed;opacity:0.85">
+    <div class="section-note" style="margin:0">
+      <strong style="color:var(--text-muted)">⚠️ 当前构建诚实状态：</strong>
+      DHT 发现层当前<strong>禁用</strong>（GetDHTStats 返回 enabled:false，实际依赖 registry/gossip）；
+      WAF 引擎<strong>尚未激活</strong>（status 返回 disabled）；
+      贡献账本为<strong>本地内存版（GossipLedger 桩，非 IPFS）</strong>；
+      节点 <strong>BIP39 身份未暴露</strong>到 UI（pubkey 接口返回空）。以上均为规划中功能，非故障。
+    </div>
+  </div>
   <!-- 服务概览 -->
   <div class="card" id="overviewCard">
     <div class="card-title"><span class="icon">📊</span> 服务概览</div>
@@ -431,6 +441,9 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
       <div style="margin-top:8px;text-align:right">
         <button class="btn btn-sm btn-primary" onclick="saveWeights()" style="font-size:11px;padding:4px 12px">保存权重</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
+        个人模式为 <strong>4 维</strong> 路由（优先级 / 成本 / 速度 / 剩余 Token）。网络模式设计目标为 5 维（含 trust/reputation 等），但当前 UI 仅暴露这 4 个滑块。
       </div>
     </div>
     <!-- 概览统计 -->

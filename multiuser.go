@@ -96,7 +96,7 @@ func (m *MultiUserManager) load() {
 				// Decrypt stored key, then store SHA-256 hash in apiKeyMap
 				plaintext := c.APIKey
 				if IsEncrypted(c.APIKey) {
-					plaintext = enc.Decrypt(c.APIKey)
+					plaintext = decryptField(c.APIKey)
 				}
 				if plaintext != "" {
 					m.apiKeyMap[hashAPIKey(plaintext)] = id
@@ -200,7 +200,7 @@ func (m *MultiUserManager) CreateConsumer(name, inviteCode string) (*Consumer, e
 
 	apiKey := "sk-" + randomString(48)
 	id := "consumer-" + randomString(8)
-	encryptedKey := enc.Encrypt(apiKey)
+	encryptedKey := encryptField(apiKey)
 
 	consumer := &Consumer{
 		ID:         id,
@@ -288,7 +288,7 @@ func (m *MultiUserManager) ListConsumers() []Consumer {
 		// Decrypt for display then mask
 		displayKey := c.APIKey
 		if IsEncrypted(c.APIKey) {
-			displayKey = enc.Decrypt(c.APIKey)
+			displayKey = decryptField(c.APIKey)
 		}
 		if len(displayKey) > 8 {
 			safe.APIKey = displayKey[:6] + "..." + displayKey[len(displayKey)-4:]
@@ -311,7 +311,7 @@ func (m *MultiUserManager) GetConsumerFull(id string) (*Consumer, bool) {
 	result := *c
 	// Decrypt API key for admin display
 	if IsEncrypted(result.APIKey) {
-		result.APIKey = enc.Decrypt(result.APIKey)
+		result.APIKey = decryptField(result.APIKey)
 	}
 	return &result, true
 }
@@ -328,7 +328,7 @@ func (m *MultiUserManager) DeleteConsumer(id string) bool {
 	// Remove the SHA-256 hash from apiKeyMap
 	plaintextKey := c.APIKey
 	if IsEncrypted(c.APIKey) {
-		plaintextKey = enc.Decrypt(c.APIKey)
+		plaintextKey = decryptField(c.APIKey)
 	}
 	delete(m.apiKeyMap, hashAPIKey(plaintextKey))
 	delete(m.consumers, id)

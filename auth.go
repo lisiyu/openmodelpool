@@ -52,7 +52,7 @@ func (a *Auth) load() {
 	}
 	// Decrypt SMTP password if encrypted
 	if a.data.SMTP.Password != "" && IsEncrypted(a.data.SMTP.Password) {
-		a.data.SMTP.Password = enc.Decrypt(a.data.SMTP.Password)
+		a.data.SMTP.Password = decryptField(a.data.SMTP.Password)
 	}
 }
 
@@ -64,7 +64,7 @@ func (a *Auth) save() {
 	// Deep copy and encrypt SMTP password before writing
 	safe := a.data
 	if safe.SMTP.Password != "" && !IsEncrypted(safe.SMTP.Password) {
-		safe.SMTP.Password = enc.Encrypt(safe.SMTP.Password)
+		safe.SMTP.Password = encryptField(safe.SMTP.Password)
 	}
 	b, _ := json.MarshalIndent(safe, "", "  ")
 	os.MkdirAll("data", 0755)
@@ -76,7 +76,7 @@ func (a *Auth) save() {
 func (a *Auth) saveLocked() {
 	safe := a.data
 	if safe.SMTP.Password != "" && !IsEncrypted(safe.SMTP.Password) {
-		safe.SMTP.Password = enc.Encrypt(safe.SMTP.Password)
+		safe.SMTP.Password = encryptField(safe.SMTP.Password)
 	}
 	b, _ := json.MarshalIndent(safe, "", "  ")
 	os.MkdirAll("data", 0755)

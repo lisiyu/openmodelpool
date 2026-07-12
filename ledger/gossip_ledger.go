@@ -1,182 +1,270 @@
 package ledger
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"crypto/ed25519"
 	"fmt"
-	"io"
-	"net/http"
 	"sync"
 	"time"
 )
 
-// IPFSClient provides a zero-dependency IPFS client that uses public gateways
-// for storage and retrieval, with local simulation fallback.
-type IPFSClient struct {
-	mu sync.RWMutex
-
-	// Public IPFS gateways for read/write.
-	gateways []string
-
-	// Local cache simulating IPFS pinning when gateways are unreachable.
-	localCache map[string][]byte
-
-	// HTTP client with timeout.
-	httpClient *http.Client
+// GossipLedger is a local, append-only contribution ledger. Records are kept
+// in memory and mirrored to IPFS (best-effort) via the embedded IPFSClient.
+//
+// This is a minimal but functional implementation that closes the previously
+// undefined `GossipLedger` symbol. The "gossip" sync merges remote records
+// into the local store.
+type GossipLedger struct {
+	mu        sync.RWMutex
+	peerID    string
+	ipfs      *IPFSClient
+	recs      map[string]*ContributionRecord
+	trusts    map[string]*TrustRecord
+	claims    map[string]*CapabilityClaim
+	penalties map[string]*PenaltyRecord
+	seq       uint64
+	pub       ed25519.PublicKey
+	priv      ed25519.PrivateKey
 }
 
-// NewIPFSClient creates a new IPFS client with default public gateways.
-func NewIPFSClient() *IPFSClient {
-	return &IPFSClient{
-		gateways: []string{
-			"https://ipfs.io",
-			"https://dweb.link",
-			"https://gateway.pinata.cloud",
-			"https://cloudflare-ipfs.com",
-			"https://ipfs.infura.io",
-		},
-		localCache: make(map[string][]byte),
-		httpClient: &http.Client{Timeout: 200 * time.Millisecond},
-	}
-}
-
-// Store uploads data to IPFS. It first tries the HTTP gateway add API;
-// on failure it computes a SHA-256 hash locally to simulate a CID.
-// Returns the simulated or real CID.
-func (c *IPFSClient) Store(data []byte) (string, error) {
-	// Try each gateway's /api/v0/add endpoint.
-	for _, gw := range c.gateways {
-		cid, err := c.storeViaGateway(gw, data)
-		if err == nil {
-			return cid, nil
-		}
-	}
-
-	// Fallback: compute local CID-like hash.
-	return c.localStore(data), nil
-}
-
-// Retrieve fetches data from IPFS by CID. Tries gateways first, then local cache.
-func (c *IPFSClient) Retrieve(cid string) ([]byte, error) {
-	// Try each gateway.
-	for _, gw := range c.gateways {
-		data, err := c.retrieveViaGateway(gw, cid)
-		if err == nil {
-			return data, nil
-		}
-	}
-
-	// Fallback: local cache.
-	c.mu.RLock()
-	data, ok := c.localCache[cid]
-	c.mu.RUnlock()
-	if ok {
-		return data, nil
-	}
-
-	return nil, fmt.Errorf("failed to retrieve CID %s from all gateways and local cache", cid)
-}
-
-// StoreJSON marshals v to JSON and stores it on IPFS.
-func (c *IPFSClient) StoreJSON(v interface{}) (string, error) {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal JSON: %w", err)
-	}
-	return c.Store(data)
-}
-
-// RetrieveJSON fetches data and unmarshals into v.
-func (c *IPFSClient) RetrieveJSON(cid string, v interface{}) error {
-	data, err := c.Retrieve(cid)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, v)
-}
-
-// CacheSize returns the number of items in local cache.
-func (c *IPFSClient) CacheSize() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return len(c.localCache)
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-func (c *IPFSClient) storeViaGateway(gateway string, data []byte) (string, error) {
-	url := gateway + "/api/v0/add"
-
-	body := &bytes.Buffer{}
-	// Multipart is ideal but for simplicity we send raw body.
-	req, err := http.NewRequest("POST", url, body)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/octet-stream")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("gateway %s returned status %d", gateway, resp.StatusCode)
-	}
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	// The API returns JSON with "Hash" field.
-	var result struct {
-		Hash string `json:"Hash"`
-	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", err
-	}
-	if result.Hash == "" {
-		return "", fmt.Errorf("empty hash from gateway %s", gateway)
-	}
-
-	// Also cache locally.
-	c.mu.Lock()
-	c.localCache[result.Hash] = data
-	c.mu.Unlock()
-
-	return result.Hash, nil
-}
-
-func (c *IPFSClient) retrieveViaGateway(gateway, cid string) ([]byte, error) {
-	url := gateway + "/ipfs/" + cid
-	resp, err := c.httpClient.Get(url)
+// NewGossipLedger creates an empty ledger for the given local peer.
+func NewGossipLedger(peerID string) (*GossipLedger, error) {
+	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("gateway %s returned status %d for CID %s", gateway, resp.StatusCode, cid)
-	}
-
-	return io.ReadAll(resp.Body)
+	return &GossipLedger{
+		peerID:    peerID,
+		ipfs:      NewIPFSClient(),
+		recs:      make(map[string]*ContributionRecord),
+		trusts:    make(map[string]*TrustRecord),
+		claims:    make(map[string]*CapabilityClaim),
+		penalties: make(map[string]*PenaltyRecord),
+		pub:       pub,
+		priv:      priv,
+	}, nil
 }
 
-// localStore computes a SHA-256 hash of data and stores it in local cache,
-// simulating an IPFS CID. The hash is prefixed with "Qm" to resemble a real CIDv0.
-func (c *IPFSClient) localStore(data []byte) string {
-	h := sha256.Sum256(data)
-	cid := "Qm" + hex.EncodeToString(h[:])
+// PublicKey returns the ledger's ed25519 public key.
+func (g *GossipLedger) PublicKey() ed25519.PublicKey {
+	return g.pub
+}
 
-	c.mu.Lock()
-	c.localCache[cid] = data
-	c.mu.Unlock()
+// Sign returns an ed25519 signature over data using the ledger's private key.
+func (g *GossipLedger) Sign(data []byte) []byte {
+	return ed25519.Sign(g.priv, data)
+}
 
-	return cid
+// getAllClaims returns the ledger's capability claims as a slice.
+func (g *GossipLedger) getAllClaims() []*CapabilityClaim {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	out := make([]*CapabilityClaim, 0, len(g.claims))
+	for _, c := range g.claims {
+		out = append(out, c)
+	}
+	return out
+}
+
+// VerifySignature reports whether sig is a valid ed25519 signature of data
+// for the given public key.
+func VerifySignature(pub ed25519.PublicKey, data, sig []byte) bool {
+	return ed25519.Verify(pub, data, sig)
+}
+
+// GetPenalties returns all penalties recorded for a peer.
+func (g *GossipLedger) GetPenalties(peerID string) ([]*PenaltyRecord, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	var out []*PenaltyRecord
+	for _, p := range g.penalties {
+		if p.PeerID == peerID {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// Count returns the total number of records stored in the ledger.
+func (g *GossipLedger) Count() int {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return len(g.recs) + len(g.trusts) + len(g.claims) + len(g.penalties)
+}
+
+func (g *GossipLedger) nextID(prefix string) string {
+	g.seq++
+	return fmt.Sprintf("%s-%s-%d", prefix, g.peerID, g.seq)
+}
+
+// RecordContribution stores a contribution locally and mirrors it to IPFS.
+func (g *GossipLedger) RecordContribution(record *ContributionRecord) (string, error) {
+	if record == nil {
+		return "", fmt.Errorf("nil contribution record")
+	}
+	g.mu.Lock()
+	if record.ID == "" {
+		record.ID = g.nextID("contrib")
+	}
+	if record.PeerID == "" {
+		record.PeerID = g.peerID
+	}
+	if record.Timestamp.IsZero() {
+		record.Timestamp = time.Now()
+	}
+	cp := *record
+	g.recs[record.ID] = &cp
+	g.mu.Unlock()
+
+	if cid, err := g.ipfs.StoreJSON(record); err == nil {
+		cp.Proof.IPFSHash = cid
+		cp.Proof.StorageLocation = "ipfs"
+		g.mu.Lock()
+		g.recs[record.ID] = &cp
+		g.mu.Unlock()
+	}
+	return record.ID, nil
+}
+
+// GetContribution returns a stored contribution by ID.
+func (g *GossipLedger) GetContribution(id string) (*ContributionRecord, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	r, ok := g.recs[id]
+	if !ok {
+		return nil, fmt.Errorf("contribution %s not found", id)
+	}
+	return r, nil
+}
+
+// VerifyContribution reports whether a contribution exists locally.
+func (g *GossipLedger) VerifyContribution(id string) (bool, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	_, ok := g.recs[id]
+	return ok, nil
+}
+
+// GetPeerContributions returns all contributions recorded for a peer.
+func (g *GossipLedger) GetPeerContributions(peerID string) ([]*ContributionRecord, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	var out []*ContributionRecord
+	for _, r := range g.recs {
+		if r.PeerID == peerID {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+// RecordTrust stores a trust probe result.
+func (g *GossipLedger) RecordTrust(rec *TrustRecord) (string, error) {
+	if rec == nil {
+		return "", fmt.Errorf("nil trust record")
+	}
+	g.mu.Lock()
+	if rec.ID == "" {
+		rec.ID = g.nextID("trust")
+	}
+	if rec.VerifierPeerID == "" {
+		rec.VerifierPeerID = g.peerID
+	}
+	if rec.Timestamp.IsZero() {
+		rec.Timestamp = time.Now()
+	}
+	cp := *rec
+	g.trusts[rec.ID] = &cp
+	g.mu.Unlock()
+	return rec.ID, nil
+}
+
+// RecordClaim stores a capability claim.
+func (g *GossipLedger) RecordClaim(claim *CapabilityClaim) (string, error) {
+	if claim == nil {
+		return "", fmt.Errorf("nil claim")
+	}
+	g.mu.Lock()
+	if claim.ID == "" {
+		claim.ID = g.nextID("claim")
+	}
+	if claim.PeerID == "" {
+		claim.PeerID = g.peerID
+	}
+	if claim.Timestamp.IsZero() {
+		claim.Timestamp = time.Now()
+	}
+	cp := *claim
+	g.claims[claim.ID] = &cp
+	g.mu.Unlock()
+	return claim.ID, nil
+}
+
+// RecordPenalty stores a penalty.
+func (g *GossipLedger) RecordPenalty(rec *PenaltyRecord) (string, error) {
+	if rec == nil {
+		return "", fmt.Errorf("nil penalty record")
+	}
+	g.mu.Lock()
+	if rec.ID == "" {
+		rec.ID = g.nextID("penalty")
+	}
+	if rec.PeerID == "" {
+		rec.PeerID = g.peerID
+	}
+	if rec.Timestamp.IsZero() {
+		rec.Timestamp = time.Now()
+	}
+	cp := *rec
+	g.penalties[rec.ID] = &cp
+	g.mu.Unlock()
+	return rec.ID, nil
+}
+
+// GossipSync merges remote records into the local store and returns the
+// number of new records added.
+func (g *GossipLedger) GossipSync(contributions []*ContributionRecord, trusts []*TrustRecord, claims []*CapabilityClaim, penalties []*PenaltyRecord) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	added := 0
+	for _, r := range contributions {
+		if r == nil || r.ID == "" {
+			continue
+		}
+		if _, ok := g.recs[r.ID]; !ok {
+			cp := *r
+			g.recs[r.ID] = &cp
+			added++
+		}
+	}
+	for _, t := range trusts {
+		if t == nil || t.ID == "" {
+			continue
+		}
+		if _, ok := g.trusts[t.ID]; !ok {
+			cp := *t
+			g.trusts[t.ID] = &cp
+			added++
+		}
+	}
+	for _, c := range claims {
+		if c == nil || c.ID == "" {
+			continue
+		}
+		if _, ok := g.claims[c.ID]; !ok {
+			cp := *c
+			g.claims[c.ID] = &cp
+			added++
+		}
+	}
+	for _, p := range penalties {
+		if p == nil || p.ID == "" {
+			continue
+		}
+		if _, ok := g.penalties[p.ID]; !ok {
+			cp := *p
+			g.penalties[p.ID] = &cp
+			added++
+		}
+	}
+	return added
 }

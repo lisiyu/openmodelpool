@@ -19,8 +19,8 @@ import (
 
 type ReputationManager struct {
 	mu       sync.RWMutex
-	scores   map[string]*NodeReputation `json:"scores"`   // nodeID -> reputation data
-	myScores map[string]*PeerScore      `json:"my_scores"` // our scores of other nodes
+	scores   map[string]*NodeReputation // nodeID -> reputation data (persisted via save/load)
+	myScores map[string]*PeerScore      // our scores of other nodes (persisted via save/load)
 	dataDir  string
 }
 
