@@ -8,7 +8,7 @@ import (
 // testEnv holds per-test isolated state for all global subsystems.
 type testEnv struct {
 	dir     string // temp data directory
-	encInst *encryptor
+	encInst *Encryptor
 	pmInst  *ProviderManager
 	tkInst  *Tracker
 	muInst  *MultiUserManager

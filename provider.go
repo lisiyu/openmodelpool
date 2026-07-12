@@ -49,12 +49,12 @@ func (m *ProviderManager) load() {
 		for _, p := range list {
 			// Decrypt API key if encrypted (legacy single key)
 			if p.APIKey != "" && IsEncrypted(p.APIKey) {
-				p.APIKey = enc.Decrypt(p.APIKey)
+				p.APIKey = decryptField(p.APIKey)
 			}
 			// Decrypt API keys in multi-key array
 			for i := range p.APIKeys {
 				if p.APIKeys[i].Key != "" && IsEncrypted(p.APIKeys[i].Key) {
-					p.APIKeys[i].Key = enc.Decrypt(p.APIKeys[i].Key)
+					p.APIKeys[i].Key = decryptField(p.APIKeys[i].Key)
 				}
 			}
 			// Migrate legacy single APIKey to APIKeys array
@@ -137,11 +137,11 @@ func (m *ProviderManager) makeProviderListLocked() []Provider {
 	list := make([]Provider, 0, len(m.providers))
 	for _, p := range m.providers {
 		if p.APIKey != "" && !IsEncrypted(p.APIKey) {
-			p.APIKey = enc.Encrypt(p.APIKey)
+			p.APIKey = encryptField(p.APIKey)
 		}
 		for i := range p.APIKeys {
 			if p.APIKeys[i].Key != "" && !IsEncrypted(p.APIKeys[i].Key) {
-				p.APIKeys[i].Key = enc.Encrypt(p.APIKeys[i].Key)
+				p.APIKeys[i].Key = encryptField(p.APIKeys[i].Key)
 			}
 		}
 		list = append(list, p)

@@ -90,7 +90,7 @@ func initNode(dataDir string) {
 	node.encPrivKey = store.PrivKeyB64
 
 	// Derive public key from encrypted key (decrypt temporarily, derive pub, then zero)
-	decrypted := enc.Decrypt(store.PrivKeyB64)
+	decrypted := decryptField(store.PrivKeyB64)
 	if decrypted == "" {
 		slog.Error("failed to decrypt node private key")
 		return
@@ -108,7 +108,7 @@ func initNode(dataDir string) {
 	}
 	// Decrypt and store mnemonic if present
 	if store.HasMnemonic && store.Mnemonic != "" {
-		decMnemonic := enc.Decrypt(store.Mnemonic)
+		decMnemonic := decryptField(store.Mnemonic)
 		if decMnemonic != "" {
 			node.mnemonic = decMnemonic
 		}
@@ -183,7 +183,7 @@ func (n *NodeIdentity) GenerateWithMnemonic(wordCount int) (string, error) {
 
 	// SA-13: Encrypt private key for storage, then clear plaintext
 	privKeyB64 := base64.StdEncoding.EncodeToString(privKey)
-	n.encPrivKey = enc.Encrypt(privKeyB64)
+	n.encPrivKey = encryptField(privKeyB64)
 	// Clear the private key from memory (will be decrypted on-demand for signing)
 	for i := range privKey {
 		privKey[i] = 0
@@ -231,7 +231,7 @@ func (n *NodeIdentity) RestoreFromMnemonic(mnemonic string) error {
 
 	// SA-13: Encrypt private key for storage, then clear plaintext
 	privKeyB64 := base64.StdEncoding.EncodeToString(privKey)
-	n.encPrivKey = enc.Encrypt(privKeyB64)
+	n.encPrivKey = encryptField(privKeyB64)
 	for i := range privKey {
 		privKey[i] = 0
 	}
@@ -271,7 +271,7 @@ func (n *NodeIdentity) GetMnemonic() (string, error) {
 			return "", fmt.Errorf("no mnemonic stored for this identity")
 		}
 
-		decrypted := enc.Decrypt(store.Mnemonic)
+		decrypted := decryptField(store.Mnemonic)
 		if decrypted == "" {
 			return "", fmt.Errorf("failed to decrypt mnemonic")
 		}
@@ -438,7 +438,7 @@ func (n *NodeIdentity) generate() error {
 
 	// SA-13: Encrypt private key for in-memory storage, then clear plaintext
 	privKeyB64 := base64.StdEncoding.EncodeToString(priv)
-	n.encPrivKey = enc.Encrypt(privKeyB64)
+	n.encPrivKey = encryptField(privKeyB64)
 	n.privKey = priv // temporarily held for save(), cleared after save
 	n.pubKey = pub
 	n.nodeID = "mm-" + base58Encode(pub[:16])
@@ -455,7 +455,7 @@ func (n *NodeIdentity) save() {
 	encKey := n.encPrivKey
 	if encKey == "" && n.privKey != nil {
 		privKeyB64 := base64.StdEncoding.EncodeToString(n.privKey)
-		encKey = enc.Encrypt(privKeyB64)
+		encKey = encryptField(privKeyB64)
 		n.encPrivKey = encKey
 		// Clear plaintext private key after encryption
 		for i := range n.privKey {
@@ -471,7 +471,7 @@ func (n *NodeIdentity) save() {
 	// Encrypt mnemonic if available
 	encMnemonic := ""
 	if n.mnemonic != "" {
-		encMnemonic = enc.Encrypt(n.mnemonic)
+		encMnemonic = encryptField(n.mnemonic)
 	}
 
 	store := NodeKeyStore{
@@ -515,7 +515,7 @@ func (n *NodeIdentity) Sign(message []byte) string {
 	defer n.mu.Unlock()
 
 	// Decrypt private key from encrypted in-memory storage
-	decrypted := enc.Decrypt(n.encPrivKey)
+	decrypted := decryptField(n.encPrivKey)
 	if decrypted == "" {
 		return ""
 	}
@@ -552,7 +552,7 @@ func (n *NodeIdentity) SignHex(message []byte) string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	decrypted := enc.Decrypt(n.encPrivKey)
+	decrypted := decryptField(n.encPrivKey)
 	if decrypted == "" {
 		return ""
 	}

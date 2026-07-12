@@ -85,7 +85,7 @@ func (c *Config) load() {
 	// Decrypt sensitive fields
 	for _, key := range sensitiveKeys {
 		if v, ok := c.data[key].(string); ok && v != "" && IsEncrypted(v) {
-			c.data[key] = enc.Decrypt(v)
+			c.data[key] = decryptField(v)
 		}
 	}
 	slog.Info("config loaded", "path", c.path, "keys", len(c.data))
@@ -118,7 +118,7 @@ func (c *Config) doSave() {
 	}
 	for _, key := range sensitiveKeys {
 		if v, ok := safe[key].(string); ok && v != "" && !IsEncrypted(v) {
-			safe[key] = enc.Encrypt(v)
+			safe[key] = encryptField(v)
 		}
 	}
 	// SA-15: Save with HMAC integrity protection

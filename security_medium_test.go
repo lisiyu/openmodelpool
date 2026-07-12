@@ -214,7 +214,7 @@ func TestSA15_SaveAndLoadWithIntegrity(t *testing.T) {
 	origEnc := enc
 	defer func() { enc = origEnc }()
 
-	enc = &encryptor{
+	enc = &Encryptor{
 		mu:    sync.RWMutex{},
 		key:   make([]byte, 32),
 		ready: true,
@@ -249,7 +249,7 @@ func TestSA15_TamperedFileDetected(t *testing.T) {
 	origEnc := enc
 	defer func() { enc = origEnc }()
 
-	enc = &encryptor{
+	enc = &Encryptor{
 		mu:    sync.RWMutex{},
 		key:   make([]byte, 32),
 		ready: true,
