@@ -49,7 +49,7 @@ select.form-input{appearance:none;cursor:pointer}
 .toast.error{background:rgba(239,68,68,.9);color:#fff}
 .toast.info{background:rgba(59,130,246,.9);color:#fff}
 @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
-.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap;flex-shrink:0}
 .badge-green{background:rgba(34,197,94,.15);color:var(--success);border:1px solid rgba(34,197,94,.3)}
 .badge-red{background:rgba(239,68,68,.15);color:var(--error);border:1px solid rgba(239,68,68,.3)}
 .badge-blue{background:rgba(59,130,246,.15);color:var(--info);border:1px solid rgba(59,130,246,.3)}
@@ -60,7 +60,7 @@ select.form-input{appearance:none;cursor:pointer}
 .provider-item:hover{border-color:rgba(108,99,255,.3)}
 .provider-header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:12px}
 .provider-info{flex:1;min-width:0}
-.provider-name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px}
+.provider-name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .provider-url{font-size:12px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .provider-meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:12px;color:var(--text-secondary)}
 .provider-actions{display:flex;gap:6px;flex-shrink:0}
@@ -90,7 +90,7 @@ select.form-input{appearance:none;cursor:pointer}
 .loading{display:inline-block;width:16px;height:16px;border:2px solid var(--border-color);border-top-color:var(--accent-start);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .section-note{font-size:12px;color:var(--text-muted);padding:10px 14px;background:rgba(108,99,255,.08);border-radius:8px;margin-bottom:16px;border-left:3px solid var(--accent-start)}
-.routing-btn{padding:6px 14px;border:1px solid var(--border-color);border-radius:8px;background:white;cursor:pointer;font-size:12px;transition:all .2s}
+.routing-btn{padding:6px 14px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;font-size:12px;transition:all .2s}
 .routing-btn:hover{border-color:var(--accent-start)}
 .routing-btn.active{background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:white;border-color:transparent}
 .usage-table{width:100%;border-collapse:collapse;font-size:12px}
@@ -105,396 +105,13 @@ select.form-input{appearance:none;cursor:pointer}
 .priority-input{width:42px;padding:2px 4px;border:1px solid var(--border-color);border-radius:4px;font-size:12px;text-align:center;background:rgba(108,99,255,.06);color:var(--text-primary)}
 .priority-input:focus{border-color:var(--accent-start);outline:none;background:white}
 @media(max-width:640px){.container{padding:16px 12px 40px}.preset-grid{grid-template-columns:repeat(2,1fr)}.provider-header{flex-direction:column;align-items:flex-start}.provider-actions{margin-top:8px}}
-
-/* ===== V8 CSS ===== */
-/* V8 Card System */
-.v8-card {
-  background: #1c1c1e;
-  border: 1px solid rgba(148,163,184,.12);
-  border-left: 4px solid #334155;
-  border-radius: 12px;
-  padding: 18px 20px;
-  margin-bottom: 16px;
-  transition: all .3s;
-}
-.v8-card:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,0,0,.25); }
-.v8-card.accent-0 { border-left-color: #3b82f6; }
-.v8-card.accent-1 { border-left-color: #8b5cf6; }
-.v8-card.accent-2 { border-left-color: #f97316; }
-.v8-card.accent-3 { border-left-color: #22c55e; }
-.v8-card.accent-4 { border-left-color: #ec4899; }
-.v8-card.accent-5 { border-left-color: #06b6d4; }
-.v8-card.v8-disabled { opacity: .4; }
-
-.v8-row-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: nowrap;
-}
-.v8-status-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.v8-status-dot.on { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,.4); }
-.v8-status-dot.off { background: #64748b; }
-.v8-status-dot.warn { background: #fbbf24; box-shadow: 0 0 6px rgba(251,191,36,.3); }
-
-.v8-priority-badge {
-  display: inline-flex; align-items: center;
-  height: 28px; padding: 0 10px;
-  font-size: 13px; font-weight: 500;
-  color: #94a3b8;
-  background: rgba(51,65,85,.12);
-  border: 1px solid rgba(148,163,184,.25);
-  border-radius: 8px;
-  white-space: nowrap; line-height: 1;
-  flex-shrink: 0;
-}
-.v8-priority-badge b { font-weight: 600; color: #e5e5e5; margin-left: 4px; }
-
-.v8-platform-name {
-  font-size: 18px; font-weight: 700;
-  white-space: nowrap; letter-spacing: .5px;
-  color: #f5f5f7; flex-shrink: 0;
-}
-.v8-platform-name a {
-  color: #f5f5f7; text-decoration: none;
-  border-bottom: 1px dashed rgba(148,163,184,.4);
-  transition: all .2s;
-}
-.v8-platform-name a:hover { color: #60a5fa; border-bottom-color: #60a5fa; }
-
-.v8-model-stats {
-  display: inline-flex; align-items: center;
-  gap: 3px; flex-shrink: 0;
-  margin-left: auto;
-}
-.v8-model-stats .v8-label {
-  font-size: 12px; font-weight: 500;
-  color: #94a3b8; margin-right: 4px;
-  white-space: nowrap;
-}
-.v8-model-stat {
-  display: inline-flex; align-items: center;
-  height: 22px; padding: 0 7px;
-  font-size: 11px; font-weight: 500;
-  border-radius: 6px;
-  white-space: nowrap; line-height: 1;
-}
-.v8-model-stat .v8-val {
-  font-weight: 700; font-size: 12px;
-  margin-left: 3px; font-variant-numeric: tabular-nums;
-}
-.v8-model-stat.v8-private { background: rgba(96,165,250,.08); color: #60a5fa; border: 1px solid rgba(96,165,250,.18); }
-.v8-model-stat.v8-shared { background: rgba(168,85,247,.08); color: #a855f7; border: 1px solid rgba(168,85,247,.18); }
-.v8-model-stat.v8-enabled { background: rgba(34,197,94,.08); color: #22c55e; border: 1px solid rgba(34,197,94,.18); cursor: pointer; transition: all .2s; }
-.v8-model-stat.v8-enabled:hover { background: rgba(34,197,94,.18); border-color: rgba(34,197,94,.4); }
-.v8-model-stat.v8-total { background: rgba(148,163,184,.08); color: #94a3b8; border: 1px solid rgba(148,163,184,.18); }
-
-.v8-type-badge {
-  font-size: 10px; font-weight: 500;
-  padding: 2px 8px; border-radius: 6px;
-  background: rgba(148,163,184,.1);
-  color: #94a3b8;
-  border: 1px solid rgba(148,163,184,.15);
-  white-space: nowrap; flex-shrink: 0;
-}
-
-.v8-merged-row {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  flex-wrap: nowrap;
-  margin-top: 10px;
-}
-.v8-stats-group {
-  display: inline-flex; align-items: center;
-  gap: 4px; flex-shrink: 0;
-}
-.v8-stat-pill {
-  display: inline-flex; align-items: center;
-  height: 28px; padding: 0 10px;
-  font-size: 12px; font-weight: 500;
-  color: #94a3b8;
-  background: rgba(51,65,85,.12);
-  border: 1px solid rgba(148,163,184,.25);
-  border-radius: 8px;
-  white-space: nowrap; line-height: 1;
-  transition: all .2s;
-}
-.v8-stat-pill b {
-  font-weight: 600; color: #e5e5e5;
-  margin-left: 3px; font-variant-numeric: tabular-nums;
-}
-.v8-stat-pill b.green { color: #22c55e; }
-.v8-stat-pill b.yellow { color: #fbbf24; }
-.v8-stat-pill b.blue { color: #3b82f6; }
-.v8-stat-pill b.purple { color: #a855f7; }
-
-.v8-keys-pill {
-  display: inline-flex; align-items: center;
-  height: 28px; padding: 0 10px;
-  font-size: 12px; font-weight: 500;
-  color: #94a3b8;
-  background: rgba(51,65,85,.12);
-  border: 1px solid rgba(148,163,184,.25);
-  border-radius: 8px;
-  white-space: nowrap; line-height: 1;
-  gap: 6px;
-}
-.v8-keys-pill b { font-weight: 600; color: #e5e5e5; margin-left: 3px; }
-.v8-keys-pill .v8-key-sub {
-  font-size: 10px; font-weight: 600;
-  padding: 1px 5px; border-radius: 4px;
-}
-.v8-keys-pill .v8-key-sub.v8-private { background: rgba(96,165,250,.12); color: #60a5fa; }
-.v8-keys-pill .v8-key-sub.v8-shared { background: rgba(168,85,247,.12); color: #a855f7; }
-
-.v8-separator {
-  width: 1px; height: 18px;
-  background: rgba(148,163,184,.2);
-  margin: 0 8px; flex-shrink: 0;
-}
-
-.v7-btn {
-  display: inline-flex; align-items: center;
-  height: 28px; padding: 0 12px;
-  font-size: 12px; font-weight: 500;
-  border-radius: 8px;
-  border: 1px solid rgba(148,163,184,.25);
-  background: rgba(51,65,85,.08);
-  color: #94a3b8;
-  cursor: pointer; white-space: nowrap;
-  transition: all .2s; gap: 4px;
-}
-.v7-btn:hover { background: rgba(51,65,85,.18); border-color: rgba(148,163,184,.5); color: #e5e5e5; }
-.v7-btn.danger { background: rgba(239,68,68,.06); border-color: rgba(239,68,68,.2); color: rgba(239,68,68,.9); }
-.v7-btn.danger:hover { background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.4); }
-.v7-btn.success { background: rgba(34,197,94,.06); border-color: rgba(34,197,94,.2); color: rgba(34,197,94,.9); }
-.v7-btn.success:hover { background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.4); }
-
-.v8-quota-bar {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(148,163,184,.08);
-}
-.v8-quota-cell {
-  display: flex; flex-direction: column;
-  gap: 6px;
-}
-.v8-quota-label {
-  font-size: 11px; font-weight: 600;
-  color: #94a3b8;
-  text-align: center;
-  letter-spacing: .3px;
-}
-.v8-quota-traffic {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-}
-.v8-traffic-item, .v8-quota-connect-item {
-  display: flex; flex-direction: column;
-  align-items: center; gap: 2px;
-}
-.v8-traffic-num {
-  font-size: 14px; font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.v8-traffic-sub { font-size: 9px; color: #64748b; font-weight: 500; }
-.v8-traffic-num.blue { color: #3b82f6; }
-.v8-traffic-num.purple { color: #a855f7; }
-.v8-traffic-num.emerald { color: #10b981; }
-
-.v8-quota-connect-num {
-  font-size: 14px; font-weight: 700;
-  color: #e5e5e5;
-  font-variant-numeric: tabular-nums;
-}
-.v8-quota-connect-sub { font-size: 9px; color: #64748b; font-weight: 500; }
-
-.v8-quota-value {
-  font-size: 12px; font-weight: 600;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-.v8-quota-value.blue { color: #3b82f6; }
-.v8-quota-value.purple { color: #a855f7; }
-.v8-quota-value.emerald { color: #10b981; }
-
-.v8-quota-bar-wrap {
-  height: 4px;
-  background: rgba(148,163,184,.1);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.v8-quota-bar-fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width .6s ease;
-}
-.v8-quota-bar-fill.blue { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
-.v8-quota-bar-fill.purple { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
-.v8-quota-bar-fill.emerald { background: linear-gradient(90deg, #10b981, #34d399); }
-
-/* V8 Modal */
-.v8-modal-backdrop {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,.6);
-  backdrop-filter: blur(8px);
-  display: none; align-items: center; justify-content: center;
-  z-index: 1000;
-}
-.v8-modal-backdrop.show { display: flex; }
-.v8-modal {
-  background: #1c1c1e;
-  border: 1px solid rgba(148,163,184,.15);
-  border-radius: 16px;
-  width: 720px; max-height: 80vh;
-  overflow: hidden;
-  box-shadow: 0 24px 80px rgba(0,0,0,.5);
-}
-.v8-modal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid rgba(148,163,184,.1);
-}
-.v8-modal-header h2 {
-  font-size: 16px; font-weight: 700; color: #f5f5f7;
-  display: flex; align-items: center; gap: 8px;
-}
-.v8-close-btn {
-  width: 28px; height: 28px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 8px; border: 1px solid rgba(148,163,184,.2);
-  background: rgba(51,65,85,.1);
-  color: #94a3b8; font-size: 14px;
-  cursor: pointer; transition: all .2s;
-}
-.v8-close-btn:hover { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.3); color: #ef4444; }
-
-.v8-toolbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 24px;
-  border-bottom: 1px solid rgba(148,163,184,.08);
-}
-.v8-toolbar-left { display: flex; gap: 6px; }
-.v8-toolbar-btn {
-  height: 28px; padding: 0 12px;
-  font-size: 12px; font-weight: 500;
-  border-radius: 8px;
-  border: 1px solid rgba(148,163,184,.2);
-  background: rgba(51,65,85,.08);
-  color: #94a3b8;
-  cursor: pointer; transition: all .2s;
-}
-.v8-toolbar-btn:hover { background: rgba(51,65,85,.18); color: #e5e5e5; }
-.v8-search-box {
-  height: 28px; padding: 0 12px;
-  font-size: 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(148,163,184,.2);
-  background: rgba(51,65,85,.08);
-  color: #e5e5e5;
-  outline: none; width: 200px;
-}
-
-.v8-matrix-wrap { padding: 16px 24px; max-height: 400px; overflow-y: auto; }
-.v8-matrix-table { width: 100%; border-collapse: collapse; }
-.v8-matrix-table th {
-  position: sticky; top: 0;
-  background: #1c1c1e;
-  padding: 8px 12px;
-  font-size: 11px; font-weight: 600;
-  color: #94a3b8; text-align: left;
-  border-bottom: 1px solid rgba(148,163,184,.15);
-}
-.v8-matrix-table td {
-  padding: 6px 12px;
-  border-bottom: 1px solid rgba(148,163,184,.06);
-}
-.v8-section-row td {
-  padding: 8px 12px 4px;
-  font-size: 10px; font-weight: 600;
-  color: #64748b; text-transform: uppercase;
-  letter-spacing: .5px;
-  border-bottom: 1px solid rgba(148,163,184,.08);
-}
-
-.v8-key-label { display: flex; flex-direction: column; gap: 2px; }
-.v8-key-name { font-size: 11px; font-weight: 600; color: #e5e5e5; }
-.v8-key-mask { font-size: 9px; color: #64748b; font-family: 'SF Mono', Monaco, Consolas, monospace; }
-.v8-key-count { font-size: 9px; color: #22c55e; font-weight: 500; }
-
-.v8-model-name {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 12px; font-weight: 500; color: #e5e5e5;
-}
-.v8-model-tag {
-  font-size: 9px; font-weight: 600;
-  padding: 1px 5px; border-radius: 4px;
-}
-.v8-model-tag.system { background: rgba(59,130,246,.12); color: #60a5fa; }
-.v8-model-tag.synced { background: rgba(34,197,94,.1); color: #22c55e; }
-
-.v8-toggle-wrap { display: flex; justify-content: center; }
-.v8-toggle {
-  width: 36px; height: 20px;
-  border-radius: 10px;
-  background: rgba(148,163,184,.2);
-  position: relative;
-  cursor: pointer;
-  transition: all .2s;
-}
-.v8-toggle.on { background: #22c55e; }
-.v8-toggle .v8-knob {
-  width: 16px; height: 16px;
-  border-radius: 50%;
-  background: white;
-  position: absolute;
-  top: 2px; left: 2px;
-  transition: all .2s;
-  box-shadow: 0 1px 3px rgba(0,0,0,.2);
-}
-.v8-toggle.on .v8-knob { left: 18px; }
-
-.v8-modal-footer {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 24px;
-  border-top: 1px solid rgba(148,163,184,.1);
-}
-.v8-footer-stats { font-size: 12px; color: #94a3b8; }
-.v8-footer-stats b { color: #e5e5e5; font-weight: 600; }
-.v8-save-btn {
-  height: 32px; padding: 0 20px;
-  font-size: 13px; font-weight: 600;
-  border-radius: 8px; border: none;
-  background: #3b82f6; color: white;
-  cursor: pointer; transition: all .2s;
-}
-.v8-save-btn:hover { background: #2563eb; }
-
-.v8-overview-version {
-  font-size: 10px; font-weight: 500;
-  padding: 2px 8px; border-radius: 6px;
-  background: rgba(59,130,246,.08);
-  color: #60a5fa;
-  border: 1px solid rgba(59,130,246,.2);
-  white-space: nowrap; flex-shrink: 0;
-}
-
 </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
     <div class="logo">OpenModelPool</div>
-    <div class="logo-sub">v4.0.1 · 去中心化 AI 模型联邦管理</div>
+    <div class="logo-sub">v4.1 · AI 聚合网关 · 共享模型网络</div>
     <div class="header-actions">
       <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
@@ -548,7 +165,7 @@ select.form-input{appearance:none;cursor:pointer}
     <div id="domainBindingQuickCard" style="display:none;margin-bottom:16px;padding:16px;background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(178,75,243,.06));border:1px solid rgba(108,99,255,.2);border-radius:10px">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">🔗 获得固定公网地址</div>
       <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;line-height:1.7">
-        您的公网地址目前会随服务器重启变化。绑定域名或 IP 后可获得固定地址，方便分享给他人使用。<br>
+        绑定域名或 IP 后可获得固定地址，方便分享给他人使用。<br>
         <span style="color:var(--text-muted)">💡 <b>绑定域名</b>：适合有自己域名的用户，通过 CNAME 解析获得固定 HTTPS 地址<br>
         💡 <b>绑定 IP</b>：适合有固定公网 IP 的用户，直接绑定无需域名。如果服务器没有固定 IP，推荐用绑定域名更简单</span>
       </div>
@@ -565,9 +182,10 @@ select.form-input{appearance:none;cursor:pointer}
           <div style="font-size:12px;font-weight:500;margin-bottom:6px">📋 域名绑定分步指引：</div>
           <div style="font-size:11px;color:var(--text-secondary);line-height:1.8">
             <div>1️⃣ 准备一个域名（推荐在 Cloudflare / 阿里云 / 腾讯云购买）</div>
-            <div>2️⃣ 添加 DNS 记录：类型 <b>CNAME</b>，名称如 <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px">api</code>，值填服务器地址</div>
-            <div>3️⃣ 在下方输入完整域名（如 api.yourdomain.com）</div>
-            <div>4️⃣ 点击绑定，等待 DNS 生效（通常 1-5 分钟）</div>
+            <div>2️⃣ <b>先在域名 DNS 管理后台</b>，添加 A 记录，将域名解析指向您服务器的公网 IP</div>
+            <div>3️⃣ <b>等待 DNS 生效</b>（通常几分钟，最长可能 24 小时）</div>
+            <div>4️⃣ DNS 生效后，在下方输入完整域名并点击绑定</div>
+            <div style="color:var(--accent-orange);margin-top:4px">⚠️ 注意：必须先完成 DNS 解析配置，再在此处绑定域名，否则绑定后无法访问</div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -634,7 +252,7 @@ select.form-input{appearance:none;cursor:pointer}
   <div class="card" id="usageCard">
     <div class="card-title" style="justify-content:space-between">
       <span><span class="icon">📈</span> 使用量 & 动态路由</span>
-      <button class="btn btn-secondary btn-sm" onclick="refreshUsage()">🔄 刷新</button>
+      <button class="btn btn-secondary btn-sm" id="btnRefreshUsage" onclick="var b=this;b.disabled=true;b.textContent='加载中...';refreshUsage().finally(function(){b.disabled=false;b.textContent='🔄 刷新';toast('✅ 使用量已更新','success')})">🔄 刷新</button>
     </div>
     <!-- 路由模式 -->
     <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
@@ -665,12 +283,7 @@ select.form-input{appearance:none;cursor:pointer}
         <button class="btn btn-sm btn-primary" onclick="saveWeights()" style="font-size:11px;padding:4px 12px">保存权重</button>
       </div>
     </div>
-    <!-- Sider Token 状态 -->
-    <div id="siderStatusBox" style="margin-bottom:16px;padding:10px 14px;border-radius:8px;display:flex;align-items:center;gap:10px;font-size:13px;background:rgba(108,99,255,.04);border:1px solid var(--border-color)">
-      <span id="siderStatusIcon" style="font-size:18px">🔄</span>
-      <span id="siderStatusText" style="flex:1">Sider Token 状态：检测中...</span>
-      <button class="btn btn-sm btn-secondary" onclick="testSiderToken()" id="siderTestBtn" style="font-size:11px;padding:4px 10px">测试连接</button>
-    </div>
+
     <!-- 概览统计 -->
     <div class="status-grid" id="usageGrid" style="margin-bottom:16px">
       <div class="status-item"><div><div class="status-label">今日请求</div><div class="status-value" id="todayRequests">-</div></div></div>
@@ -691,7 +304,7 @@ select.form-input{appearance:none;cursor:pointer}
   <div class="card">
     <div class="card-title" style="justify-content:space-between">
       <span><span class="icon">📋</span> 请求日志</span>
-      <button class="btn btn-secondary btn-sm" onclick="refreshLogs()">🔄 刷新</button>
+      <button class="btn btn-secondary btn-sm" id="btnRefreshLogs" onclick="var b=this;b.disabled=true;b.textContent='加载中...';refreshLogs().finally(function(){b.disabled=false;b.textContent='🔄 刷新';toast('✅ 日志已更新','success')})">🔄 刷新</button>
     </div>
     <div id="logList" style="font-size:12px;max-height:400px;overflow-y:auto">
       <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
@@ -702,7 +315,7 @@ select.form-input{appearance:none;cursor:pointer}
   <div class="card">
     <div class="card-title" style="justify-content:space-between">
       <span><span class="icon">🏥</span> Provider 健康状态</span>
-      <button class="btn btn-secondary btn-sm" onclick="refreshHealth()">🔄 刷新</button>
+      <button class="btn btn-secondary btn-sm" id="btnRefreshHealth" onclick="var b=this;b.disabled=true;b.textContent='加载中...';refreshHealth().finally(function(){b.disabled=false;b.textContent='🔄 刷新';toast('✅ 健康状态已更新','success')})">🔄 刷新</button>
     </div>
     <div id="healthList" style="font-size:12px">
       <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
@@ -714,12 +327,27 @@ select.form-input{appearance:none;cursor:pointer}
     <div class="card-title" style="justify-content:space-between">
       <span><span class="icon">🔌</span> 平台管理</span>
       <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="addAllDiscoveredAsPreset()" style="border-color:rgba(52,211,153,.4);color:#34d399" id="batchAddDiscoveredBtn">📥 一键添加全部发现</button>
         <button class="btn btn-secondary btn-sm" onclick="syncAllUrls()">🔄 一键同步全部地址</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()" style="border-color:rgba(52,211,153,.4);color:#34d399" id="discoveryToggleBtn">🔍 新发现</button>
         <button class="btn btn-primary btn-sm" onclick="showAddProvider()">+ 添加平台</button>
       </div>
     </div>
     <div class="section-note">添加 AI 平台并配置 API Key，请求将根据模型名称自动路由到对应平台</div>
-    <div id="nodeOverview"></div>
+    <!-- Discovery Card (full card style, at top of platform list) -->
+    <div id="discoveryPanel" style="display:none;border:1px solid rgba(52,211,153,.3);background:linear-gradient(135deg,rgba(52,211,153,.04),rgba(108,99,255,.04));border-radius:var(--radius);padding:20px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border-color)">
+        <span style="font-weight:600;font-size:15px"><span style="margin-right:6px">🔍</span>新发现的 AI 平台</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="triggerDiscovery()" id="triggerScanBtn">🔄 扫描新平台</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()">✕ 收起</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">系统自动发现的免费 AI 平台，管理员可审核、忽略或添加。</div>
+      <div id="discoveredList" style="display:grid;gap:10px">
+        <div style="text-align:center;color:var(--text-muted);padding:20px">点击「🔄 扫描新平台」开始发现</div>
+      </div>
+    </div>
     <div class="provider-list" id="providerList">
       <div style="text-align:center;color:var(--text-muted);padding:30px"><div class="loading"></div><br>加载中...</div>
     </div>
@@ -727,7 +355,9 @@ select.form-input{appearance:none;cursor:pointer}
 
 
 
-  <!-- 邮件服务 -->
+
+
+    <!-- 邮件服务 -->
   <div class="card">
     <div class="card-title"><span class="icon">📧</span> 邮件服务配置</div>
     <div class="form-group"><label class="form-label">SMTP 服务器</label><input class="form-input" id="smtpHost" placeholder="smtp.gmail.com"></div>
@@ -747,8 +377,7 @@ select.form-input{appearance:none;cursor:pointer}
     <div class="card-title">
       <span><span class="icon">🔗</span> 分享中心</span>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-primary btn-sm" onclick="generateGuestKey('consumer')">+ 签发使用者 Key</button>
-        <button class="btn btn-secondary btn-sm" onclick="generateGuestKey('collaborator')">+ 邀请协作者</button>
+        <button class="btn btn-primary btn-sm" onclick="generateGuestKey()">+ 创建 Guest Key</button>
       </div>
     </div>
 
@@ -875,6 +504,36 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
       </div>
 
+      <!-- 💰 公共池额度 -->
+      <div style="background:linear-gradient(135deg,rgba(108,99,255,.06),rgba(178,75,243,.03));border:1px solid rgba(108,99,255,.2);border-radius:12px;padding:20px;margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700;color:var(--accent-start)">💰 公共池额度</div>
+          <div style="font-size:11px;color:var(--text-muted)">我的节点向公共池贡献的额度</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--success);line-height:1" id="poolDailyContrib">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">每日贡献额度</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">节点总配额</div>
+          </div>
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--accent-end);line-height:1" id="poolPublicShare">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">公共池分配比例</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px" id="poolPublicDaily">-</div>
+          </div>
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--accent-start);line-height:1" id="poolGlobalQuota">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">公共池总额度</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">全网汇总</div>
+          </div>
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--warning);line-height:1" id="poolMyQuota">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">我的可用额度</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">占池 <span id="poolSharePercent">-</span>%</div>
+          </div>
+        </div>
+      </div>
+
       <!-- 📊 网络概览 -->
       <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px">📊 网络概览</div>
@@ -954,6 +613,30 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
   </div>
 
+  <!-- 项目介绍 & GitHub -->
+  <div style="margin-top:32px;padding:24px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius);text-align:center">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">🚀 OpenModelPool — 开源 AI 聚合网关</div>
+    <div style="font-size:12px;color:var(--text-muted);line-height:1.8;max-width:600px;margin:0 auto">
+      多模型聚合路由 · 共享剩余AI模型算力 · 一键接入全球 AI 平台<br>
+      支持 OpenAI 兼容 API，多 Key 轮询，故障转移，公共池共享
+    </div>
+    <div style="margin-top:14px;display:flex;justify-content:center;gap:16px;flex-wrap:wrap">
+      <a href="https://github.com/lisiyu/openmodelpool" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(255,255,255,.06);border:1px solid var(--border-color);border-radius:20px;color:var(--text-secondary);text-decoration:none;font-size:12px;transition:all .2s" onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'" onmouseout="this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub 仓库
+      </a>
+      <a href="https://github.com/lisiyu/openmodelpool/issues" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(255,255,255,.06);border:1px solid var(--border-color);border-radius:20px;color:var(--text-secondary);text-decoration:none;font-size:12px;transition:all .2s" onmouseover="this.style.borderColor='var(--warning)';this.style.color='var(--warning)'" onmouseout="this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+        💡 问题反馈
+      </a>
+      <a href="https://github.com/lisiyu/openmodelpool/pulls" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(255,255,255,.06);border:1px solid var(--border-color);border-radius:20px;color:var(--text-secondary);text-decoration:none;font-size:12px;transition:all .2s" onmouseover="this.style.borderColor='var(--success)';this.style.color='var(--success)'" onmouseout="this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+        🔀 提交 PR
+      </a>
+    </div>
+    <div style="margin-top:16px;font-size:11px;color:var(--text-muted);opacity:.6">
+      OpenModelPool v4.1 · Made with ❤️ · 开源协议 MIT
+    </div>
+  </div>
+
   <!-- 共享网络免责声明模态框 -->
   <div class="modal-overlay" id="networkDisclaimerModal">
     <div class="modal" style="max-width:640px">
@@ -987,6 +670,7 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
     <div id="modalStep2" style="display:none">
       <button class="btn btn-secondary btn-sm" onclick="backToStep1()" style="margin-bottom:16px">← 返回选择</button>
+      <div id="presetRegLink" style="display:none;margin-bottom:12px;padding:10px 14px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.15);border-radius:8px"></div>
       <div class="form-group"><label class="form-label">平台 ID</label><input class="form-input" id="pId" placeholder="deepseek"></div>
       <div class="form-group"><label class="form-label">显示名称</label><input class="form-input" id="pName" placeholder="DeepSeek"></div>
       <div class="form-group"><label class="form-label">API Base URL</label><input class="form-input" id="pUrl" placeholder="https://api.deepseek.com/v1"></div>
@@ -1018,9 +702,8 @@ select.form-input{appearance:none;cursor:pointer}
             <div>
               <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">权限</label>
               <select id="newKeyAccess" class="form-input" style="font-size:12px;height:32px">
-                <option value="private">🔒 私有</option>
-                <option value="shared">🔗 共享</option>
-                <option value="public">🌐 公共</option>
+                <option value="private">私有</option>
+                <option value="shared">共享</option>
               </select>
             </div>
           </div>
@@ -1042,35 +725,12 @@ select.form-input{appearance:none;cursor:pointer}
         <div class="form-group"><label class="form-label">每分钟请求上限（可选）</label><input class="form-input" id="pRateLimit" type="number" value="0" min="0" placeholder="0=不限"><div style="font-size:10px;color:var(--text-muted);margin-top:3px">0 表示不限制</div></div>
       </div>
       <div class="form-group">
-        <label class="form-label">🔐 访问权限与额度分配</label>
-        <div style="margin-top:6px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
-            <input type="checkbox" id="pAccessPrivate" checked> 🔒 私有 Key（自己使用）
-          </label>
-          <div style="margin-top:8px">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
-              <input type="checkbox" id="pAccessShared"> 🌐 共享到网络池
-            </label>
-            <div id="poolPercentSection" style="display:none;margin-top:8px;padding:10px 12px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.15);border-radius:8px">
-              <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">共享额度的分配比例</div>
-              <div style="display:flex;gap:16px;align-items:center">
-                <div style="flex:1">
-                  <label style="font-size:12px;color:var(--text-secondary)">Guest Key / Public Key 分配比例</label>
-                  <input type="range" id="pGuestKeyPercent" min="0" max="100" value="50" oninput="document.getElementById('pGuestPercentDisplay').textContent=this.value+'%';document.getElementById('pPublicPercentDisplay').textContent=(100-this.value)+'%'" style="width:100%">
-                </div>
-                <div style="display:flex;gap:12px;font-size:13px;font-weight:600">
-                  <span>Guest: <span id="pGuestPercentDisplay">50%</span></span>
-                  <span style="color:var(--text-muted)">|</span>
-                  <span>Public: <span id="pPublicPercentDisplay">50%</span></span>
-                </div>
-              </div>
-            </div>
-          </div>
+        <label class="form-label">🔐 访问权限控制</label>
+        <div class="btn-group" style="display:flex;gap:0;margin-top:6px;border-radius:8px;overflow:hidden;border:1px solid var(--border-color)">
+          <button type="button" id="btnAccessPrivate" class="routing-btn" onclick="setAccessControl('private')" style="flex:1;padding:8px 16px;font-size:13px;border-radius:0;border-right:1px solid var(--border-color)">🔒 仅私有 Key</button>
+          <button type="button" id="btnAccessShared" class="routing-btn" onclick="setAccessControl('shared')" style="flex:1;padding:8px 16px;font-size:13px;border-radius:0">🌐 允许共享/公共 Key</button>
         </div>
-        <div class="section-note" style="margin-top:4px;font-size:11px">
-          勾选"共享到网络池"后，可调整 Guest/Public 池的额度分配比例。<br>
-          Guest Key（sk-guest-{node_id}-{random}）由节点管理员签发；Public Key 为全网络公共访问密钥。
-        </div>
+        <div class="section-note" style="margin-top:4px;font-size:11px">⚠️ 每个平台的 Key 只能选择一种模式（私有或共享）。如需同时共享和私有使用，请添加两个相同的平台分别配置。<br>Guest Key（sk-guest-{node_id}-{random}）由节点管理员签发；Proxy Key（sk-{48位随机字符}）为节点主密钥。</div>
       </div>
       <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="pEnabled" checked> 启用此平台</label></div>
       <div class="btn-group">
@@ -1082,11 +742,6 @@ select.form-input{appearance:none;cursor:pointer}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-// Access control checkbox toggle
-document.getElementById('pAccessShared').addEventListener('change', function() {
-  document.getElementById('poolPercentSection').style.display = this.checked ? '' : 'none';
-});
-
 <script>
 // ================================================================
 // Module: CoreAuth - Authentication, utilities, and initialization
@@ -1105,6 +760,7 @@ async function authFetch(url, opts = {}) {
 }
 function logout() { localStorage.removeItem('admin_token'); location.href = '/login'; }
 function toast(msg, type = 'success') { const t = document.createElement('div'); t.className = `toast ${type}`; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
+function extractError(d) { if (!d) return '未知错误'; if (typeof d.error === 'string') return d.error; if (d.error && typeof d.error === 'object') return d.error.message || d.error.type || JSON.stringify(d.error); if (d.detail) return typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail); return '未知错误'; }
 
 // ===== Init =====
 // Auth guard — show message instead of immediate redirect to prevent loops
@@ -1220,10 +876,20 @@ async function setRoutingMode(mode) {
       document.querySelectorAll('.routing-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.mode === mode);
       });
-      alert(`路由模式已切换为: ${mode === 'priority' ? '优先级优先' : mode === 'cheapest' ? '成本最低' : '速度最快'}`);
+      // 立即显示/隐藏权重滑块
+      const weightBox = document.getElementById('weightSliders');
+      if (weightBox) {
+        if (mode === 'auto') {
+          weightBox.style.display = 'block';
+          loadWeights();
+        } else {
+          weightBox.style.display = 'none';
+        }
+      }
+      toast(`✅ 路由模式已切换为: ${mode === 'priority' ? '优先级优先' : mode === 'cheapest' ? '成本最低' : mode === 'fastest' ? '速度最快' : '综合权重'}`, 'success');
     }
   } catch (e) {
-    alert('切换失败: ' + e.message);
+    toast('切换失败: ' + e.message, 'error');
   }
 }
 
@@ -1233,11 +899,11 @@ async function resetUsage() {
     const r = await authFetch('/api/usage/reset', { method: 'DELETE' });
     const d = await r.json();
     if (d.success) {
-      alert('使用记录已清空');
+      toast('✅ 使用记录已清空', 'success');
       refreshUsage();
     }
   } catch (e) {
-    alert('清空失败: ' + e.message);
+    toast('清空失败: ' + e.message, 'error');
   }
 }
 
@@ -1304,30 +970,28 @@ async function refreshSiderStatus() {
 }
 
 function updateSiderStatusUI(status) {
-  const icon = document.getElementById('siderStatusIcon');
-  const text = document.getElementById('siderStatusText');
-  const box = document.getElementById('siderStatusBox');
-  if (!icon || !text) return;
+  const badge = document.getElementById('siderStatusBadge');
+  if (!badge) return;
 
   const st = status.token_status || 'unknown';
   if (st === 'ok') {
-    icon.textContent = '✅';
-    text.innerHTML = '<b>Sider Token 正常</b>' + (status.last_success_at ? ' · 上次成功: ' + formatTime(status.last_success_at) : '');
-    box.style.background = 'rgba(34,197,94,.06)';
-    box.style.borderColor = 'rgba(34,197,94,.3)';
+    badge.innerHTML = '✅ Token 正常';
+    badge.style.background = 'rgba(34,197,94,.12)';
+    badge.style.color = '#22c55e';
+    badge.title = 'Sider Token 正常' + (status.last_success_at ? ' · 上次成功: ' + formatTime(status.last_success_at) : '');
   } else if (st === 'expired') {
-    icon.textContent = '🔴';
     const failCount = status.consecutive_failures || 0;
-    text.innerHTML = '<b>Sider Token 已过期！</b> 连续失败 ' + failCount + ' 次'
+    badge.innerHTML = '🔴 Token 过期';
+    badge.style.background = 'rgba(239,68,68,.12)';
+    badge.style.color = '#ef4444';
+    badge.title = 'Sider Token 已过期！连续失败 ' + failCount + ' 次'
       + (status.last_failure_at ? ' · 最近: ' + formatTime(status.last_failure_at) : '')
-      + '<br><span style="font-size:11px;color:var(--text-muted)">请打开浏览器登录 sider.ai，然后重新获取 Cookie 中的 Token</span>';
-    box.style.background = 'rgba(239,68,68,.06)';
-    box.style.borderColor = 'rgba(239,68,68,.3)';
+      + '。请打开浏览器登录 sider.ai，重新获取 Cookie 中的 Token';
   } else {
-    icon.textContent = '⚪';
-    text.textContent = 'Sider Token 状态：未检测';
-    box.style.background = 'rgba(108,99,255,.04)';
-    box.style.borderColor = 'var(--border-color)';
+    badge.innerHTML = '⚪ 未检测';
+    badge.style.background = 'rgba(108,99,255,.1)';
+    badge.style.color = 'var(--text-muted)';
+    badge.title = 'Sider Token 状态：未检测（点击刷新）';
   }
 }
 
@@ -1348,13 +1012,13 @@ async function testSiderToken() {
     const r = await authFetch('/api/providers/sider/test', { method: 'POST' });
     const d = await r.json();
     if (d.valid) {
-      alert('✅ ' + d.message);
+      toast('✅ ' + d.message, 'success');
     } else {
-      alert('❌ ' + d.message);
+      toast('❌ ' + d.message, 'error');
     }
     refreshSiderStatus();
   } catch (e) {
-    alert('测试失败: ' + e.message);
+    toast('测试失败: ' + e.message, 'error');
   } finally {
     btn.textContent = oldText;
     btn.disabled = false;
@@ -1363,8 +1027,6 @@ async function testSiderToken() {
 
 // ===== Providers =====
 let allProviders = [];
-let allHealthData = {};
-let allNetworkStatus = null;
 // ================================================================
 // Module: ProviderManager - Provider CRUD, testing, and model management
 // ================================================================
@@ -1372,23 +1034,12 @@ async function loadProviders() {
   const r = await authFetch('/api/providers');
   const d = await r.json();
   allProviders = d.providers || [];
-  // Fetch health data for V8 cards
-  try {
-    const hr = await authFetch('/api/health');
-    const hd = await hr.json();
-    allHealthData = hd.health || {};
-  } catch(e) { allHealthData = {}; }
-  // Fetch network status for node overview
-  try {
-    const nr = await authFetch('/api/network/status');
-    allNetworkStatus = await nr.json();
-  } catch(e) { allNetworkStatus = null; }
-  renderNodeOverview();
   renderProviders();
 }
 
 function renderProviders() {
   const list = document.getElementById('providerList');
+  // Only show providers that user has explicitly configured (has at least one API key)
   const configured = allProviders.filter(p => (p.api_key && p.api_key.trim()) || (p.api_keys && p.api_keys.length > 0));
   if (!configured.length) {
     list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px">' +
@@ -1399,395 +1050,57 @@ function renderProviders() {
       '</div>';
     return;
   }
-
-  list.innerHTML = configured.map((p, idx) => {
+  list.innerHTML = configured.map(p => {
     const enabled = p.enabled;
     const models = p.models || [];
     const keys = p.api_keys || [];
     const keyCount = keys.length;
-    const accent = idx % 6;
-    const health = allHealthData[p.id] || allHealthData[p.name] || {};
-    const isHealthy = health.healthy !== false;
-    const latencyMs = health.latency_ms || 0;
+    const keyStatus = keyCount > 0
+      ? `<span class="badge badge-green">🔑 ${keyCount} 个 Key</span>`
+      : (p.api_key ? `<span class="badge badge-green">Key: ${p.api_key}</span>` : '<span class="badge badge-red">未配置 Key</span>');
     const ac = p.access_control || {};
-
-    // Model stats
-    const privateModels = models.filter(m => m.access_type === 'private' || (!m.access_type && m.enabled)).length;
-    const sharedModels = models.filter(m => m.access_type === 'shared').length;
-    const enabledModels = models.filter(m => m.enabled).length;
-    const totalModels = models.length;
-
-    // Key stats
-    const privateKeys = keys.filter(k => k.access_control === 'private' || (!k.access_control)).length;
-    const sharedKeys = keys.filter(k => k.access_control === 'shared' || k.access_control === 'public').length;
-
-    // Status dot
-    let statusClass = 'off';
-    if (enabled && isHealthy) statusClass = 'on';
-    else if (enabled && !isHealthy) statusClass = 'warn';
-
-    // Latency color
-    let latColor = 'green';
-    if (latencyMs > 800) latColor = 'yellow';
-    if (latencyMs > 2000) latColor = '';
-    const latDisplay = latencyMs > 0 ? latencyMs + 'ms' : '—';
-
-    // Success rate
-    const successRate = health.success_rate || (isHealthy ? 100 : 0);
-    let srColor = 'green';
-    if (successRate < 95) srColor = 'yellow';
-    if (successRate < 80) srColor = '';
-    const srDisplay = enabled ? successRate.toFixed(1) + '%' : '—';
-
-    // Quota data
-    const tokenLimit = p.token_limit || 0;
-    const tokenUsed = p.token_used || health.token_used || 0;
-    const todayReqs = health.today_requests || 0;
-    const todayTokens = health.today_tokens || 0;
-    const tokenDisplay = (n) => n >= 1000 ? (n/1000).toFixed(1) + 'K' : String(n);
-    const quotaDisplay = tokenLimit > 0 ? tokenUsed.toLocaleString() + ' / ' + tokenLimit.toLocaleString() : '∞ / ∞';
-    const quotaPct = tokenLimit > 0 ? Math.min(100, (tokenUsed / tokenLimit * 100)) : (tokenUsed > 0 ? 15 : 0);
-    const quotaPctDisplay = Math.round(quotaPct) + '%';
-
-    // Network quota
-    const guestPct = allNetworkStatus?.quota_allocation?.guest_key_percent || 50;
-    const publicPct = allNetworkStatus?.quota_allocation?.public_key_percent || 50;
-
-    const disabledClass = !enabled ? ' v8-disabled' : '';
-    const toggleLabel = enabled ? '禁用' : '启用';
-
-    return `<div class="v8-card accent-${accent}${disabledClass}" id="p-${p.id}">
-      <div class="v8-row-header">
-        <span class="v8-status-dot ${statusClass}"></span>
-        <span class="v8-priority-badge">P<b>${p.priority || 5}</b></span>
-        <span class="v8-platform-name"><a href="${p.base_url}" target="_blank" onclick="event.stopPropagation()">${p.name}</a></span>
-        <div class="v8-model-stats">
-          <span class="v8-label">模型统计：</span>
-          <span class="v8-model-stat v8-private">私有<span class="v8-val">${privateModels}</span></span>
-          <span class="v8-model-stat v8-shared">共享<span class="v8-val">${sharedModels}</span></span>
-          <span class="v8-model-stat v8-enabled" onclick="event.stopPropagation();openModelMatrix('${p.id}')">启用<span class="v8-val">${enabledModels}</span></span>
-          <span class="v8-model-stat v8-total">总计<span class="v8-val">${totalModels}</span></span>
+    const accessBadge = ac.allow_shared_key ? '<span class="badge badge-green" title="允许共享/公共 Key 访问">🌐 共享</span>' : '<span class="badge badge-yellow" title="仅私有 Key 可访问">🔒 私有</span>';
+    return `<div class="provider-item" id="p-${p.id}">
+      <div class="provider-header" onclick="toggleModels('${p.id}')">
+        <div class="provider-info">
+          <div class="provider-name"><span class="status-dot ${enabled?'green':'red'}" style="width:8px;height:8px"></span> ${p.name} <span class="badge badge-blue">${p.type}</span> ${accessBadge}</div>
+          <div class="provider-url">${p.base_url}</div>
+          <div class="provider-meta">${keyStatus} <span>· ${models.length} 个模型</span> <span>· 📊 额度: ${p.token_limit > 0 ? p.token_limit.toLocaleString() + ' tokens' : '无限'}</span> <span>· 优先级 <input type="number" class="priority-input" value="${p.priority||5}" min="1" max="99" onclick="event.stopPropagation()" onchange="updatePriority('${p.id}', this.value)" title="数字越小优先级越高"></span></div>
         </div>
-        <span class="v8-type-badge">${p.type}</span>
-      </div>
-      <div class="v8-merged-row">
-        <div class="v8-stats-group">
-          <div class="v8-keys-pill">
-            Provider keys <b>${keyCount}</b>
-            ${privateKeys > 0 ? '<span class="v8-key-sub v8-private">私有 ' + privateKeys + '</span>' : ''}
-            ${sharedKeys > 0 ? '<span class="v8-key-sub v8-shared">共享 ' + sharedKeys + '</span>' : ''}
-          </div>
-          <span class="v8-stat-pill">延迟 <b class="${latColor}">${latDisplay}</b></span>
-          <span class="v8-stat-pill">成功率 <b class="${srColor}">${srDisplay}</b></span>
-        </div>
-        <div class="v8-separator"></div>
-        <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:auto">
-          <button class="v7-btn" onclick="event.stopPropagation();syncProviderUrl('${p.id}')">同步地址</button>
-          <button class="v7-btn" onclick="event.stopPropagation();syncModels('${p.id}')">同步模型</button>
-          <button class="v7-btn" onclick="event.stopPropagation();editProvider('${p.id}')">编辑</button>
-          <button class="v7-btn" onclick="event.stopPropagation();toggleApiKeys('${p.id}')" title="管理 API Keys">🔑</button>
-          <button class="v7-btn success" onclick="event.stopPropagation();testProvider('${p.id}')">测试</button>
-          <button class="v7-btn danger" onclick="event.stopPropagation();toggleProvider('${p.id}',${!enabled})">${toggleLabel}</button>
-          <button class="v7-btn danger" onclick="event.stopPropagation();deleteProvider('${p.id}')">删除</button>
+        <div class="provider-actions">
+          ${(function(){const preset=presets.find(x=>x.id===p.id);const u=preset?.api_key_url||'';return u?`<a href="${u}" target="_blank" class="btn btn-secondary btn-sm" onclick="event.stopPropagation()" style="text-decoration:none;display:inline-flex;align-items:center" title="前往官网注册获取 API Key">🔗 官网</a>`:''})()}
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleApiKeys('${p.id}')" title="管理 API Keys，支持多 Key 轮询和故障转移" style="border-color:rgba(108,99,255,.4);color:var(--primary)">🔑 Keys${keyCount > 0 ? '('+keyCount+')' : ''}</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncProviderUrl('${p.id}')">同步地址</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncModels('${p.id}')">同步模型</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();editProvider('${p.id}')">编辑</button>
+          ${p.id === 'sider' ? '<span id="siderStatusBadge" style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(108,99,255,.1);color:var(--text-muted);cursor:help" title="Sider Token 状态加载中..." onclick="event.stopPropagation();refreshSiderStatus()">🔄 检测中</span>' : ''}<button class="btn btn-success btn-sm" onclick="event.stopPropagation();testProvider('${p.id}')">测试</button>
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();toggleProvider('${p.id}',${!enabled})">${enabled?'禁用':'启用'}</button>
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteProvider('${p.id}')">删除</button>
         </div>
       </div>
-      <div class="v8-quota-bar">
-        <div class="v8-quota-cell">
-          <div class="v8-quota-label">私有池</div>
-          <div class="v8-quota-traffic">
-            <div class="v8-traffic-item"><span class="v8-traffic-num blue">${todayReqs}</span><span class="v8-traffic-sub">今日请求</span></div>
-            <div class="v8-traffic-item"><span class="v8-traffic-num blue">${tokenDisplay(todayTokens)}</span><span class="v8-traffic-sub">今日 Token</span></div>
-            <div class="v8-quota-connect-item"><span class="v8-quota-connect-num">${keyCount}</span><span class="v8-quota-connect-sub">连接数</span></div>
-          </div>
-          <div class="v8-quota-value blue">${quotaDisplay}</div>
-          <div class="v8-quota-bar-wrap"><div class="v8-quota-bar-fill blue" style="width:${quotaPctDisplay}"></div></div>
-        </div>
-        <div class="v8-quota-cell">
-          <div class="v8-quota-label">公共池 <span style="font-size:9px;color:#64748b;font-weight:400">(${publicPct}%)</span></div>
-          <div class="v8-quota-traffic">
-            <div class="v8-traffic-item"><span class="v8-traffic-num purple">—</span><span class="v8-traffic-sub">今日请求</span></div>
-            <div class="v8-traffic-item"><span class="v8-traffic-num purple">—</span><span class="v8-traffic-sub">今日 Token</span></div>
-            <div class="v8-quota-connect-item"><span class="v8-quota-connect-num">0</span><span class="v8-quota-connect-sub">连接数</span></div>
-          </div>
-          <div class="v8-quota-value purple">— / —</div>
-          <div class="v8-quota-bar-wrap"><div class="v8-quota-bar-fill purple" style="width:0%"></div></div>
-        </div>
-        <div class="v8-quota-cell">
-          <div class="v8-quota-label">Guest池 <span style="font-size:9px;color:#64748b;font-weight:400">(${guestPct}%)</span></div>
-          <div class="v8-quota-traffic">
-            <div class="v8-traffic-item"><span class="v8-traffic-num emerald">—</span><span class="v8-traffic-sub">今日请求</span></div>
-            <div class="v8-traffic-item"><span class="v8-traffic-num emerald">—</span><span class="v8-traffic-sub">今日 Token</span></div>
-            <div class="v8-quota-connect-item"><span class="v8-quota-connect-num">0</span><span class="v8-quota-connect-sub">连接数</span></div>
-          </div>
-          <div class="v8-quota-value emerald">— / —</div>
-          <div class="v8-quota-bar-wrap"><div class="v8-quota-bar-fill emerald" style="width:0%"></div></div>
-        </div>
-      </div>
-      <div class="provider-apikeys" id="apikeys-${p.id}" style="display:none;padding:12px 16px;background:var(--bg-secondary);border-top:1px solid var(--border-color);border-radius:0 0 12px 12px;margin-top:12px">
+      <div class="provider-apikeys" id="apikeys-${p.id}" style="display:none;padding:12px 16px;background:var(--bg-secondary);border-top:1px solid var(--border-color)">
         <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;padding:8px 12px;background:rgba(108,99,255,.04);border-radius:6px;border:1px solid rgba(108,99,255,.1)">💡 多 Key 管理：为同一平台配置多个 API Key，系统自动轮询/故障转移。可设置不同额度、权限和优先级。</div>
         <div id="apikeys-list-${p.id}"><div style="color:var(--text-muted);text-align:center;padding:8px">点击加载 Key 列表</div></div>
+      </div>
+      <div class="provider-models" id="models-${p.id}">
+        ${models.length ? models.map(m => `<div class="model-item"><div><span>${m.id}</span> <span class="model-name">${m.name||''}</span></div><div class="toggle ${m.enabled?'active':''}" onclick="toggleModel('${p.id}','${m.id}')"></div></div>`).join('') : '<div style="color:var(--text-muted);text-align:center;padding:10px">无模型配置</div>'}
+        <button class="btn btn-secondary btn-sm" onclick="fetchRemoteModels('${p.id}')" style="margin-top:8px">🔄 从远程刷新模型列表</button>
       </div>
     </div>`;
   }).join('');
 }
 
 function toggleModels(pid) { const el = document.getElementById('models-' + pid); el.classList.toggle('open'); }
-
-function renderNodeOverview() {
-  const container = document.getElementById('nodeOverview');
-  if (!container) return;
-
-  const configured = allProviders.filter(p => (p.api_key && p.api_key.trim()) || (p.api_keys && p.api_keys.length > 0));
-  const enabledProviders = configured.filter(p => p.enabled);
-  const totalModels = configured.reduce((s, p) => s + (p.models || []).length, 0);
-  const enabledModels = configured.reduce((s, p) => s + (p.models || []).filter(m => m.enabled).length, 0);
-  const totalKeys = configured.reduce((s, p) => s + (p.api_keys || []).length, 0);
-  const privateKeys = configured.reduce((s, p) => s + (p.api_keys || []).filter(k => k.access_control === 'private' || !k.access_control).length, 0);
-  const sharedKeys = configured.reduce((s, p) => s + (p.api_keys || []).filter(k => k.access_control === 'shared' || k.access_control === 'public').length, 0);
-
-  // Average latency
-  let totalLat = 0, latCount = 0;
-  for (const p of enabledProviders) {
-    const h = allHealthData[p.id] || allHealthData[p.name] || {};
-    if (h.latency_ms) { totalLat += h.latency_ms; latCount++; }
-  }
-  const avgLat = latCount > 0 ? Math.round(totalLat / latCount) : 0;
-
-  // Average success rate
-  let totalSr = 0, srCount = 0;
-  for (const p of enabledProviders) {
-    const h = allHealthData[p.id] || allHealthData[p.name] || {};
-    const sr = h.success_rate || (h.healthy !== false ? 100 : 0);
-    totalSr += sr; srCount++;
-  }
-  const avgSr = srCount > 0 ? (totalSr / srCount).toFixed(1) : '—';
-
-  const guestPct = allNetworkStatus?.quota_allocation?.guest_key_percent || 50;
-  const publicPct = allNetworkStatus?.quota_allocation?.public_key_percent || 50;
-  const nodeId = allNetworkStatus?.node_id || '—';
-  const version = document.getElementById('versionText')?.textContent || '—';
-
-  const tokenDisplay = (n) => n >= 1000 ? (n/1000).toFixed(1) + 'K' : String(n);
-
-  // Sum up today stats from health
-  let todayReqsAll = 0, todayTokensAll = 0;
-  for (const p of enabledProviders) {
-    const h = allHealthData[p.id] || allHealthData[p.name] || {};
-    todayReqsAll += h.today_requests || 0;
-    todayTokensAll += h.today_tokens || 0;
-  }
-
-  container.innerHTML = `
-    <div class="v8-row-header">
-      <span class="v8-status-dot on"></span>
-      <span class="v8-platform-name" style="font-size:14px;font-weight:700">节点概览</span>
-      <span style="font-size:10px;color:#64748b;font-family:'SF Mono',Monaco,Consolas,monospace">${nodeId}</span>
-      <span class="v8-overview-version">v${version}</span>
-      <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0">
-        <button class="v7-btn" style="border-color:rgba(52,211,153,.4);color:#34d399" onclick="syncAllUrls()">🔄 一键同步全部地址</button>
-        <button class="v7-btn" style="background:rgba(96,165,250,.15);border-color:rgba(96,165,250,.4);color:#60a5fa" onclick="showAddProvider()">+ 添加平台</button>
-      </div>
-    </div>
-    <div class="v8-merged-row" style="gap:12px">
-      <div class="v8-stats-group">
-        <span class="v8-stat-pill" style="background:transparent;border-color:transparent;color:#94a3b8;font-weight:600">模型统计：</span>
-        <span class="v8-stat-pill">启用 <b class="green">${enabledModels}</b></span>
-        <span class="v8-stat-pill">总计 <b class="yellow">${totalModels}</b></span>
-        <div class="v8-keys-pill">
-          Provider keys <b>${totalKeys}</b>
-          ${privateKeys > 0 ? '<span class="v8-key-sub v8-private">私有 ' + privateKeys + '</span>' : ''}
-          ${sharedKeys > 0 ? '<span class="v8-key-sub v8-shared">共享 ' + sharedKeys + '</span>' : ''}
-        </div>
-        <span class="v8-stat-pill">平均延迟 <b class="purple">${avgLat > 0 ? avgLat + 'ms' : '—'}</b></span>
-        <span class="v8-stat-pill">成功率 <b class="green">${avgSr}%</b></span>
-      </div>
-    </div>
-    <div class="v8-quota-bar">
-      <div class="v8-quota-cell">
-        <div class="v8-quota-label">私有池</div>
-        <div class="v8-quota-traffic">
-          <div class="v8-traffic-item"><span class="v8-traffic-num blue">${todayReqsAll}</span><span class="v8-traffic-sub">今日请求</span></div>
-          <div class="v8-traffic-item"><span class="v8-traffic-num blue">${tokenDisplay(todayTokensAll)}</span><span class="v8-traffic-sub">今日 Token</span></div>
-          <div class="v8-quota-connect-item"><span class="v8-quota-connect-num">${totalKeys}</span><span class="v8-quota-connect-sub">连接数</span></div>
-        </div>
-        <div class="v8-quota-value blue">∞ / ∞</div>
-        <div class="v8-quota-bar-wrap"><div class="v8-quota-bar-fill emerald" style="width:15%"></div></div>
-      </div>
-      <div class="v8-quota-cell">
-        <div class="v8-quota-label">公共池 <span style="font-size:9px;color:#64748b;font-weight:400">(${publicPct}%)</span></div>
-        <div class="v8-quota-traffic">
-          <div class="v8-traffic-item"><span class="v8-traffic-num purple">—</span><span class="v8-traffic-sub">今日请求</span></div>
-          <div class="v8-traffic-item"><span class="v8-traffic-num purple">—</span><span class="v8-traffic-sub">今日 Token</span></div>
-          <div class="v8-quota-connect-item"><span class="v8-quota-connect-num">0</span><span class="v8-quota-connect-sub">连接数</span></div>
-        </div>
-        <div class="v8-quota-value purple">— / —</div>
-        <div class="v8-quota-bar-wrap"><div class="v8-quota-bar-fill blue" style="width:0%"></div></div>
-      </div>
-      <div class="v8-quota-cell">
-        <div class="v8-quota-label">Guest池 <span style="font-size:9px;color:#64748b;font-weight:400">(${guestPct}%)</span></div>
-        <div class="v8-quota-traffic">
-          <div class="v8-traffic-item"><span class="v8-traffic-num emerald">—</span><span class="v8-traffic-sub">今日请求</span></div>
-          <div class="v8-traffic-item"><span class="v8-traffic-num emerald">—</span><span class="v8-traffic-sub">今日 Token</span></div>
-          <div class="v8-quota-connect-item"><span class="v8-quota-connect-num">0</span><span class="v8-quota-connect-sub">连接数</span></div>
-        </div>
-        <div class="v8-quota-value emerald">— / —</div>
-        <div class="v8-quota-bar-wrap"><div class="v8-quota-bar-fill emerald" style="width:0%"></div></div>
-      </div>
-    </div>
-  `;
+function setAccessControl(mode) {
+  const priv = document.getElementById('btnAccessPrivate');
+  const shared = document.getElementById('btnAccessShared');
+  if (priv) priv.classList.toggle('active', mode === 'private');
+  if (shared) shared.classList.toggle('active', mode === 'shared');
+  // Store in hidden input for form submission
+  let hidden = document.getElementById('pAccessControlValue');
+  if (!hidden) { hidden = document.createElement('input'); hidden.type='hidden'; hidden.id='pAccessControlValue'; hidden.name='pAccessControl'; const modal = document.getElementById('editModal'); if (modal) modal.appendChild(hidden); else document.body.appendChild(hidden); }
+  hidden.value = mode;
 }
-
-function openModelMatrix(pid) {
-  const p = allProviders.find(x => x.id === pid);
-  if (!p) return;
-  const models = p.models || [];
-  const keys = p.api_keys || [];
-  if (!models.length) { toast('该平台暂无模型配置', 'info'); return; }
-
-  const modal = document.getElementById('v8ModelModal');
-  const header = document.getElementById('v8ModelModalTitle');
-  const body = document.getElementById('v8ModelModalBody');
-  const footer = document.getElementById('v8ModelModalFooter');
-
-  header.innerHTML = `<span style="font-size:20px">🔗</span> ${p.name} — 模型管理`;
-
-  // Build table
-  const keyCols = keys.length > 0 ? keys : [{id:'default', alias:'默认Key', key: p.api_key || 'sk-***', access_control:'private'}];
-  const colCount = keyCols.length + 1;
-
-  let thead = '<tr><th>模型名称</th>';
-  for (const k of keyCols) {
-    const alias = k.alias || k.key?.substring(0, 8) + '...';
-    const mask = k.key ? k.key.substring(0, 3) + '***' + k.key.substring(k.key.length - 4) : 'sk-***';
-    const enabledForKey = models.filter(m => m.enabled).length;
-    thead += `<th><div class="v8-key-label"><span class="v8-key-name">🔑 ${alias}</span><span class="v8-key-mask">${mask}</span><span class="v8-key-count">已选 ${enabledForKey}/${models.length}</span></div></th>`;
-  }
-  thead += '</tr>';
-
-  // Separate system default models and synced models
-  const systemModels = models.filter(m => !m.source || m.source === 'default' || m.source === 'system');
-  const syncedModels = models.filter(m => m.source === 'synced' || m.source === 'remote');
-
-  let tbody = '';
-  if (systemModels.length) {
-    tbody += `<tr class="v8-section-row"><td colspan="${colCount}">系统默认模型</td></tr>`;
-    for (const m of systemModels) {
-      tbody += '<tr>';
-      tbody += `<td><div class="v8-model-name">${m.name || m.id} <span class="v8-model-tag system">默认</span></div></td>`;
-      for (const k of keyCols) {
-        tbody += `<td><div class="v8-toggle-wrap"><div class="v8-toggle ${m.enabled ? 'on' : ''}" data-pid="${pid}" data-mid="${m.id}" onclick="v8ToggleModel(this)"><div class="v8-knob"></div></div></div></td>`;
-      }
-      tbody += '</tr>';
-    }
-  }
-  if (syncedModels.length) {
-    tbody += `<tr class="v8-section-row"><td colspan="${colCount}">同步模型（${syncedModels.length}）</td></tr>`;
-    for (const m of syncedModels) {
-      tbody += '<tr>';
-      tbody += `<td><div class="v8-model-name">${m.name || m.id} <span class="v8-model-tag synced">同步</span></div></td>`;
-      for (const k of keyCols) {
-        tbody += `<td><div class="v8-toggle-wrap"><div class="v8-toggle ${m.enabled ? 'on' : ''}" data-pid="${pid}" data-mid="${m.id}" onclick="v8ToggleModel(this)"><div class="v8-knob"></div></div></div></td>`;
-      }
-      tbody += '</tr>';
-    }
-  }
-  // If no separation info, just list all
-  if (!systemModels.length && !syncedModels.length) {
-    for (const m of models) {
-      tbody += '<tr>';
-      tbody += `<td><div class="v8-model-name">${m.name || m.id}</div></td>`;
-      for (const k of keyCols) {
-        tbody += `<td><div class="v8-toggle-wrap"><div class="v8-toggle ${m.enabled ? 'on' : ''}" data-pid="${pid}" data-mid="${m.id}" onclick="v8ToggleModel(this)"><div class="v8-knob"></div></div></div></td>`;
-      }
-      tbody += '</tr>';
-    }
-  }
-
-  body.innerHTML = `<table class="v8-matrix-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
-
-  const totalToggles = models.length * keyCols.length;
-  const enabledToggles = models.filter(m => m.enabled).length * keyCols.length;
-  footer.innerHTML = `<div class="v8-footer-stats">共 <b>${models.length}</b> 个模型 · 已启用 <b>${enabledToggles}</b> / ${totalToggles} 项配置</div><button class="v8-save-btn" onclick="v8SaveModelMatrix('${pid}')">保存更改</button>`;
-
-  modal.classList.add('show');
-}
-
-function v8ToggleModel(el) {
-  el.classList.toggle('on');
-  // Update footer stats
-  const pid = el.dataset.pid;
-  const p = allProviders.find(x => x.id === pid);
-  if (!p) return;
-  const models = p.models || [];
-  const keys = p.api_keys || [];
-  const keyCols = keys.length > 0 ? keys : [{}];
-  const totalToggles = models.length * keyCols.length;
-  const modal = document.getElementById('v8ModelModal');
-  const allToggles = modal.querySelectorAll('.v8-toggle');
-  const enabledToggles = allToggles.length > 0 ? Array.from(allToggles).filter(t => t.classList.contains('on')).length : 0;
-  const footer = document.getElementById('v8ModelModalFooter');
-  footer.innerHTML = `<div class="v8-footer-stats">共 <b>${models.length}</b> 个模型 · 已启用 <b>${enabledToggles}</b> / ${totalToggles} 项配置</div><button class="v8-save-btn" onclick="v8SaveModelMatrix('${pid}')">保存更改</button>`;
-}
-
-async function v8SaveModelMatrix(pid) {
-  const p = allProviders.find(x => x.id === pid);
-  if (!p) return;
-  const models = p.models || [];
-  const modal = document.getElementById('v8ModelModal');
-  const allToggles = modal.querySelectorAll('.v8-toggle');
-
-  // Build a map of model enabled states from toggles
-  // Since all keys share the same enabled state per model, just use first column
-  const togglesByModel = {};
-  for (const t of allToggles) {
-    const mid = t.dataset.mid;
-    if (!(mid in togglesByModel)) {
-      togglesByModel[mid] = t.classList.contains('on');
-    }
-  }
-
-  // Update model enabled states
-  for (const m of models) {
-    if (m.id in togglesByModel) {
-      m.enabled = togglesByModel[m.id];
-    }
-  }
-
-  try {
-    await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: models}) });
-    toast('模型配置已保存');
-    modal.classList.remove('show');
-    await loadProviders();
-  } catch(e) {
-    toast('保存失败: ' + e.message, 'error');
-  }
-}
-
-function v8MatrixSearch(query) {
-  const rows = document.querySelectorAll('#v8ModelModalBody .v8-matrix-table tbody tr');
-  const q = query.toLowerCase();
-  rows.forEach(row => {
-    if (row.classList.contains('v8-section-row')) {
-      row.style.display = '';
-      return;
-    }
-    const name = row.querySelector('.v8-model-name');
-    if (!name) { row.style.display = ''; return; }
-    row.style.display = name.textContent.toLowerCase().includes(q) ? '' : 'none';
-  });
-}
-
-function v8MatrixSelectAll() {
-  document.querySelectorAll('#v8ModelModalBody .v8-toggle').forEach(t => t.classList.add('on'));
-  v8ToggleModel(document.querySelector('#v8ModelModalBody .v8-toggle') || document.createElement('div'));
-}
-function v8MatrixDeselectAll() {
-  document.querySelectorAll('#v8ModelModalBody .v8-toggle').forEach(t => t.classList.remove('on'));
-  v8ToggleModel(document.querySelector('#v8ModelModalBody .v8-toggle') || document.createElement('div'));
-}
-function v8MatrixEnableAll() { v8MatrixSelectAll(); }
-function v8MatrixDisableAll() { v8MatrixDeselectAll(); }
-
 
 async function updatePriority(pid, value) {
   const priority = parseInt(value, 10);
@@ -1819,9 +1132,21 @@ async function toggleModel(pid, mid) {
   const p = allProviders.find(x => x.id === pid);
   if (!p) return;
   const m = (p.models||[]).find(x => x.id === mid);
-  if (m) { m.enabled = !m.enabled; }
-  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: p.models}) });
-  await loadProviders();
+  if (!m) return;
+  // Flip locally first for instant visual feedback
+  m.enabled = !m.enabled;
+  // Update toggle visual state without re-rendering the whole list
+  const toggleEl = event.currentTarget;
+  if (toggleEl) {
+    toggleEl.classList.toggle('active', m.enabled);
+  }
+  // Save to server in background
+  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: p.models}) }).catch(e => {
+    // Revert on failure
+    m.enabled = !m.enabled;
+    if (toggleEl) toggleEl.classList.toggle('active', m.enabled);
+    toast('保存失败: ' + e.message, 'error');
+  });
 }
 
 async function testProvider(pid) {
@@ -1835,7 +1160,11 @@ async function testProvider(pid) {
 
 async function deleteProvider(pid) {
   if (!confirm('确定删除此平台？')) return;
-  await authFetch(`/api/providers/${pid}`, { method: 'DELETE' });
+  const r = await authFetch(`/api/providers/${pid}`, { method: 'DELETE' });
+  if (!r.ok) {
+    toast('删除失败', 'error');
+    return;
+  }
   toast('已删除');
   await loadProviders(); await loadStatus();
 }
@@ -1875,7 +1204,7 @@ async function syncModels(pid) {
   try {
     const r = await authFetch(`/api/providers/${pid}/sync-models`, { method: 'POST' });
     const d = await r.json();
-    if (d.success) { toast(`✅ 已同步 ${d.models_synced} 个模型`, 'success'); } else { toast(d.error || '同步失败', 'error'); }
+    if (d.success) { toast(`✅ 已同步 ${d.models_synced} 个模型`, 'success'); } else { toast(extractError(d) || '同步失败', 'error'); }
     await loadProviders();
   } catch(e) { toast('同步失败: ' + e.message, 'error'); }
 }
@@ -1892,13 +1221,23 @@ async function syncAllUrls() {
 
 // ===== Add/Edit Provider Modal =====
 let editingId = null;
-function showAddProvider() {
+let selectedPresetKeyOptional = false; // true when selecting a discovered platform
+async function showAddProvider() {
   editingId = null;
+  selectedPresetKeyOptional = false;
   document.getElementById('editKeysSection').style.display = 'none';
   document.getElementById('modalTitle').textContent = '添加平台';
   document.getElementById('modalStep1').style.display = '';
   document.getElementById('modalStep2').style.display = 'none';
   document.getElementById('presetSearch').value = '';
+  // Load discovered platforms if not yet loaded (for 🆕 badges in preset grid)
+  if (discoveredPlatforms.length === 0) {
+    try {
+      const r = await authFetch('/api/discovered-platforms');
+      const d = await r.json();
+      discoveredPlatforms = d.platforms || [];
+    } catch(e) {}
+  }
   renderPresets();
   document.getElementById('providerModal').classList.add('open');
 }
@@ -1907,6 +1246,7 @@ function editProvider(pid) {
   const p = allProviders.find(x => x.id === pid);
   if (!p) return;
   editingId = pid;
+  selectedPresetKeyOptional = false;
   document.getElementById('modalTitle').textContent = '编辑平台';
   document.getElementById('modalStep1').style.display = 'none';
   document.getElementById('modalStep2').style.display = '';
@@ -1925,13 +1265,18 @@ function editProvider(pid) {
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = p.rate_limit_per_min || 0;
   // Load access control state
   const ac = p.access_control || {};
-  document.getElementById('pAccessPrivate').checked = ac.allow_private_key !== false;
-  document.getElementById('pAccessShared').checked = !!ac.allow_shared_key;
-  document.getElementById('poolPercentSection').style.display = ac.allow_shared_key ? '' : 'none';
-  if (document.getElementById('pGuestKeyPercent')) {
-    document.getElementById('pGuestKeyPercent').value = ac.guest_key_percent || 50;
-    document.getElementById('pGuestPercentDisplay').textContent = (ac.guest_key_percent || 50) + '%';
-    document.getElementById('pPublicPercentDisplay').textContent = (100 - (ac.guest_key_percent || 50)) + '%';
+  setAccessControl(ac.allow_shared_key ? 'shared' : 'private');
+  // Show registration link if available (from presets)
+  const regLinkEl = document.getElementById('presetRegLink');
+  if (regLinkEl) {
+    const preset = presets.find(x => x.id === pid);
+    const apiKeyUrl = preset?.api_key_url || '';
+    if (apiKeyUrl) {
+      regLinkEl.innerHTML = `<a href="${apiKeyUrl}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+      regLinkEl.style.display = '';
+    } else {
+      regLinkEl.style.display = 'none';
+    }
   }
   document.getElementById('providerModal').classList.add('open');
   // Show multi-key management section when editing
@@ -1946,6 +1291,16 @@ function selectPreset(pid) {
   document.getElementById('editKeysSection').style.display = 'none';
   document.getElementById('modalStep1').style.display = 'none';
   document.getElementById('modalStep2').style.display = '';
+  // Show registration link if available
+  const regLinkEl = document.getElementById('presetRegLink');
+  if (regLinkEl) {
+    if (p.api_key_url) {
+      regLinkEl.innerHTML = `<a href="${p.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+      regLinkEl.style.display = '';
+    } else {
+      regLinkEl.style.display = 'none';
+    }
+  }
   document.getElementById('pId').value = p.id;
   document.getElementById('pId').readOnly = false;
   document.getElementById('pName').value = p.name;
@@ -1955,12 +1310,7 @@ function selectPreset(pid) {
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.id === 'openai' ? 10 : p.id === 'openrouter' ? 20 : p.id === 'ollama' ? 50 : 5;
   document.getElementById('pEnabled').checked = true;
-  document.getElementById('pAccessPrivate').checked = true;
-  document.getElementById('pAccessShared').checked = false;
-  document.getElementById('poolPercentSection').style.display = 'none';
-  if (document.getElementById('pGuestKeyPercent')) {
-    document.getElementById('pGuestKeyPercent').value = 50;
-  }
+  setAccessControl('private'); // default: private only
   if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
 }
@@ -1975,9 +1325,7 @@ function closeModal() { document.getElementById('providerModal').classList.remov
 async function saveProvider() {
   const id = document.getElementById('pId').value.trim();
   if (!id) { toast('请填写平台 ID', 'error'); return; }
-  const allowPrivate = document.getElementById('pAccessPrivate').checked;
-  const allowShared = document.getElementById('pAccessShared').checked;
-  const guestPercent = parseInt(document.getElementById('pGuestKeyPercent')?.value) || 50;
+  const accessMode = document.getElementById('pAccessControlValue')?.value || 'private';
   const data = {
     id, name: document.getElementById('pName').value.trim() || id,
     type: 'openai_compatible', base_url: document.getElementById('pUrl').value.trim(),
@@ -1985,10 +1333,10 @@ async function saveProvider() {
     priority: parseInt(document.getElementById('pPriority').value) || 5,
     enabled: document.getElementById('pEnabled').checked,
     access_control: {
-      allow_private_key: allowPrivate,
-      allow_shared_key: allowShared,
-      guest_key_percent: guestPercent,
-      public_key_percent: 100 - guestPercent,
+      allow_private_key: true,
+      allow_shared_key: accessMode === 'shared',
+      allow_guest: editingId ? (allProviders.find(x=>x.id===editingId)?.access_control?.allow_guest ?? true) : true,
+      share_to_pool: editingId ? (allProviders.find(x=>x.id===editingId)?.access_control?.share_to_pool ?? true) : true,
     },
   };
   const dailyLimit = parseInt(document.getElementById('pDailyTokenLimit')?.value) || 0;
@@ -1997,9 +1345,9 @@ async function saveProvider() {
   if (rateLimit > 0) data.rate_limit_per_min = rateLimit;
   const key = document.getElementById('pKey').value.trim();
   if (key) data.api_key = key;
+  else if (!editingId && !selectedPresetKeyOptional) { toast('请填写 API Key', 'error'); return; }
   const proxy = document.getElementById('pProxy').value.trim();
   if (proxy) data.proxy = proxy;
-  else if (!editingId) { toast('请填写 API Key', 'error'); return; }
   // Carry over models from existing if editing
   if (editingId) {
     const existing = allProviders.find(x => x.id === editingId);
@@ -2008,9 +1356,21 @@ async function saveProvider() {
   if (!data.models) data.models = (presets.find(p=>p.id===id)||{}).default_models || [];
 
   try {
-    const r = await authFetch('/api/providers', { method: 'POST', body: JSON.stringify(data) });
-    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || '保存失败'); }
+    const url = editingId ? '/api/providers/' + editingId : '/api/providers';
+    const method = editingId ? 'PUT' : 'POST';
+    const r = await authFetch(url, { method, body: JSON.stringify(data) });
+    if (!r.ok) { const e = await r.json(); throw new Error(extractError(e) || '保存失败'); }
     toast(editingId ? '已更新' : '已添加');
+    // Mark as added in discovery if it was a discovered platform
+    if (!editingId) {
+      const disc = (discoveredPlatforms || []).find(x => x.id === id);
+      if (disc) {
+        try { await authFetch('/api/discovered-platforms/' + id, { method: 'POST', body: JSON.stringify({status: 'added'}) }); } catch(e) {}
+        discoveredPlatforms = discoveredPlatforms.filter(x => x.id !== id);
+        renderDiscoveredPlatforms();
+        renderPresets();
+      }
+    }
     closeModal();
     await loadProviders(); await loadStatus();
   } catch(e) { toast(e.message, 'error'); }
@@ -2020,7 +1380,23 @@ function renderPresets() {
   const grid = document.getElementById('presetGrid');
   const search = document.getElementById('presetSearch').value.toLowerCase();
   const filtered = presets.filter(p => !search || p.name.toLowerCase().includes(search) || p.id.includes(search) || (p.description||'').toLowerCase().includes(search));
-  grid.innerHTML = filtered.map(p => `<div class="preset-card" onclick="selectPreset('${p.id}')"><div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${p.description||''}</div></div>`).join('') + `<div class="preset-card" onclick="selectCustomPreset()" style="border-style:dashed"><div class="preset-icon">🔌</div><div class="preset-name">自定义平台</div><div class="preset-desc">手动填写地址</div></div>`;
+  // Merge discovered platforms (not dismissed/ignored/added) into preset grid
+  const addedProviderIds = new Set((allProviders||[]).map(p => p.id));
+  const discovered = (typeof discoveredPlatforms !== 'undefined' ? discoveredPlatforms : []).filter(p => {
+    if (p.status === 'dismissed' || p.status === 'ignored' || p.status === 'added') return false;
+    if (addedProviderIds.has(p.id)) return false;
+    // Also filter if base name matches an existing provider (e.g. openrouter-free vs openrouter)
+    const baseId = p.id.split('-').slice(0, -1).join('-') || p.id;
+    for (const eid of addedProviderIds) {
+      if (eid === baseId || baseId === eid || p.id.startsWith(eid + '-') || eid.startsWith(p.id.replace(/-.+$/, ''))) return false;
+    }
+    return true;
+  });
+  const discoveredHtml = discovered.map(p => {
+    const badge = '<span style="position:absolute;top:4px;right:6px;font-size:9px;background:var(--success);color:#fff;padding:1px 5px;border-radius:8px">🆕 新发现</span>';
+    return `<div class="preset-card" onclick="selectDiscoveredPreset('${p.id}')" style="position:relative;border-color:var(--success)">${badge}<div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${(p.description||'').substring(0,40)}</div></div>`;
+  }).join('');
+  grid.innerHTML = filtered.map(p => `<div class="preset-card" onclick="selectPreset('${p.id}')"><div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${p.description||''}</div></div>`).join('') + discoveredHtml + `<div class="preset-card" onclick="selectCustomPreset()" style="border-style:dashed"><div class="preset-icon">🔌</div><div class="preset-name">自定义平台</div><div class="preset-desc">手动填写地址</div></div>`;
 }
 function filterPresets() { renderPresets(); }
 
@@ -2035,20 +1411,44 @@ function selectCustomPreset() {
   document.getElementById('pDesc').value = '';
   document.getElementById('pPriority').value = '5';
   document.getElementById('pEnabled').checked = true;
-  document.getElementById('pAccessPrivate').checked = true;
-  document.getElementById('pAccessShared').checked = false;
-  document.getElementById('poolPercentSection').style.display = 'none';
-  if (document.getElementById('pGuestKeyPercent')) {
-    document.getElementById('pGuestKeyPercent').value = 50;
-  }
+  setAccessControl('private'); // default: private only
   document.getElementById('editKeysSection').style.display = 'none';
   if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
   editingId = '';
+  selectedPresetKeyOptional = false;
+}
+
+function selectDiscoveredPreset(id) {
+  const dp = (typeof discoveredPlatforms !== 'undefined' ? discoveredPlatforms : []).find(x => x.id === id);
+  if (!dp) return;
+  editingId = null;
+  selectedPresetKeyOptional = true;
+  document.getElementById('editKeysSection').style.display = 'none';
+  document.getElementById('modalTitle').textContent = '添加平台（来自发现）';
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  document.getElementById('pId').value = dp.id;
+  document.getElementById('pId').readOnly = false;
+  document.getElementById('pName').value = dp.name;
+  document.getElementById('pUrl').value = dp.base_url;
+  document.getElementById('pKey').value = '';
+  document.getElementById('pKey').placeholder = '可选：输入 API Key（也可稍后在编辑中添加）';
+  document.getElementById('pDesc').value = dp.description || '';
+  document.getElementById('pPriority').value = 5;
+  document.getElementById('pEnabled').checked = true;
+  setAccessControl('private');
+  const regLinkEl = document.getElementById('presetRegLink');
+  if (regLinkEl && dp.api_key_url) {
+    regLinkEl.innerHTML = `<a href="${dp.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 前往官网注册获取 API Key →</a>`;
+    regLinkEl.style.display = '';
+  } else if (regLinkEl) { regLinkEl.style.display = 'none'; }
+  if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
+  if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
 }
 
 function getIcon(id) {
-  const icons = {openai:'🟢',deepseek:'🔵',qwen:'🟠',zhipu:'🟣',moonshot:'🌙',lingyiwanwu:'🔶',minimax:'⬛',siliconflow:'💎',groq:'⚡',xai:'🤖',together:'🔗',mistral:'🇪🇺',doubao:'🫘',spark:'✨',hunyuan:'🐧','tokenhub-coding':'🐧','tokenhub-plan':'🐧','tokenhub-enterprise':'🐧',gemini:'♊',openrouter:'🌐',poe:'🎭',sid:'🧠',sider:'🌐',ollama:'🦙',coze:'🎯',nvidia:'🟩',anthropic:'🟠',qianfan:'🔴',novita:'🔮',fireworks:'🎆',cohere:'🔷',cerebras:'⚡',stepfun:'🌟',baichuan:'🌊'};
+  const icons = {openai:'🟢',deepseek:'🔵',qwen:'🟠',zhipu:'🟣',moonshot:'🌙',lingyiwanwu:'🔶',minimax:'⬛',siliconflow:'💎',groq:'⚡',xai:'🤖',together:'🔗',mistral:'🇪🇺',doubao:'🫘',spark:'✨',hunyuan:'🐧','tokenhub-coding':'🐧','tokenhub-plan':'🐧','tokenhub-enterprise':'🐧',gemini:'♊',openrouter:'🌐',poe:'🎭',sid:'🧠',sider:'🌐',ollama:'🦙',coze:'🎯',nvidia:'🟩',anthropic:'🟠',qianfan:'🔴',novita:'🔮',fireworks:'🎆',cohere:'🔷',cerebras:'⚡',stepfun:'🌟',baichuan:'🌊',agnes:'🎨'};
   return icons[id] || '🔌';
 }
 
@@ -2066,10 +1466,9 @@ function initApiUrls() {
   authFetch('/api/federation/config').then(r => r.json()).then(d => {
     const lanIP = d.lan_ip || '';
     const servicePort = d.service_port || '8000';
-    const tunnelUrl = d.tunnel_url || '';
     const tunnelDomain = d.tunnel_domain || '';
-    const tunnelEnabled = d.tunnel_enabled === 'true';
-    const boundIP = d.bound_ip || d.public_ip || '';
+    const boundIP = d.bound_ip || '';
+    const boundPort = d.bound_port || '8000';
 
     // 1. 局域网地址
     if (lanEl) {
@@ -2082,53 +1481,55 @@ function initApiUrls() {
       }
     }
 
-    // 2. 公网地址（优先 tunnel_url，其次 bound_ip）
-    const publicUrl = tunnelUrl ? tunnelUrl : (boundIP ? 'http://' + boundIP + ':' + servicePort : '');
-    if (publicUrl) {
-      if (pubEl) pubEl.value = publicUrl + '/v1';
-      if (hintEl) {
-        if (tunnelUrl) {
-          hintEl.textContent = tunnelDomain
-            ? '✅ 服务运行期间一直可用，重启后会变化（已绑定固定域名，见下方）'
-            : '✅ 服务运行期间一直可用，重启后会变化。建议绑定自定义域名获得永久固定地址';
-          if (badgeEl) badgeEl.textContent = tunnelDomain ? '(隧道)' : '(临时)';
-          if (pubEl) pubEl.style.color = tunnelDomain ? 'var(--text-muted)' : 'var(--text-primary)';
-        } else {
-          hintEl.textContent = '✅ 通过绑定公网 IP 提供固定访问地址';
-          if (badgeEl) badgeEl.textContent = '(固定IP)';
-          if (pubEl) pubEl.style.color = 'var(--text-primary)';
-        }
+    // 2. 公网地址（固定IP）- 独立于域名
+    if (boundIP) {
+      if (pubEl) {
+        pubEl.value = 'http://' + boundIP + ':' + boundPort + '/v1';
+        pubEl.style.color = 'var(--text-primary)';
       }
+      if (hintEl) hintEl.innerHTML = '✅ 固定公网IP地址，可<a href="javascript:void(0)" onclick="showBindMode(\'ip\')" style="color:var(--accent);text-decoration:underline">修改</a>';
+      if (badgeEl) badgeEl.textContent = '(已绑定)';
     } else {
-      if (pubEl) { pubEl.value = ''; pubEl.placeholder = '未启用公网访问'; }
-      if (hintEl) hintEl.textContent = '未启用公网隧道';
-      if (pubEl) pubEl.style.color = 'var(--text-muted)';
+      if (pubEl) { pubEl.value = ''; pubEl.placeholder = '未绑定公网IP'; pubEl.style.color = 'var(--text-muted)'; }
+      if (hintEl) hintEl.textContent = '在下方绑定您的公网IP获得固定地址';
+      if (badgeEl) badgeEl.textContent = '';
     }
 
-    // 3. 固定域名地址（只需 tunnelDomain + tunnelEnabled，不依赖 tunnelUrl）
-    if (tunnelDomain && tunnelEnabled) {
+    // 3. 固定域名地址 - 独立于IP
+    if (tunnelDomain) {
       const domainUrl = 'https://' + tunnelDomain + '/v1';
       if (domainUrlEl) {
         domainUrlEl.value = domainUrl;
         domainUrlEl.style.color = 'var(--accent-green)';
       }
-      if (domainHintEl) domainHintEl.textContent = '✅ 已绑定自定义域名，地址固定不变';
-      if (domainBadgeEl) domainBadgeEl.textContent = '(固定)';
-      if (domainQuickCard) domainQuickCard.style.display = 'none';
-    } else if (tunnelUrl && tunnelEnabled) {
-      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '需先绑定自定义域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
-      if (domainHintEl) domainHintEl.textContent = '当前未绑定域名，点击下方引导进行绑定';
-      if (domainBadgeEl) domainBadgeEl.textContent = '';
-      if (domainQuickCard) domainQuickCard.style.display = 'block';
+      if (domainHintEl) domainHintEl.innerHTML = '✅ 已绑定域名，地址永久固定，可<a href="javascript:void(0)" onclick="showBindMode(\'domain\')" style="color:var(--accent);text-decoration:underline">修改</a>';
+      if (domainBadgeEl) domainBadgeEl.textContent = '(已绑定)';
     } else {
-      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '需先绑定域名并启用隧道'; domainUrlEl.style.color = 'var(--text-muted)'; }
-      if (domainHintEl) domainHintEl.textContent = '绑定自定义域名后获得固定不变的公网地址';
-      if (domainQuickCard) domainQuickCard.style.display = 'block';
+      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '未绑定域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
+      if (domainHintEl) domainHintEl.textContent = '在下方绑定域名获得固定地址';
+      if (domainBadgeEl) domainBadgeEl.textContent = '';
+    }
+
+    // 4. 绑定引导卡片 - 只要有一个未绑定就显示
+    if (domainQuickCard) {
+      if (!boundIP || !tunnelDomain) {
+        domainQuickCard.style.display = 'block';
+        if (boundIP && !tunnelDomain) switchBindMode('domain');
+        if (!boundIP && tunnelDomain) switchBindMode('ip');
+      } else {
+        domainQuickCard.style.display = 'none';
+      }
     }
   }).catch(() => {
     if (hintEl) hintEl.textContent = '获取地址信息失败';
     if (domainHintEl) domainHintEl.textContent = '获取地址信息失败';
   });
+}
+
+function showBindMode(mode) {
+  var card = document.getElementById('domainBindingQuickCard');
+  if (card) { card.style.display = 'block'; card.scrollIntoView({behavior:'smooth'}); }
+  switchBindMode(mode);
 }
 
     function switchBindMode(mode) {
@@ -2166,7 +1567,7 @@ function initApiUrls() {
           resultDiv.innerHTML = '<span style="color:var(--success)">✅ IP已绑定！Base URL：<code>http://' + ip + ':8000/v1</code></span>';
           setTimeout(() => { initApiUrls(); }, 2000);
         } else {
-          resultDiv.innerHTML = '<span style="color:var(--error)">❌ ' + (d.error || '绑定失败') + '</span>';
+          resultDiv.innerHTML = '<span style="color:var(--error)">❌ ' + extractError(d) || '绑定失败' + '</span>';
         }
       } catch(e) {
         resultDiv.innerHTML = '<span style="color:var(--error)">❌ 请求失败：' + e.message + '</span>';
@@ -2186,22 +1587,22 @@ function initApiUrls() {
     toast('域名格式不正确', 'error');
     return;
   }
-  resultEl.innerHTML = '<span style="color:var(--text-muted)">正在提交绑定请求...</span>';
+  resultEl.innerHTML = '<span style="color:var(--text-muted)">正在绑定域名...</span>';
   try {
-    const res = await authFetch('/api/federation/config', {
+    const res = await authFetch('/api/domain/manual-bind', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ tunnel_domain: domain, tunnel_enabled: true })
+      body: JSON.stringify({ domain: domain })
     });
     const d = await res.json();
-    if (res.ok) {
-      resultEl.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定请求已提交！请将 <strong>' + domain + '</strong> CNAME 解析到 <strong>' + (d.tunnel_url || '当前隧道地址') + ' 后等待生效</span>';
-      setTimeout(() => { initApiUrls(); }, 3000);
+    if (d.success) {
+      resultEl.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定成功！<br>如已配置 DNS 解析，可通过 <strong>https://' + domain + '</strong> 访问。<br><span style=\"font-size:10px;color:var(--text-muted)\">如无法访问，请检查 DNS 是否已正确解析到服务器 IP</span></span>';
+      setTimeout(() => { loadStatus(); initApiUrls(); }, 1500);
     } else {
-      resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定失败: ' + (d.error || '未知错误') + '</span>';
+      resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定失败: ' + extractError(d) + '</span>';
     }
   } catch(e) {
-    resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定请求失败</span>';
+    resultEl.innerHTML = '<span style="color:var(--accent-red)">绑定请求失败: ' + e.message + '</span>';
   }
 }
 
@@ -2320,7 +1721,7 @@ async function refreshLogs() {
     for (const l of logs) {
       const statusBadge = l.success ? '<span class="badge badge-green">成功</span>' : '<span class="badge badge-red">失败</span>';
       const time = l.timestamp ? new Date(l.timestamp).toLocaleString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
-      html += `<tr><td>${time}</td><td>${l.model||'-'}</td><td>${l.provider||'-'}</td><td>${l.tokens||0}</td><td>${l.latency_ms||0}ms</td><td>${statusBadge}</td></tr>`;
+      html += `<tr><td>${time}</td><td>${l.model||'-'}</td><td>${l.provider_name||'-'}</td><td>${l.tokens||0}</td><td>${l.latency_ms||0}ms</td><td>${statusBadge}</td></tr>`;
     }
     html += '</tbody></table>';
     container.innerHTML = html;
@@ -2332,22 +1733,77 @@ async function refreshHealth() {
   try {
     const r = await authFetch('/api/health');
     const d = await r.json();
-    const health = d.health || {};
+    const providers = d.providers || [];
     const container = document.getElementById('healthList');
-    const keys = Object.keys(health);
-    if (!keys.length) {
-      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无健康检测数据</div>';
+    if (!providers.length) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无已配置 API Key 的平台</div>';
       return;
     }
-    let html = '<table class="usage-table"><thead><tr><th>平台</th><th>状态</th><th>延迟</th><th>上次检查</th><th>连续失败</th></tr></thead><tbody>';
-    for (const [k, v] of Object.entries(health)) {
-      const dot = v.healthy ? '<span class="status-dot green" style="width:8px;height:8px;display:inline-block"></span>' : '<span class="status-dot red" style="width:8px;height:8px;display:inline-block"></span>';
-      const checkTime = v.last_check ? new Date(v.last_check).toLocaleString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
-      html += `<tr><td>${dot} ${k}</td><td>${v.healthy?'正常':'异常'}</td><td>${v.latency_ms||0}ms</td><td>${checkTime}</td><td>${v.consecutive_failures||0}</td></tr>`;
+    
+    let html = '<div style="display:grid;gap:12px">';
+    for (const p of providers) {
+      const isHealthy = p.status === 'healthy';
+      const statusColor = isHealthy ? '#22c55e' : (p.status === 'degraded' ? '#f59e0b' : '#ef4444');
+      const statusText = isHealthy ? '✅ 正常' : (p.status === 'degraded' ? '⚠️ 异常' : '❌ 离线');
+      const statusBg = isHealthy ? 'rgba(34,197,94,.1)' : (p.status === 'degraded' ? 'rgba(245,158,11,.1)' : 'rgba(239,68,68,.1)');
+      
+      // Calculate quota usage percentage
+      const quotaPercent = p.token_limit > 0 ? Math.min((p.token_used / p.token_limit) * 100, 100) : 0;
+      const quotaColor = quotaPercent > 80 ? '#ef4444' : (quotaPercent > 50 ? '#f59e0b' : '#22c55e');
+      const quotaText = p.token_limit > 0 
+        ? `${(p.token_used/1000).toFixed(1)}K / ${(p.token_limit/1000).toFixed(0)}K`
+        : '无限';
+      
+      const enabledBadge = p.enabled 
+        ? '<span class="badge badge-green">启用</span>'
+        : '<span class="badge badge-red">禁用</span>';
+      
+      html += `
+        <div style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:11px;padding:3px 10px;border-radius:20px;background:${statusBg};color:${statusColor};font-weight:600">${statusText}</span>
+              <span style="font-size:15px;font-weight:600">${p.provider_name || p.provider_id}</span>
+              ${enabledBadge}
+            </div>
+            <div style="display:flex;gap:12px;font-size:12px;color:var(--text-muted)">
+              <span>🔑 ${p.key_count} 个 Key</span>
+              <span>📦 ${p.model_count} 个模型</span>
+              <span>⚡ ${p.latency_ms ? p.latency_ms.toFixed(0) + 'ms' : '-'}</span>
+            </div>
+          </div>
+          
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;font-size:12px">
+            <div style="padding:10px;background:var(--bg-primary);border-radius:8px">
+              <div style="color:var(--text-muted);margin-bottom:4px">今日请求</div>
+              <div style="font-size:18px;font-weight:600;color:var(--text-primary)">${p.today_requests || 0}</div>
+            </div>
+            <div style="padding:10px;background:var(--bg-primary);border-radius:8px">
+              <div style="color:var(--text-muted);margin-bottom:4px">今日 Token</div>
+              <div style="font-size:18px;font-weight:600;color:var(--text-primary)">${p.today_tokens ? (p.today_tokens/1000).toFixed(1) + 'K' : '0'}</div>
+            </div>
+            <div style="padding:10px;background:var(--bg-primary);border-radius:8px">
+              <div style="color:var(--text-muted);margin-bottom:4px">总 Token</div>
+              <div style="font-size:18px;font-weight:600;color:var(--text-primary)">${p.token_used ? (p.token_used/1000).toFixed(1) + 'K' : '0'}</div>
+            </div>
+            <div style="padding:10px;background:var(--bg-primary);border-radius:8px">
+              <div style="color:var(--text-muted);margin-bottom:4px">额度使用</div>
+              <div style="font-size:14px;font-weight:600;color:${quotaColor}">${quotaText}</div>
+              ${p.token_limit > 0 ? `<div style="margin-top:6px;height:4px;background:rgba(0,0,0,.05);border-radius:2px;overflow:hidden"><div style="height:100%;width:${quotaPercent}%;background:${quotaColor};transition:width .3s"></div></div>` : '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">无限制</div>'}
+            </div>
+          </div>
+          
+          ${p.failure_reason ? `<div style="margin-top:10px;padding:8px 12px;background:rgba(239,68,68,.05);border-left:3px solid #ef4444;border-radius:4px;font-size:11px;color:#ef4444">❌ ${p.failure_reason}</div>` : ''}
+          ${p.consecutive_fails > 0 ? `<div style="margin-top:8px;font-size:11px;color:var(--text-muted)">连续失败: ${p.consecutive_fails} 次</div>` : ''}
+        </div>
+      `;
     }
-    html += '</tbody></table>';
+    html += '</div>';
     container.innerHTML = html;
-  } catch(e) { console.error(e); }
+  } catch(e) { 
+    console.error(e); 
+    document.getElementById('healthList').innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + e.message + '</div>';
+  }
 }
 
 // ============================================================
@@ -2406,52 +1862,12 @@ async function loadApiKeys(pid) {
 }
 
 async function showAddApiKey(pid) {
-  // Use a custom modal dialog instead of prompts
-  const modal = document.createElement('div');
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000';
-  modal.innerHTML = `
-    <div style="background:var(--bg-primary);border-radius:14px;padding:24px;width:420px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-      <h3 style="margin:0 0 16px;font-size:16px;color:var(--text-primary)">+ 添加 API Key</h3>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <div><label style="font-size:12px;color:var(--text-muted)">别名（可选）</label><input id="mAlias" class="form-input" placeholder="用于标识此Key" style="margin-top:3px"></div>
-        <div><label style="font-size:12px;color:var(--text-muted)">API Key *</label><input id="mKey" class="form-input" placeholder="sk-..." style="margin-top:3px"></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div><label style="font-size:12px;color:var(--text-muted)">额度(tokens)</label><input id="mQuota" class="form-input" type="number" value="0" style="margin-top:3px" placeholder="0=无限"></div>
-          <div><label style="font-size:12px;color:var(--text-muted)">优先级</label><input id="mPriority" class="form-input" type="number" value="1" min="1" style="margin-top:3px"></div>
-        </div>
-        <div><label style="font-size:12px;color:var(--text-muted)">访问权限</label>
-          <select id="mAccess" class="form-input" style="margin-top:3px">
-            <option value="private">🔒 私有</option>
-            <option value="shared">🔗 共享</option>
-            <option value="public">🌐 公共</option>
-          </select>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
-        <button id="mCancel" class="btn btn-secondary" style="font-size:13px;padding:6px 16px">取消</button>
-        <button id="mOk" class="btn btn-primary" style="font-size:13px;padding:6px 16px">💾 添加</button>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-  document.getElementById('mKey').focus();
-  const result = await new Promise(resolve => {
-    document.getElementById('mCancel').onclick = () => { modal.remove(); resolve(null); };
-    document.getElementById('mOk').onclick = () => {
-      const key = document.getElementById('mKey').value.trim();
-      if (!key) { toast('请输入 API Key', 'error'); return; }
-      resolve({
-        alias: document.getElementById('mAlias').value.trim(),
-        key: key,
-        quota: parseInt(document.getElementById('mQuota').value, 10) || 0,
-        access: document.getElementById('mAccess').value,
-        priority: parseInt(document.getElementById('mPriority').value, 10) || 1,
-      });
-      modal.remove();
-    };
-    modal.onclick = (e) => { if (e.target === modal) { modal.remove(); resolve(null); } };
-  });
-  if (!result) return;
-  const { alias, key, quota, access, priority } = result;
+  const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
+  const key = prompt('请输入 API Key:');
+  if (!key) return;
+  const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
+  const access = prompt('访问权限 (private/shared/public):', 'private') || 'private';
+  const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
   try {
     const r = await authFetch('/api/providers/' + pid + '/keys', {
       method: 'POST',
@@ -2463,7 +1879,7 @@ async function showAddApiKey(pid) {
       await loadApiKeys(pid);
       await loadProviders();
     } else {
-      toast('添加失败: ' + (d.error || '未知错误'), 'error');
+      toast('添加失败: ' + extractError(d) || '未知错误', 'error');
     }
   } catch(e) { toast('添加失败: ' + e.message, 'error'); }
 }
@@ -2518,7 +1934,12 @@ async function testAllKeys(pid) {
       let label = k.alias || ('Key#' + k.index);
       return status + ' ' + label + (k.error ? ': ' + k.error : '');
     }).join('\n');
-    alert('Key 测试结果:\n' + msg);
+    
+    const lines = msg.split('\n');
+    const successCount = lines.filter(l => l.startsWith('✅')).length;
+    const failCount = lines.filter(l => l.startsWith('❌')).length;
+    toast(`Key 测试完成: ${successCount} 成功, ${failCount} 失败`, failCount > 0 ? 'error' : 'success');
+
   } catch(e) { toast('测试失败: ' + e.message, 'error'); }
 }
 
@@ -2569,7 +1990,7 @@ async function saveInlineKey() {
       await loadEditKeys(editingId);
       await loadProviders();
     } else {
-      toast('添加失败: ' + (d.error || '未知错误'), 'error');
+      toast('添加失败: ' + extractError(d) || '未知错误', 'error');
     }
   } catch(e) { toast('添加失败: ' + e.message, 'error'); }
 }
@@ -2643,7 +2064,12 @@ async function testAllEditKeys() {
       let label = k.alias || ('Key#' + k.index);
       return status + ' ' + label + (k.error ? ': ' + k.error : '');
     }).join('\n');
-    alert('Key 测试结果:\n' + msg);
+    
+    const lines = msg.split('\n');
+    const successCount = lines.filter(l => l.startsWith('✅')).length;
+    const failCount = lines.filter(l => l.startsWith('❌')).length;
+    toast(`Key 测试完成: ${successCount} 成功, ${failCount} 失败`, failCount > 0 ? 'error' : 'success');
+
   } catch(e) { toast('测试失败: ' + e.message, 'error'); }
 }
 
@@ -2805,7 +2231,7 @@ async function createInvite() {
       }
     } else {
       const data = await res.json().catch(() => ({}));
-      toast(data.error || '创建失败', 'error');
+      toast(extractError(data) || '创建失败', 'error');
     }
   } catch(e) { toast('创建失败', 'error'); }
 }
@@ -2875,12 +2301,30 @@ async function loadShareInfo() {
 
 function copyText(text) {
   if (!text) return toast('没有可复制的内容', 'error');
-  navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板')).catch(() => {
-    // Fallback
-    const ta = document.createElement('textarea');
-    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
-    toast('已复制到剪贴板');
-  });
+  function doFallbackCopy(t) {
+    var ta = document.createElement('textarea');
+    ta.value = t;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+      toast('已复制到剪贴板');
+    } catch(e) {
+      toast('复制失败，请手动复制', 'error');
+    }
+    document.body.removeChild(ta);
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(function() {
+      toast('已复制到剪贴板');
+    }).catch(function() {
+      doFallbackCopy(text);
+    });
+  } else {
+    doFallbackCopy(text);
+  }
 }
 
 
@@ -2925,6 +2369,7 @@ if (authToken) {
         const r = await authFetch('/api/domain/status');
         const d = await r.json();
         const el = document.getElementById('domainStatus');
+        if (!el) return;
         el.style.display = 'block';
         if (d.bound) {
           el.innerHTML = '✅ 已绑定: <strong>' + d.domain + '</strong> | 公网地址: <a href="' + d.public_url + '" target="_blank">' + d.public_url + '</a> | Tunnel ID: ' + d.tunnel_id;
@@ -2951,7 +2396,7 @@ if (authToken) {
           el.innerHTML = '✅ Token 有效，Account ID: ' + d.account_id;
           el.style.color = 'var(--success-color, #10b981)';
         } else {
-          el.innerHTML = '❌ Token 无效: ' + (d.error || '未知错误');
+          el.innerHTML = '❌ Token 无效: ' + extractError(d) || '未知错误';
           el.style.color = 'var(--danger-color, #ef4444)';
         }
       } catch(e) {
@@ -2980,7 +2425,7 @@ if (authToken) {
           // Also refresh the tunnel URL in the config section
           setTimeout(() => loadConfig(), 1000);
         } else {
-          toast('绑定失败: ' + (d.error || '未知错误'), 'error');
+          toast('绑定失败: ' + extractError(d), 'error');
         }
       } catch(e) {
         toast('绑定失败: ' + e.message, 'error');
@@ -3026,9 +2471,15 @@ if (authToken) {
     function renderNetworkUI() {
       if (!networkStatus) return;
       const s = networkStatus;
-      const isShared = s.mode === 'shared';
+      const isShared = s.mode === 'shared' || s.network_enabled;
       const panel = document.getElementById('networkActivePanel');
       const toggle = document.getElementById('sharedNetworkToggle');
+      // Update the status badge to reflect actual shared network state (not federation)
+      const statusBadge = document.getElementById('fedEnabledStatus');
+      if (statusBadge) {
+        statusBadge.textContent = isShared ? '✅ 已加入' : '未加入';
+        statusBadge.style.color = isShared ? 'var(--success)' : 'var(--text-muted)';
+      }
 
       if (isShared) {
         if (panel) panel.style.display = '';
@@ -3093,6 +2544,30 @@ if (authToken) {
         setText('dashTotalRequests', (d.total_requests || 0).toLocaleString());
       } catch(e) {
         console.warn('network dashboard load failed', e);
+      }
+      // Load pool quota data
+      try {
+        const [quotaR, statusR] = await Promise.all([
+          authFetch('/api/network/open-key-quota'),
+          authFetch('/api/network/status')
+        ]);
+        const quota = await quotaR.json();
+        const status = await statusR.json();
+        const maxDaily = status.max_daily_requests || 0;
+        const pubPercent = (status.quota_allocation && status.quota_allocation.public_key_percent) || 0;
+        const pubDaily = Math.round(maxDaily * pubPercent / 100);
+        const globalQuota = quota.global_quota || 0;
+        const userQuota = quota.user_quota || 0;
+        const contribShare = quota.contribution_share || 0;
+        const sharePercent = globalQuota > 0 ? (contribShare * 100).toFixed(1) : '0';
+        setText('poolDailyContrib', maxDaily.toLocaleString());
+        setText('poolPublicShare', pubPercent + '%');
+        setText('poolPublicDaily', pubDaily > 0 ? pubDaily.toLocaleString() + '/天' : '-');
+        setText('poolGlobalQuota', globalQuota.toLocaleString());
+        setText('poolMyQuota', userQuota.toLocaleString());
+        setText('poolSharePercent', sharePercent);
+      } catch(e) {
+        console.warn('pool quota load failed', e);
       }
     }
 
@@ -3166,7 +2641,7 @@ if (authToken) {
         // Step 2: Enable shared network
         const r2 = await authFetch('/api/network/enable', {method:'POST'});
         const d = await r2.json();
-        if (!r2.ok) { toast(d.error || '启用失败', 'error'); return; }
+        if (!r2.ok) { toast(extractError(d) || '启用失败', 'error'); return; }
 
         // Update UI state
         document.getElementById('sharedNetworkToggle').checked = true;
@@ -3309,7 +2784,7 @@ if (authToken) {
           const escapedKey = keyVal.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
           const dateInfo = issuedAt ? '创建于 ' + issuedAt + (expires !== '永久' ? ' · 到期 ' + expires : ' · 永久有效') : (expires !== '永久' ? '到期 ' + expires : '永久有效');
           return `
-          <div data-gk-key="${escapedKey}" style="padding:10px 14px;margin-bottom:6px;background:var(--bg-secondary);border-radius:8px;border:1px solid ${revoked ? 'rgba(239,68,68,.15)' : 'var(--border-color, rgba(255,255,255,.08))'};${revoked ? 'opacity:0.55;' : ''}">
+          <div data-gk-key="${escapedKey}" style="padding:12px 16px;margin-bottom:8px;background:var(--bg-secondary);border-radius:10px;border:1px solid ${revoked ? 'rgba(239,68,68,.2)' : 'var(--border-color, rgba(255,255,255,.1))'};box-shadow:0 2px 8px rgba(0,0,0,.1);transition:all .2s ease;cursor:default;${revoked ? 'opacity:0.55;' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
               <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;min-width:0;flex:1">
                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏷️ ${displayName}</span>
@@ -3324,8 +2799,10 @@ if (authToken) {
               <div style="color:var(--text-muted);font-size:10px">${dateInfo} · ${quota}</div>
               <div style="display:flex;gap:4px;flex-shrink:0">
                 <button class="btn btn-secondary btn-sm" onclick="copyText('${safeKey}')" title="复制 Key" style="font-size:10px;padding:3px 8px">📋</button>
+                ${!revoked ? `<button class="btn btn-primary btn-sm" onclick="shareExistingKey('${safeKey}')" title="分享" style="font-size:10px;padding:3px 8px">📤 分享</button>` : ''}
                 ${!revoked ? `<button class="btn btn-secondary btn-sm" onclick="editGuestKeyQuota('${safeKey}')" title="编辑额度" style="font-size:10px;padding:3px 8px">✏️</button>` : ''}
                 ${!revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeGuestKey('${safeKey}')" title="撤销" style="font-size:10px;padding:3px 8px">撤销</button>` : ''}
+                ${revoked ? `<button class="btn btn-danger btn-sm" onclick="deleteGuestKey('${safeKey}')" title="永久删除" style="font-size:10px;padding:3px 8px">🗑️ 删除</button>` : ''}
               </div>
             </div>
           </div>`;
@@ -3400,29 +2877,28 @@ if (authToken) {
           await loadGuestKeys();
         } else {
           const err = await res.json().catch(() => ({}));
-          toast('更新失败: ' + (err.error || res.statusText), 'error');
+          toast('更新失败: ' + extractError(err), 'error');
         }
       } catch(e) {
         toast('更新失败: ' + e.message, 'error');
       }
     }
 
-    async function generateGuestKey(purpose) {
-      _currentKeyPurpose = purpose || 'consumer';
+    async function generateGuestKey() {
       if (document.getElementById('guestKeyForm')) {
         document.getElementById('guestKeyForm').remove();
         return;
       }
-      const purposeLabel = _currentKeyPurpose === 'collaborator' ? '🤝 邀请协作者' : '🔑 签发使用者 Key';
-      const purposeColor = _currentKeyPurpose === 'collaborator' ? 'rgba(99,102,241,.06)' : 'rgba(108,99,255,.06)';
-      const purposeBorder = _currentKeyPurpose === 'collaborator' ? 'rgba(99,102,241,.2)' : 'rgba(108,99,255,.2)';
+      const purposeLabel = '🔑 创建 Guest Key';
+      const purposeColor = 'rgba(108,99,255,.06)';
+      const purposeBorder = 'rgba(108,99,255,.2)';
       const formHtml = `
         <div id="guestKeyForm" style="padding:16px;margin-bottom:8px;background:${purposeColor};border:1px solid ${purposeBorder};border-radius:10px">
           <div style="font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:6px">${purposeLabel}</div>
 
           <div style="margin-bottom:14px;padding:12px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.12);border-radius:8px">
             <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px">备注名称 <span style="color:var(--error)">*</span></label>
-            <input id="gkNote" class="form-input" style="font-size:12px;height:34px;width:100%;box-sizing:border-box" placeholder="${_currentKeyPurpose === 'collaborator' ? '如：Alice' : '如：给小明的试用 Key'}">
+            <input id="gkNote" class="form-input" style="font-size:12px;height:34px;width:100%;box-sizing:border-box" placeholder="如：给小明的试用 Key">
             <div style="font-size:10px;color:var(--text-muted);margin-top:4px">💡 给 Key 起个名字方便后续管理</div>
           </div>
 
@@ -3520,11 +2996,6 @@ if (authToken) {
       const quotaPerRequest = parseInt(document.getElementById('gkQuotaPerRequest').value, 10) || 0;
       const rpm = parseInt(document.getElementById('gkRpm').value, 10) || 0;
       if (!note) { toast('请填写备注名称', 'error'); return; }
-      // Add prefix for collaborator type
-      const purpose = _currentKeyPurpose || 'consumer';
-      if (purpose === 'collaborator' && !note.startsWith('[协作]')) {
-        note = '[协作] ' + note;
-      }
       try {
         const body = { exp_days: expDays, quota: quota, quota_hourly: quotaHourly, quota_per_request: quotaPerRequest, rpm: rpm, note: note, access_public_pool: document.getElementById('gkAccessPublicPool')?.checked || false };
         const res = await authFetch('/api/network/guest-keys', {
@@ -3537,14 +3008,12 @@ if (authToken) {
           const formEl = document.getElementById('guestKeyForm');
           if (formEl) formEl.remove();
           if (d.key) {
-            toast('Guest Key 已签发', 'success');
+            toast('Guest Key 已签发，点击 Key 右侧的 📤 按钮进行分享', 'success');
             await loadGuestKeys();
-            // Show share panel
-            showSharePanel({ key: d.key, note: note, quota: quota, quota_hourly: quotaHourly, expires_at: d.expires_at || '' }, purpose);
           }
         } else {
           const err = await res.json();
-          toast('签发失败: ' + (err.error || '未知错误'), 'error');
+          toast('签发失败: ' + extractError(err), 'error');
         }
       } catch(e) { toast('签发失败: ' + e.message, 'error'); }
     }
@@ -3582,6 +3051,8 @@ if (authToken) {
         qrContent = inviteLink;
         showInviteLink = true;
         shareText = '邀请你一起维护我的 OpenModelPool Agent 节点 👇\n\n邀请链接: ' + inviteLink + '\n\n你的身份凭证 (Guest Key): ' + guestKey + '\n\n首次登录时可用此 Key 验证身份并设置密码。';
+        // Mark key as collaborator type
+        authFetch('/api/network/guest-keys/' + encodeURIComponent(guestKey) + '/mark-collaborator', { method: 'POST' }).catch(()=>{});
       } else {
         qrContent = JSON.stringify({ api_url: apiUrl, api_key: guestKey, platform: "OpenModelPool Agent" });
         shareText = '我用 OpenModelPool 搭了个 AI 聚合网关，拿去用 👇\n\nAPI 地址: ' + apiUrl + '\nAPI Key: ' + guestKey;
@@ -3592,7 +3063,7 @@ if (authToken) {
       const escapedInviteLink = inviteLink.replace(/'/g, "\\'");
 
       let panelHtml = `
-        <div style="padding:16px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:10px">
+        <div style="padding:20px;background:linear-gradient(135deg,rgba(34,197,94,.06),rgba(34,197,94,.02));border:1px solid rgba(34,197,94,.25);border-radius:12px;box-shadow:0 4px 20px rgba(34,197,94,.08)">
           <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
             <span>🎉 Key 已创建: ${guestKey.substring(0, 24)}...</span>
             <span style="font-size:10px;padding:2px 8px;background:rgba(108,99,255,.12);color:var(--accent-start);border-radius:4px">${purposeLabel}</span>
@@ -3629,10 +3100,10 @@ if (authToken) {
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:6px">📡 分享渠道</label>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到微信发送'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📱 微信</button>
-              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到 Telegram 发送'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">✈️ Telegram</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到微信发送')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📱 微信</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到 Telegram 发送')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">✈️ Telegram</button>
               <button class="btn btn-secondary btn-sm" onclick="window.location.href='mailto:?subject=' + encodeURIComponent('OpenModelPool 分享') + '&body=' + encodeURIComponent(this.dataset.text)" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📧 邮件</button>
-              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制全部内容'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📋 复制全部</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制全部内容')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📋 复制全部</button>
             </div>
           </div>
 
@@ -3648,19 +3119,197 @@ if (authToken) {
             </div>
           </div>
 
-          <div style="margin-top:12px;text-align:right">
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('sharePanel').style.display='none';document.getElementById('sharePanel').innerHTML=''" style="font-size:11px;padding:4px 12px">收起分享面板</button>
+          <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+            <span id="shareLockStatus" style="font-size:11px;color:var(--text-muted)"></span>
+            <button class="btn btn-primary btn-sm" id="confirmShareTypeBtn" onclick="confirmShareType('${escapedKey}','${purpose}')" style="font-size:11px;padding:6px 16px;background:linear-gradient(135deg,var(--accent-start),var(--accent-end))">✅ 确认分享方式</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('sharePanel').style.display='none';document.getElementById('sharePanel').innerHTML=''" style="font-size:11px;padding:4px 12px">收起</button>
           </div>
         </div>`;
 
       panel.innerHTML = panelHtml;
       panel.style.display = '';
 
+      // Check if already locked
+      const lockedType = _shareTypeLocks['${escapedKey}'];
+      if (lockedType) {
+        _applyShareLock(lockedType);
+      }
+
       // Generate QR code
       setTimeout(() => { generateQRCode('qrSharePanel', qrContent); }, 100);
 
       // Scroll to panel
       panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // Share type lock state
+    const _shareTypeLocks = {};
+
+    async function confirmShareType(guestKey, purpose) {
+      try {
+        // Call backend to lock the share type
+        const endpoint = purpose === 'collaborator' 
+          ? '/api/network/guest-keys/' + encodeURIComponent(guestKey) + '/mark-collaborator'
+          : '/api/network/guest-keys/' + encodeURIComponent(guestKey) + '/share-type';
+        const body = purpose === 'collaborator' ? undefined : JSON.stringify({share_type: 'consumer'});
+        const opts = { method: 'POST' };
+        if (body) opts.body = body;
+        const r = await authFetch(endpoint, opts);
+        if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error || e.detail || '锁定失败'); }
+        _shareTypeLocks[guestKey] = purpose;
+        _applyShareLock(purpose);
+        toast('分享方式已锁定：' + (purpose === 'collaborator' ? '🤝 协作者' : '🔑 使用者'), 'success');
+      } catch(e) {
+        toast('锁定失败: ' + e.message, 'error');
+      }
+    }
+
+    function _applyShareLock(purpose) {
+      const btn = document.getElementById('confirmShareTypeBtn');
+      const status = document.getElementById('shareLockStatus');
+      if (btn) { btn.disabled = true; btn.textContent = '✅ 已锁定'; btn.style.opacity = '0.6'; }
+      if (status) { status.textContent = '🔒 已锁定为' + (purpose === 'collaborator' ? '协作者' : '使用者'); status.style.color = 'var(--success)'; }
+    }
+
+    function shareExistingKey(escapedKey) {
+      // Show a dialog to choose share type
+      const dialogId = 'shareDialog_' + escapedKey.replace(/[^a-zA-Z0-9]/g, '_');
+      const existing = document.getElementById(dialogId);
+      if (existing) { existing.remove(); return; }
+      const dialogHtml = `
+        <div id="${dialogId}" style="padding:12px 16px;background:var(--bg-secondary);border:1px solid var(--border-color, rgba(255,255,255,.1));border-top:none;border-radius:0 0 10px 10px;margin-top:-9px;margin-bottom:8px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--accent-start)">📤 选择分享方式</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-primary btn-sm" onclick="document.getElementById('${dialogId}').remove();showSharePanelForExistingKey('${escapedKey}','consumer')" style="font-size:11px;padding:6px 14px">🔑 分享给使用者</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${dialogId}').remove();showSharePanelForExistingKey('${escapedKey}','collaborator')" style="font-size:11px;padding:6px 14px;border-color:rgba(99,102,241,.4);color:#818cf8">🤝 邀请协作者</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${dialogId}').remove()" style="font-size:11px;padding:4px 10px;opacity:.7">✕ 关闭</button>
+          </div>
+        </div>`;
+      const keyRow = document.querySelector('[data-gk-key="' + escapedKey.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') + '"]');
+      if (keyRow) {
+        // Remove rounded bottom corners from key card so it merges with the dialog
+        keyRow.style.borderRadius = '10px 10px 0 0';
+        keyRow.style.marginBottom = '0';
+        keyRow.insertAdjacentHTML('afterend', dialogHtml);
+      }
+    }
+
+    function showSharePanelForExistingKey(guestKey, purpose) {
+      const keyData = { key: guestKey };
+      const panel = document.getElementById('sharePanel');
+      if (!panel) return;
+      const apiUrl = (shareInfoData && shareInfoData.public_api_url) || (shareInfoData && shareInfoData.proxy_api_url) || window.location.origin + '/v1';
+      const baseUrl = window.location.origin;
+      const purposeLabel = purpose === 'collaborator' ? '🤝 协作者' : '🔑 使用者';
+
+      let shareText = '';
+      let inviteLink = '';
+      let qrContent = '';
+      let showInviteLink = false;
+
+      if (purpose === 'collaborator') {
+        inviteLink = baseUrl + '/login?collaborate=' + encodeURIComponent(guestKey);
+        qrContent = inviteLink;
+        showInviteLink = true;
+        shareText = '邀请你一起维护我的 OpenModelPool Agent 节点 👇\n\n邀请链接: ' + inviteLink + '\n\n你的身份凭证 (Guest Key): ' + guestKey + '\n\n首次登录时可用此 Key 验证身份并设置密码。';
+        // Mark key as collaborator type
+        authFetch('/api/network/guest-keys/' + encodeURIComponent(guestKey) + '/mark-collaborator', { method: 'POST' }).catch(()=>{});
+      } else {
+        qrContent = JSON.stringify({ api_url: apiUrl, api_key: guestKey, platform: "OpenModelPool Agent" });
+        shareText = '我用 OpenModelPool 搭了个 AI 聚合网关，拿去用 👇\n\nAPI 地址: ' + apiUrl + '\nAPI Key: ' + guestKey;
+      }
+
+      const escapedKey = guestKey.replace(/'/g, "\\'");
+      const escapedInviteLink = inviteLink.replace(/'/g, "\\'");
+
+      let panelHtml = `
+        <div style="padding:20px;background:linear-gradient(135deg,rgba(34,197,94,.06),rgba(34,197,94,.02));border:1px solid rgba(34,197,94,.25);border-radius:12px;box-shadow:0 4px 20px rgba(34,197,94,.08)">
+          <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+            <span>📤 分享 Key: ${guestKey.substring(0, 24)}...</span>
+            <span style="font-size:10px;padding:2px 8px;background:rgba(108,99,255,.12);color:var(--accent-start);border-radius:4px">${purposeLabel}</span>
+          </div>
+
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">📡 API 地址</label>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" value="${apiUrl}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${apiUrl.replace(/'/g, "\\'")}')" style="flex-shrink:0">📋</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">🔑 Guest Key</label>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" value="${guestKey}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${escapedKey}')" style="flex-shrink:0">📋</button>
+            </div>
+          </div>`;
+
+      if (showInviteLink) {
+        panelHtml += `
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">🔗 邀请链接</label>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" value="${inviteLink}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${escapedInviteLink}')" style="flex-shrink:0">📋</button>
+            </div>
+          </div>`;
+      }
+
+      const escapedText = shareText.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+      panelHtml += `
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:6px">📡 分享渠道</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到微信发送')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📱 微信</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制，请粘贴到 Telegram 发送')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">✈️ Telegram</button>
+              <button class="btn btn-secondary btn-sm" onclick="window.location.href='mailto:?subject=' + encodeURIComponent('OpenModelPool 分享') + '&body=' + encodeURIComponent(this.dataset.text)" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📧 邮件</button>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(this.dataset.text).then(()=>toast('已复制全部内容')).catch(()=>toast('复制失败，请手动复制','error'))" data-text="${escapedText}" style="font-size:11px;padding:4px 12px">📋 复制全部</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">💬 预设文案</label>
+            <textarea class="form-input" rows="3" readonly style="font-size:11px;resize:none;background:var(--bg-secondary);width:100%;box-sizing:border-box">${shareText}</textarea>
+          </div>
+
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="text-align:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">扫码获取</div>
+              <div id="qrSharePanel" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+            <span id="shareLockStatus" style="font-size:11px;color:var(--text-muted)"></span>
+            <button class="btn btn-primary btn-sm" id="confirmShareTypeBtn" onclick="confirmShareType('${escapedKey}','${purpose}')" style="font-size:11px;padding:6px 16px;background:linear-gradient(135deg,var(--accent-start),var(--accent-end))">✅ 确认分享方式</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('sharePanel').style.display='none';document.getElementById('sharePanel').innerHTML=''" style="font-size:11px;padding:4px 12px">收起</button>
+          </div>
+        </div>`;
+
+      panel.innerHTML = panelHtml;
+      panel.style.display = '';
+      // Check if already locked
+      const lockedType = _shareTypeLocks['${escapedKey}'];
+      if (lockedType) { _applyShareLock(lockedType); }
+      setTimeout(() => { generateQRCode('qrSharePanel', qrContent); }, 100);
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function deleteGuestKey(key) {
+      if (!confirm('确定永久删除此已撤销的 Guest Key？此操作不可恢复。')) return;
+      try {
+        const res = await authFetch('/api/network/guest-keys/' + encodeURIComponent(key) + '/permanent', { method: 'DELETE' });
+        if (res.ok) {
+          toast('已永久删除', 'success');
+          await loadGuestKeys();
+        } else {
+          const err = await res.json();
+          toast('删除失败: ' + extractError(err), 'error');
+        }
+      } catch(e) {
+        toast('删除失败: ' + e.message, 'error');
+      }
     }
 
     async function revokeGuestKey(key) {
@@ -3672,7 +3321,7 @@ if (authToken) {
           await loadGuestKeys();
         } else {
           const err = await res.json().catch(() => ({}));
-          toast('撤销失败: ' + (err.error || res.statusText), 'error');
+          toast('撤销失败: ' + extractError(err), 'error');
           await loadGuestKeys();
         }
       } catch(e) {
@@ -3705,8 +3354,18 @@ function toggleSharedNetwork() {
     document.getElementById('sharedNetworkToggle').checked = false;
     showNetworkDisclaimer();
   } else {
-    // Disabling - confirm first
-    if (!confirm('确定要退出共享网络吗？所有连接节点将被清除，回到个人模式。')) {
+    // Disabling - show backup reminder with NodeID
+    const nodeId = (networkStatus && networkStatus.node_id) || '-';
+    const backupMsg = `⚠️ 退出共享网络提醒
+
+您的节点身份信息将被清除：
+NodeID: ${nodeId}
+
+请备份以上 NodeID，重新加入时可用于恢复节点身份和贡献积分。
+
+确定要退出吗？`;
+    
+    if (!confirm(backupMsg)) {
       document.getElementById('sharedNetworkToggle').checked = true;
       return;
     }
@@ -3714,7 +3373,7 @@ function toggleSharedNetwork() {
       method: 'POST'
     }).then(r => {
       if (r.ok) {
-        toast('已退出共享网络', 'success');
+        toast('已退出共享网络，回到个人模式', 'success');
         updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', false);
         document.getElementById('quotaAllocation').style.display = 'none';
         document.getElementById('networkActivePanel').style.display = 'none';
@@ -3757,7 +3416,7 @@ async function generateFedInvite() {
       document.getElementById('fedInviteCode').value = d.code;
       toast('✅ 邀请码已生成');
     } else {
-      toast('生成失败: ' + (d.error || '未知错误'), 'error');
+      toast('生成失败: ' + extractError(d) || '未知错误', 'error');
     }
   } catch(e) { toast('生成失败: ' + e.message, 'error'); }
 }
@@ -3878,28 +3537,217 @@ async function generateFedInvite() {
       }).catch(() => {});
     }, 500);
 
-</script>
 
-<!-- V8 Model Matrix Modal -->
-<div class="v8-modal-backdrop" id="v8ModelModal" onclick="if(event.target===this)this.classList.remove('show')">
-  <div class="v8-modal">
-    <div class="v8-modal-header">
-      <h2 id="v8ModelModalTitle">模型管理</h2>
-      <button class="v8-close-btn" onclick="document.getElementById('v8ModelModal').classList.remove('show')">✕</button>
-    </div>
-    <div class="v8-toolbar">
-      <div class="v8-toolbar-left">
-        <button class="v8-toolbar-btn" onclick="v8MatrixSelectAll()">全选</button>
-        <button class="v8-toolbar-btn" onclick="v8MatrixDeselectAll()">反选</button>
-        <button class="v8-toolbar-btn" onclick="v8MatrixEnableAll()">全部启用</button>
-        <button class="v8-toolbar-btn" onclick="v8MatrixDisableAll()">全部禁用</button>
+// ===== Discovery Functions =====
+let discoveredPlatforms = [];
+
+function toggleDiscoveryPanel() {
+  const panel = document.getElementById('discoveryPanel');
+  const isVisible = panel.style.display !== 'none';
+  if (isVisible) {
+    panel.style.display = 'none';
+  } else {
+    panel.style.display = '';
+    if (discoveredPlatforms.length === 0) {
+      loadDiscoveredPlatforms();
+    }
+    setTimeout(() => panel.scrollIntoView({behavior:'smooth', block:'start'}), 100);
+  }
+}
+
+async function loadDiscoveredPlatforms() {
+  const el = document.getElementById('discoveredList');
+  el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px"><div class="loading"></div><br>加载中...</div>';
+  try {
+    const r = await authFetch('/api/discovered-platforms');
+    const d = await r.json();
+    discoveredPlatforms = d.platforms || [];
+    renderDiscoveredPlatforms();
+  } catch(e) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function renderDiscoveredPlatforms() {
+  const el = document.getElementById('discoveredList');
+  // Filter out added AND already-configured providers
+  const existingIds = new Set((allProviders || []).map(p => p.id));
+  const visible = discoveredPlatforms.filter(p => p.status !== 'added' && !existingIds.has(p.id));
+  if (!visible.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无新发现，所有平台已添加或处理</div>';
+    return;
+  }
+  const statusMap = {
+    'new': {label: '新发现', color: '#3b82f6', bg: 'rgba(59,130,246,.1)'},
+    'reviewed': {label: '已审核', color: '#22c55e', bg: 'rgba(34,197,94,.1)'},
+    'dismissed': {label: '已忽略', color: '#6b7280', bg: 'rgba(107,114,128,.1)'},
+    'added': {label: '已添加', color: '#a855f7', bg: 'rgba(168,85,247,.1)'}
+  };
+  el.innerHTML = visible.map(p => {
+    const st = statusMap[p.status] || statusMap['new'];
+    const models = (p.models || []).slice(0, 4).join(', ');
+    const modelsExtra = (p.models || []).length > 4 ? ` +${p.models.length - 4}个` : '';
+    return `<div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:10px;display:grid;gap:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="font-size:14px;font-weight:600">${p.name}</div>
+        <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${st.bg};color:${st.color}">${st.label}</span>
       </div>
-      <input class="v8-search-box" type="text" placeholder="🔍 搜索模型..." oninput="v8MatrixSearch(this.value)">
-    </div>
-    <div class="v8-matrix-wrap" id="v8ModelModalBody"></div>
-    <div class="v8-modal-footer" id="v8ModelModalFooter"></div>
-  </div>
-</div>
+      <div style="font-size:12px;color:var(--text-secondary)">${p.description || ''}</div>
+      <div style="font-size:12px;color:var(--text-muted);font-family:monospace;word-break:break-all">${p.base_url}</div>
+      ${models ? `<div style="font-size:11px;color:var(--text-muted)">模型: ${models}${modelsExtra}</div>` : ''}
+      <div style="font-size:11px;color:var(--text-muted)">来源: ${p.source} · 发现时间: ${new Date(p.discovered_at).toLocaleString()}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+        ${p.api_key_url ? `<a href="${p.api_key_url}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;font-size:11px">🔗 官网注册</a>` : ''}
+        ${p.status === 'new' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px" onclick="updateDiscoveredStatus('${p.id}','reviewed')">✅ 标记已审核</button>` : ''}
+        ${p.status !== 'dismissed' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px;border-color:rgba(239,68,68,.3);color:#ef4444" onclick="updateDiscoveredStatus('${p.id}','dismissed')">❌ 忽略</button>` : ''}
+        <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="addDiscoveredAsPreset('${p.id}')">+ 添加为预设</button>
+      </div>
+    </div>`;
+  }).join('');
+}
 
+async function updateDiscoveredStatus(id, status) {
+  try {
+    const r = await authFetch(`/api/discovered-platforms/${id}`, {
+      method: 'POST',
+      body: JSON.stringify({status: status})
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(extractError(e)); }
+    toast(status === 'reviewed' ? '已标记为已审核' : status === 'dismissed' ? '已忽略' : '已更新');
+    await loadDiscoveredPlatforms();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function addDiscoveredAsPreset(id) {
+  // Open the add-provider modal at Step 1 so user can see it in the preset list
+  showAddProvider();
+  toast('已在预设列表中标记为 🆕 新发现，点击它即可添加');
+}
+
+async function triggerDiscovery() {
+  const btn = document.getElementById('triggerScanBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 扫描中...';
+  try {
+    const r = await authFetch('/api/discovered-platforms/trigger', {method: 'POST'});
+    const d = await r.json();
+    if (d.status === 'already_running') {
+      toast('扫描已在进行中');
+    } else {
+      toast('扫描已启动');
+      // Wait a bit then reload
+      setTimeout(() => loadDiscoveredPlatforms(), 3000);
+    }
+  } catch(e) {
+    toast('扫描失败: ' + e.message, 'error');
+  } finally {
+    setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 扫描新平台'; }, 2000);
+  }
+}
+
+
+async function addAllDiscoveredAsPreset() {
+  // Ensure we have the latest discovered platforms list
+  try {
+    const dr = await authFetch('/api/discovered-platforms');
+    const dd = await dr.json();
+    discoveredPlatforms = dd.platforms || [];
+  } catch(e) {}
+
+  const pending = discoveredPlatforms.filter(p => p.status !== 'added' && p.status !== 'dismissed' && p.status !== 'ignored');
+  if (!pending.length) { toast('没有待添加的发现平台', 'error'); return; }
+
+  const btn = document.getElementById('batchAddDiscoveredBtn');
+  btn.disabled = true;
+  btn.textContent = `⏳ 添加中 (0/${pending.length})...`;
+
+  let added = 0, skipped = 0, incompatible = 0, errors = [];
+  for (const p of pending) {
+    btn.textContent = `⏳ 添加中 (${added}/${pending.length})...`;
+    try {
+      // Check if already exists as provider
+      const existingProviders = document.querySelectorAll('[data-provider-id]');
+      const ids = Array.from(existingProviders).map(el => el.getAttribute('data-provider-id'));
+      if (ids.includes(p.id)) {
+        await authFetch(`/api/discovered-platforms/${p.id}`, {
+          method: 'POST', body: JSON.stringify({status: 'added'})
+        });
+        skipped++;
+        continue;
+      }
+
+      // Compatibility check: verify OpenAI API format
+      btn.textContent = `🔍 检测 ${p.name}...`;
+      try {
+        const checkR = await authFetch(`/api/discovered-platforms/${p.id}/check`, { method: 'POST' });
+        const checkD = await checkR.json();
+        if (!checkD.compatible && !checkD.skipped) {
+          incompatible++;
+          errors.push(`${p.name}: 不支持 OpenAI API 标准格式（${extractError(checkD) || '未知'}）`);
+          continue;
+        }
+      } catch(ce) {
+        // If check itself fails, still try to add
+        console.warn('Compatibility check failed for', p.name, ce);
+      }
+
+      const data = {
+        id: p.id,
+        name: p.name,
+        type: 'openai_compatible',
+        base_url: p.base_url,
+        description: p.description || '',
+        priority: 5,
+        enabled: true,
+        access_control: { allow_private_key: true, allow_shared_key: false },
+        models: p.models || []
+      };
+
+      const r = await authFetch('/api/providers', { method: 'POST', body: JSON.stringify(data) });
+      if (r.ok) {
+        await authFetch(`/api/discovered-platforms/${p.id}`, {
+          method: 'POST', body: JSON.stringify({status: 'added'})
+        });
+        added++;
+      } else {
+        const e = await r.json().catch(() => ({}));
+        errors.push(p.name + ': ' + extractError(e));
+      }
+    } catch(e) {
+      errors.push(p.name + ': ' + e.message);
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = '📥 一键添加全部发现';
+
+  let msg = `✅ 已添加 ${added} 个平台`;
+  if (skipped > 0) msg += `，${skipped} 个已存在跳过`;
+  if (incompatible > 0) msg += `，${incompatible} 个不兼容`;
+  if (errors.length > 0) msg += `，${errors.length} 个问题`;
+  toast(msg, (errors.length > 0 || incompatible > 0) ? 'warning' : 'success');
+  if (incompatible > 0) {
+    setTimeout(() => {
+      toast('不兼容的平台暂不支持，欢迎到 GitHub 提 PR 增加适配', 'info', 8000);
+    }, 1500);
+  }
+  if (errors.length > 0) console.warn('Batch add errors:', errors);
+
+  // Refresh provider list
+  await loadProviders();
+  // Refresh discovered platforms data (no loading spinner) and re-render
+  try {
+    const dr = await authFetch('/api/discovered-platforms');
+    const dd = await dr.json();
+    discoveredPlatforms = dd.platforms || [];
+  } catch(e) {}
+  renderDiscoveredPlatforms();
+  // Also refresh preset grid if the modal is open
+  if (document.getElementById('providerModal')?.classList.contains('open')) {
+    renderPresets();
+  }
+}
+
+</script>
 </body>
 </html>
