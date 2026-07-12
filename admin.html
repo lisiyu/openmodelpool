@@ -1041,33 +1041,21 @@ select.form-input{appearance:none;cursor:pointer}
         <div class="form-group"><label class="form-label">每分钟请求上限（可选）</label><input class="form-input" id="pRateLimit" type="number" value="0" min="0" placeholder="0=不限"><div style="font-size:10px;color:var(--text-muted);margin-top:3px">0 表示不限制</div></div>
       </div>
       <div class="form-group">
-        <div style="margin-top:6px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
-            <input type="checkbox" id="pAccessPrivate" checked> 🔒 私有 Key（自己使用）
-          </label>
-          <div style="margin-top:8px">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
-              <input type="checkbox" id="pAccessShared"> 🌐 共享到网络池
-            </label>
-            <div id="poolPercentSection" style="display:none;margin-top:8px;padding:10px 12px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.15);border-radius:8px">
-              <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">共享额度的分配比例</div>
-              <div style="display:flex;gap:16px;align-items:center">
-                <div style="flex:1">
-                  <label style="font-size:12px;color:var(--text-secondary)">Guest Key / Public Key 分配比例</label>
-                  <input type="range" id="pGuestKeyPercent" min="0" max="100" value="50" oninput="document.getElementById('pGuestPercentDisplay').textContent=this.value+'%';document.getElementById('pPublicPercentDisplay').textContent=(100-this.value)+'%'" style="width:100%">
-                </div>
-                <div style="display:flex;gap:12px;font-size:13px;font-weight:600">
-                  <span>Guest: <span id="pGuestPercentDisplay">50%</span></span>
-                  <span style="color:var(--text-muted)">|</span>
-                  <span>Public: <span id="pPublicPercentDisplay">50%</span></span>
-                </div>
-              </div>
+        <div style="padding:10px 12px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.15);border-radius:8px">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">共享额度分配比例（共享 Key 的额度在 Guest/Public 之间分配）</div>
+          <div style="display:flex;gap:16px;align-items:center">
+            <div style="flex:1">
+              <input type="range" id="pGuestKeyPercent" min="0" max="100" value="50" oninput="document.getElementById('pGuestPercentDisplay').textContent=this.value+'%';document.getElementById('pPublicPercentDisplay').textContent=(100-this.value)+'%'" style="width:100%">
+            </div>
+            <div style="display:flex;gap:12px;font-size:13px;font-weight:600">
+              <span>Guest: <span id="pGuestPercentDisplay">50%</span></span>
+              <span style="color:var(--text-muted)">|</span>
+              <span>Public: <span id="pPublicPercentDisplay">50%</span></span>
             </div>
           </div>
-        </div>
-        <div class="section-note" style="margin-top:4px;font-size:11px">
-          勾选"共享到网络池"后，可调整 Guest/Public 池的额度分配比例。<br>
-          Guest Key（sk-guest-{node_id}-{random}）由节点管理员签发；Public Key 为全网络公共访问密钥。
+          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
+            Guest Key（sk-guest-{node_id}-{random}）由节点管理员签发；Public Key 为全网络公共访问密钥。
+          </div>
         </div>
       </div>
       <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="pEnabled" checked> 启用此平台</label></div>
@@ -1080,11 +1068,6 @@ select.form-input{appearance:none;cursor:pointer}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-// Access control checkbox toggle
-document.getElementById('pAccessShared').addEventListener('change', function() {
-  document.getElementById('poolPercentSection').style.display = this.checked ? '' : 'none';
-});
-
 <script>
 // ================================================================
 // Module: CoreAuth - Authentication, utilities, and initialization
@@ -1924,9 +1907,6 @@ function editProvider(pid) {
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = p.rate_limit_per_min || 0;
   // Load access control state
   const ac = p.access_control || {};
-  document.getElementById('pAccessPrivate').checked = ac.allow_private_key !== false;
-  document.getElementById('pAccessShared').checked = !!ac.allow_shared_key;
-  document.getElementById('poolPercentSection').style.display = ac.allow_shared_key ? '' : 'none';
   if (document.getElementById('pGuestKeyPercent')) {
     document.getElementById('pGuestKeyPercent').value = ac.guest_key_percent || 50;
     document.getElementById('pGuestPercentDisplay').textContent = (ac.guest_key_percent || 50) + '%';
@@ -1954,9 +1934,6 @@ function selectPreset(pid) {
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.id === 'openai' ? 10 : p.id === 'openrouter' ? 20 : p.id === 'ollama' ? 50 : 5;
   document.getElementById('pEnabled').checked = true;
-  document.getElementById('pAccessPrivate').checked = true;
-  document.getElementById('pAccessShared').checked = false;
-  document.getElementById('poolPercentSection').style.display = 'none';
   if (document.getElementById('pGuestKeyPercent')) {
     document.getElementById('pGuestKeyPercent').value = 50;
   }
@@ -1974,8 +1951,6 @@ function closeModal() { document.getElementById('providerModal').classList.remov
 async function saveProvider() {
   const id = document.getElementById('pId').value.trim();
   if (!id) { toast('请填写平台 ID', 'error'); return; }
-  const allowPrivate = document.getElementById('pAccessPrivate').checked;
-  const allowShared = document.getElementById('pAccessShared').checked;
   const guestPercent = parseInt(document.getElementById('pGuestKeyPercent')?.value) || 50;
   const data = {
     id, name: document.getElementById('pName').value.trim() || id,
@@ -1984,8 +1959,6 @@ async function saveProvider() {
     priority: parseInt(document.getElementById('pPriority').value) || 5,
     enabled: document.getElementById('pEnabled').checked,
     access_control: {
-      allow_private_key: allowPrivate,
-      allow_shared_key: allowShared,
       guest_key_percent: guestPercent,
       public_key_percent: 100 - guestPercent,
     },
@@ -2034,9 +2007,6 @@ function selectCustomPreset() {
   document.getElementById('pDesc').value = '';
   document.getElementById('pPriority').value = '5';
   document.getElementById('pEnabled').checked = true;
-  document.getElementById('pAccessPrivate').checked = true;
-  document.getElementById('pAccessShared').checked = false;
-  document.getElementById('poolPercentSection').style.display = 'none';
   if (document.getElementById('pGuestKeyPercent')) {
     document.getElementById('pGuestKeyPercent').value = 50;
   }
