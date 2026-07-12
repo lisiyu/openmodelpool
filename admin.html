@@ -1018,8 +1018,9 @@ select.form-input{appearance:none;cursor:pointer}
             <div>
               <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">权限</label>
               <select id="newKeyAccess" class="form-input" style="font-size:12px;height:32px">
-                <option value="private">私有</option>
-                <option value="shared">共享</option>
+                <option value="private">🔒 私有</option>
+                <option value="shared">🔗 共享</option>
+                <option value="public">🌐 公共</option>
               </select>
             </div>
           </div>
@@ -1041,18 +1042,35 @@ select.form-input{appearance:none;cursor:pointer}
         <div class="form-group"><label class="form-label">每分钟请求上限（可选）</label><input class="form-input" id="pRateLimit" type="number" value="0" min="0" placeholder="0=不限"><div style="font-size:10px;color:var(--text-muted);margin-top:3px">0 表示不限制</div></div>
       </div>
       <div class="form-group">
-        <label class="form-label">🔐 访问权限控制</label>
-        <div style="display:flex;gap:16px;margin-top:6px">
+        <label class="form-label">🔐 访问权限与额度分配</label>
+        <div style="margin-top:6px">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
-            <input type="radio" name="pAccessControl" value="private" id="pAccessPrivate" checked>
-            🔒 仅私有 Key
+            <input type="checkbox" id="pAccessPrivate" checked> 🔒 私有 Key（自己使用）
           </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
-            <input type="radio" name="pAccessControl" value="shared" id="pAccessShared">
-            🌐 允许共享/公共 Key
-          </label>
+          <div style="margin-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
+              <input type="checkbox" id="pAccessShared"> 🌐 共享到网络池
+            </label>
+            <div id="poolPercentSection" style="display:none;margin-top:8px;padding:10px 12px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.15);border-radius:8px">
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">共享额度的分配比例</div>
+              <div style="display:flex;gap:16px;align-items:center">
+                <div style="flex:1">
+                  <label style="font-size:12px;color:var(--text-secondary)">Guest Key / Public Key 分配比例</label>
+                  <input type="range" id="pGuestKeyPercent" min="0" max="100" value="50" oninput="document.getElementById('pGuestPercentDisplay').textContent=this.value+'%';document.getElementById('pPublicPercentDisplay').textContent=(100-this.value)+'%'" style="width:100%">
+                </div>
+                <div style="display:flex;gap:12px;font-size:13px;font-weight:600">
+                  <span>Guest: <span id="pGuestPercentDisplay">50%</span></span>
+                  <span style="color:var(--text-muted)">|</span>
+                  <span>Public: <span id="pPublicPercentDisplay">50%</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="section-note" style="margin-top:4px;font-size:11px">⚠️ 每个平台的 Key 只能选择一种模式（私有或共享）。如需同时共享和私有使用，请添加两个相同的平台分别配置。<br>Guest Key（sk-guest-{node_id}-{random}）由节点管理员签发；Proxy Key（sk-{48位随机字符}）为节点主密钥。</div>
+        <div class="section-note" style="margin-top:4px;font-size:11px">
+          勾选"共享到网络池"后，可调整 Guest/Public 池的额度分配比例。<br>
+          Guest Key（sk-guest-{node_id}-{random}）由节点管理员签发；Public Key 为全网络公共访问密钥。
+        </div>
       </div>
       <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="pEnabled" checked> 启用此平台</label></div>
       <div class="btn-group">
@@ -1064,6 +1082,11 @@ select.form-input{appearance:none;cursor:pointer}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+// Access control checkbox toggle
+document.getElementById('pAccessShared').addEventListener('change', function() {
+  document.getElementById('poolPercentSection').style.display = this.checked ? '' : 'none';
+});
+
 <script>
 // ================================================================
 // Module: CoreAuth - Authentication, utilities, and initialization
@@ -1902,10 +1925,13 @@ function editProvider(pid) {
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = p.rate_limit_per_min || 0;
   // Load access control state
   const ac = p.access_control || {};
-  if (ac.allow_shared_key) {
-    document.getElementById('pAccessShared').checked = true;
-  } else {
-    document.getElementById('pAccessPrivate').checked = true;
+  document.getElementById('pAccessPrivate').checked = ac.allow_private_key !== false;
+  document.getElementById('pAccessShared').checked = !!ac.allow_shared_key;
+  document.getElementById('poolPercentSection').style.display = ac.allow_shared_key ? '' : 'none';
+  if (document.getElementById('pGuestKeyPercent')) {
+    document.getElementById('pGuestKeyPercent').value = ac.guest_key_percent || 50;
+    document.getElementById('pGuestPercentDisplay').textContent = (ac.guest_key_percent || 50) + '%';
+    document.getElementById('pPublicPercentDisplay').textContent = (100 - (ac.guest_key_percent || 50)) + '%';
   }
   document.getElementById('providerModal').classList.add('open');
   // Show multi-key management section when editing
@@ -1929,7 +1955,12 @@ function selectPreset(pid) {
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.id === 'openai' ? 10 : p.id === 'openrouter' ? 20 : p.id === 'ollama' ? 50 : 5;
   document.getElementById('pEnabled').checked = true;
-  document.getElementById('pAccessPrivate').checked = true; // default: private only
+  document.getElementById('pAccessPrivate').checked = true;
+  document.getElementById('pAccessShared').checked = false;
+  document.getElementById('poolPercentSection').style.display = 'none';
+  if (document.getElementById('pGuestKeyPercent')) {
+    document.getElementById('pGuestKeyPercent').value = 50;
+  }
   if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
 }
@@ -1944,7 +1975,9 @@ function closeModal() { document.getElementById('providerModal').classList.remov
 async function saveProvider() {
   const id = document.getElementById('pId').value.trim();
   if (!id) { toast('请填写平台 ID', 'error'); return; }
-  const accessMode = document.querySelector('input[name="pAccessControl"]:checked').value;
+  const allowPrivate = document.getElementById('pAccessPrivate').checked;
+  const allowShared = document.getElementById('pAccessShared').checked;
+  const guestPercent = parseInt(document.getElementById('pGuestKeyPercent')?.value) || 50;
   const data = {
     id, name: document.getElementById('pName').value.trim() || id,
     type: 'openai_compatible', base_url: document.getElementById('pUrl').value.trim(),
@@ -1952,8 +1985,10 @@ async function saveProvider() {
     priority: parseInt(document.getElementById('pPriority').value) || 5,
     enabled: document.getElementById('pEnabled').checked,
     access_control: {
-      allow_private_key: true,
-      allow_shared_key: accessMode === 'shared',
+      allow_private_key: allowPrivate,
+      allow_shared_key: allowShared,
+      guest_key_percent: guestPercent,
+      public_key_percent: 100 - guestPercent,
     },
   };
   const dailyLimit = parseInt(document.getElementById('pDailyTokenLimit')?.value) || 0;
@@ -2000,7 +2035,12 @@ function selectCustomPreset() {
   document.getElementById('pDesc').value = '';
   document.getElementById('pPriority').value = '5';
   document.getElementById('pEnabled').checked = true;
-  document.getElementById('pAccessPrivate').checked = true; // default: private only
+  document.getElementById('pAccessPrivate').checked = true;
+  document.getElementById('pAccessShared').checked = false;
+  document.getElementById('poolPercentSection').style.display = 'none';
+  if (document.getElementById('pGuestKeyPercent')) {
+    document.getElementById('pGuestKeyPercent').value = 50;
+  }
   document.getElementById('editKeysSection').style.display = 'none';
   if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
@@ -2366,12 +2406,52 @@ async function loadApiKeys(pid) {
 }
 
 async function showAddApiKey(pid) {
-  const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
-  const key = prompt('请输入 API Key:');
-  if (!key) return;
-  const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
-  const access = prompt('访问权限 (private/shared/public):', 'private') || 'private';
-  const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
+  // Use a custom modal dialog instead of prompts
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000';
+  modal.innerHTML = `
+    <div style="background:var(--bg-primary);border-radius:14px;padding:24px;width:420px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <h3 style="margin:0 0 16px;font-size:16px;color:var(--text-primary)">+ 添加 API Key</h3>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div><label style="font-size:12px;color:var(--text-muted)">别名（可选）</label><input id="mAlias" class="form-input" placeholder="用于标识此Key" style="margin-top:3px"></div>
+        <div><label style="font-size:12px;color:var(--text-muted)">API Key *</label><input id="mKey" class="form-input" placeholder="sk-..." style="margin-top:3px"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><label style="font-size:12px;color:var(--text-muted)">额度(tokens)</label><input id="mQuota" class="form-input" type="number" value="0" style="margin-top:3px" placeholder="0=无限"></div>
+          <div><label style="font-size:12px;color:var(--text-muted)">优先级</label><input id="mPriority" class="form-input" type="number" value="1" min="1" style="margin-top:3px"></div>
+        </div>
+        <div><label style="font-size:12px;color:var(--text-muted)">访问权限</label>
+          <select id="mAccess" class="form-input" style="margin-top:3px">
+            <option value="private">🔒 私有</option>
+            <option value="shared">🔗 共享</option>
+            <option value="public">🌐 公共</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button id="mCancel" class="btn btn-secondary" style="font-size:13px;padding:6px 16px">取消</button>
+        <button id="mOk" class="btn btn-primary" style="font-size:13px;padding:6px 16px">💾 添加</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('mKey').focus();
+  const result = await new Promise(resolve => {
+    document.getElementById('mCancel').onclick = () => { modal.remove(); resolve(null); };
+    document.getElementById('mOk').onclick = () => {
+      const key = document.getElementById('mKey').value.trim();
+      if (!key) { toast('请输入 API Key', 'error'); return; }
+      resolve({
+        alias: document.getElementById('mAlias').value.trim(),
+        key: key,
+        quota: parseInt(document.getElementById('mQuota').value, 10) || 0,
+        access: document.getElementById('mAccess').value,
+        priority: parseInt(document.getElementById('mPriority').value, 10) || 1,
+      });
+      modal.remove();
+    };
+    modal.onclick = (e) => { if (e.target === modal) { modal.remove(); resolve(null); } };
+  });
+  if (!result) return;
+  const { alias, key, quota, access, priority } = result;
   try {
     const r = await authFetch('/api/providers/' + pid + '/keys', {
       method: 'POST',
