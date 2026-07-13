@@ -151,7 +151,8 @@ type Provider struct {
 	Models      []ModelDef `json:"models"`
 	Priority    int        `json:"priority"`
 	TokenLimit  int64      `json:"token_limit,omitempty"` // monthly token budget, 0=unlimited
-	DailyTokenLimit     int64 `json:"daily_token_limit,omitempty"`      // daily token budget, 0=unlimited
+	RateLimitEnabled  bool  `json:"rate_limit_enabled,omitempty"`    // master toggle for rate limiting
+	DailyRequestLimit int64 `json:"daily_request_limit,omitempty"` // max requests per day, 0=unlimited
 	RateLimitPerMin     int   `json:"rate_limit_per_min,omitempty"`     // requests per minute, 0=unlimited
 	PrivateRequestsDaily int64 `json:"private_requests_daily,omitempty"` // private pool max requests per day, 0=unlimited
 	PrivateQuotaMonthly int64 `json:"private_quota_monthly,omitempty"`  // private key quota limit per month, 0=unlimited
