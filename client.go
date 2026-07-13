@@ -974,40 +974,103 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		}
 		client := proxyHTTPClient(testProvider, 15 * time.Second)
 		baseURL := strings.TrimRight(testProvider.BaseURL, "/")
-		// Always verify with a real chat completion request — /models alone is unreliable
-		// (some providers return 200 even for invalid keys).
-		fallbackModels := []string{"gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0"}
-		// If the provider has models configured, try the first one (enabled or not) for testing
-		if len(testProvider.Models) > 0 {
-			fallbackModels = append([]string{testProvider.Models[0].ID}, fallbackModels...)
+
+		// Step 1: Fetch /models to verify key and get available model names
+		modelsReq, _ := http.NewRequest("GET", baseURL+"/models", nil)
+		modelsReq.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
+		modelsResp, err := client.Do(modelsReq)
+		if err != nil {
+			return map[string]any{"success": false, "error": err.Error()}
 		}
-		var lastErr string
-		for _, model := range fallbackModels {
-			testPayload := map[string]any{
-				"model":      model,
-				"max_tokens": 1,
-				"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+		modelsBody, _ := io.ReadAll(modelsResp.Body)
+		modelsResp.Body.Close()
+
+		if modelsResp.StatusCode == 401 || modelsResp.StatusCode == 403 {
+			return map[string]any{"success": false, "error": fmt.Sprintf("API key invalid (HTTP %d)", modelsResp.StatusCode)}
+		}
+
+		// Collect available model IDs
+		var availableModels []string
+		if modelsResp.StatusCode == 200 {
+			var modelsData struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
 			}
-			testBody, _ := json.Marshal(testPayload)
-			testReq, _ := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewReader(testBody))
-			testReq.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
-			testReq.Header.Set("Content-Type", "application/json")
-			testResp, err := client.Do(testReq)
-			if err != nil {
-				return map[string]any{"success": false, "error": err.Error()}
-			}
-			if testResp.StatusCode == 200 {
-				testResp.Body.Close()
-				return map[string]any{"success": true, "message": "Connected (chat verified)"}
-			}
-			b, _ := io.ReadAll(testResp.Body)
-			testResp.Body.Close()
-			lastErr = fmt.Sprintf("HTTP %d: %s", testResp.StatusCode, truncate(string(b), 200))
-			if testResp.StatusCode == 401 || testResp.StatusCode == 403 {
-				return map[string]any{"success": false, "error": fmt.Sprintf("API key invalid (HTTP %d)", testResp.StatusCode)}
+			if json.Unmarshal(modelsBody, &modelsData) == nil {
+				for _, m := range modelsData.Data {
+					if m.ID != "" {
+						availableModels = append(availableModels, m.ID)
+					}
+				}
 			}
 		}
-		return map[string]any{"success": false, "error": lastErr}
+
+		// Step 2: Pick a model to chat-test with
+		var testModel string
+		availSet := make(map[string]bool)
+		for _, m := range availableModels {
+			availSet[m] = true
+		}
+		// Prefer an enabled model from config that the provider actually has
+		for _, m := range testProvider.Models {
+			if m.Enabled && availSet[m.ID] {
+				testModel = m.ID
+				break
+			}
+		}
+		// Fallback: first available model from API
+		if testModel == "" && len(availableModels) > 0 {
+			testModel = availableModels[0]
+		}
+		// Fallback: first model from provider config
+		if testModel == "" && len(testProvider.Models) > 0 {
+			for _, m := range testProvider.Models {
+				if m.Enabled {
+					testModel = m.ID
+					break
+				}
+			}
+			if testModel == "" {
+				testModel = testProvider.Models[0].ID
+			}
+		}
+
+		if testModel == "" {
+			if modelsResp.StatusCode == 200 {
+				return map[string]any{"success": true, "message": fmt.Sprintf("Connected, %d models available", len(availableModels))}
+			}
+			return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", modelsResp.StatusCode, truncate(string(modelsBody), 200))}
+		}
+
+		// Step 3: Verify key with a lightweight chat request
+		testPayload := map[string]any{
+			"model":      testModel,
+			"max_tokens": 1,
+			"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+		}
+		testBody, _ := json.Marshal(testPayload)
+		testReq, _ := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewReader(testBody))
+		testReq.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
+		testReq.Header.Set("Content-Type", "application/json")
+		testResp, err := client.Do(testReq)
+		if err != nil {
+			return map[string]any{"success": false, "error": err.Error()}
+		}
+		chatBody, _ := io.ReadAll(testResp.Body)
+		testResp.Body.Close()
+
+		if testResp.StatusCode == 200 {
+			return map[string]any{"success": true, "message": fmt.Sprintf("Connected (chat verified with %s)", testModel)}
+		}
+		if testResp.StatusCode == 401 || testResp.StatusCode == 403 {
+			return map[string]any{"success": false, "error": fmt.Sprintf("API key invalid (HTTP %d)", testResp.StatusCode)}
+		}
+		// Chat 404 but /models returned 200 means key is valid
+		if testResp.StatusCode == 404 && modelsResp.StatusCode == 200 {
+			return map[string]any{"success": true, "message": fmt.Sprintf("Connected (key valid, %d models available)", len(availableModels))}
+		}
+		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", testResp.StatusCode, truncate(string(chatBody), 200))}
 	}
 }
 // fetchRemoteModels fetches model list from an OpenAI-compatible provider.
