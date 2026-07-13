@@ -977,14 +977,9 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		// Always verify with a real chat completion request — /models alone is unreliable
 		// (some providers return 200 even for invalid keys).
 		fallbackModels := []string{"gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0"}
-		// If the provider has models configured, try the first enabled one first
+		// If the provider has models configured, try the first one (enabled or not) for testing
 		if len(testProvider.Models) > 0 {
-			for _, m := range testProvider.Models {
-				if m.Enabled {
-					fallbackModels = append([]string{m.ID}, fallbackModels...)
-					break
-				}
-			}
+			fallbackModels = append([]string{testProvider.Models[0].ID}, fallbackModels...)
 		}
 		var lastErr string
 		for _, model := range fallbackModels {
