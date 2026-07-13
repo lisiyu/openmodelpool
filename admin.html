@@ -299,7 +299,8 @@ select.form-input{appearance:none;cursor:pointer}
 .v8-search-box{height:26px;padding:0 10px;font-size:12px;border-radius:6px;border:1px solid rgba(148,163,184,.2);background:rgba(51,65,85,.08);color:#e5e5e5;outline:none;width:200px}
 .v8-matrix-wrap{padding:16px 24px;max-height:400px;overflow-y:auto}
 .v8-matrix-table{width:100%;border-collapse:collapse}
-.v8-matrix-table th{position:sticky;top:0;background:#1c1c1e;padding:8px 12px;font-size:11px;font-weight:600;color:#94a3b8;text-align:left;border-bottom:1px solid rgba(148,163,184,.15)}
+.v8-matrix-table thead{display:table-header-group}
+.v8-matrix-table th{position:sticky;top:0;z-index:10;background:#1c1c1e;padding:8px 12px;font-size:11px;font-weight:600;color:#94a3b8;text-align:left;border-bottom:1px solid rgba(148,163,184,.15)}
 .v8-matrix-table td{padding:6px 12px;border-bottom:1px solid rgba(148,163,184,.06)}
 .v8-section-row td{padding:8px 12px 4px;font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(148,163,184,.08)}
 .v8-key-label{display:flex;flex-direction:column;gap:2px}
@@ -1044,6 +1045,25 @@ function v8ToggleModel(el) {
   var enabledToggles = 0;
   for (var i = 0; i < allToggles.length; i++) {
     if (allToggles[i].classList.contains('on')) enabledToggles++;
+  }
+  // Update per-key column counts in thead
+  var keyThs = modal.querySelectorAll('.v8-matrix-table thead th');
+  for (var ki = 0; ki < keyCols.length; ki++) {
+    var kid = keyCols[ki].id;
+    var colEnabled = 0, colAvail = 0;
+    for (var mi = 0; mi < models.length; mi++) {
+      var m = models[mi];
+      if (!m.available_keys || m.available_keys.length === 0 || m.available_keys.indexOf(kid) >= 0) {
+        colAvail++;
+        var rowIdx = -1;
+        for (var ri = 0; ri < models.length; ri++) { if (models[ri].id === m.id) { rowIdx = ri; break; } }
+        // Find the toggle for this model+key
+        var toggle = modal.querySelector('.v8-toggle[data-mid="'+m.id+'"][data-kid="'+kid+'"]');
+        if (toggle && toggle.classList.contains('on')) colEnabled++;
+      }
+    }
+    var countEl = keyThs[ki + 1] ? keyThs[ki + 1].querySelector('.v8-key-count') : null;
+    if (countEl) countEl.textContent = '已选 ' + colEnabled + '/' + colAvail;
   }
   var footer = document.getElementById('v8ModelModalFooter');
   footer.innerHTML = '<div class="v8-footer-stats">共 <b>' + models.length + '</b> 个模型 · 已启用 <b>' + enabledToggles + '</b> / ' + totalToggles + ' 项配置</div><button class="v8-save-btn" onclick="v8SaveModelMatrix(\'' + pid + '\')">保存更改</button>';
@@ -4370,3 +4390,14 @@ async function addAllDiscoveredAsPreset() {
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async></script>
 </body>
 </html>
+
+/* Enhanced card selection/hover effect */
+.v5-provider-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(108,99,255,.25), 0 0 0 2px rgba(108,99,255,.3);
+    border-color: rgba(108,99,255,.5);
+}
+.v5-provider-card:focus-within {
+    box-shadow: 0 8px 32px rgba(108,99,255,.3), 0 0 0 2px rgba(108,99,255,.4);
+    border-color: rgba(108,99,255,.6);
+}
