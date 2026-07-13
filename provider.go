@@ -67,6 +67,11 @@ func (m *ProviderManager) load() {
 			}
 		}
 		slog.Info("providers loaded", "count", len(m.providers))
+	for _, p := range m.providers {
+		for _, k := range p.APIKeys {
+			slog.Info("after load", "provider", p.ID, "keyID", k.ID, "keyLen", len(k.Key), "isEncrypted", IsEncrypted(k.Key))
+		}
+	}
 	}
 }
 
@@ -136,6 +141,13 @@ func (m *ProviderManager) saveLocked() {
 func (m *ProviderManager) makeProviderListLocked() []Provider {
 	list := make([]Provider, 0, len(m.providers))
 	for _, p := range m.providers {
+		// Deep copy APIKeys slice to avoid modifying in-memory data
+		if len(p.APIKeys) > 0 {
+			keysCopy := make([]APIKeyConfig, len(p.APIKeys))
+			copy(keysCopy, p.APIKeys)
+			p.APIKeys = keysCopy
+		}
+		
 		if p.APIKey != "" && !IsEncrypted(p.APIKey) {
 			p.APIKey = encryptField(p.APIKey)
 		}
@@ -186,6 +198,17 @@ func (m *ProviderManager) GetAll() []Provider {
 
 	m.cachedAll = result
 	m.cacheValid = true
+	return result
+}
+
+// GetConfigured returns only user-configured providers (excluding preset templates without keys).
+func (m *ProviderManager) GetConfigured() []Provider {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var result []Provider
+	for _, p := range m.providers {
+		result = append(result, p.Safe())
+	}
 	return result
 }
 
@@ -867,6 +890,7 @@ func (m *ProviderManager) RoutingAdvice(model string) []map[string]any {
 
 // SyncModels fetches the available model list from an OpenAI-compatible provider
 // and updates the provider's Models field. Returns the number of models synced.
+// When multiple API keys exist, it fetches models per key and tracks per-key availability.
 func (m *ProviderManager) SyncModels(providerID string) (int, error) {
 	p, ok := m.GetRaw(providerID)
 	if !ok {
@@ -877,33 +901,108 @@ func (m *ProviderManager) SyncModels(providerID string) (int, error) {
 		return 0, fmt.Errorf("sync only supported for openai_compatible providers (current type: %s)", p.Type)
 	}
 
-	if p.APIKey == "" {
+	if p.APIKey == "" && len(p.APIKeys) == 0 {
 		return 0, fmt.Errorf("provider '%s' has no API key configured", providerID)
 	}
 
-	models := fetchRemoteModels(p)
-	if len(models) == 0 {
+	// Preserve existing enabled state
+	existingModels := make(map[string]ModelDef)
+	for _, md := range p.Models {
+		existingModels[md.ID] = md
+	}
+
+	// Build per-key model availability
+	type keyModels struct {
+		keyID   string
+		modelIDs []string
+	}
+	var keyResults []keyModels
+	allModelIDs := make(map[string]string) // id -> name
+
+	// Fetch models from each key
+	if len(p.APIKeys) > 0 {
+		for _, k := range p.APIKeys {
+			if !k.Enabled {
+				continue
+			}
+			decryptedKey, err := decryptAPIKey(k.Key)
+			if err != nil {
+				slog.Warn("failed to decrypt key for sync", "key_id", k.ID, "error", err)
+				continue
+			}
+			tmp := p
+			tmp.APIKey = decryptedKey
+			models := fetchRemoteModels(tmp)
+			var ids []string
+			for _, rm := range models {
+				ids = append(ids, rm["id"])
+				allModelIDs[rm["id"]] = rm["name"]
+			}
+			keyResults = append(keyResults, keyModels{keyID: k.ID, modelIDs: ids})
+		}
+	} else {
+		// Legacy single key - decrypt if encrypted
+		if p.APIKey != "" {
+			decrypted, err := decryptAPIKey(p.APIKey)
+			if err == nil {
+				p.APIKey = decrypted
+			} else {
+				slog.Warn("failed to decrypt legacy key for sync", "error", err)
+			}
+		}
+		models := fetchRemoteModels(p)
+		var ids []string
+		for _, rm := range models {
+			ids = append(ids, rm["id"])
+			allModelIDs[rm["id"]] = rm["name"]
+		}
+		keyResults = append(keyResults, keyModels{keyID: "default", modelIDs: ids})
+	}
+
+	if len(allModelIDs) == 0 {
 		return 0, fmt.Errorf("no models returned from provider '%s'", providerID)
 	}
 
-	// Convert to ModelDef slice, preserving enabled state for existing models
-	existingModels := make(map[string]bool)
-	for _, md := range p.Models {
-		existingModels[md.ID] = md.Enabled
+	// Build available-by-key lookup
+	modelKeyAvailability := make(map[string]map[string]bool) // modelID -> keyID -> available
+	for _, kr := range keyResults {
+		for _, mid := range kr.modelIDs {
+			if modelKeyAvailability[mid] == nil {
+				modelKeyAvailability[mid] = make(map[string]bool)
+			}
+			modelKeyAvailability[mid][kr.keyID] = true
+		}
 	}
 
+	// Build new Models list
 	var newModels []ModelDef
-	for _, rm := range models {
-		enabled := false // new models default to disabled; users opt-in via UI
-		if wasEnabled, exists := existingModels[rm["id"]]; exists {
-			enabled = wasEnabled
+	for mid, mname := range allModelIDs {
+		def := ModelDef{
+			ID:   mid,
+			Name: mname,
 		}
-		newModels = append(newModels, ModelDef{
-			ID:      rm["id"],
-			Name:    rm["name"],
-			Enabled: enabled,
-		})
+
+		// Preserve existing state
+		if existing, ok := existingModels[mid]; ok {
+			def.Enabled = existing.Enabled
+			def.EnabledByKeys = existing.EnabledByKeys
+		}
+
+		// Set available keys
+		if avail, ok := modelKeyAvailability[mid]; ok {
+			for keyID := range avail {
+				def.AvailableKeys = append(def.AvailableKeys, keyID)
+			}
+			sort.Strings(def.AvailableKeys)
+		}
+
+		newModels = append(newModels, def)
 	}
+
+	// Sort models by ID for consistent ordering
+	sort.Slice(newModels, func(i, j int) bool {
+		return newModels[i].ID < newModels[j].ID
+	})
 
 	m.mu.Lock()
 	if existing, ok := m.providers[providerID]; ok {
@@ -914,7 +1013,7 @@ func (m *ProviderManager) SyncModels(providerID string) (int, error) {
 	m.saveLocked()
 	m.mu.Unlock()
 
-	slog.Info("provider models synced", "provider", providerID, "count", len(newModels))
+	slog.Info("provider models synced", "provider", providerID, "count", len(newModels), "keys", len(keyResults))
 	return len(newModels), nil
 }
 
@@ -1219,14 +1318,6 @@ func (m *ProviderManager) GetAPIKeys(providerID string) ([]APIKeyConfig, error) 
 
 	// Return masked keys
 	result := make([]APIKeyConfig, len(p.APIKeys))
-	for i, k := range p.APIKeys {
-		result[i] = k
-		if len(result[i].Key) > 8 {
-			result[i].Key = result[i].Key[:4] + "..." + result[i].Key[len(result[i].Key)-4:]
-		} else if result[i].Key != "" {
-			result[i].Key = "***"
-		}
-	}
 	return result, nil
 }
 

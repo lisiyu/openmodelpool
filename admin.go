@@ -466,6 +466,20 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Auto-migrate: if api_key is set but APIKeys is empty, create first key entry
+	if p.APIKey != "" && p.APIKey != "your-api-key-here" && len(p.APIKeys) == 0 {
+		p.APIKeys = []APIKeyConfig{
+			{
+				ID:            "key-" + p.ID + "-1",
+				Key:           p.APIKey,
+				Alias:         "默认 Key",
+				AccessControl: "private",
+				Priority:      1,
+				Enabled:       true,
+			},
+		}
+	}
+
 	// For new providers: only enable the latest few models by default
 	isNew := false
 	if _, exists := pm.GetRaw(p.ID); !exists {
@@ -485,6 +499,7 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := pm.Add(p)
+	healthChecker.CheckProviderNow(p.ID)
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
 
@@ -568,7 +583,22 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Auto-migrate: if api_key is set but APIKeys is empty, create first key entry
+	if merged.APIKey != "" && merged.APIKey != "your-api-key-here" && len(merged.APIKeys) == 0 {
+		merged.APIKeys = []APIKeyConfig{
+			{
+				ID:            "key-" + merged.ID + "-1",
+				Key:           merged.APIKey,
+				Alias:         "默认 Key",
+				AccessControl: "private",
+				Priority:      1,
+				Enabled:       true,
+			},
+		}
+	}
+
 	result := pm.Add(merged)
+	healthChecker.CheckProviderNow(id)
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
 
@@ -1009,43 +1039,74 @@ func handleRequestLogs(w http.ResponseWriter, r *http.Request) {
 
 func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 	health := healthChecker.GetHealth()
-	
+
 	// Get today's usage stats
 	todayStats := tracker.ProviderStats(1)
-	
+
 	type EnrichedHealth struct {
 		ProviderID       string  `json:"provider_id"`
 		ProviderName     string  `json:"provider_name"`
+		Type             string  `json:"type"`
 		Status           string  `json:"status"`
 		LatencyMS        float64 `json:"latency_ms"`
 		ConsecutiveFails int     `json:"consecutive_fails"`
 		FailureReason    string  `json:"failure_reason,omitempty"`
-		ModelCount       int     `json:"model_count"`
+		ModelCount        int     `json:"model_count"`
+		TotalModelCount   int     `json:"total_model_count"`
+		PrivateModelCount int     `json:"private_model_count"`
+		SharedModelCount  int     `json:"shared_model_count"`
 		TokenLimit       int64   `json:"token_limit"`
 		TokenUsed        int64   `json:"token_used"`
 		TodayRequests    int     `json:"today_requests"`
 		TodayTokens      int     `json:"today_tokens"`
 		KeyCount         int     `json:"key_count"`
+		PrivateKeyCount  int     `json:"private_key_count"`
+		SharedKeyCount   int     `json:"shared_key_count"`
 		Enabled          bool    `json:"enabled"`
+		Priority         int     `json:"priority"`
+		IsShared         bool    `json:"is_shared"`
+		SuccessRate      *float64 `json:"success_rate"`
+		Models           []ModelDef             `json:"models"`
+		AccessControl    *ProviderAccessControl `json:"access_control"`
+		// Quota fields (placeholder — zero until quota tracking is implemented)
+		QuotaPrivateUsed  int64 `json:"quota_private_used"`
+		QuotaPrivateTotal int64 `json:"quota_private_total"`
+		QuotaPublicUsed   int64 `json:"quota_public_used"`
+		QuotaPublicTotal  int64 `json:"quota_public_total"`
+		QuotaGuestUsed    int64 `json:"quota_guest_used"`
+		QuotaGuestTotal   int64 `json:"quota_guest_total"`
+		// Per-pool today stats (placeholder)
+		TodayReqsPrivate   int `json:"today_reqs_private"`
+		TodayTokensPrivate int `json:"today_tokens_private"`
+		TodayReqsPublic    int `json:"today_reqs_public"`
+		TodayTokensPublic  int `json:"today_tokens_public"`
+		TodayReqsGuest     int `json:"today_reqs_guest"`
+		TodayTokensGuest   int `json:"today_tokens_guest"`
+		// Connection tracking
+		ActiveConns int `json:"active_conns"`
 	}
-	
-	enriched := make([]EnrichedHealth, 0, len(health))
+
+	// Build health lookup from checker results
+	healthMap := make(map[string]ProviderHealth)
 	for _, h := range health {
-		p, ok := pm.GetRaw(h.ProviderID)
-		if !ok {
-			continue
-		}
-		
-		// Only show providers with API keys configured
+		healthMap[h.ProviderID] = h
+	}
+
+	// Iterate all configured providers that have keys
+	configured := pm.GetConfigured()
+	enriched := make([]EnrichedHealth, 0, len(configured))
+	for _, p := range configured {
 		hasKey := (p.APIKey != "" && p.APIKey != "your-api-key-here") || len(p.APIKeys) > 0
 		if !hasKey {
 			continue
 		}
-		
+
+		h, hasHealth := healthMap[p.ID]
+
 		// Get today's usage from stats
 		todayReqs := 0
 		todayTokens := 0
-		if stats, ok := todayStats[h.ProviderID]; ok {
+		if stats, ok := todayStats[p.ID]; ok {
 			if count, ok := stats["request_count"].(int); ok {
 				todayReqs = count
 			}
@@ -1053,15 +1114,30 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 				todayTokens = tokens
 			}
 		}
-		
+
 		// Get total usage
-		totalUsed := tracker.TotalTokensByProvider()[h.ProviderID]
-		
+		totalUsed := tracker.TotalTokensByProvider()[p.ID]
+
 		keyCount := len(p.APIKeys)
 		if keyCount == 0 && p.APIKey != "" && p.APIKey != "your-api-key-here" {
 			keyCount = 1
 		}
-		
+
+		// Count private vs shared keys
+		privateKeyCount := 0
+		sharedKeyCount := 0
+		for _, k := range p.APIKeys {
+			if k.AccessControl == "shared" {
+				sharedKeyCount++
+			} else {
+				privateKeyCount++
+			}
+		}
+		// Legacy single key counts as private
+		if len(p.APIKeys) == 0 && p.APIKey != "" && p.APIKey != "your-api-key-here" {
+			privateKeyCount = 1
+		}
+
 		// Count only enabled models
 		enabledModelCount := 0
 		for _, m := range p.Models {
@@ -1069,25 +1145,183 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 				enabledModelCount++
 			}
 		}
-		
+		// Private/shared model counts: based on per-key access_control and EnabledByKeys matrix
+		privateModelCount := 0
+		sharedModelCount := 0
+		// Build keyID -> accessControl map
+		keyAccessMap := make(map[string]string)
+		for _, k := range p.APIKeys {
+			if k.Enabled {
+				keyAccessMap[k.ID] = k.AccessControl
+			}
+		}
+		// Count models based on which keys have them enabled
+		for _, m := range p.Models {
+			if len(m.EnabledByKeys) == 0 {
+				// Legacy: no per-key config, use overall Enabled flag
+				if m.Enabled {
+					if privateKeyCount > 0 {
+						privateModelCount++
+					}
+					if sharedKeyCount > 0 {
+						sharedModelCount++
+					}
+				}
+				continue
+			}
+			isPrivate := false
+			isShared := false
+			for keyID, enabled := range m.EnabledByKeys {
+				if !enabled {
+					continue
+				}
+				access := keyAccessMap[keyID]
+				if access == "private" {
+					isPrivate = true
+				} else if access == "shared" {
+					isShared = true
+				}
+			}
+			if isPrivate {
+				privateModelCount++
+			}
+			if isShared {
+				sharedModelCount++
+			}
+		}
+
+		// IsShared: provider is shared if share_to_pool is true
+		isShared := p.AccessControl.ShareToPool
+
+		// Access control (pass through for frontend guest_pool_percent etc.)
+		ac := p.AccessControl
+
 		enriched = append(enriched, EnrichedHealth{
-			ProviderID:       h.ProviderID,
-			ProviderName:     h.ProviderName,
-			Status:           h.Status,
-			LatencyMS:        h.LatencyMS,
-			ConsecutiveFails: h.ConsecutiveFails,
-			FailureReason:    h.FailureReason,
-			ModelCount:       enabledModelCount,
+			ProviderID:       p.ID,
+			ProviderName:     p.Name,
+			Type:             p.Type,
+			Status:           func() string { if hasHealth { return h.Status }; return "pending" }(),
+			LatencyMS:        func() float64 { if hasHealth { return h.LatencyMS }; return 0 }(),
+			ConsecutiveFails: func() int { if hasHealth { return h.ConsecutiveFails }; return 0 }(),
+			FailureReason:    func() string { if hasHealth { return h.FailureReason }; return "" }(),
+			ModelCount:        enabledModelCount,
+			TotalModelCount:   len(p.Models),
+			PrivateModelCount: privateModelCount,
+			SharedModelCount:  sharedModelCount,
 			TokenLimit:       p.TokenLimit,
 			TokenUsed:        totalUsed,
 			TodayRequests:    todayReqs,
 			TodayTokens:      todayTokens,
 			KeyCount:         keyCount,
+			PrivateKeyCount:  privateKeyCount,
+			SharedKeyCount:   sharedKeyCount,
 			Enabled:          p.Enabled,
+			Priority:         p.Priority,
+			IsShared:         isShared,
+			SuccessRate:      nil, // placeholder: not yet tracked
+			Models:           p.Models,
+			AccessControl:    &ac,
+			ActiveConns:      GetProviderConns(p.ID),
 		})
 	}
-	
-	writeJSON(w, 200, map[string]any{"providers": enriched})
+
+	// Aggregate node_stats from enriched providers
+	var totalProviders, onlineProviders, totalKeys, privateKeyCount, sharedKeyCount int
+	var totalModels, enabledModels, privateModels, sharedModels int
+	var totalLatency float64
+	var latencyCount, successCount int
+	var successSum float64
+	var todayReqsPrivate, todayTokensPrivate int
+	var todayReqsPublic, todayTokensPublic int
+	var todayReqsGuest, todayTokensGuest int
+	var quotaPrivUsed, quotaPrivTotal, quotaPubUsed, quotaPubTotal, quotaGuestUsed, quotaGuestTotal int64
+
+	for _, ep := range enriched {
+		totalProviders++
+		if ep.Status == "healthy" || ep.Status == "degraded" {
+			onlineProviders++
+		}
+		totalKeys += ep.KeyCount
+		privateKeyCount += ep.PrivateKeyCount
+		sharedKeyCount += ep.SharedKeyCount
+		totalModels += ep.TotalModelCount
+		enabledModels += ep.ModelCount
+		privateModels += ep.PrivateModelCount
+		sharedModels += ep.SharedModelCount
+		if ep.LatencyMS > 0 {
+			totalLatency += ep.LatencyMS
+			latencyCount++
+		}
+		if ep.SuccessRate != nil {
+			successSum += *ep.SuccessRate
+			successCount++
+		}
+		todayReqsPrivate += ep.TodayReqsPrivate
+		todayTokensPrivate += ep.TodayTokensPrivate
+		todayReqsPublic += ep.TodayReqsPublic
+		todayTokensPublic += ep.TodayTokensPublic
+		todayReqsGuest += ep.TodayReqsGuest
+		todayTokensGuest += ep.TodayTokensGuest
+		quotaPrivUsed += ep.QuotaPrivateUsed
+		quotaPrivTotal += ep.QuotaPrivateTotal
+		quotaPubUsed += ep.QuotaPublicUsed
+		quotaPubTotal += ep.QuotaPublicTotal
+		quotaGuestUsed += ep.QuotaGuestUsed
+		quotaGuestTotal += ep.QuotaGuestTotal
+	}
+
+	var avgLatency *float64
+	if latencyCount > 0 {
+		v := totalLatency / float64(latencyCount)
+		avgLatency = &v
+	}
+	var avgSuccessRate *float64
+	if successCount > 0 {
+		v := successSum / float64(successCount)
+		avgSuccessRate = &v
+	}
+
+	var totalConns, connsPrivate, connsPublic, connsGuest int
+	for _, ep := range enriched {
+		totalConns += ep.ActiveConns
+		if ep.IsShared {
+			connsPublic += ep.ActiveConns
+		} else {
+			connsPrivate += ep.ActiveConns
+		}
+	}
+	connsGuest = 0 // placeholder: no per-guest connection tracking yet
+
+	nodeStats := map[string]any{
+		"provider_total":    totalProviders,
+		"provider_online":   onlineProviders,
+		"key_total":         totalKeys,
+		"private_key_count": privateKeyCount,
+		"shared_key_count":  sharedKeyCount,
+		"model_total":       totalModels,
+		"model_enabled":     enabledModels,
+		"private_models":    privateModels,
+		"shared_models":     sharedModels,
+		"avg_latency":       avgLatency,
+		"success_rate":      avgSuccessRate,
+		"today_reqs_private":  todayReqsPrivate,
+		"today_tokens_private": todayTokensPrivate,
+		"today_reqs_public":   todayReqsPublic,
+		"today_tokens_public":  todayTokensPublic,
+		"today_reqs_guest":    todayReqsGuest,
+		"today_tokens_guest":   todayTokensGuest,
+		"quota_private_used":  quotaPrivUsed,
+		"quota_private_total": quotaPrivTotal,
+		"quota_public_used":   quotaPubUsed,
+		"quota_public_total":  quotaPubTotal,
+		"quota_guest_used":    quotaGuestUsed,
+		"quota_guest_total":   quotaGuestTotal,
+		"conns_private": connsPrivate,
+		"conns_public":  connsPublic,
+		"conns_guest":   connsGuest,
+	}
+
+	writeJSON(w, 200, map[string]any{"providers": enriched, "node_stats": nodeStats})
 }
 
 // ============================================================
@@ -1102,6 +1336,8 @@ func handleAdminPage(w http.ResponseWriter, r *http.Request) {
 	// No server-side auth check — admin.html uses client-side auth
 	// via authFetch() with Bearer token from localStorage.
 	// This avoids redirect loops when cookies don't persist (e.g. behind tunnels).
+	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	http.ServeFile(w, r, "admin.html")
 }
 
@@ -1203,19 +1439,21 @@ func handleSyncAllURLs(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
-	all := pm.GetAll()
-	enabled := 0
-	for _, p := range all {
-		if p.Enabled {
-			enabled++
+	configured := pm.GetConfigured()
+	withKey := 0
+	for _, p := range configured {
+		hasKey := (p.APIKey != "" && p.APIKey != "your-api-key-here") || len(p.APIKeys) > 0
+		if hasKey {
+			withKey++
 		}
 	}
 	writeJSON(w, 200, map[string]any{
 		"status":  "running",
 		"version": AppVersion,
 		"providers": map[string]any{
-			"enabled": enabled,
-			"total":   len(all),
+			"enabled":      withKey,
+			"total":        len(configured),
+			"preset_total": len(presetProviders),
 		},
 		"models": len(pm.AllModels()),
 	})

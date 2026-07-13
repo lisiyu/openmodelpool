@@ -115,9 +115,11 @@ type ModelListResponse struct {
 // ============================================================
 
 type ModelDef struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Enabled bool   `json:"enabled"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Enabled       bool            `json:"enabled"`
+	EnabledByKeys map[string]bool `json:"enabled_by_keys,omitempty"` // per-key enabled state: keyID -> enabled
+	AvailableKeys []string        `json:"available_keys,omitempty"`  // keyIDs that have this model available
 }
 
 // APIKeyConfig represents a single API key with its own quota and access control.
@@ -271,6 +273,15 @@ type AdminData struct {
 	CreatedAt    string `json:"created_at"`
 }
 
+// Collaborator represents a collaborator account with limited admin access
+type Collaborator struct {
+	Username     string `json:"username"`
+	PasswordHash string `json:"password_hash"`
+	GuestKey     string `json:"guest_key"`        // associated guest key
+	CreatedAt    string `json:"created_at"`
+	LastLogin    string `json:"last_login,omitempty"`
+}
+
 type SMTPConfig struct {
 	Host      string `json:"host"`
 	Port      int    `json:"port"`
@@ -297,6 +308,7 @@ type AdminStore struct {
 	// P0-2: Independent reset code (replaces Proxy API Key reuse for password reset)
 	ResetCodeHash   string `json:"reset_code_hash,omitempty"`
 	ResetCodeExpires string `json:"reset_code_expires,omitempty"`
+	Collaborators []Collaborator `json:"collaborators,omitempty"`
 }
 
 // ============================================================
