@@ -29,7 +29,7 @@ func initHealthChecker(interval time.Duration) {
 		stopCh:   make(chan struct{}),
 	}
 	// Initialize statuses for all providers
-	for _, p := range pm.Enabled() {
+	for _, p := range pm.EnabledRaw() {
 		healthChecker.statuses[p.ID] = &ProviderHealth{
 			ProviderID:   p.ID,
 			ProviderName: p.Name,
@@ -57,7 +57,7 @@ func (h *HealthChecker) run() {
 }
 
 func (h *HealthChecker) checkAll() {
-	providers := pm.Enabled()
+	providers := pm.EnabledRaw()
 	// Update statuses map for new providers
 	h.mu.Lock()
 	for _, p := range providers {
@@ -83,26 +83,50 @@ func (h *HealthChecker) checkAll() {
 }
 
 func (h *HealthChecker) checkProvider(p Provider) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	start := time.Now()
 	var healthy bool
 	var latencyMS float64
 	var failReason string
+	var keysTested int
+	var keysFailed int
 
 	switch p.Type {
 	case "coze":
-		// Resolve multi-key for coze provider
-		if p.APIKey == "" && len(p.APIKeys) > 0 {
-			p.APIKey = p.GetEffectiveAPIKey()
+		// Collect all keys to try for coze provider
+		type keyEntry struct {
+			alias string
+			token string
 		}
-		// Check Coze API token (provider key first, then global fallback)
-		token := p.APIKey
-		if token == "" {
-			token = cfg.Get("coze_api_token", "")
+		var keysToTry []keyEntry
+		for _, k := range p.APIKeys {
+			if !k.Enabled {
+				continue
+			}
+			decrypted, err := decryptAPIKey(k.Key)
+			if err != nil {
+				slog.Debug("health check: failed to decrypt coze key", "key_id", k.ID, "error", err)
+				continue
+			}
+			keysToTry = append(keysToTry, keyEntry{alias: k.Alias, token: decrypted})
 		}
-		if token == "" {
+		// Fallback to legacy single key or global config
+		if len(keysToTry) == 0 {
+			token := p.APIKey
+			if token == "" {
+				token = cfg.Get("coze_api_token", "")
+			}
+			if token != "" {
+				if IsEncrypted(token) {
+					if decrypted, err := decryptAPIKey(token); err == nil {
+						token = decrypted
+					}
+				}
+				keysToTry = append(keysToTry, keyEntry{alias: "default", token: token})
+			}
+		}
+		if len(keysToTry) == 0 {
 			failReason = "Coze API token not configured"
 			break
 		}
@@ -110,39 +134,63 @@ func (h *HealthChecker) checkProvider(p Provider) {
 		if baseURL == "" {
 			baseURL = "https://api.coze.cn"
 		}
-		req, _ := http.NewRequestWithContext(ctx, "GET", baseURL+"/v1/bots?page_index=0&page_size=1", nil)
-		req.Header.Set("Authorization", "Bearer "+token)
 		client := proxyHTTPClient(p, 15*time.Second)
-		resp, err := client.Do(req)
-		if err != nil {
-			failReason = err.Error()
-			break
-		}
-		resp.Body.Close()
-		latencyMS = float64(time.Since(start).Milliseconds())
-		healthy = resp.StatusCode == 200
-		if !healthy {
-			failReason = "HTTP " + strconv.Itoa(resp.StatusCode)
+		for _, ke := range keysToTry {
+			keysTested++
+			reqStart := time.Now()
+			req, _ := http.NewRequestWithContext(ctx, "GET", baseURL+"/v1/bots?page_index=0&page_size=1", nil)
+			req.Header.Set("Authorization", "Bearer "+ke.token)
+			resp, err := client.Do(req)
+			if err != nil {
+				failReason = ke.alias + ": " + err.Error()
+				keysFailed++
+				continue
+			}
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			latencyMS = float64(time.Since(reqStart).Milliseconds())
+			if resp.StatusCode == 200 {
+				healthy = true
+				failReason = ""
+				break
+			}
+			failReason = ke.alias + ": HTTP " + strconv.Itoa(resp.StatusCode)
+			keysFailed++
 		}
 
 	default:
-		// OpenAI-compatible: check via /models or fallback endpoint
-		// Resolve multi-key
-		if p.APIKey == "" && len(p.APIKeys) > 0 {
-			p.APIKey = p.GetEffectiveAPIKey()
+		// OpenAI-compatible: try all enabled keys, healthy if any succeeds
+		type keyEntry struct {
+			alias string
+			key   string
 		}
-		if p.APIKey == "" {
+		var keysToTry []keyEntry
+		for _, k := range p.APIKeys {
+			if !k.Enabled {
+				continue
+			}
+			decrypted, err := decryptAPIKey(k.Key)
+			if err != nil {
+				slog.Debug("health check: failed to decrypt key", "key_id", k.ID, "error", err)
+				continue
+			}
+			keysToTry = append(keysToTry, keyEntry{alias: k.Alias, key: decrypted})
+		}
+		// Fallback to legacy single key
+		if len(keysToTry) == 0 && p.APIKey != "" {
+			apiKey := p.APIKey
+			if IsEncrypted(apiKey) {
+				if decrypted, err := decryptAPIKey(apiKey); err == nil {
+					apiKey = decrypted
+				}
+			}
+			keysToTry = append(keysToTry, keyEntry{alias: "default", key: apiKey})
+		}
+		if len(keysToTry) == 0 {
 			failReason = "no API key"
 			break
 		}
-		// Decrypt API key if still encrypted (safety net)
-		if IsEncrypted(p.APIKey) {
-			if decrypted, err := decryptAPIKey(p.APIKey); err == nil {
-				p.APIKey = decrypted
-			}
-		}
 		client := proxyHTTPClient(p, 15*time.Second)
-
 
 		// Determine health check endpoint
 		hcEndpoint := p.HealthCheckEndpoint
@@ -150,64 +198,78 @@ func (h *HealthChecker) checkProvider(p Provider) {
 			hcEndpoint = "/models"
 		}
 
-		// Primary health check
-		req, _ := http.NewRequestWithContext(ctx, "GET", p.BaseURL+hcEndpoint, nil)
-		req.Header.Set("Authorization", "Bearer "+p.APIKey)
-		resp, err := client.Do(req)
-		if err != nil {
-			failReason = err.Error()
-			break
-		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		latencyMS = float64(time.Since(start).Milliseconds())
-		healthy = resp.StatusCode == 200
-		if !healthy {
-			failReason = "HTTP " + strconv.Itoa(resp.StatusCode)
-		}
+		// Try each key until one succeeds
+		for _, ke := range keysToTry {
+			keysTested++
+			reqStart := time.Now()
 
-		// Fallback: if /models returned 404, try lightweight /chat/completions probe
-		// This handles providers like TokenHub that don't support /models
-		if !healthy && (resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 || resp.StatusCode == 405) && (hcEndpoint == "/models" || hcEndpoint == "") {
-			slog.Debug("health check /models non-standard response, falling back to /chat/completions probe", "provider", p.ID)
-			// Build model list: provider's own models first, then common fallbacks
-			var probeModels []string
-			for _, m := range p.Models {
-				if m.Enabled {
-					probeModels = append(probeModels, m.ID)
-				}
+			// Primary health check: GET /models
+			req, _ := http.NewRequestWithContext(ctx, "GET", p.BaseURL+hcEndpoint, nil)
+			req.Header.Set("Authorization", "Bearer "+ke.key)
+			resp, err := client.Do(req)
+			if err != nil {
+				failReason = ke.alias + ": " + err.Error()
+				keysFailed++
+				continue
 			}
-			probeModels = append(probeModels, "gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0")
-			// Try each model until one succeeds
-			for _, model := range probeModels {
-				probeBody, _ := json.Marshal(map[string]any{
-					"model":       model,
-					"max_tokens":  1,
-					"messages":    []map[string]string{{"role": "user", "content": "hi"}},
-				})
-				probeReq, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", bytes.NewReader(probeBody))
-				probeReq.Header.Set("Authorization", "Bearer "+p.APIKey)
-				probeReq.Header.Set("Content-Type", "application/json")
-				start = time.Now()
-				probeResp, err := client.Do(probeReq)
-				if err != nil {
-					failReason = err.Error()
-					continue
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			latencyMS = float64(time.Since(reqStart).Milliseconds())
+
+			if resp.StatusCode == 200 {
+				healthy = true
+				failReason = ""
+				break
+			}
+
+			// Fallback: if /models returned error, try /chat/completions probe
+			if (resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 || resp.StatusCode == 405) && (hcEndpoint == "/models" || hcEndpoint == "") {
+				slog.Debug("health check /models non-standard response, falling back to /chat/completions probe", "provider", p.ID, "key", ke.alias)
+				var probeModels []string
+				for _, m := range p.Models {
+					if m.Enabled {
+						probeModels = append(probeModels, m.ID)
+					}
 				}
-				io.Copy(io.Discard, probeResp.Body)
-				probeResp.Body.Close()
-				latencyMS = float64(time.Since(start).Milliseconds())
-				if probeResp.StatusCode == 200 {
-					healthy = true
-					failReason = ""
+				probeModels = append(probeModels, "gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0")
+				probeOK := false
+				for _, model := range probeModels {
+					probeBody, _ := json.Marshal(map[string]any{
+						"model":      model,
+						"max_tokens": 1,
+						"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+					})
+					probeReq, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", bytes.NewReader(probeBody))
+					probeReq.Header.Set("Authorization", "Bearer "+ke.key)
+					probeReq.Header.Set("Content-Type", "application/json")
+					probeStart := time.Now()
+					probeResp, err := client.Do(probeReq)
+					if err != nil {
+						continue
+					}
+					io.Copy(io.Discard, probeResp.Body)
+					probeResp.Body.Close()
+					latencyMS = float64(time.Since(probeStart).Milliseconds())
+					if probeResp.StatusCode == 200 {
+						healthy = true
+						failReason = ""
+						probeOK = true
+						break
+					}
+					if probeResp.StatusCode == 401 {
+						break // key is truly invalid, stop trying models
+					}
+				}
+				if healthy {
 					break
 				}
-				// 401 means key is truly invalid, stop trying
-				if probeResp.StatusCode == 401 {
-					failReason = "HTTP 401"
-					break
+				if !probeOK {
+					failReason = ke.alias + ": HTTP " + strconv.Itoa(resp.StatusCode)
+					keysFailed++
 				}
-				failReason = "HTTP " + strconv.Itoa(probeResp.StatusCode)
+			} else {
+				failReason = ke.alias + ": HTTP " + strconv.Itoa(resp.StatusCode)
+				keysFailed++
 			}
 		}
 	}
@@ -224,6 +286,11 @@ func (h *HealthChecker) checkProvider(p Provider) {
 
 	hs.LastCheck = now
 	hs.LatencyMS = latencyMS
+
+	// Log multi-key summary
+	if keysTested > 1 {
+		slog.Info("multi-key health check", "provider", p.ID, "keys_tested", keysTested, "keys_failed", keysFailed, "healthy", healthy)
+	}
 
 	if healthy {
 		hs.Status = "healthy"

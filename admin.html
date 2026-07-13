@@ -1527,11 +1527,19 @@ async function toggleModel(pid, mid) {
   });
 }
 async function testProvider(pid) {
-  toast('正在测试连接...', 'info');
+  toast('正在测试所有 Key...', 'info');
   try {
-    const r = await authFetch(`/api/providers/${pid}/test`, { method: 'POST' });
+    const r = await authFetch(`/api/providers/${pid}/test-all-keys`, { method: 'POST' });
     const d = await r.json();
-    toast(d.success ? `✅ ${d.message}` : `❌ ${d.error}`, d.success ? 'success' : 'error');
+    if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    const successCount = d.results.filter(k => k.success).length;
+    const failCount = d.results.length - successCount;
+    if (failCount === 0) {
+      toast(`✅ 全部 ${successCount} 个 Key 通过`, 'success');
+    } else {
+      const failedKeys = d.results.filter(k => !k.success).map(k => k.alias || ('Key#' + k.index));
+      toast(`⚠️ ${successCount}/${d.results.length} Key 通过，${failCount} 失败: ${failedKeys.join(', ')}`, 'error', 8000);
+    }
     if (typeof refreshHealth === 'function') await refreshHealth();
   } catch(e) { toast('测试失败: ' + e.message, 'error'); }
 }
