@@ -1347,6 +1347,10 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 
 	for _, ep := range enriched {
 		totalProviders++
+		// Skip all stats (except totalProviders) for disabled providers
+		if !ep.Enabled {
+			continue
+		}
 		if ep.Status == "healthy" || ep.Status == "degraded" {
 			onlineProviders++
 		}
@@ -1365,10 +1369,6 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		if ep.SuccessRate != nil {
 			successSum += *ep.SuccessRate
 			successCount++
-		}
-		// Only count quota/usage from enabled providers
-		if !ep.Enabled {
-			continue
 		}
 		todayReqsPrivate += ep.TodayReqsPrivate
 		todayTokensPrivate += ep.TodayTokensPrivate

@@ -924,12 +924,12 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
       <div class="form-group">
         <label class="form-label">📊 额度上限控制</label>
-        <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">每个周期独立控制：每日/每月到期自动重置，总额永不重置。0=不限制该周期</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">每日请求数：限制每天API调用次数（到期重置）；每月上限/总额上限：限制token消耗量。0=不限制</div>
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="background:rgba(108,99,255,.04)">
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500;width:80px">池类型</th>
-              <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每日上限</th>
+              <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每日请求数</th>
               <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每月上限</th>
               <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">总额上限</th>
             </tr>
@@ -937,13 +937,13 @@ select.form-input{appearance:none;cursor:pointer}
           <tbody>
             <tr>
               <td style="padding:6px 8px;border-bottom:1px solid rgba(0,0,0,.04)"><span class="dot dot-blue" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle"></span>私有池</td>
-              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivRequestsDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
               <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaMonthly" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
               <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaTotal" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
             </tr>
             <tr>
               <td style="padding:6px 8px"><span class="dot dot-purple" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle"></span>共享池</td>
-              <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px"><input class="form-input" id="pSharedRequestsDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
               <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaMonthly" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
               <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaTotal" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
             </tr>
@@ -1687,10 +1687,10 @@ function editProvider(pid) {
   document.getElementById('pEnabled').checked = p.enabled !== false;
   if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = p.daily_token_limit || 0;
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = p.rate_limit_per_min || 0;
-  if (document.getElementById('pPrivQuotaDaily')) document.getElementById('pPrivQuotaDaily').value = p.private_quota_daily || 0;
+  if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = p.private_requests_daily || 0;
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = p.private_quota_monthly || 0;
   if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = p.private_quota_total || 0;
-  if (document.getElementById('pSharedQuotaDaily')) document.getElementById('pSharedQuotaDaily').value = p.shared_quota_daily || 0;
+  if (document.getElementById('pSharedRequestsDaily')) document.getElementById('pSharedRequestsDaily').value = p.shared_requests_daily || 0;
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = p.shared_quota_monthly || 0;
   if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = p.shared_quota_total || 0;
   // Load access control state and pool ratio
@@ -1744,10 +1744,10 @@ function selectPreset(pid) {
   setAccessControl('private'); // default: private only
   if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
-  if (document.getElementById('pPrivQuotaDaily')) document.getElementById('pPrivQuotaDaily').value = '0';
+  if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
   if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
-  if (document.getElementById('pSharedQuotaDaily')) document.getElementById('pSharedQuotaDaily').value = '0';
+  if (document.getElementById('pSharedRequestsDaily')) document.getElementById('pSharedRequestsDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
   if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
 }
@@ -1800,10 +1800,10 @@ async function saveProvider() {
   if (dailyLimit > 0) data.daily_token_limit = dailyLimit;
   const rateLimit = parseInt(document.getElementById('pRateLimit')?.value) || 0;
   if (rateLimit > 0) data.rate_limit_per_min = rateLimit;
-  data.private_quota_daily = parseInt(document.getElementById('pPrivQuotaDaily')?.value) || 0;
+  data.private_requests_daily = parseInt(document.getElementById('pPrivRequestsDaily')?.value) || 0;
   data.private_quota_monthly = parseInt(document.getElementById('pPrivQuotaMonthly')?.value) || 0;
   data.private_quota_total = parseInt(document.getElementById('pPrivQuotaTotal')?.value) || 0;
-  data.shared_quota_daily = parseInt(document.getElementById('pSharedQuotaDaily')?.value) || 0;
+  data.shared_requests_daily = parseInt(document.getElementById('pSharedRequestsDaily')?.value) || 0;
   data.shared_quota_monthly = parseInt(document.getElementById('pSharedQuotaMonthly')?.value) || 0;
   data.shared_quota_total = parseInt(document.getElementById('pSharedQuotaTotal')?.value) || 0;
   const key = document.getElementById('pKey').value.trim();
@@ -1877,10 +1877,10 @@ function selectCustomPreset() {
   document.getElementById('editKeysSection').style.display = 'none';
   if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
-  if (document.getElementById('pPrivQuotaDaily')) document.getElementById('pPrivQuotaDaily').value = '0';
+  if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
   if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
-  if (document.getElementById('pSharedQuotaDaily')) document.getElementById('pSharedQuotaDaily').value = '0';
+  if (document.getElementById('pSharedRequestsDaily')) document.getElementById('pSharedRequestsDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
   if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
   editingId = '';
@@ -1912,10 +1912,10 @@ function selectDiscoveredPreset(id) {
   } else if (regLinkEl) { regLinkEl.style.display = 'none'; }
   if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
-  if (document.getElementById('pPrivQuotaDaily')) document.getElementById('pPrivQuotaDaily').value = '0';
+  if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
   if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
-  if (document.getElementById('pSharedQuotaDaily')) document.getElementById('pSharedQuotaDaily').value = '0';
+  if (document.getElementById('pSharedRequestsDaily')) document.getElementById('pSharedRequestsDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
   if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
 }
@@ -2258,7 +2258,7 @@ async function refreshHealth() {
     if (nsSharedModels > 0) statsHtml += '<span class="v7-stat-pill">🌐<b class="purple">' + nsSharedModels + '</b></span>';
     statsHtml += '<span class="v7-stat-pill">总计 <b class="yellow">' + nsTotalModels + '</b></span>';
     var nsFailedKeys = ns.failed_key_count || 0;
-    statsHtml += '<span class="v7-stat-pill">Provider keys <b>' + nsTotalKeys + '</b>';
+    statsHtml += '<span class="v7-stat-pill">Keys <b>' + nsTotalKeys + '</b>';
     if (nsFailedKeys > 0) statsHtml += ' <span style="background:#ef4444;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">失效' + nsFailedKeys + '</span>';
     if (nsPrivKeys > 0) statsHtml += ' <span style="background:#3b82f6;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">🔒' + nsPrivKeys + '</span>';
     if (nsSharedKeys > 0) statsHtml += ' <span style="background:#8b5cf6;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">🌐' + nsSharedKeys + '</span>';
@@ -2374,7 +2374,7 @@ async function refreshHealth() {
       const srColor = (p.success_rate != null) ? (p.success_rate >= 95 ? 'green' : (p.success_rate >= 80 ? 'yellow' : '')) : '';
 
       let inlineStats = '';
-      inlineStats += '<div class="v8-keys-pill">Provider keys <b>' + (p.key_count || 0) + '</b>';
+      inlineStats += '<div class="v8-keys-pill">Keys <b>' + (p.key_count || 0) + '</b>';
       if (privateCount > 0) inlineStats += '<span class="v8-ksub private">🔒' + privateCount + '</span>';
       if (sharedCount > 0) inlineStats += '<span class="v8-ksub shared">🌐' + sharedCount + '</span>';
       var failedKeys = p.failed_key_count || 0;

@@ -153,10 +153,10 @@ type Provider struct {
 	TokenLimit  int64      `json:"token_limit,omitempty"` // monthly token budget, 0=unlimited
 	DailyTokenLimit     int64 `json:"daily_token_limit,omitempty"`      // daily token budget, 0=unlimited
 	RateLimitPerMin     int   `json:"rate_limit_per_min,omitempty"`     // requests per minute, 0=unlimited
-	PrivateQuotaDaily   int64 `json:"private_quota_daily,omitempty"`    // private key quota limit per day, 0=unlimited
+	PrivateRequestsDaily int64 `json:"private_requests_daily,omitempty"` // private pool max requests per day, 0=unlimited
 	PrivateQuotaMonthly int64 `json:"private_quota_monthly,omitempty"`  // private key quota limit per month, 0=unlimited
 	PrivateQuotaTotal   int64 `json:"private_quota_total,omitempty"`    // private key total quota cap, 0=unlimited
-	SharedQuotaDaily    int64 `json:"shared_quota_daily,omitempty"`     // shared key quota limit per day, 0=unlimited
+	SharedRequestsDaily  int64 `json:"shared_requests_daily,omitempty"`  // shared pool max requests per day, 0=unlimited
 	SharedQuotaMonthly  int64 `json:"shared_quota_monthly,omitempty"`   // shared key quota limit per month, 0=unlimited
 	SharedQuotaTotal    int64 `json:"shared_quota_total,omitempty"`     // shared key total quota cap, 0=unlimited
 	Description string     `json:"description,omitempty"`
