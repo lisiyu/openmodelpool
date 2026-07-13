@@ -128,7 +128,11 @@ type APIKeyConfig struct {
 	Alias         string `json:"alias,omitempty"` // human-readable alias (optional)
 	Key           string `json:"key"`             // API key (encrypted at rest)
 	Quota         int64  `json:"quota"`           // total quota (tokens), 0=unlimited
-	Used          int64  `json:"used"`            // used quota
+	QuotaDaily    int64  `json:"quota_daily"`     // daily quota limit, 0=unlimited
+	QuotaMonthly  int64  `json:"quota_monthly"`   // monthly quota limit, 0=unlimited
+	Used          int64  `json:"used"`            // used quota (total)
+	UsedDaily     int64  `json:"used_daily"`      // used today
+	UsedMonthly   int64  `json:"used_monthly"`    // used this month
 	AccessControl string `json:"access_control"`  // "private" | "shared" | "public"
 	Enabled       bool   `json:"enabled"`         // whether this key is enabled
 	Priority      int    `json:"priority"`        // priority for rotation (higher = preferred)
@@ -147,6 +151,12 @@ type Provider struct {
 	Models      []ModelDef `json:"models"`
 	Priority    int        `json:"priority"`
 	TokenLimit  int64      `json:"token_limit,omitempty"` // monthly token budget, 0=unlimited
+	DailyTokenLimit     int64 `json:"daily_token_limit,omitempty"`      // daily token budget, 0=unlimited
+	RateLimitPerMin     int   `json:"rate_limit_per_min,omitempty"`     // requests per minute, 0=unlimited
+	PrivateQuotaDaily   int64 `json:"private_quota_daily,omitempty"`    // private key quota limit per day, 0=unlimited
+	PrivateQuotaMonthly int64 `json:"private_quota_monthly,omitempty"`  // private key quota limit per month, 0=unlimited
+	SharedQuotaDaily    int64 `json:"shared_quota_daily,omitempty"`     // shared key quota limit per day, 0=unlimited
+	SharedQuotaMonthly  int64 `json:"shared_quota_monthly,omitempty"`   // shared key quota limit per month, 0=unlimited
 	Description string     `json:"description,omitempty"`
 	Icon        string     `json:"icon,omitempty"`
 	APIKeyURL   string     `json:"api_key_url,omitempty"`

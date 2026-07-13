@@ -1239,6 +1239,16 @@ func (m *ProviderManager) UpdateAPIKey(providerID, keyID string, updates map[str
 					p.APIKeys[i].Quota = int64(f)
 				}
 			}
+			if v, ok := updates["quota_daily"]; ok {
+				if f, ok := v.(float64); ok {
+					p.APIKeys[i].QuotaDaily = int64(f)
+				}
+			}
+			if v, ok := updates["quota_monthly"]; ok {
+				if f, ok := v.(float64); ok {
+					p.APIKeys[i].QuotaMonthly = int64(f)
+				}
+			}
 			if v, ok := updates["access_control"]; ok {
 				if s, ok := v.(string); ok {
 					p.APIKeys[i].AccessControl = s

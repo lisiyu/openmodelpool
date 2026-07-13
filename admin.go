@@ -741,11 +741,12 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 				if limitUSD > 0 {
 					// Estimate: $1 ≈ 1M tokens (rough average for GPT-4 class models)
 					estimatedTokens := int64(limitUSD * 1_000_000)
-					if key.Quota == 0 || key.Quota != estimatedTokens {
-						// Use UpdateAPIKey to persist the change through ProviderManager
-						pm.UpdateAPIKey(id, key.ID, map[string]any{"quota": float64(estimatedTokens)})
+					// Update quota_monthly (upstream billing is usually monthly)
+					if key.QuotaMonthly == 0 || key.QuotaMonthly != estimatedTokens {
+						pm.UpdateAPIKey(id, key.ID, map[string]any{"quota_monthly": float64(estimatedTokens)})
 						keyResult["quota_updated"] = true
 						keyResult["new_quota"] = estimatedTokens
+						keyResult["quota_period"] = "monthly"
 					}
 				}
 			}
@@ -1243,17 +1244,27 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			if !k.Enabled {
 				continue
 			}
+			// Effective quota per key: min of non-zero daily/monthly/total
+			// For display purposes, use monthly as the primary quota figure
+			effectiveQuota := k.Quota // total
+			if k.QuotaMonthly > 0 && (effectiveQuota == 0 || k.QuotaMonthly < effectiveQuota) {
+				effectiveQuota = k.QuotaMonthly
+			}
+			if k.QuotaDaily > 0 && (effectiveQuota == 0 || k.QuotaDaily < effectiveQuota) {
+				effectiveQuota = k.QuotaDaily
+			}
+
 			switch k.AccessControl {
 			case "private":
-				if k.Quota > 0 {
-					quotaPrivTotal += k.Quota
+				if effectiveQuota > 0 {
+					quotaPrivTotal += effectiveQuota
 				}
 				quotaPrivUsed += k.Used
 			case "shared":
 				// Split shared key quota between public pool and guest pool
-				if k.Quota > 0 {
-					quotaPubTotal += k.Quota * int64(publicPct) / 100
-					quotaGuestTotal += k.Quota * int64(guestPct) / 100
+				if effectiveQuota > 0 {
+					quotaPubTotal += effectiveQuota * int64(publicPct) / 100
+					quotaGuestTotal += effectiveQuota * int64(guestPct) / 100
 				}
 				// Split used proportionally as well
 				quotaPubUsed += k.Used * int64(publicPct) / 100
@@ -1266,6 +1277,29 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 				quotaPrivTotal = p.TokenLimit
 			}
 			quotaPrivUsed = totalUsed
+		}
+
+		// Apply platform-level quota caps (min of cap and sum-of-keys)
+		// Use monthly cap as the effective cap for display (most common billing cycle)
+		privCap := p.PrivateQuotaMonthly
+		if privCap == 0 { privCap = p.PrivateQuotaDaily } // fallback
+		if privCap > 0 && quotaPrivTotal > privCap {
+			quotaPrivTotal = privCap
+			if quotaPrivUsed > quotaPrivTotal {
+				quotaPrivUsed = quotaPrivTotal
+			}
+		}
+		sharedCap := p.SharedQuotaMonthly
+		if sharedCap == 0 { sharedCap = p.SharedQuotaDaily } // fallback
+		if sharedCap > 0 {
+			totalShared := quotaPubTotal + quotaGuestTotal
+			if totalShared > sharedCap {
+				scale := float64(sharedCap) / float64(totalShared)
+				quotaPubTotal = int64(float64(quotaPubTotal) * scale)
+				quotaGuestTotal = sharedCap - quotaPubTotal
+				quotaPubUsed = int64(float64(quotaPubUsed) * scale)
+				quotaGuestUsed = int64(float64(quotaGuestUsed) * scale)
+			}
 		}
 
 		enriched = append(enriched, EnrichedHealth{
