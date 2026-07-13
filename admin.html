@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+
 <meta charset="UTF-8">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -107,7 +108,24 @@ select.form-input{appearance:none;cursor:pointer}
 .latency-tag.fast{color:var(--success)}
 .priority-input{width:42px;padding:2px 4px;border:1px solid var(--border-color);border-radius:4px;font-size:12px;text-align:center;background:rgba(108,99,255,.06);color:var(--text-primary)}
 .priority-input:focus{border-color:var(--accent-start);outline:none;background:white}
-@media(max-width:640px){.container{padding:16px 12px 40px}.preset-grid{grid-template-columns:repeat(2,1fr)}.provider-header{flex-direction:column;align-items:flex-start}.provider-actions{margin-top:8px}}
+@media(max-width:640px){
+.container{padding:16px 12px 40px}
+.preset-grid{grid-template-columns:repeat(2,1fr)}
+.provider-header{flex-direction:column;align-items:flex-start}
+.provider-actions{margin-top:8px}
+/* Mobile: merged row wraps - action buttons go to next line */
+.v7-merged-row{flex-wrap:wrap!important}
+.v7-merged-row .v7-separator{display:none}
+.v7-merged-row>div:last-child{margin-left:0!important;width:100%;margin-top:8px;justify-content:flex-start}
+/* Mobile: left border already removed globally */
+/* Mobile: quota stacking moved to end of CSS */
+/* Mobile: node stats stack */
+.ns-row{grid-template-columns:repeat(2,1fr)!important}
+.ns-traffic-row{grid-template-columns:1fr!important}
+/* Mobile: stat pills wrap */
+.v7-stats-group{flex-wrap:wrap!important;flex-shrink:1!important}
+.v7-merged-row .v7-stats-group{width:100%}
+}
 
 /* ============ V5 Node Stats ============ */
 .ns-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
@@ -118,15 +136,16 @@ select.form-input{appearance:none;cursor:pointer}
 .ns-cell .ns-value.green{color:var(--success)}
 .ns-cell .ns-label{font-size:11px;color:var(--text-muted);letter-spacing:.3px}
 .ns-traffic-row{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:12px;padding-top:12px;border-top:1px solid rgba(51,65,85,.35)}
-.ns-traffic-cell{padding:10px 14px;border-right:1px solid rgba(51,65,85,.3)}
+.ns-traffic-cell{padding:10px 14px;border-right:1px solid rgba(51,65,85,.3);text-align:center}
 .ns-traffic-cell:last-child{border-right:none}
-.ns-traffic-cell .ntc-header{font-size:12px;color:var(--text-secondary);margin-bottom:10px;display:flex;align-items:center;gap:5px;font-weight:600}
+.ns-traffic-cell .ntc-header{font-size:12px;color:var(--text-secondary);margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:600}
 .ns-traffic-cell .ntc-header .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .dot-yellow{background:#fbbf24}
 .dot-blue{background:#3b82f6}
 .dot-purple{background:#a855f7}
+.dot-green{background:#22c55e}
 .dot-gray{background:#475569}
-.ns-traffic-cell .ntc-stats{display:flex;gap:16px}
+.ns-traffic-cell .ntc-stats{display:flex;gap:16px;justify-content:center}
 .ns-traffic-cell .ntc-stat .ntc-num{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
 .ns-traffic-cell .ntc-stat .ntc-num.yellow-text{color:#fbbf24}
 .ns-traffic-cell .ntc-stat .ntc-num.blue-text{color:#60a5fa}
@@ -146,26 +165,33 @@ select.form-input{appearance:none;cursor:pointer}
 .nq-bar-fill.yellow{background:#f59e0b}
 .nq-bar-fill.blue{background:#3b82f6}
 .nq-bar-fill.purple{background:#a855f7}
+.nq-bar-fill.green{background:#22c55e}
+.ns-traffic-cell .nq-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:8px}
+.ns-traffic-cell .nq-value.blue-text{color:#60a5fa}
+.ns-traffic-cell .nq-value.purple-text{color:#c084fc}
+.ns-traffic-cell .nq-value.green-text{color:#22c55e}
+.ns-traffic-cell .nq-bar-wrap{height:6px;border-radius:3px;background:var(--bg-primary);margin:0 auto 8px;overflow:hidden;max-width:180px}
+.ns-traffic-cell .nq-bar-fill{height:100%;border-radius:3px}
 .nq-cell .nq-detail{font-size:11px;color:var(--text-muted)}
 .nq-cell .nq-detail .num{font-weight:600;color:var(--text-secondary)}
 
 /* ============ V5 Provider Cards (V6 Centered Layout) ============ */
-.v5-provider-card{background:var(--bg-card);border:1px solid var(--border-color);border-left:4px solid #334155;border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;transition:all .3s}
+.v5-provider-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;transition:all .3s}
 .v5-provider-card:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(0,0,0,.25)}
 .v5-provider-card.disabled{opacity:.5}
 /* Color accent: dim by default, brighten on hover */
-.v5-card-accent-0{border-left-color:rgba(34,197,94,.3);background:linear-gradient(135deg,rgba(34,197,94,.02) 0%,var(--bg-card) 40%)}
-.v5-card-accent-1{border-left-color:rgba(59,130,246,.3);background:linear-gradient(135deg,rgba(59,130,246,.02) 0%,var(--bg-card) 40%)}
-.v5-card-accent-2{border-left-color:rgba(168,85,247,.3);background:linear-gradient(135deg,rgba(168,85,247,.02) 0%,var(--bg-card) 40%)}
-.v5-card-accent-3{border-left-color:rgba(245,158,11,.3);background:linear-gradient(135deg,rgba(245,158,11,.02) 0%,var(--bg-card) 40%)}
-.v5-card-accent-4{border-left-color:rgba(236,72,153,.3);background:linear-gradient(135deg,rgba(236,72,153,.02) 0%,var(--bg-card) 40%)}
-.v5-card-accent-5{border-left-color:rgba(20,184,166,.3);background:linear-gradient(135deg,rgba(20,184,166,.02) 0%,var(--bg-card) 40%)}
-.v5-card-accent-0:hover{border-left-color:#22c55e;background:linear-gradient(135deg,rgba(34,197,94,.08) 0%,var(--bg-card) 40%)}
-.v5-card-accent-1:hover{border-left-color:#3b82f6;background:linear-gradient(135deg,rgba(59,130,246,.08) 0%,var(--bg-card) 40%)}
-.v5-card-accent-2:hover{border-left-color:#a855f7;background:linear-gradient(135deg,rgba(168,85,247,.08) 0%,var(--bg-card) 40%)}
-.v5-card-accent-3:hover{border-left-color:#f59e0b;background:linear-gradient(135deg,rgba(245,158,11,.08) 0%,var(--bg-card) 40%)}
-.v5-card-accent-4:hover{border-left-color:#ec4899;background:linear-gradient(135deg,rgba(236,72,153,.08) 0%,var(--bg-card) 40%)}
-.v5-card-accent-5:hover{border-left-color:#14b8a6;background:linear-gradient(135deg,rgba(20,184,166,.08) 0%,var(--bg-card) 40%)}
+
+
+
+
+
+
+
+
+
+
+
+
 .v5-row-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;text-align:center}
 .v5-status-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
 .v5-status-dot.green{background:var(--success);box-shadow:0 0 8px rgba(34,197,94,.5)}
@@ -212,6 +238,7 @@ select.form-input{appearance:none;cursor:pointer}
 .v5-quota-cell .qc-traffic .qt-stat .qt-num.blue-text{color:#60a5fa}
 .v5-quota-cell .qc-traffic .qt-stat .qt-num.purple-text{color:#c084fc}
 .v5-quota-cell .qc-traffic .qt-stat .qt-num.gray-text{color:#475569}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.green-text{color:#22c55e}
 .v5-quota-cell .qc-traffic .qt-stat .qt-sublabel{font-size:9px;color:var(--text-muted);margin-top:1px}
 .v5-quota-cell .qc-quota{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:6px}
 .v5-quota-cell .qc-quota.yellow-text{color:#fbbf24}
@@ -219,6 +246,7 @@ select.form-input{appearance:none;cursor:pointer}
 .v5-quota-cell .qc-quota.purple-text{color:#c084fc}
 .v5-quota-cell .qc-quota.gray-text{color:#475569}
 .v5-quota-cell .qc-quota.red-text{color:#f87171}
+.v5-quota-cell .qc-quota.green-text{color:#22c55e}
 .v5-quota-cell .qc-bar-wrap{height:5px;border-radius:3px;background:var(--bg-primary);margin:0 auto 6px;overflow:hidden;max-width:120px}
 .v5-quota-cell .qc-bar-fill{height:100%;border-radius:3px}
 .qc-bar-fill.yellow{background:#f59e0b}
@@ -245,22 +273,65 @@ select.form-input{appearance:none;cursor:pointer}
 .v8-model-stats .v8-ms-label{font-size:12px;font-weight:500;color:var(--text-muted);margin-right:4px;white-space:nowrap}
 .v8-ms-pill{display:inline-flex;align-items:center;height:22px;padding:0 7px;font-size:11px;font-weight:500;border-radius:6px;white-space:nowrap;line-height:1}
 .v8-ms-pill .v8-ms-val{font-weight:700;font-size:12px;margin-left:3px;font-variant-numeric:tabular-nums}
-.v8-ms-pill.private{background:rgba(96,165,250,.08);color:#60a5fa;border:1px solid rgba(96,165,250,.18)}
-.v8-ms-pill.shared{background:rgba(168,85,247,.08);color:#a855f7;border:1px solid rgba(168,85,247,.18)}
+.v8-ms-pill.private{background:#3b82f6;color:#fff;border:1px solid rgba(59,130,246,.6)}
+.v8-ms-pill.shared{background:#8b5cf6;color:#fff;border:1px solid rgba(139,92,246,.6)}
 .v8-ms-pill.enabled{background:rgba(34,197,94,.08);color:#22c55e;border:1px solid rgba(34,197,94,.18);cursor:pointer;transition:all .2s}
 .v8-ms-pill.enabled:hover{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.4)}
-.v8-ms-pill.total{background:rgba(148,163,184,.08);color:#94a3b8;border:1px solid rgba(148,163,184,.18)}
-
+.v8-ms-pill.total{background:rgba(148,163,184,.15);color:#e2e8f0;border:1px solid rgba(148,163,184,.25)}
 /* V8: Keys Pill */
-.v8-keys-pill{display:inline-flex;align-items:center;height:28px;padding:0 10px;font-size:12px;font-weight:500;color:var(--text-secondary);background:rgba(51,65,85,.12);border:1px solid rgba(148,163,184,.25);border-radius:8px;white-space:nowrap;line-height:1;gap:6px}
+.v8-keys-pill{display:inline-flex;align-items:center;height:28px;padding:0 12px;font-size:12px;font-weight:500;color:var(--text-secondary);background:rgba(51,65,85,.12);border:1px solid rgba(148,163,184,.25);border-radius:8px;white-space:nowrap;line-height:1;gap:8px}
 .v8-keys-pill b{font-weight:600;color:var(--text-primary);margin-left:3px}
-.v8-keys-pill .v8-ksub{font-size:10px;font-weight:600;padding:1px 5px;border-radius:4px}
-.v8-keys-pill .v8-ksub.private{background:rgba(96,165,250,.12);color:#60a5fa}
-.v8-keys-pill .v8-ksub.shared{background:rgba(168,85,247,.12);color:#a855f7}
+.v8-keys-pill .v8-ksub{font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;margin-left:6px}
+.v8-keys-pill .v8-ksub.private{background:#3b82f6;color:#fff}
+.v8-keys-pill .v8-ksub.shared{background:#8b5cf6;color:#fff}
+/* V8: Model Matrix Modal */
+.v8-modal-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:10000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.v8-modal-backdrop.show{display:flex}
+.v8-modal{background:#1c1c1e;border:1px solid rgba(148,163,184,.15);border-radius:16px;width:90%;max-width:900px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.5)}
+.v8-modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid rgba(148,163,184,.1)}
+.v8-modal-header h2{font-size:18px;font-weight:600;color:#e5e5e5;margin:0}
+.v8-close-btn{width:28px;height:28px;border-radius:50%;border:none;background:rgba(148,163,184,.12);color:#94a3b8;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.v8-close-btn:hover{background:rgba(239,68,68,.2);color:#ef4444}
+.v8-toolbar{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid rgba(148,163,184,.06);gap:12px;flex-wrap:wrap}
+.v8-toolbar-left{display:flex;gap:6px}
+.v8-toolbar-btn{height:26px;padding:0 12px;font-size:11px;font-weight:500;border-radius:6px;border:1px solid rgba(148,163,184,.2);background:rgba(51,65,85,.08);color:#94a3b8;cursor:pointer;transition:all .2s}
+.v8-toolbar-btn:hover{background:rgba(51,65,85,.2);color:#e5e5e5}
+.v8-search-box{height:26px;padding:0 10px;font-size:12px;border-radius:6px;border:1px solid rgba(148,163,184,.2);background:rgba(51,65,85,.08);color:#e5e5e5;outline:none;width:200px}
+.v8-matrix-wrap{padding:16px 24px;max-height:400px;overflow-y:auto}
+.v8-matrix-table{width:100%;border-collapse:collapse}
+.v8-matrix-table th{position:sticky;top:0;background:#1c1c1e;padding:8px 12px;font-size:11px;font-weight:600;color:#94a3b8;text-align:left;border-bottom:1px solid rgba(148,163,184,.15)}
+.v8-matrix-table td{padding:6px 12px;border-bottom:1px solid rgba(148,163,184,.06)}
+.v8-section-row td{padding:8px 12px 4px;font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(148,163,184,.08)}
+.v8-key-label{display:flex;flex-direction:column;gap:2px}
+.v8-key-name{font-size:11px;font-weight:600;color:#e5e5e5}
+.v8-key-mask{font-size:9px;color:#64748b;font-family:'SF Mono',Monaco,Consolas,monospace}
+.v8-key-count{font-size:9px;color:#22c55e;font-weight:500}
+.v8-model-name{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:#e5e5e5}
+.v8-model-tag{font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px}
+.v8-model-tag.system{background:rgba(59,130,246,.12);color:#60a5fa}
+.v8-model-tag.synced{background:rgba(34,197,94,.1);color:#22c55e}
+.v8-toggle-wrap{display:flex;justify-content:center}
+.v8-toggle{width:36px;height:20px;border-radius:10px;background:rgba(148,163,184,.2);position:relative;cursor:pointer;transition:all .2s}
+.v8-toggle.on{background:#22c55e}
+.v8-toggle .v8-knob{width:16px;height:16px;border-radius:50%;background:white;position:absolute;top:2px;left:2px;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.v8-toggle.on .v8-knob{left:18px}
+.v8-modal-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-top:1px solid rgba(148,163,184,.1)}
+.v8-footer-stats{font-size:12px;color:#94a3b8}
+.v8-footer-stats b{color:#e5e5e5;font-weight:600}
+.v8-save-btn{height:32px;padding:0 20px;font-size:13px;font-weight:600;border-radius:8px;border:none;background:#3b82f6;color:white;cursor:pointer;transition:all .2s}
+.v8-save-btn:hover{background:#2563eb}
+
 
 /* V8: stat-pill color variants */
 .v7-stat-pill b.blue{color:#60a5fa}
 .v7-stat-pill b.purple{color:#a855f7}
+
+/* ===== Mobile Responsive (after V8 overrides) ===== */
+@media(max-width:640px){
+.v5-quota-bar{grid-template-columns:1fr!important}
+.v5-quota-cell{border-right:none!important;border-bottom:1px solid rgba(51,65,85,.3)}
+.v5-quota-cell:last-child{border-bottom:none}
+}
 </style>
 </head>
 <body>
@@ -855,7 +926,199 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
   </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+/* V8: Model Matrix Functions */
+function openModelMatrix(pid) {
+  var p = allProviders.find(function(x){ return x.id === pid; });
+  if (!p) { toast('未找到平台: ' + pid, 'error'); return; }
+  var models = p.models || [];
+  var keys = p.api_keys || [];
+  if (!models.length) { toast('该平台暂无模型配置，请先同步模型', 'info'); return; }
+
+  var modal = document.getElementById('v8ModelModal');
+  var header = document.getElementById('v8ModelModalTitle');
+  var body = document.getElementById('v8ModelModalBody');
+  var footer = document.getElementById('v8ModelModalFooter');
+
+  header.innerHTML = '<span style="font-size:20px">🔗</span> ' + p.name + ' — 模型管理';
+
+  var keyCols = keys.length > 0 ? keys : [{id:'default', alias:'默认Key', key: p.api_key || 'sk-***', access_control:'private'}];
+  var colCount = keyCols.length + 1;
+
+  // Helper: check if a model is available for a specific key
+  function isModelAvailForKey(m, kid) {
+    if (!m.available_keys || m.available_keys.length === 0) return true; // no tracking data = assume available
+    return m.available_keys.indexOf(kid) >= 0;
+  }
+  // Helper: check if a model is enabled for a specific key
+  function isModelEnabledForKey(m, kid) {
+    if (m.enabled_by_keys && m.enabled_by_keys[kid] != null) return m.enabled_by_keys[kid];
+    return m.enabled; // fallback to global enabled
+  }
+
+  // Count enabled per key for thead
+  var thead = '<tr><th>模型名称</th>';
+  for (var ki = 0; ki < keyCols.length; ki++) {
+    var k = keyCols[ki];
+    var alias = k.alias || (k.key ? k.key.substring(0, 8) + '...' : 'sk-***');
+    var mask = k.key ? k.key.substring(0, 3) + '***' + k.key.substring(k.key.length - 4) : 'sk-***';
+    var enabledCount = 0;
+    var availCount = 0;
+    for (var mi = 0; mi < models.length; mi++) {
+      if (isModelAvailForKey(models[mi], k.id)) {
+        availCount++;
+        if (isModelEnabledForKey(models[mi], k.id)) enabledCount++;
+      }
+    }
+    thead += '<th><div class="v8-key-label"><span class="v8-key-name">🔑 ' + alias + '</span><span class="v8-key-mask">' + mask + '</span><span class="v8-key-count">已选 ' + enabledCount + '/' + availCount + '</span></div></th>';
+  }
+  thead += '</tr>';
+
+  // Render a model row with per-key toggles
+  function renderModelRow(m, tagHtml) {
+    var html = '<tr>';
+    html += '<td><div class="v8-model-name">' + (m.name || m.id) + (tagHtml || '') + '</div></td>';
+    for (var ki = 0; ki < keyCols.length; ki++) {
+      var kid = keyCols[ki].id;
+      if (isModelAvailForKey(m, kid)) {
+        var isOn = isModelEnabledForKey(m, kid);
+        html += '<td><div class="v8-toggle-wrap"><div class="v8-toggle ' + (isOn ? 'on' : '') + '" data-pid="' + pid + '" data-mid="' + m.id + '" data-kid="' + kid + '" onclick="v8ToggleModel(this)"><div class="v8-knob"></div></div></div></td>';
+      } else {
+        // Model not available for this key — show disabled indicator
+        html += '<td><div class="v8-toggle-wrap"><span style="color:#475569;font-size:11px">—</span></div></td>';
+      }
+    }
+    html += '</tr>';
+    return html;
+  }
+
+  var systemModels = models.filter(function(m){return !m.source || m.source === 'default' || m.source === 'system';});
+  var syncedModels = models.filter(function(m){return m.source === 'synced' || m.source === 'remote';});
+
+  var tbody = '';
+  if (systemModels.length) {
+    tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">系统默认模型</td></tr>';
+    for (var si = 0; si < systemModels.length; si++) {
+      tbody += renderModelRow(systemModels[si], ' <span class="v8-model-tag system">默认</span>');
+    }
+  }
+  if (syncedModels.length) {
+    tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">同步模型（' + syncedModels.length + '）</td></tr>';
+    for (var yi = 0; yi < syncedModels.length; yi++) {
+      tbody += renderModelRow(syncedModels[yi], ' <span class="v8-model-tag synced">同步</span>');
+    }
+  }
+  if (!systemModels.length && !syncedModels.length) {
+    for (var ai = 0; ai < models.length; ai++) {
+      tbody += renderModelRow(models[ai], '');
+    }
+  }
+
+  body.innerHTML = '<table class="v8-matrix-table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
+
+  var totalToggles = 0, enabledToggles = 0;
+  for (var ti = 0; ti < models.length; ti++) {
+    for (var tk = 0; tk < keyCols.length; tk++) {
+      if (isModelAvailForKey(models[ti], keyCols[tk].id)) {
+        totalToggles++;
+        if (isModelEnabledForKey(models[ti], keyCols[tk].id)) enabledToggles++;
+      }
+    }
+  }
+  footer.innerHTML = '<div class="v8-footer-stats">共 <b>' + models.length + '</b> 个模型 · 已启用 <b>' + enabledToggles + '</b> / ' + totalToggles + ' 项配置</div><button class="v8-save-btn" onclick="v8SaveModelMatrix(\'' + pid + '\')">保存更改</button>';
+
+  modal.classList.add('show');
+}
+
+function v8ToggleModel(el) {
+  el.classList.toggle('on');
+  var pid = el.dataset.pid;
+  var p = allProviders.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  var models = p.models || [];
+  var keys = p.api_keys || [];
+  var keyCols = keys.length > 0 ? keys : [{}];
+  var totalToggles = models.length * keyCols.length;
+  var modal = document.getElementById('v8ModelModal');
+  var allToggles = modal.querySelectorAll('.v8-toggle');
+  var enabledToggles = 0;
+  for (var i = 0; i < allToggles.length; i++) {
+    if (allToggles[i].classList.contains('on')) enabledToggles++;
+  }
+  var footer = document.getElementById('v8ModelModalFooter');
+  footer.innerHTML = '<div class="v8-footer-stats">共 <b>' + models.length + '</b> 个模型 · 已启用 <b>' + enabledToggles + '</b> / ' + totalToggles + ' 项配置</div><button class="v8-save-btn" onclick="v8SaveModelMatrix(\'' + pid + '\')">保存更改</button>';
+}
+
+async function v8SaveModelMatrix(pid) {
+  var p = allProviders.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  var models = p.models || [];
+  var keys = p.api_keys || [];
+  var keyCols = keys.length > 0 ? keys : [{id:'default'}];
+  var modal = document.getElementById('v8ModelModal');
+  var allToggles = modal.querySelectorAll('.v8-toggle');
+
+  // Build per-key toggle state: { modelID: { keyID: bool } }
+  var toggleMap = {};
+  for (var i = 0; i < allToggles.length; i++) {
+    var t = allToggles[i];
+    var mid = t.dataset.mid;
+    var kid = t.dataset.kid || 'default';
+    if (!toggleMap[mid]) toggleMap[mid] = {};
+    toggleMap[mid][kid] = t.classList.contains('on');
+  }
+
+  // Apply toggle states to models
+  var anyEnabled = false;
+  for (var j = 0; j < models.length; j++) {
+    var m = models[j];
+    if (m.id in toggleMap) {
+      m.enabled_by_keys = toggleMap[m.id];
+      // Global enabled = true if ANY key has it enabled
+      var hasEnabled = false;
+      for (var k in toggleMap[m.id]) {
+        if (toggleMap[m.id][k]) { hasEnabled = true; break; }
+      }
+      m.enabled = hasEnabled;
+      if (hasEnabled) anyEnabled = true;
+    }
+  }
+
+  try {
+    await authFetch('/api/providers/' + pid, { method: 'PUT', body: JSON.stringify({models: models}) });
+    toast('✅ 模型配置已保存');
+    modal.classList.remove('show');
+    await loadProviders();
+    if (typeof refreshHealth === 'function') await refreshHealth();
+  } catch(e) {
+    toast('保存失败: ' + e.message, 'error');
+  }
+}
+
+function v8MatrixSearch(query) {
+  var rows = document.querySelectorAll('#v8ModelModalBody .v8-matrix-table tbody tr');
+  var q = query.toLowerCase();
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (row.classList.contains('v8-section-row')) { row.style.display = ''; continue; }
+    var name = row.querySelector('.v8-model-name');
+    if (!name) { row.style.display = ''; continue; }
+    row.style.display = name.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+  }
+}
+
+function v8MatrixSelectAll() {
+  document.querySelectorAll('#v8ModelModalBody .v8-toggle').forEach(function(t){ t.classList.add('on'); });
+  v8ToggleModel(document.querySelector('#v8ModelModalBody .v8-toggle') || document.createElement('div'));
+}
+function v8MatrixDeselectAll() {
+  document.querySelectorAll('#v8ModelModalBody .v8-toggle').forEach(function(t){ t.classList.remove('on'); });
+  v8ToggleModel(document.querySelector('#v8ModelModalBody .v8-toggle') || document.createElement('div'));
+}
+function v8MatrixEnableAll() { v8MatrixSelectAll(); }
+function v8MatrixDisableAll() { v8MatrixDeselectAll(); }
+
+</script>
 <script>
 // ================================================================
 // Module: CoreAuth - Authentication, utilities, and initialization
@@ -894,7 +1157,7 @@ async function loadStatus() {
   const d = await r.json();
   document.getElementById('statusText').textContent = d.status === 'running' ? '运行中' : '异常';
   document.getElementById('statusDot').className = `status-dot ${d.status === 'running' ? 'green' : 'red'}`;
-  document.getElementById('providerCount').textContent = `${d.providers?.enabled || 0} / ${d.providers?.total || 0}`;
+  document.getElementById('providerCount').textContent = `${d.providers?.enabled || 0} / ${d.providers?.preset_total || d.providers?.total || 0}`;
   document.getElementById('modelCount').textContent = d.models || 0;
   document.getElementById('versionText').textContent = d.version || '-';
 }
@@ -1248,6 +1511,7 @@ async function testProvider(pid) {
     const r = await authFetch(`/api/providers/${pid}/test`, { method: 'POST' });
     const d = await r.json();
     toast(d.success ? `✅ ${d.message}` : `❌ ${d.error}`, d.success ? 'success' : 'error');
+    if (typeof refreshHealth === 'function') await refreshHealth();
   } catch(e) { toast('测试失败: ' + e.message, 'error'); }
 }
 async function deleteProvider(pid) {
@@ -1259,6 +1523,7 @@ async function deleteProvider(pid) {
   }
   toast('已删除');
   await loadProviders(); await loadStatus();
+  if (typeof refreshHealth === 'function') await refreshHealth();
 }
 async function fetchRemoteModels(pid) {
   toast('正在拉取远程模型列表...', 'info');
@@ -1286,6 +1551,7 @@ async function syncProviderUrl(pid) {
     const d = await r.json();
     if (d.changed) { toast(`✅ ${d.message}`, 'success'); } else { toast(d.message, 'info'); }
     await loadProviders();
+    if (typeof refreshHealth === 'function') await refreshHealth();
   } catch(e) { toast('同步失败: ' + e.message, 'error'); }
 }
 async function syncModels(pid) {
@@ -1295,6 +1561,7 @@ async function syncModels(pid) {
     const d = await r.json();
     if (d.success) { toast(`✅ 已同步 ${d.models_synced} 个模型`, 'success'); } else { var errMsg = extractError(d) || '同步失败'; if (errMsg.indexOf('no API key') >= 0) errMsg = '该平台未配置有效的 API Key，无法同步模型'; toast(errMsg, 'error'); }
     await loadProviders();
+    if (typeof refreshHealth === 'function') await refreshHealth();
   } catch(e) { toast('同步失败: ' + e.message, 'error'); }
 }
 async function syncAllUrls() {
@@ -1304,6 +1571,7 @@ async function syncAllUrls() {
     const d = await r.json();
     if (d.changed > 0) { toast(`✅ 已更新 ${d.changed} 个平台的地址`, 'success'); } else { toast('所有平台地址已是最新，无需更新', 'info'); }
     await loadProviders();
+    if (typeof refreshHealth === 'function') await refreshHealth();
   } catch(e) { toast('同步失败: ' + e.message, 'error'); }
 }
 // ===== Add/Edit Provider Modal =====
@@ -1320,7 +1588,7 @@ async function showAddProvider() {
   // Load discovered platforms if not yet loaded (for 🆕 badges in preset grid)
   if (discoveredPlatforms.length === 0) {
     try {
-      const r = await authFetch('/api/discovered-platforms');
+      const r = await authFetch('/api/discovery/platforms');
       const d = await r.json();
       discoveredPlatforms = d.platforms || [];
     } catch(e) {}
@@ -1441,8 +1709,6 @@ async function saveProvider() {
     priority: parseInt(document.getElementById('pPriority').value) || 5,
     enabled: document.getElementById('pEnabled').checked,
     access_control: {
-      allow_private_key: true,
-      allow_shared_key: true,
       allow_guest: editingId ? (allProviders.find(x=>x.id===editingId)?.access_control?.allow_guest ?? true) : true,
       share_to_pool: editingId ? (allProviders.find(x=>x.id===editingId)?.access_control?.share_to_pool ?? true) : true,
       guest_pool_percent: parseInt(document.getElementById('poolRatioSlider')?.value) || 50,
@@ -1473,7 +1739,7 @@ async function saveProvider() {
     if (!editingId) {
       const disc = (discoveredPlatforms || []).find(x => x.id === id);
       if (disc) {
-        try { await authFetch('/api/discovered-platforms/' + id, { method: 'POST', body: JSON.stringify({status: 'added'}) }); } catch(e) {}
+        try { await authFetch('/api/discovery/platforms/' + id, { method: 'PUT', body: JSON.stringify({status: 'added'}) }); } catch(e) {}
         discoveredPlatforms = discoveredPlatforms.filter(x => x.id !== id);
         renderDiscoveredPlatforms();
         renderPresets();
@@ -1862,7 +2128,7 @@ async function refreshHealth() {
     const statsContainer = document.getElementById('nodeStatsContainer');
     let statsHtml = '';
 
-    // V8: Overview row-header
+    // V8: Overview row-header with action buttons
     var v8Nid = (v8NodeInfo.node_id || '').substring(0, 16);
     var v8Ver = v8NodeInfo.version || '';
     statsHtml += '<div class="v5-row-header" style="margin-bottom:8px">';
@@ -1870,80 +2136,99 @@ async function refreshHealth() {
     statsHtml += '<span style="font-size:14px;font-weight:700">节点概览</span>';
     if (v8Nid) statsHtml += '<span style="font-size:10px;color:#64748b;font-family:monospace">' + v8Nid + '</span>';
     if (v8Ver) statsHtml += '<span style="font-size:10px;color:#64748b;background:rgba(100,116,139,.1);padding:1px 6px;border-radius:4px">' + v8Ver + '</span>';
-    statsHtml += '<div style="display:flex;gap:6px;margin-left:auto;flex-shrink:0">';
-    statsHtml += '<button class="v7-card-btn" onclick="refreshHealth()">刷新</button>';
-    statsHtml += '</div>';
+
     statsHtml += '</div>';
 
-    // V8: Merged stat-pills row
+    // V8: Model stats row
+    var nsPrivModels = ns.private_models || 0;
+    var nsSharedModels = ns.shared_models || 0;
+    var nsEnabledModels = ns.model_enabled || 0;
+    var nsTotalModels = ns.model_total || 0;
+    var nsPrivKeys = ns.private_key_count || 0;
+    var nsSharedKeys = ns.shared_key_count || 0;
+    var nsTotalKeys = ns.key_total || 0;
+    var nsAvgLatency = ns.avg_latency;
+    var nsSuccessRate = ns.success_rate;
+
     statsHtml += '<div class="v7-merged-row" style="gap:8px;margin-bottom:10px">';
     statsHtml += '<div class="v7-stats-group">';
-    statsHtml += '<span class="v7-stat-pill" style="background:transparent;border-color:transparent;color:#94a3b8;font-weight:600">概览</span>';
-    statsHtml += '<span class="v7-stat-pill">Provider <b class="blue">' + (ns.provider_total || 0) + '</b></span>';
-    statsHtml += '<span class="v7-stat-pill">在线 <b>' + (ns.provider_online || 0) + '</b></span>';
-    statsHtml += '<span class="v7-stat-pill">API Keys <b class="purple">' + (ns.key_total || 0) + '</b></span>';
-    statsHtml += '<span class="v7-stat-pill">模型 <b>' + (ns.model_total || 0) + '</b></span>';
-    if (ns.avg_latency) statsHtml += '<span class="v7-stat-pill">延迟 <b class="purple">' + ns.avg_latency.toFixed(0) + 'ms</b></span>';
-    if (ns.success_rate != null) statsHtml += '<span class="v7-stat-pill">成功率 <b>' + ns.success_rate.toFixed(1) + '%</b></span>';
+    statsHtml += '<span class="v7-stat-pill" style="background:transparent;border-color:transparent;color:#94a3b8;font-weight:600">模型:</span>';
+    if (nsPrivModels > 0) statsHtml += '<span class="v7-stat-pill">私有 <b class="blue">' + nsPrivModels + '</b></span>';
+    if (nsSharedModels > 0) statsHtml += '<span class="v7-stat-pill">共享 <b class="purple">' + nsSharedModels + '</b></span>';
+    statsHtml += '<span class="v7-stat-pill">启用 <b class="green">' + nsEnabledModels + '</b></span>';
+    statsHtml += '<span class="v7-stat-pill">总计 <b class="yellow">' + nsTotalModels + '</b></span>';
+    statsHtml += '<span class="v7-stat-pill">Provider keys <b>' + nsTotalKeys + '</b>';
+    if (nsPrivKeys > 0) statsHtml += ' <span style="background:#3b82f6;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">私有' + nsPrivKeys + '</span>';
+    if (nsSharedKeys > 0) statsHtml += ' <span style="background:#8b5cf6;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">共享' + nsSharedKeys + '</span>';
+    statsHtml += '</span>';
+    if (nsAvgLatency != null) statsHtml += '<span class="v7-stat-pill">平均延迟 <b class="purple">' + nsAvgLatency.toFixed(0) + 'ms</b></span>';
+    if (nsSuccessRate != null) statsHtml += '<span class="v7-stat-pill">成功率 <b class="green">' + nsSuccessRate.toFixed(1) + '%</b></span>';
     statsHtml += '</div>';
     statsHtml += '</div>';
 
-    // ns-row: 4 cells (hidden - V8 stat-pills above show same data)
-    statsHtml += '<div class="ns-row" style="display:none">';
-    statsHtml += '<div class="ns-cell"><div class="ns-value white">' + (ns.provider_total || 0) + '</div><div class="ns-label">Provider 总数</div></div>';
-    statsHtml += '<div class="ns-cell"><div class="ns-value green">' + (ns.provider_online || 0) + '</div><div class="ns-label">在线 Provider</div></div>';
-    statsHtml += '<div class="ns-cell"><div class="ns-value white">' + (ns.key_total || 0) + '</div><div class="ns-label">API Key 总数</div></div>';
-    statsHtml += '<div class="ns-cell"><div class="ns-value white">' + (ns.model_total || 0) + '</div><div class="ns-label">可用模型</div></div>';
-    statsHtml += '</div>';
+    // V8: Separator line
+    statsHtml += '<div style="border-bottom:1px solid rgba(148,163,184,.12);margin-bottom:12px"></div>';
 
-    // ns-traffic-row: 3 columns (private / public / guest)
+    // V8: Three pool cards (Private / Public / Guest)
     statsHtml += '<div class="ns-traffic-row">';
-    // Private
+
+    // Private pool
+    var privReqs = ns.today_reqs_private || 0;
+    var privToks = ns.today_tokens_private || 0;
+    var privUsed = ns.quota_private_used || 0;
+    var privTotal = ns.quota_private_total || 0;
     statsHtml += '<div class="ns-traffic-cell">';
-    statsHtml += '<div class="ntc-header"><span class="dot dot-yellow"></span>私有池</div>';
+    statsHtml += '<div class="ntc-header"><span class="dot dot-blue"></span>私有池</div>';
     statsHtml += '<div class="ntc-stats">';
-    statsHtml += '<div class="ntc-stat"><div class="ntc-num yellow-text">' + fmtTok(ns.today_reqs_private || 0) + '</div><div class="ntc-sublabel">今日请求</div></div>';
-    statsHtml += '<div class="ntc-stat"><div class="ntc-num yellow-text">' + fmtTok(ns.today_tokens_private || 0) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
-    statsHtml += '</div></div>';
-    // Public
-    statsHtml += '<div class="ns-traffic-cell">';
-    statsHtml += '<div class="ntc-header"><span class="dot dot-blue"></span>公共池</div>';
-    statsHtml += '<div class="ntc-stats">';
-    statsHtml += '<div class="ntc-stat"><div class="ntc-num blue-text">' + fmtTok(ns.today_reqs_public || 0) + '</div><div class="ntc-sublabel">今日请求</div></div>';
-    statsHtml += '<div class="ntc-stat"><div class="ntc-num blue-text">' + fmtTok(ns.today_tokens_public || 0) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
-    statsHtml += '</div></div>';
-    // Guest
-    statsHtml += '<div class="ns-traffic-cell">';
-    statsHtml += '<div class="ntc-header"><span class="dot dot-purple"></span>Guest 池</div>';
-    statsHtml += '<div class="ntc-stats">';
-    statsHtml += '<div class="ntc-stat"><div class="ntc-num purple-text">' + fmtTok(ns.today_reqs_guest || 0) + '</div><div class="ntc-sublabel">今日请求</div></div>';
-    statsHtml += '<div class="ntc-stat"><div class="ntc-num purple-text">' + fmtTok(ns.today_tokens_guest || 0) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
-    statsHtml += '</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num blue-text">' + fmtTok(privReqs) + '</div><div class="ntc-sublabel">今日请求</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num blue-text">' + fmtTok(privToks) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num" style="color:#fff">' + (ns.conns_private || 0) + '</div><div class="ntc-sublabel">连接数</div></div>';
+    statsHtml += '</div>';
+    statsHtml += '<div class="nq-value blue-text">' + formatQuota(privUsed, privTotal) + '</div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill blue" style="width:' + barPercent(privUsed, privTotal) + '%"></div></div>';
     statsHtml += '</div>';
 
-    // ns-quota-row: 3 columns (hidden - quota info in provider cards' quota-bar)
-    statsHtml += '<div class="ns-quota-row" style="display:none">';
-    // Private quota
-    var pUsed = ns.quota_private_used || 0, pTotal = ns.quota_private_total || 0;
-    statsHtml += '<div class="nq-cell">';
-    statsHtml += '<div class="nq-header"><span class="dot dot-yellow"></span>私有池</div>';
-    statsHtml += '<div class="nq-value yellow-text">' + formatQuota(pUsed, pTotal) + '</div>';
-    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill yellow" style="width:' + barPercent(pUsed, pTotal) + '%"></div></div>';
+    // Public pool (with percentage)
+    var pubReqs = ns.today_reqs_public || 0;
+    var pubToks = ns.today_tokens_public || 0;
+    var pubUsed = ns.quota_public_used || 0;
+    var pubTotal = ns.quota_public_total || 0;
+    var guestPct = 50; // default
+    // Get guest pool percent from providers
+    for (var gi = 0; gi < providers.length; gi++) {
+      if (providers[gi].access_control && providers[gi].access_control.guest_pool_percent != null) {
+        guestPct = providers[gi].access_control.guest_pool_percent;
+        break;
+      }
+    }
+    var publicPct = 100 - guestPct;
+    statsHtml += '<div class="ns-traffic-cell">';
+    statsHtml += '<div class="ntc-header"><span class="dot dot-purple"></span>公共池 (' + publicPct + '%)</div>';
+    statsHtml += '<div class="ntc-stats">';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num purple-text">' + fmtTok(pubReqs) + '</div><div class="ntc-sublabel">今日请求</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num purple-text">' + fmtTok(pubToks) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num" style="color:#fff">' + (ns.conns_public || 0) + '</div><div class="ntc-sublabel">连接数</div></div>';
     statsHtml += '</div>';
-    // Public quota
-    var uUsed = ns.quota_public_used || 0, uTotal = ns.quota_public_total || 0;
-    statsHtml += '<div class="nq-cell">';
-    statsHtml += '<div class="nq-header"><span class="dot dot-blue"></span>公共池</div>';
-    statsHtml += '<div class="nq-value blue-text">' + formatQuota(uUsed, uTotal) + '</div>';
-    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill blue" style="width:' + barPercent(uUsed, uTotal) + '%"></div></div>';
+    statsHtml += '<div class="nq-value purple-text">' + formatQuota(pubUsed, pubTotal) + '</div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill purple" style="width:' + barPercent(pubUsed, pubTotal) + '%"></div></div>';
     statsHtml += '</div>';
-    // Guest quota
-    var gUsed = ns.quota_guest_used || 0, gTotal = ns.quota_guest_total || 0;
-    statsHtml += '<div class="nq-cell">';
-    statsHtml += '<div class="nq-header"><span class="dot dot-purple"></span>Guest 池</div>';
-    statsHtml += '<div class="nq-value purple-text">' + formatQuota(gUsed, gTotal) + '</div>';
-    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill purple" style="width:' + barPercent(gUsed, gTotal) + '%"></div></div>';
+
+    // Guest pool (with percentage)
+    var gReqs = ns.today_reqs_guest || 0;
+    var gToks = ns.today_tokens_guest || 0;
+    var gUsed = ns.quota_guest_used || 0;
+    var gTotal = ns.quota_guest_total || 0;
+    statsHtml += '<div class="ns-traffic-cell">';
+    statsHtml += '<div class="ntc-header"><span class="dot dot-green"></span>Guest池 (' + guestPct + '%)</div>';
+    statsHtml += '<div class="ntc-stats">';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num green-text">' + fmtTok(gReqs) + '</div><div class="ntc-sublabel">今日请求</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num green-text">' + fmtTok(gToks) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num" style="color:#fff">' + (ns.conns_guest || 0) + '</div><div class="ntc-sublabel">连接数</div></div>';
     statsHtml += '</div>';
+    statsHtml += '<div class="nq-value green-text">' + formatQuota(gUsed, gTotal) + '</div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill green" style="width:' + barPercent(gUsed, gTotal) + '%"></div></div>';
+    statsHtml += '</div>';
+
     statsHtml += '</div>';
 
     statsContainer.innerHTML = statsHtml;
@@ -1993,18 +2278,16 @@ async function refreshHealth() {
       const successRate = (p.success_rate != null) ? p.success_rate.toFixed(1) + '%' : '—';
       const srColor = (p.success_rate != null) ? (p.success_rate >= 95 ? 'green' : (p.success_rate >= 80 ? 'yellow' : '')) : '';
 
-      let inlineStats = '<div class="v7-stats-group">';
+      let inlineStats = '';
       inlineStats += '<div class="v8-keys-pill">Provider keys <b>' + (p.key_count || 0) + '</b>';
       if (privateCount > 0) inlineStats += '<span class="v8-ksub private">私有 ' + privateCount + '</span>';
       if (sharedCount > 0) inlineStats += '<span class="v8-ksub shared">共享 ' + sharedCount + '</span>';
       inlineStats += '</div>';
-      inlineStats += '<span class="v7-stat-pill">模型 <b>' + (p.model_count || 0) + '</b></span>';
       inlineStats += '<span class="v7-stat-pill">延迟 <b class="' + latencyColor + '">' + latency + '</b></span>';
       inlineStats += '<span class="v7-stat-pill">成功率 <b class="' + srColor + '">' + successRate + '</b></span>';
-      inlineStats += '</div>';
 
-      // Row 1: Header (centered)
-      let row1 = '<div class="v5-row-header">';
+      // Row 1: Title + Status info (same line, flex-wrap for mobile)
+      let row1 = '<div class="v7-stats-group" style="margin-bottom:0;flex-wrap:wrap">';
       row1 += '<span class="v5-status-dot ' + statusClass + '"></span>';
       row1 += '<span class="v7-stat-pill" style="font-size:13px">P<b>' + (p.priority || 5) + '</b></span>';
       // Platform name as clickable link to official website
@@ -2015,22 +2298,16 @@ async function refreshHealth() {
       } else {
         row1 += '<span class="v5-provider-name">' + pname + '</span>';
       }
-      // V8: Model count stat
-      row1 += '<div class="v8-model-stats">';
-      row1 += '<span class="v8-ms-label">模型</span>';
-      row1 += '<span class="v8-ms-pill total">总计<span class="v8-ms-val">' + (p.model_count || 0) + '</span></span>';
+      row1 += inlineStats;
       row1 += '</div>';
-      row1 += typeBadge;
-      row1 += '</div>';
-      // Inline stats will be in merged row below
 
       // Row 2: base_url (own row)
       // Row 3: action buttons (own row)
       let actionBtns = '';
       // Website link merged into platform name (clickable)
       // 🔑 Keys button removed - no standalone function
-      actionBtns += '<button class="v7-card-btn" onclick="syncProviderUrl(\'' + pid + '\')">同步地址</button>';
-      actionBtns += '<button class="v7-card-btn" onclick="syncModels(\'' + pid + '\')">同步模型</button>';
+      // syncProviderUrl button removed per user request
+      actionBtns += '<button class="v7-card-btn" onclick="syncModels(\'' + pid + '\')">同步</button>';
       actionBtns += '<button class="v7-card-btn" onclick="editProvider(\'' + pid + '\')">编辑</button>';
       actionBtns += '<button class="v7-card-btn btn-success" onclick="testProvider(\'' + pid + '\')">测试</button>';
       actionBtns += '<button class="v7-card-btn btn-danger" onclick="toggleProvider(\'' + pid + '\',' + (!enabled) + ')">' + (enabled ? '禁用' : '启用') + '</button>';
@@ -2042,79 +2319,89 @@ async function refreshHealth() {
       // Guest pool percent from access_control
       var guestPct = (p.access_control && p.access_control.guest_pool_percent != null) ? p.access_control.guest_pool_percent : 50;
       var publicPct = 100 - guestPct;
+
 let row3 = '<div class="v5-quota-bar">';
 
-      // Private pool cell
+      // Private pool cell (blue)
       var ppUsed = p.quota_private_used || 0, ppTotal = p.quota_private_total || 0;
       var ppReqs = p.today_reqs_private || 0, ppTok = p.today_tokens_private || 0;
-      var ppBarColor = 'yellow';
       row3 += '<div class="v5-quota-cell">';
-      row3 += '<div class="qc-header"><span class="dot dot-yellow"></span>私有池</div>';
+      row3 += '<div class="qc-header"><span class="dot dot-blue"></span>私有池</div>';
       row3 += '<div class="qc-traffic">';
-      row3 += '<div class="qt-stat"><div class="qt-num yellow-text">' + (ppReqs > 0 || ppTotal > 0 ? fmtTok(ppReqs) : '—') + '</div><div class="qt-sublabel">今日请求</div></div>';
-      row3 += '<div class="qt-stat"><div class="qt-num yellow-text">' + (ppTok > 0 || ppTotal > 0 ? fmtTok(ppTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num blue-text">' + (ppReqs > 0 || ppTotal > 0 ? fmtTok(ppReqs) : '—') + '</div><div class="qt-sublabel">今日请求</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num blue-text">' + (ppTok > 0 || ppTotal > 0 ? fmtTok(ppTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num" style="color:#fff">' + (p.active_conns || 0) + '</div><div class="qt-sublabel">连接数</div></div>';
       row3 += '</div>';
-      row3 += '<div class="qc-quota yellow-text">' + formatQuota(ppUsed, ppTotal) + '</div>';
-      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill ' + ppBarColor + '" style="width:' + barPercent(ppUsed, ppTotal) + '%"></div></div>';
-      row3 += '<div class="qc-connect">连接数 <span class="conn-num">—</span></div>';
+      row3 += '<div class="qc-quota blue-text">' + formatQuota(ppUsed, ppTotal) + '</div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill blue" style="width:' + barPercent(ppUsed, ppTotal) + '%"></div></div>';
       row3 += '</div>';
 
-      // Public pool cell
+      // Public pool cell (purple)
       var upUsed = p.quota_public_used || 0, upTotal = p.quota_public_total || 0;
       var upReqs = p.today_reqs_public || 0, upTok = p.today_tokens_public || 0;
       row3 += '<div class="v5-quota-cell">';
-      row3 += '<div class="qc-header"><span class="dot dot-blue"></span>公共池 <span style="font-size:10px;color:var(--text-muted);font-weight:400">(' + publicPct + '%)</span></div>';
+      row3 += '<div class="qc-header"><span class="dot dot-purple"></span>公共池 <span style="font-size:10px;color:var(--text-muted);font-weight:400">(' + publicPct + '%)</span></div>';
       row3 += '<div class="qc-traffic">';
-      row3 += '<div class="qt-stat"><div class="qt-num blue-text">' + (upReqs > 0 || upTotal > 0 ? fmtTok(upReqs) : '—') + '</div><div class="qt-sublabel">今日请求</div></div>';
-      row3 += '<div class="qt-stat"><div class="qt-num blue-text">' + (upTok > 0 || upTotal > 0 ? fmtTok(upTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num purple-text">' + (upReqs > 0 || upTotal > 0 ? fmtTok(upReqs) : '—') + '</div><div class="qt-sublabel">今日请求</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num purple-text">' + (upTok > 0 || upTotal > 0 ? fmtTok(upTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num" style="color:#fff">' + (p.active_conns || 0) + '</div><div class="qt-sublabel">连接数</div></div>';
       row3 += '</div>';
-      row3 += '<div class="qc-quota blue-text">' + formatQuota(upUsed, upTotal) + '</div>';
-      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill blue" style="width:' + barPercent(upUsed, upTotal) + '%"></div></div>';
-      row3 += '<div class="qc-connect">连接数 <span class="conn-num">—</span></div>';
+      row3 += '<div class="qc-quota purple-text">' + formatQuota(upUsed, upTotal) + '</div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill purple" style="width:' + barPercent(upUsed, upTotal) + '%"></div></div>';
       row3 += '</div>';
 
-      // Guest pool cell
+      // Guest pool cell (green)
       var gpUsed = p.quota_guest_used || 0, gpTotal = p.quota_guest_total || 0;
       var gpReqs = p.today_reqs_guest || 0, gpTok = p.today_tokens_guest || 0;
       row3 += '<div class="v5-quota-cell">';
-      row3 += '<div class="qc-header"><span class="dot dot-purple"></span>Guest池 <span style="font-size:10px;color:var(--text-muted);font-weight:400">(' + guestPct + '%)</span></div>';
+      row3 += '<div class="qc-header"><span class="dot dot-green"></span>Guest池 <span style="font-size:10px;color:var(--text-muted);font-weight:400">(' + guestPct + '%)</span></div>';
       row3 += '<div class="qc-traffic">';
-      row3 += '<div class="qt-stat"><div class="qt-num purple-text">' + (gpReqs > 0 || gpTotal > 0 ? fmtTok(gpReqs) : '—') + '</div><div class="qt-sublabel">今日请求</div></div>';
-      row3 += '<div class="qt-stat"><div class="qt-num purple-text">' + (gpTok > 0 || gpTotal > 0 ? fmtTok(gpTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num green-text">' + (gpReqs > 0 || gpTotal > 0 ? fmtTok(gpReqs) : '—') + '</div><div class="qt-sublabel">今日请求</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num green-text">' + (gpTok > 0 || gpTotal > 0 ? fmtTok(gpTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num" style="color:#fff">' + (p.active_conns || 0) + '</div><div class="qt-sublabel">连接数</div></div>';
       row3 += '</div>';
-      row3 += '<div class="qc-quota purple-text">' + formatQuota(gpUsed, gpTotal) + '</div>';
-      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill purple" style="width:' + barPercent(gpUsed, gpTotal) + '%"></div></div>';
-      row3 += '<div class="qc-connect">连接数 <span class="conn-num">—</span></div>';
-      row3 += '</div>';
-
+      row3 += '<div class="qc-quota green-text">' + formatQuota(gpUsed, gpTotal) + '</div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill green" style="width:' + barPercent(gpUsed, gpTotal) + '%"></div></div>';
       row3 += '</div>';
 
-      // V7: Merged row - inline stats + separator + action buttons
-      var mergedRow = '<div class="v7-merged-row">';
-      mergedRow += inlineStats;
-      mergedRow += '<div class="v7-separator"></div>';
-      mergedRow += '<div style="display:flex;align-items:center;gap:5px;flex-shrink:0">';
-      mergedRow += actionBtns;
-      mergedRow += '</div>';
-      mergedRow += '</div>';
+      row3 += '</div>';
+      // Row 2: Model stats + action buttons in one line
+      var enabledModels = (p.models || []).filter(function(m){return m.enabled}).length;
+      var privModels = p.private_model_count || 0;
+      var sharedModels = p.shared_model_count || 0;
+      var row2stats = '<div class="v7-merged-row" style="margin-top:8px;flex-wrap:wrap;gap:0">';
+      row2stats += '<div class="v7-stats-group" style="flex-wrap:wrap">';
+      row2stats += '<span class="v7-stat-pill" style="background:transparent;border-color:transparent;color:#94a3b8;font-weight:600">模型:</span>';
+      if (privModels > 0) row2stats += '<span class="v8-ms-pill private">🔒私有<span class="v8-ms-val">' + privModels + '</span></span>';
+      if (sharedModels > 0) row2stats += '<span class="v8-ms-pill shared">🌐共享<span class="v8-ms-val">' + sharedModels + '</span></span>';
+      row2stats += '<span class="v8-ms-pill enabled" onclick="event.stopPropagation();openModelMatrix(\x27' + pid + '\x27)" title="点击打开模型配置矩阵">启用<span class="v8-ms-val">' + enabledModels + '</span></span>';
+      row2stats += '<span class="v8-ms-pill total">总计<span class="v8-ms-val">' + (p.total_model_count || p.model_count || 0) + '</span></span>';
+      row2stats += '</div>';
+      row2stats += '<div class="v7-separator"></div>';
+      row2stats += '<div style="display:flex;align-items:center;gap:5px;flex-shrink:0;flex-wrap:wrap">';
+      row2stats += actionBtns;
+      row2stats += '</div>';
+      row2stats += '</div>';
 
       // Build card with color accent cycling
       var accentIdx = providers.indexOf(p) % 6;
       var cardClass = 'v5-provider-card v5-card-accent-' + accentIdx + (enabled ? '' : ' disabled');
       cardsHtml += '<div class="' + cardClass + '" id="v5p-' + pid + '">';
       cardsHtml += row1;
-      cardsHtml += mergedRow;
+      cardsHtml += row2stats;
+      cardsHtml += '<div style="border-bottom:1px solid rgba(148,163,184,.12);margin:10px 0">';
       cardsHtml += row3;
-      cardsHtml += '</div>';
+      cardsHtml += '</div>';  // close separator
+      cardsHtml += '</div>';  // close card
     }
 
     v5List.innerHTML = cardsHtml;
   } catch(e) {
-    console.error(e);
+    console.error('refreshHealth error:', e.message, e.stack);
     var sc = document.getElementById('nodeStatsContainer');
     if (sc) sc.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + e.message + '</div>';
     var vl = document.getElementById('providerV5List');
-    if (vl) vl.innerHTML = '';
+    if (vl) vl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">Provider加载失败: ' + e.message + '</div>';
   }
 }
 
@@ -2454,15 +2741,7 @@ async function saveEditKeyForm(pid, keyId) {
   const access = document.getElementById('ekf-access').value;
   const expiresEl = document.getElementById('ekf-expires');
   const expiresAt = expiresEl && expiresEl.value ? new Date(expiresEl.value).toISOString() : '';
-  // Validate: check contradiction with provider access mode
-  const prov = allProviders.find(x => x.id === pid);
-  if (prov) {
-    const provShared = prov.access_control?.allow_shared_key ?? false;
-    if (!provShared && access !== 'private') {
-      const proceed = confirm('⚠️ 检测到矛盾\n\n当前 Provider 访问模式 = "🔒 私有"\n但 Key 权限设为 "' + '🔗 共享' + '"\n\nProvider 为私有模式时，Key 设为共享无实际意义，共享 Key 仍无法使用此 Provider。\n\n建议：先将 Provider 访问模式改为"允许共享"，或保持 Key 为"私有"。\n\n是否仍然继续保存？');
-      if (!proceed) return;
-    }
-  }
+  // Key sharing is independent of provider - shared key quota goes to public pool
   try {
     const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
       method: 'PUT',
@@ -2731,7 +3010,22 @@ function copyText(text) {
 }
 // ===== Start (only if authenticated) =====
 if (authToken) {
-  init().then(() => { initApiUrls(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); loadWeights(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationConfig(); loadShareInfo(); loadGuestKeys(); });
+  init().then(() => { 
+    console.log('[CHAIN] Starting post-init chain');
+    try { initApiUrls(); console.log('[CHAIN] initApiUrls OK'); } catch(e) { console.error('[CHAIN] initApiUrls FAILED:', e); }
+    try { loadProxyApiKey(); console.log('[CHAIN] loadProxyApiKey started'); } catch(e) { console.error('[CHAIN] loadProxyApiKey FAILED:', e); }
+    try { loadSmtp(); console.log('[CHAIN] loadSmtp started'); } catch(e) { console.error('[CHAIN] loadSmtp FAILED:', e); }
+    try { loadAdminInfo(); console.log('[CHAIN] loadAdminInfo started'); } catch(e) { console.error('[CHAIN] loadAdminInfo FAILED:', e); }
+    try { refreshUsage(); console.log('[CHAIN] refreshUsage started'); } catch(e) { console.error('[CHAIN] refreshUsage FAILED:', e); }
+    try { loadWeights(); console.log('[CHAIN] loadWeights started'); } catch(e) { console.error('[CHAIN] loadWeights FAILED:', e); }
+    try { refreshSiderStatus(); console.log('[CHAIN] refreshSiderStatus started'); } catch(e) { console.error('[CHAIN] refreshSiderStatus FAILED:', e); }
+    try { refreshLogs(); console.log('[CHAIN] refreshLogs started'); } catch(e) { console.error('[CHAIN] refreshLogs FAILED:', e); }
+    try { refreshHealth(); console.log('[CHAIN] refreshHealth started'); } catch(e) { console.error('[CHAIN] refreshHealth FAILED:', e); }
+    try { loadFederationConfig(); } catch(e) { console.error('[CHAIN] loadFederationConfig FAILED:', e); }
+    try { loadShareInfo(); } catch(e) { console.error('[CHAIN] loadShareInfo FAILED:', e); }
+    try { loadGuestKeys(); } catch(e) { console.error('[CHAIN] loadGuestKeys FAILED:', e); }
+    console.log('[CHAIN] All functions called');
+});
   // Auto-refresh status and usage every 30 seconds with error handling
   let _pollTimer = setInterval(async () => {
     try { await loadStatus(); await refreshUsage(); } catch(e) {
@@ -3859,7 +4153,7 @@ async function loadDiscoveredPlatforms() {
   const el = document.getElementById('discoveredList');
   el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px"><div class="loading"></div><br>加载中...</div>';
   try {
-    const r = await authFetch('/api/discovered-platforms');
+    const r = await authFetch('/api/discovery/platforms');
     const d = await r.json();
     discoveredPlatforms = d.platforms || [];
     renderDiscoveredPlatforms();
@@ -3906,8 +4200,8 @@ function renderDiscoveredPlatforms() {
 }
 async function updateDiscoveredStatus(id, status) {
   try {
-    const r = await authFetch(`/api/discovered-platforms/${id}`, {
-      method: 'POST',
+    const r = await authFetch(`/api/discovery/platforms/${id}`, {
+      method: 'PUT',
       body: JSON.stringify({status: status})
     });
     if (!r.ok) { const e = await r.json(); throw new Error(extractError(e)); }
@@ -3925,7 +4219,7 @@ async function triggerDiscovery() {
   btn.disabled = true;
   btn.textContent = '⏳ 扫描中...';
   try {
-    const r = await authFetch('/api/discovered-platforms/trigger', {method: 'POST'});
+    const r = await authFetch('/api/discovery/scan', {method: 'POST'});
     const d = await r.json();
     if (d.status === 'already_running') {
       toast('扫描已在进行中');
@@ -3943,7 +4237,7 @@ async function triggerDiscovery() {
 async function addAllDiscoveredAsPreset() {
   // Ensure we have the latest discovered platforms list
   try {
-    const dr = await authFetch('/api/discovered-platforms');
+    const dr = await authFetch('/api/discovery/platforms');
     const dd = await dr.json();
     discoveredPlatforms = dd.platforms || [];
   } catch(e) {}
@@ -3960,7 +4254,7 @@ async function addAllDiscoveredAsPreset() {
       const existingProviders = document.querySelectorAll('[data-provider-id]');
       const ids = Array.from(existingProviders).map(el => el.getAttribute('data-provider-id'));
       if (ids.includes(p.id)) {
-        await authFetch(`/api/discovered-platforms/${p.id}`, {
+        await authFetch(`/api/discovery/platforms/${p.id}`, {
           method: 'POST', body: JSON.stringify({status: 'added'})
         });
         skipped++;
@@ -3969,7 +4263,7 @@ async function addAllDiscoveredAsPreset() {
       // Compatibility check: verify OpenAI API format
       btn.textContent = `🔍 检测 ${p.name}...`;
       try {
-        const checkR = await authFetch(`/api/discovered-platforms/${p.id}/check`, { method: 'POST' });
+        const checkR = await authFetch(`/api/discovery/platforms/${p.id}/check`, { method: 'POST' });
         const checkD = await checkR.json();
         if (!checkD.compatible && !checkD.skipped) {
           incompatible++;
@@ -3988,12 +4282,12 @@ async function addAllDiscoveredAsPreset() {
         description: p.description || '',
         priority: 5,
         enabled: true,
-        access_control: { allow_private_key: true, allow_shared_key: true, guest_pool_percent: 50 },
+        access_control: { guest_pool_percent: 50 },
         models: p.models || []
       };
       const r = await authFetch('/api/providers', { method: 'POST', body: JSON.stringify(data) });
       if (r.ok) {
-        await authFetch(`/api/discovered-platforms/${p.id}`, {
+        await authFetch(`/api/discovery/platforms/${p.id}`, {
           method: 'POST', body: JSON.stringify({status: 'added'})
         });
         added++;
@@ -4022,7 +4316,7 @@ async function addAllDiscoveredAsPreset() {
   await loadProviders();
   // Refresh discovered platforms data (no loading spinner) and re-render
   try {
-    const dr = await authFetch('/api/discovered-platforms');
+    const dr = await authFetch('/api/discovery/platforms');
     const dd = await dr.json();
     discoveredPlatforms = dd.platforms || [];
   } catch(e) {}
@@ -4050,5 +4344,29 @@ async function addAllDiscoveredAsPreset() {
   }
 })();
 </script>
+
+<!-- V8 Model Matrix Modal -->
+<div class="v8-modal-backdrop" id="v8ModelModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="v8-modal">
+    <div class="v8-modal-header">
+      <h2 id="v8ModelModalTitle">模型管理</h2>
+      <button class="v8-close-btn" onclick="document.getElementById('v8ModelModal').classList.remove('show')">✕</button>
+    </div>
+    <div class="v8-toolbar">
+      <div class="v8-toolbar-left">
+        <button class="v8-toolbar-btn" onclick="v8MatrixSelectAll()">全选</button>
+        <button class="v8-toolbar-btn" onclick="v8MatrixDeselectAll()">反选</button>
+        <button class="v8-toolbar-btn" onclick="v8MatrixEnableAll()">全部启用</button>
+        <button class="v8-toolbar-btn" onclick="v8MatrixDisableAll()">全部禁用</button>
+      </div>
+      <input class="v8-search-box" type="text" placeholder="🔍 搜索模型..." oninput="v8MatrixSearch(this.value)">
+    </div>
+    <div class="v8-matrix-wrap" id="v8ModelModalBody"></div>
+    <div class="v8-modal-footer" id="v8ModelModalFooter"></div>
+  </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async></script>
 </body>
 </html>
