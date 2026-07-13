@@ -177,7 +177,8 @@ select.form-input{appearance:none;cursor:pointer}
 
 /* ============ V5 Provider Cards (V6 Centered Layout) ============ */
 .v5-provider-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;transition:all .3s}
-.v5-provider-card:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(0,0,0,.25)}
+.v5-provider-card:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(108,99,255,.25),0 0 0 2px rgba(108,99,255,.3);border-color:rgba(108,99,255,.5)}
+.v5-provider-card:focus-within{box-shadow:0 8px 32px rgba(108,99,255,.3),0 0 0 2px rgba(108,99,255,.4);border-color:rgba(108,99,255,.6)}
 .v5-provider-card.disabled{opacity:.5}
 /* Color accent: dim by default, brighten on hover */
 
@@ -4390,14 +4391,3 @@ async function addAllDiscoveredAsPreset() {
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async></script>
 </body>
 </html>
-
-/* Enhanced card selection/hover effect */
-.v5-provider-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 32px rgba(108,99,255,.25), 0 0 0 2px rgba(108,99,255,.3);
-    border-color: rgba(108,99,255,.5);
-}
-.v5-provider-card:focus-within {
-    box-shadow: 0 8px 32px rgba(108,99,255,.3), 0 0 0 2px rgba(108,99,255,.4);
-    border-color: rgba(108,99,255,.6);
-}
