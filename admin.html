@@ -2919,7 +2919,18 @@ async function testAllEditKeys() {
         const statusEl = document.getElementById('keystatus-' + k.key_id);
         if (statusEl) {
           if (k.success) {
-            statusEl.innerHTML = '✅ 可用';
+            let balanceText = '';
+            if (k.balance && k.balance.available) {
+              if (k.balance.hard_limit_usd) {
+                balanceText = ' 💰$' + k.balance.hard_limit_usd.toFixed(2);
+              } else if (k.balance.balance) {
+                balanceText = ' 💰' + k.balance.balance.toFixed(2);
+              }
+              if (k.quota_updated) {
+                balanceText += ' (已同步)';
+              }
+            }
+            statusEl.innerHTML = '✅ 可用' + balanceText;
             statusEl.style.background = 'rgba(34,197,94,.1)';
             statusEl.style.color = '#22c55e';
           } else {
