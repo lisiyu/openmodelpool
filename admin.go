@@ -1196,6 +1196,34 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		// Access control (pass through for frontend guest_pool_percent etc.)
 		ac := p.AccessControl
 
+		// Aggregate per-key quota by access type (private / shared)
+		var quotaPrivUsed, quotaPrivTotal int64
+		var quotaPubUsed, quotaPubTotal int64
+		for _, k := range p.APIKeys {
+			if !k.Enabled {
+				continue
+			}
+			switch k.AccessControl {
+			case "private":
+				if k.Quota > 0 {
+					quotaPrivTotal += k.Quota
+				}
+				quotaPrivUsed += k.Used
+			case "shared":
+				if k.Quota > 0 {
+					quotaPubTotal += k.Quota
+				}
+				quotaPubUsed += k.Used
+			}
+		}
+		// Legacy single key (no APIKeys) counts as private
+		if len(p.APIKeys) == 0 && p.APIKey != "" && p.APIKey != "your-api-key-here" {
+			if p.TokenLimit > 0 {
+				quotaPrivTotal = p.TokenLimit
+			}
+			quotaPrivUsed = totalUsed
+		}
+
 		enriched = append(enriched, EnrichedHealth{
 			ProviderID:       p.ID,
 			ProviderName:     p.Name,
@@ -1220,8 +1248,12 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			IsShared:         isShared,
 			SuccessRate:      nil, // placeholder: not yet tracked
 			Models:           p.Models,
-			AccessControl:    &ac,
-			ActiveConns:      GetProviderConns(p.ID),
+			AccessControl:       &ac,
+			ActiveConns:         GetProviderConns(p.ID),
+			QuotaPrivateUsed:    quotaPrivUsed,
+			QuotaPrivateTotal:   quotaPrivTotal,
+			QuotaPublicUsed:     quotaPubUsed,
+			QuotaPublicTotal:    quotaPubTotal,
 		})
 	}
 
