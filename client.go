@@ -1073,6 +1073,122 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", testResp.StatusCode, truncate(string(chatBody), 200))}
 	}
 }
+
+// queryKeyBalance attempts to query the upstream API for remaining balance/quota.
+// Tries common OpenAI-compatible billing endpoints.
+// Returns remaining tokens (if discoverable) or -1 if not available.
+func queryKeyBalance(baseURL, apiKey string) map[string]any {
+	result := map[string]any{
+		"available": false,
+	}
+	if baseURL == "" || apiKey == "" {
+		return result
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// Try multiple common billing endpoints
+	endpoints := []struct {
+		path   string
+		parser func([]byte) map[string]any
+	}{
+		{"/dashboard/billing/subscription", parseOpenAISubscription},
+		{"/dashboard/billing/usage", parseOpenAIUsage},
+		{"/v1/dashboard/billing/subscription", parseOpenAISubscription},
+		{"/v1/dashboard/billing/usage", parseOpenAIUsage},
+	}
+
+	for _, ep := range endpoints {
+		req, err := http.NewRequest("GET", baseURL+ep.path, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			continue
+		}
+		parsed := ep.parser(body)
+		if parsed != nil {
+			parsed["available"] = true
+			parsed["source"] = ep.path
+			return parsed
+		}
+	}
+	return result
+}
+
+// parseOpenAISubscription parses /dashboard/billing/subscription response
+// OpenAI format: {"hard_limit_usd": 120.0, "soft_limit_usd": 120.0, "access_until": 1234567890, ...}
+func parseOpenAISubscription(body []byte) map[string]any {
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil
+	}
+	result := make(map[string]any)
+
+	// Hard limit (total budget)
+	if hardLimit, ok := data["hard_limit_usd"].(float64); ok && hardLimit > 0 {
+		result["hard_limit_usd"] = hardLimit
+	}
+	// Soft limit
+	if softLimit, ok := data["soft_limit_usd"].(float64); ok && softLimit > 0 {
+		result["soft_limit_usd"] = softLimit
+	}
+	// Used amount
+	if used, ok := data["used"].(float64); ok {
+		result["used_usd"] = used
+	}
+	// Access until (timestamp)
+	if accessUntil, ok := data["access_until"].(float64); ok {
+		result["access_until"] = int64(accessUntil)
+	}
+	// Some providers return total_granted, used_granted
+	if totalGranted, ok := data["total_granted"].(float64); ok && totalGranted > 0 {
+		result["total_granted_usd"] = totalGranted
+	}
+	if usedGranted, ok := data["used_granted"].(float64); ok {
+		result["used_granted_usd"] = usedGranted
+	}
+
+	// Must have at least one useful field
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// parseOpenAIUsage parses /dashboard/billing/usage response
+// OpenAI format: {"total_usage": 123.45, "daily_costs": [...]}
+func parseOpenAIUsage(body []byte) map[string]any {
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil
+	}
+	result := make(map[string]any)
+
+	if totalUsage, ok := data["total_usage"].(float64); ok {
+		result["total_usage_cents"] = totalUsage // OpenAI returns cents
+	}
+	// Some providers return balance directly
+	if balance, ok := data["balance"].(float64); ok && balance > 0 {
+		result["balance"] = balance
+	}
+	if remaining, ok := data["remaining"].(float64); ok {
+		result["remaining"] = remaining
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 // fetchRemoteModels fetches model list from an OpenAI-compatible provider.
 func fetchRemoteModels(p Provider) []map[string]string {
 	// Multi-key migration: if legacy APIKey is empty, try APIKeys array
