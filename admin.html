@@ -918,9 +918,18 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
       <div class="form-group"><label class="form-label">描述</label><input class="form-input" id="pDesc" placeholder="平台描述"></div>
       <div class="form-group"><label class="form-label">优先级（数字越小越优先）</label><input class="form-input" id="pPriority" type="number" value="5"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="form-group"><label class="form-label">每日 Token 上限（可选）</label><input class="form-input" id="pDailyTokenLimit" type="number" value="0" min="0" placeholder="0=不限"><div style="font-size:10px;color:var(--text-muted);margin-top:3px">0 表示不限制</div></div>
-        <div class="form-group"><label class="form-label">每分钟请求上限（可选）</label><input class="form-input" id="pRateLimit" type="number" value="0" min="0" placeholder="0=不限"><div style="font-size:10px;color:var(--text-muted);margin-top:3px">0 表示不限制</div></div>
+      <div class="form-group">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <label class="form-label" style="margin:0">⚡ 调用频率限制</label>
+          <div class="toggle" id="pRateLimitToggle" onclick="toggleRateLimit()" style="flex-shrink:0"></div>
+        </div>
+        <div id="pRateLimitFields" style="display:none;opacity:0;transition:opacity .2s">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="form-group" style="margin-bottom:8px"><label class="form-label" style="font-size:12px">每分钟请求数 (RPM)</label><input class="form-input" id="pRateLimit" type="number" value="0" min="0" placeholder="0=不限" style="height:36px;font-size:13px"></div>
+            <div class="form-group" style="margin-bottom:8px"><label class="form-label" style="font-size:12px">每日总请求数</label><input class="form-input" id="pDailyRequestLimit" type="number" value="0" min="0" placeholder="0=不限" style="height:36px;font-size:13px"></div>
+          </div>
+          <div style="font-size:10px;color:var(--text-muted)">开启后对该平台的所有请求执行频率限制</div>
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">📊 额度上限控制</label>
@@ -1685,8 +1694,14 @@ function editProvider(pid) {
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.priority || 5;
   document.getElementById('pEnabled').checked = p.enabled !== false;
-  if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = p.daily_token_limit || 0;
+  // Rate limit toggle
+  const rlEnabled = p.rate_limit_enabled || false;
+  const rlToggle = document.getElementById('pRateLimitToggle');
+  if (rlToggle) { rlToggle.classList.toggle('active', rlEnabled); }
+  const rlFields = document.getElementById('pRateLimitFields');
+  if (rlFields) { rlFields.style.display = rlEnabled ? 'block' : 'none'; rlFields.style.opacity = rlEnabled ? '1' : '0'; }
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = p.rate_limit_per_min || 0;
+  if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = p.daily_request_limit || 0;
   if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = p.private_requests_daily || 0;
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = p.private_quota_monthly || 0;
   if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = p.private_quota_total || 0;
@@ -1742,7 +1757,9 @@ function selectPreset(pid) {
   document.getElementById('pPriority').value = p.id === 'openai' ? 10 : p.id === 'openrouter' ? 20 : p.id === 'ollama' ? 50 : 5;
   document.getElementById('pEnabled').checked = true;
   setAccessControl('private'); // default: private only
-  if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
+  if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = '0';
+  const rlT = document.getElementById('pRateLimitToggle'); if (rlT) rlT.classList.remove('active');
+  const rlF = document.getElementById('pRateLimitFields'); if (rlF) { rlF.style.display='none'; rlF.style.opacity='0'; }
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
   if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
@@ -1796,10 +1813,16 @@ async function saveProvider() {
       guest_pool_percent: parseInt(document.getElementById('poolRatioSlider')?.value) || 50,
     },
   };
-  const dailyLimit = parseInt(document.getElementById('pDailyTokenLimit')?.value) || 0;
-  if (dailyLimit > 0) data.daily_token_limit = dailyLimit;
-  const rateLimit = parseInt(document.getElementById('pRateLimit')?.value) || 0;
-  if (rateLimit > 0) data.rate_limit_per_min = rateLimit;
+  // Rate limit
+  const rlEnabled = document.getElementById('pRateLimitToggle')?.classList.contains('active') || false;
+  data.rate_limit_enabled = rlEnabled;
+  if (rlEnabled) {
+    data.rate_limit_per_min = parseInt(document.getElementById('pRateLimit')?.value) || 0;
+    data.daily_request_limit = parseInt(document.getElementById('pDailyRequestLimit')?.value) || 0;
+  } else {
+    data.rate_limit_per_min = 0;
+    data.daily_request_limit = 0;
+  }
   data.private_requests_daily = parseInt(document.getElementById('pPrivRequestsDaily')?.value) || 0;
   data.private_quota_monthly = parseInt(document.getElementById('pPrivQuotaMonthly')?.value) || 0;
   data.private_quota_total = parseInt(document.getElementById('pPrivQuotaTotal')?.value) || 0;
@@ -1875,7 +1898,9 @@ function selectCustomPreset() {
   document.getElementById('pEnabled').checked = true;
   setAccessControl('private'); // default: private only
   document.getElementById('editKeysSection').style.display = 'none';
-  if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
+  if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = '0';
+  const rlT = document.getElementById('pRateLimitToggle'); if (rlT) rlT.classList.remove('active');
+  const rlF = document.getElementById('pRateLimitFields'); if (rlF) { rlF.style.display='none'; rlF.style.opacity='0'; }
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
   if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
@@ -1910,7 +1935,9 @@ function selectDiscoveredPreset(id) {
     regLinkEl.innerHTML = `<a href="${dp.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 前往官网注册获取 API Key →</a>`;
     regLinkEl.style.display = '';
   } else if (regLinkEl) { regLinkEl.style.display = 'none'; }
-  if (document.getElementById('pDailyTokenLimit')) document.getElementById('pDailyTokenLimit').value = '0';
+  if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = '0';
+  const rlT = document.getElementById('pRateLimitToggle'); if (rlT) rlT.classList.remove('active');
+  const rlF = document.getElementById('pRateLimitFields'); if (rlF) { rlF.style.display='none'; rlF.style.opacity='0'; }
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
   if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
@@ -4604,6 +4631,16 @@ async function addAllDiscoveredAsPreset() {
 </div>
 
 
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async>
+function toggleRateLimit() {
+  const toggle = document.getElementById('pRateLimitToggle');
+  const fields = document.getElementById('pRateLimitFields');
+  if (!toggle || !fields) return;
+  toggle.classList.toggle('active');
+  const isActive = toggle.classList.contains('active');
+  fields.style.display = isActive ? 'block' : 'none';
+  setTimeout(() => { fields.style.opacity = isActive ? '1' : '0'; }, 10);
+}
+</script>
 </body>
 </html>
