@@ -724,7 +724,33 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 		if msg, ok := testResult["message"].(string); ok {
 			keyResult["message"] = msg
 		}
-		
+
+		// Query upstream balance if test succeeded
+		if testResult["success"] == true && p.Type == "openai_compatible" {
+			balance := queryKeyBalance(p.BaseURL, decryptedKey)
+			if avail, ok := balance["available"].(bool); ok && avail {
+				keyResult["balance"] = balance
+				// If upstream reports a dollar limit, convert to approximate tokens
+				// and update local quota if upstream is authoritative
+				var limitUSD float64
+				if v, ok := balance["hard_limit_usd"].(float64); ok {
+					limitUSD = v
+				} else if v, ok := balance["total_granted_usd"].(float64); ok {
+					limitUSD = v
+				}
+				if limitUSD > 0 {
+					// Estimate: $1 ≈ 1M tokens (rough average for GPT-4 class models)
+					estimatedTokens := int64(limitUSD * 1_000_000)
+					if key.Quota == 0 || key.Quota != estimatedTokens {
+						// Use UpdateAPIKey to persist the change through ProviderManager
+						pm.UpdateAPIKey(id, key.ID, map[string]any{"quota": float64(estimatedTokens)})
+						keyResult["quota_updated"] = true
+						keyResult["new_quota"] = estimatedTokens
+					}
+				}
+			}
+		}
+
 		results = append(results, keyResult)
 	}
 	
@@ -733,17 +759,18 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 		"results": results,
 		"total":   len(results),
 	}
-	
-	if !allSuccess {
-		failedCount := 0
-		for _, r := range results {
-			if s, ok := r["success"].(bool); !ok || !s {
-				failedCount++
-			}
+
+	failedCount := 0
+	for _, r := range results {
+		if s, ok := r["success"].(bool); !ok || !s {
+			failedCount++
 		}
-		response["failed_count"] = failedCount
 	}
-	
+	response["failed_count"] = failedCount
+
+	// Update health status with actual failed key count from manual test
+	healthChecker.SetFailedKeyCount(id, failedCount)
+
 	writeJSON(w, 200, response)
 }
 
