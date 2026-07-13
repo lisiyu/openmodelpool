@@ -1316,8 +1316,17 @@ func (m *ProviderManager) GetAPIKeys(providerID string) ([]APIKeyConfig, error) 
 		return nil, fmt.Errorf("provider '%s' not found", providerID)
 	}
 
-	// Return masked keys
+	// Return masked keys with all fields populated
 	result := make([]APIKeyConfig, len(p.APIKeys))
+	for i, k := range p.APIKeys {
+		result[i] = k // copy all fields
+		// Mask the actual key value for security
+		if len(k.Key) > 8 {
+			result[i].Key = k.Key[:4] + "••••••••" + k.Key[len(k.Key)-4:]
+		} else if k.Key != "" {
+			result[i].Key = "••••••••"
+		}
+	}
 	return result, nil
 }
 

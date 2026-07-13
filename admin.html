@@ -2457,7 +2457,7 @@ async function loadApiKeys(pid) {
     if (!keys.length) {
       container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:8px">未配置多 Key，点击下方按钮添加</div>';
     } else {
-      let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>别名/Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>操作</th><th>测试</th></tr></thead><tbody>';
+      let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>别名/Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>可用</th><th>操作</th><th>测试</th></tr></thead><tbody>';
       for (const k of keys) {
         const quotaText = k.quota > 0 ? (k.used + '/' + k.quota) : '无限';
         const hourlyText = k.quota_hourly > 0 ? k.quota_hourly.toLocaleString() + '/h' : '';
@@ -2472,6 +2472,9 @@ async function loadApiKeys(pid) {
         html += '<td>' + accessLabel + '</td>';
         html += '<td>' + (k.priority || 1) + '</td>';
         html += '<td>' + statusBadge + expiresText + '</td>';
+        // Key availability status indicator
+        const tableKeyStatusId = 'table-keystatus-' + k.id;
+        html += '<td><span id="' + tableKeyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试按钮检测">⏳</span></td>';
         html += '<td>';
         html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="editKeyAccessControl(\'' + pid + '\',\'' + k.id + '\',\'' + k.access_control + '\')">编辑权限</button> ';
         html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
@@ -2513,12 +2516,17 @@ async function showAddApiKey(pid) {
 }
 async function toggleKeyEnabled(pid, keyId, enabled) {
   try {
-    await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+    const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
       method: 'PUT',
       body: JSON.stringify({ enabled: enabled })
     });
-    toast(enabled ? '已启用' : '已禁用');
-    await loadApiKeys(pid);
+    const d = await r.json();
+    if (d.success) {
+      toast(enabled ? '✅ 已启用' : '⏸ 已禁用', 'success');
+      await loadApiKeys(pid);
+    } else {
+      toast('操作失败: ' + (d.error || '未知错误'), 'error');
+    }
   } catch(e) { toast('操作失败: ' + e.message, 'error'); }
 }
 async function editKeyAccessControl(pid, keyId, currentAccess) {
@@ -2561,19 +2569,66 @@ async function resetKeyQuota(pid, keyId) {
   } catch(e) { toast('重置失败: ' + e.message, 'error'); }
 }
 async function testSingleKey(pid, keyId) {
+  const statusEl = document.getElementById('table-keystatus-' + keyId);
+  if (statusEl) {
+    statusEl.innerHTML = '⏳';
+    statusEl.style.background = 'rgba(59,130,246,.1)';
+    statusEl.style.color = 'var(--info)';
+  }
   toast('正在测试...', 'info');
   try {
     const r = await authFetch('/api/providers/' + pid + '/test?key_id=' + keyId, {method:'POST'});
     const d = await r.json();
+    if (statusEl) {
+      if (d.success) {
+        statusEl.innerHTML = '✅';
+        statusEl.style.background = 'rgba(34,197,94,.1)';
+        statusEl.style.color = '#22c55e';
+      } else {
+        statusEl.innerHTML = '❌';
+        statusEl.style.background = 'rgba(239,68,68,.1)';
+        statusEl.style.color = '#ef4444';
+      }
+    }
     toast(d.success ? '✅ Key 可用' : '❌ Key 不可用: ' + (d.error||''), d.success ? 'success' : 'error');
-  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+  } catch(e) {
+    if (statusEl) {
+      statusEl.innerHTML = '❌';
+      statusEl.style.background = 'rgba(239,68,68,.1)';
+      statusEl.style.color = '#ef4444';
+    }
+    toast('测试失败: ' + e.message, 'error');
+  }
 }
 async function testAllKeys(pid) {
   toast('正在测试所有 Key...', 'info');
+  // Set all table indicators to testing state
+  document.querySelectorAll('[id^="table-keystatus-"]').forEach(el => {
+    el.innerHTML = '⏳';
+    el.style.background = 'rgba(59,130,246,.1)';
+    el.style.color = 'var(--info)';
+  });
   try {
     const r = await authFetch('/api/providers/' + pid + '/test-all-keys', {method:'POST'});
     const d = await r.json();
     if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    // Update each key's status indicator
+    d.results.forEach(k => {
+      if (k.key_id) {
+        const statusEl = document.getElementById('table-keystatus-' + k.key_id);
+        if (statusEl) {
+          if (k.success) {
+            statusEl.innerHTML = '✅';
+            statusEl.style.background = 'rgba(34,197,94,.1)';
+            statusEl.style.color = '#22c55e';
+          } else {
+            statusEl.innerHTML = '❌';
+            statusEl.style.background = 'rgba(239,68,68,.1)';
+            statusEl.style.color = '#ef4444';
+          }
+        }
+      }
+    });
     let msg = d.results.map(k => {
       let status = k.success ? '✅' : '❌';
       let label = k.alias || ('Key#' + k.index);
@@ -2656,6 +2711,9 @@ async function loadEditKeys(pid) {
         html += '<span style="font-size:13px;font-weight:600">' + aliasDisplay + '</span>';
         html += statusBadge;
         html += '<span style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(108,99,255,.1);color:var(--accent-start)">' + accessLabel + '</span>';
+        // Key availability status indicator
+        const keyStatusId = 'keystatus-' + k.id;
+        html += '<span id="' + keyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试此Key">⏳ 未测试</span>';
         html += '</div>';
         html += '<div style="display:flex;gap:6px">';
         html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="editInlineKey(\'' + pid + '\',\'' + k.id + '\')">✏️ 编辑</button>';
@@ -2815,20 +2873,66 @@ async function deleteKeyInEdit(pid, keyId) {
   } catch(e) { toast('删除失败: ' + e.message, 'error'); }
 }
 async function testEditKey(pid, keyId) {
-  toast('正在测试...', 'info');
+  const statusEl = document.getElementById('keystatus-' + keyId);
+  if (statusEl) {
+    statusEl.innerHTML = '⏳ 测试中...';
+    statusEl.style.background = 'rgba(59,130,246,.1)';
+    statusEl.style.color = 'var(--info)';
+  }
   try {
     const r = await authFetch('/api/providers/' + pid + '/test?key_id=' + keyId, {method:'POST'});
     const d = await r.json();
+    if (statusEl) {
+      if (d.success) {
+        statusEl.innerHTML = '✅ 可用';
+        statusEl.style.background = 'rgba(34,197,94,.1)';
+        statusEl.style.color = '#22c55e';
+      } else {
+        statusEl.innerHTML = '❌ 不可用';
+        statusEl.style.background = 'rgba(239,68,68,.1)';
+        statusEl.style.color = '#ef4444';
+      }
+    }
     toast(d.success ? '✅ Key 可用' : '❌ Key 不可用: ' + (d.error||''), d.success ? 'success' : 'error');
-  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+  } catch(e) {
+    if (statusEl) {
+      statusEl.innerHTML = '❌ 测试失败';
+      statusEl.style.background = 'rgba(239,68,68,.1)';
+      statusEl.style.color = '#ef4444';
+    }
+    toast('测试失败: ' + e.message, 'error');
+  }
 }
 async function testAllEditKeys() {
   if (!editingId) return;
   toast('正在测试所有 Key...', 'info');
+  // Set all indicators to testing state
+  document.querySelectorAll('[id^="keystatus-"]').forEach(el => {
+    el.innerHTML = '⏳ 测试中...';
+    el.style.background = 'rgba(59,130,246,.1)';
+    el.style.color = 'var(--info)';
+  });
   try {
     const r = await authFetch('/api/providers/' + editingId + '/test-all-keys', {method:'POST'});
     const d = await r.json();
     if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    // Update each key's status indicator
+    d.results.forEach(k => {
+      if (k.key_id) {
+        const statusEl = document.getElementById('keystatus-' + k.key_id);
+        if (statusEl) {
+          if (k.success) {
+            statusEl.innerHTML = '✅ 可用';
+            statusEl.style.background = 'rgba(34,197,94,.1)';
+            statusEl.style.color = '#22c55e';
+          } else {
+            statusEl.innerHTML = '❌ 不可用';
+            statusEl.style.background = 'rgba(239,68,68,.1)';
+            statusEl.style.color = '#ef4444';
+          }
+        }
+      }
+    });
     let msg = d.results.map(k => {
       let status = k.success ? '✅' : '❌';
       let label = k.alias || ('Key#' + k.index);
