@@ -974,59 +974,47 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		}
 		client := proxyHTTPClient(testProvider, 15 * time.Second)
 		baseURL := strings.TrimRight(testProvider.BaseURL, "/")
-		// Try /models first
-		req, _ := http.NewRequest("GET", baseURL+"/models", nil)
-		req.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
-		resp, err := client.Do(req)
-		if err != nil {
-			return map[string]any{"success": false, "error": err.Error()}
-		}
-		if resp.StatusCode == 200 {
-			var data struct {
-				Data []any `json:"data"`
+		// Always verify with a real chat completion request — /models alone is unreliable
+		// (some providers return 200 even for invalid keys).
+		fallbackModels := []string{"gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0"}
+		// If the provider has models configured, try the first enabled one first
+		if len(testProvider.Models) > 0 {
+			for _, m := range testProvider.Models {
+				if m.Enabled {
+					fallbackModels = append([]string{m.ID}, fallbackModels...)
+					break
+				}
 			}
-			json.NewDecoder(resp.Body).Decode(&data)
-			resp.Body.Close()
-			return map[string]any{"success": true, "message": fmt.Sprintf("Connected, %d models", len(data.Data))}
 		}
-		resp.Body.Close()
-		// If /models returns 404/405/403 (endpoint not supported or forbidden), fall back to a lightweight chat request
-		if resp.StatusCode == 404 || resp.StatusCode == 405 || resp.StatusCode == 403 {
-			// Try multiple model names for compatibility with different providers
-			fallbackModels := []string{"gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0"}
-			var lastErr string
-			for _, model := range fallbackModels {
-				testPayload := map[string]any{
-					"model":      model,
-					"max_tokens": 1,
-					"messages":   []map[string]any{{"role": "user", "content": "hi"}},
-				}
-				testBody, _ := json.Marshal(testPayload)
-				testReq, _ := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewReader(testBody))
-				testReq.Header.Set("Authorization", "Bearer " + testProvider.APIKey)
-				testReq.Header.Set("Content-Type", "application/json")
-				testResp, err := client.Do(testReq)
-				if err != nil {
-					return map[string]any{"success": false, "error": err.Error()}
-				}
-				if testResp.StatusCode == 200 {
-					testResp.Body.Close()
-					return map[string]any{"success": true, "message": "Connected (chat verified)"}
-				}
-				b, _ := io.ReadAll(testResp.Body)
+		var lastErr string
+		for _, model := range fallbackModels {
+			testPayload := map[string]any{
+				"model":      model,
+				"max_tokens": 1,
+				"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+			}
+			testBody, _ := json.Marshal(testPayload)
+			testReq, _ := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewReader(testBody))
+			testReq.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
+			testReq.Header.Set("Content-Type", "application/json")
+			testResp, err := client.Do(testReq)
+			if err != nil {
+				return map[string]any{"success": false, "error": err.Error()}
+			}
+			if testResp.StatusCode == 200 {
 				testResp.Body.Close()
-				lastErr = fmt.Sprintf("HTTP %d: %s", testResp.StatusCode, truncate(string(b), 200))
-				if testResp.StatusCode == 401 {
-					return map[string]any{"success": false, "error": "API key invalid (HTTP 401)"}
-				}
+				return map[string]any{"success": true, "message": "Connected (chat verified)"}
 			}
-			return map[string]any{"success": false, "error": lastErr}
+			b, _ := io.ReadAll(testResp.Body)
+			testResp.Body.Close()
+			lastErr = fmt.Sprintf("HTTP %d: %s", testResp.StatusCode, truncate(string(b), 200))
+			if testResp.StatusCode == 401 || testResp.StatusCode == 403 {
+				return map[string]any{"success": false, "error": fmt.Sprintf("API key invalid (HTTP %d)", testResp.StatusCode)}
+			}
 		}
-		b, _ := io.ReadAll(resp.Body)
-		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", resp.StatusCode, truncate(string(b), 200))}
+		return map[string]any{"success": false, "error": lastErr}
 	}
 }
-
 // fetchRemoteModels fetches model list from an OpenAI-compatible provider.
 func fetchRemoteModels(p Provider) []map[string]string {
 	// Multi-key migration: if legacy APIKey is empty, try APIKeys array
