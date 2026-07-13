@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -160,6 +161,7 @@ func (h *HealthChecker) checkProvider(p Provider) {
 
 	default:
 		// OpenAI-compatible: try all enabled keys, healthy if any succeeds
+		// Use POST /chat/completions directly (more reliable than GET /models)
 		type keyEntry struct {
 			alias string
 			key   string
@@ -191,86 +193,56 @@ func (h *HealthChecker) checkProvider(p Provider) {
 			break
 		}
 		client := proxyHTTPClient(p, 15*time.Second)
+		baseURL := strings.TrimRight(p.BaseURL, "/")
 
-		// Determine health check endpoint
-		hcEndpoint := p.HealthCheckEndpoint
-		if hcEndpoint == "" {
-			hcEndpoint = "/models"
+		// Build model list to try
+		var probeModels []string
+		for _, m := range p.Models {
+			if m.Enabled {
+				probeModels = append(probeModels, m.ID)
+			}
 		}
+		probeModels = append(probeModels, "gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1")
 
 		// Try each key until one succeeds
 		for _, ke := range keysToTry {
 			keysTested++
-			reqStart := time.Now()
-
-			// Primary health check: GET /models
-			req, _ := http.NewRequestWithContext(ctx, "GET", p.BaseURL+hcEndpoint, nil)
-			req.Header.Set("Authorization", "Bearer "+ke.key)
-			resp, err := client.Do(req)
-			if err != nil {
-				failReason = ke.alias + ": " + err.Error()
-				keysFailed++
-				continue
-			}
-			io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
-			latencyMS = float64(time.Since(reqStart).Milliseconds())
-
-			if resp.StatusCode == 200 {
-				healthy = true
-				failReason = ""
-				break
-			}
-
-			// Fallback: if /models returned error, try /chat/completions probe
-			if (resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 || resp.StatusCode == 405) && (hcEndpoint == "/models" || hcEndpoint == "") {
-				slog.Debug("health check /models non-standard response, falling back to /chat/completions probe", "provider", p.ID, "key", ke.alias)
-				var probeModels []string
-				for _, m := range p.Models {
-					if m.Enabled {
-						probeModels = append(probeModels, m.ID)
-					}
+			keyOK := false
+			
+			for _, model := range probeModels {
+				reqStart := time.Now()
+				probeBody, _ := json.Marshal(map[string]any{
+					"model":      model,
+					"max_tokens": 1,
+					"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+				})
+				probeReq, _ := http.NewRequestWithContext(ctx, "POST", baseURL+"/chat/completions", bytes.NewReader(probeBody))
+				probeReq.Header.Set("Authorization", "Bearer "+ke.key)
+				probeReq.Header.Set("Content-Type", "application/json")
+				probeResp, err := client.Do(probeReq)
+				if err != nil {
+					continue
 				}
-				probeModels = append(probeModels, "gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0")
-				probeOK := false
-				for _, model := range probeModels {
-					probeBody, _ := json.Marshal(map[string]any{
-						"model":      model,
-						"max_tokens": 1,
-						"messages":   []map[string]string{{"role": "user", "content": "hi"}},
-					})
-					probeReq, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", bytes.NewReader(probeBody))
-					probeReq.Header.Set("Authorization", "Bearer "+ke.key)
-					probeReq.Header.Set("Content-Type", "application/json")
-					probeStart := time.Now()
-					probeResp, err := client.Do(probeReq)
-					if err != nil {
-						continue
-					}
-					io.Copy(io.Discard, probeResp.Body)
-					probeResp.Body.Close()
-					latencyMS = float64(time.Since(probeStart).Milliseconds())
-					if probeResp.StatusCode == 200 {
-						healthy = true
-						failReason = ""
-						probeOK = true
-						break
-					}
-					if probeResp.StatusCode == 401 {
-						break // key is truly invalid, stop trying models
-					}
-				}
-				if healthy {
+				io.Copy(io.Discard, probeResp.Body)
+				probeResp.Body.Close()
+				latencyMS = float64(time.Since(reqStart).Milliseconds())
+				
+				if probeResp.StatusCode == 200 {
+					healthy = true
+					failReason = ""
+					keyOK = true
 					break
 				}
-				if !probeOK {
-					failReason = ke.alias + ": HTTP " + strconv.Itoa(resp.StatusCode)
-					keysFailed++
+				if probeResp.StatusCode == 401 || probeResp.StatusCode == 403 {
+					break // key is invalid, stop trying models for this key
 				}
-			} else {
-				failReason = ke.alias + ": HTTP " + strconv.Itoa(resp.StatusCode)
-				keysFailed++
 			}
+			
+			if keyOK {
+				break
+			}
+			failReason = ke.alias + ": all models failed"
+			keysFailed++
 		}
 	}
 
