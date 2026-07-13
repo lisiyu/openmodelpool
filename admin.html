@@ -924,25 +924,28 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
       <div class="form-group">
         <label class="form-label">📊 额度上限控制</label>
-        <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">设定各池的额度上限，实际生效值 = min(此处设置, 所有key额度之和)。0=不限制</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">每个周期独立控制：每日/每月到期自动重置，总额永不重置。0=不限制该周期</div>
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="background:rgba(108,99,255,.04)">
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500;width:80px">池类型</th>
               <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每日上限</th>
               <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每月上限</th>
+              <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">总额上限</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td style="padding:6px 8px;border-bottom:1px solid rgba(0,0,0,.04)"><span class="dot dot-blue" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle"></span>私有池</td>
-              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaDaily" type="number" value="0" min="0" placeholder="0=不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
-              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaMonthly" type="number" value="0" min="0" placeholder="0=不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaMonthly" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaTotal" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
             </tr>
             <tr>
               <td style="padding:6px 8px"><span class="dot dot-purple" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle"></span>共享池</td>
-              <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaDaily" type="number" value="0" min="0" placeholder="0=不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
-              <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaMonthly" type="number" value="0" min="0" placeholder="0=不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaMonthly" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaTotal" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
             </tr>
           </tbody>
         </table>
@@ -1686,8 +1689,10 @@ function editProvider(pid) {
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = p.rate_limit_per_min || 0;
   if (document.getElementById('pPrivQuotaDaily')) document.getElementById('pPrivQuotaDaily').value = p.private_quota_daily || 0;
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = p.private_quota_monthly || 0;
+  if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = p.private_quota_total || 0;
   if (document.getElementById('pSharedQuotaDaily')) document.getElementById('pSharedQuotaDaily').value = p.shared_quota_daily || 0;
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = p.shared_quota_monthly || 0;
+  if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = p.shared_quota_total || 0;
   // Load access control state and pool ratio
   const ac = p.access_control || {};
   const guestPct = ac.guest_pool_percent ?? 50;
@@ -1741,8 +1746,10 @@ function selectPreset(pid) {
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
   if (document.getElementById('pPrivQuotaDaily')) document.getElementById('pPrivQuotaDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
+  if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
   if (document.getElementById('pSharedQuotaDaily')) document.getElementById('pSharedQuotaDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
+  if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
 }
 function backToStep1() {
   document.getElementById('modalStep1').style.display = '';
@@ -1795,8 +1802,10 @@ async function saveProvider() {
   if (rateLimit > 0) data.rate_limit_per_min = rateLimit;
   data.private_quota_daily = parseInt(document.getElementById('pPrivQuotaDaily')?.value) || 0;
   data.private_quota_monthly = parseInt(document.getElementById('pPrivQuotaMonthly')?.value) || 0;
+  data.private_quota_total = parseInt(document.getElementById('pPrivQuotaTotal')?.value) || 0;
   data.shared_quota_daily = parseInt(document.getElementById('pSharedQuotaDaily')?.value) || 0;
   data.shared_quota_monthly = parseInt(document.getElementById('pSharedQuotaMonthly')?.value) || 0;
+  data.shared_quota_total = parseInt(document.getElementById('pSharedQuotaTotal')?.value) || 0;
   const key = document.getElementById('pKey').value.trim();
   if (key) data.api_key = key;
   else if (!editingId && !selectedPresetKeyOptional) { toast('请填写 API Key', 'error'); return; }
@@ -1870,8 +1879,10 @@ function selectCustomPreset() {
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
   if (document.getElementById('pPrivQuotaDaily')) document.getElementById('pPrivQuotaDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
+  if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
   if (document.getElementById('pSharedQuotaDaily')) document.getElementById('pSharedQuotaDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
+  if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
   editingId = '';
   selectedPresetKeyOptional = false;
 }
@@ -1903,8 +1914,10 @@ function selectDiscoveredPreset(id) {
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
   if (document.getElementById('pPrivQuotaDaily')) document.getElementById('pPrivQuotaDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
+  if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
   if (document.getElementById('pSharedQuotaDaily')) document.getElementById('pSharedQuotaDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
+  if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
 }
 function getIcon(id) {
   const icons = {openai:'🟢',deepseek:'🔵',qwen:'🟠',zhipu:'🟣',moonshot:'🌙',lingyiwanwu:'🔶',minimax:'⬛',siliconflow:'💎',groq:'⚡',xai:'🤖',together:'🔗',mistral:'🇪🇺',doubao:'🫘',spark:'✨',hunyuan:'🐧','tokenhub-coding':'🐧','tokenhub-plan':'🐧','tokenhub-enterprise':'🐧',gemini:'♊',openrouter:'🌐',poe:'🎭',sid:'🧠',sider:'🌐',ollama:'🦙',coze:'🎯',nvidia:'🟩',anthropic:'🟠',qianfan:'🔴',novita:'🔮',fireworks:'🎆',cohere:'🔷',cerebras:'⚡',stepfun:'🌟',baichuan:'🌊',agnes:'🎨'};
@@ -2516,6 +2529,7 @@ async function loadApiKeys(pid) {
         if (k.quota_daily > 0) qParts.push('日:' + k.quota_daily.toLocaleString());
         if (k.quota_monthly > 0) qParts.push('月:' + k.quota_monthly.toLocaleString());
         if (k.quota > 0) qParts.push('总:' + k.quota.toLocaleString());
+        if (k.quota > 0) qParts.push('总:' + k.quota.toLocaleString());
         const quotaText = qParts.length > 0 ? qParts.join('/') : '无限';
         const hourlyText = k.quota_hourly > 0 ? k.quota_hourly.toLocaleString() + '/h' : '';
         const rpmText = k.rpm > 0 ? k.rpm + ' RPM' : '';
@@ -2765,6 +2779,7 @@ async function loadEditKeys(pid) {
         var quotaParts = [];
         if (k.quota_daily > 0) quotaParts.push('日:' + k.quota_daily.toLocaleString());
         if (k.quota_monthly > 0) quotaParts.push('月:' + k.quota_monthly.toLocaleString());
+        if (k.quota > 0) quotaParts.push('总:' + k.quota.toLocaleString());
         if (k.quota > 0) quotaParts.push('总:' + k.quota.toLocaleString());
         const quotaText = quotaParts.length > 0 ? (k.used.toLocaleString() + ' 已用 | ' + quotaParts.join(' · ')) : '无限制';
         const statusBadge = k.enabled ? '<span class="badge badge-green" style="font-size:11px;padding:2px 8px">启用</span>' : '<span class="badge badge-red" style="font-size:11px;padding:2px 8px">禁用</span>';

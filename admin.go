@@ -1279,24 +1279,20 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			quotaPrivUsed = totalUsed
 		}
 
-		// Apply platform-level quota caps (min of cap and sum-of-keys)
-		// Use monthly cap as the effective cap for display (most common billing cycle)
-		privCap := p.PrivateQuotaMonthly
-		if privCap == 0 { privCap = p.PrivateQuotaDaily } // fallback
-		if privCap > 0 && quotaPrivTotal > privCap {
-			quotaPrivTotal = privCap
+		// Apply platform-level total quota caps (independent of daily/monthly)
+		// Total cap is the absolute ceiling — all-time cumulative usage cannot exceed this
+		if p.PrivateQuotaTotal > 0 && quotaPrivTotal > p.PrivateQuotaTotal {
+			quotaPrivTotal = p.PrivateQuotaTotal
 			if quotaPrivUsed > quotaPrivTotal {
 				quotaPrivUsed = quotaPrivTotal
 			}
 		}
-		sharedCap := p.SharedQuotaMonthly
-		if sharedCap == 0 { sharedCap = p.SharedQuotaDaily } // fallback
-		if sharedCap > 0 {
+		if p.SharedQuotaTotal > 0 {
 			totalShared := quotaPubTotal + quotaGuestTotal
-			if totalShared > sharedCap {
-				scale := float64(sharedCap) / float64(totalShared)
+			if totalShared > p.SharedQuotaTotal {
+				scale := float64(p.SharedQuotaTotal) / float64(totalShared)
 				quotaPubTotal = int64(float64(quotaPubTotal) * scale)
-				quotaGuestTotal = sharedCap - quotaPubTotal
+				quotaGuestTotal = p.SharedQuotaTotal - quotaPubTotal
 				quotaPubUsed = int64(float64(quotaPubUsed) * scale)
 				quotaGuestUsed = int64(float64(quotaGuestUsed) * scale)
 			}
@@ -1369,6 +1365,10 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		if ep.SuccessRate != nil {
 			successSum += *ep.SuccessRate
 			successCount++
+		}
+		// Only count quota/usage from enabled providers
+		if !ep.Enabled {
+			continue
 		}
 		todayReqsPrivate += ep.TodayReqsPrivate
 		todayTokensPrivate += ep.TodayTokensPrivate
