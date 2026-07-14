@@ -73,7 +73,6 @@ type GuestKeyRecord struct {
 	ExpiresAt  string `json:"expires_at,omitempty"`  // expiry timestamp
 	Note       string `json:"note,omitempty"`        // optional note/label
 	ShareType  string `json:"share_type,omitempty"`  // consumer, collaborator, or empty (unlocked)
-	AccessPublicPool bool `json:"access_public_pool,omitempty"` // 是否授予公共池访问权
 }
 
 // GuestKeyStore manages all guest keys issued by this node.
@@ -132,7 +131,6 @@ type GuestKeyOptions struct {
 	RPM             int   // 每分钟请求数限制 (0=不限)
 	ExpDays int    // validity in days (0=never expires)
 	Note    string // optional note/label
-	AccessPublicPool bool // 是否授予公共池访问权
 }
 
 // GenerateGuestKey creates a new guest key for the given node.
@@ -168,7 +166,6 @@ func GenerateGuestKey(nodeID string, opts ...GuestKeyOptions) (string, error) {
 		record.RPM = opt.RPM
 		record.ExpDays = opt.ExpDays
 		record.Note = opt.Note
-		record.AccessPublicPool = opt.AccessPublicPool
 		if opt.ExpDays > 0 {
 			expiresAt := time.Now().AddDate(0, 0, opt.ExpDays)
 			record.ExpiresAt = expiresAt.Format(time.RFC3339)
@@ -237,13 +234,13 @@ func ValidateGuestKey(key string) (nodeID string, valid bool) {
 }
 
 
-// GetGuestKeyAccessPublicPool checks if a guest key has public pool access.
+// GetGuestKeyAccessPublicPool checks if a guest key can access the public pool.
 // Returns: nodeID, accessPublicPool flag, and whether the key is valid.
 //
-// v3.2: When the issuing node has joined the shared network (NetworkModeShared),
-// ALL guest keys automatically get public pool access regardless of the explicit
-// AccessPublicPool flag. The difference between consumer and collaborator guest
-// keys is only about admin panel access, not resource access permissions.
+// v3.2: Guest keys can only access the public pool when the issuing node has
+// joined the shared network (NetworkModeShared). In personal mode, guest keys
+// are restricted to the issuing node's own providers. Consumer and collaborator
+// guest keys have identical resource access permissions.
 func GetGuestKeyAccessPublicPool(key string) (nodeID string, accessPublicPool bool, valid bool) {
 	if !strings.HasPrefix(key, "sk-guest-") {
 		return "", false, false
@@ -267,7 +264,7 @@ func GetGuestKeyAccessPublicPool(key string) (nodeID string, accessPublicPool bo
 				if netMgr != nil && netMgr.IsSharedMode() {
 					return rec.NodeID, true, true
 				}
-				return rec.NodeID, rec.AccessPublicPool, true
+				return rec.NodeID, false, true  // personal mode: guest keys cannot access public pool
 			}
 		}
 	}
@@ -509,7 +506,6 @@ func handleGuestKeyIssue(w http.ResponseWriter, r *http.Request) {
 			RPM             int    `json:"rpm"`
 			ExpDays         int    `json:"exp_days"`
 			Note            string `json:"note"`
-			AccessPublicPool bool  `json:"access_public_pool"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
 			opts.Quota = body.Quota
@@ -518,7 +514,6 @@ func handleGuestKeyIssue(w http.ResponseWriter, r *http.Request) {
 			opts.RPM = body.RPM
 			opts.ExpDays = body.ExpDays
 			opts.Note = body.Note
-			opts.AccessPublicPool = body.AccessPublicPool
 		}
 	}
 
