@@ -3741,9 +3741,7 @@ if (authToken) {
           const isCollab = note.startsWith('[协作]');
           const displayNote = isCollab ? note.replace(/^\[协作\]\s*/, '') : note;
           const displayName = displayNote || ('🔑 ' + keyVal.substring(0, 20) + '...');
-          const pubPoolBadge = k.access_public_pool
-            ? '<span style="font-size:10px;padding:1px 6px;background:rgba(34,197,94,.12);color:#22c55e;border-radius:4px">🌐 公共池</span>'
-            : '';
+
           const typeBadge = isCollab
             ? '<span style="font-size:10px;padding:1px 6px;background:rgba(99,102,241,.12);color:#6366f1;border-radius:4px">🤝 协作者</span>'
             : '<span style="font-size:10px;padding:1px 6px;background:rgba(108,99,255,.12);color:var(--accent-start);border-radius:4px">🔑 使用者</span>';
@@ -3767,7 +3765,6 @@ if (authToken) {
               <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;min-width:0;flex:1">
                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏷️ ${displayName}</span>
                 ${typeBadge}
-                ${pubPoolBadge}
               </div>
               <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px">
                 ${statusBadge}
@@ -3935,20 +3932,7 @@ if (authToken) {
               <span style="font-size:11px;color:var(--text-muted)">天 <span style="font-size:10px">(0=永久)</span></span>
             </div>
           </div>
-          <div style="padding:10px 14px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.12);border-radius:8px;margin-top:0;margin-bottom:14px">
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <div>
-                <div style="font-size:12px;font-weight:500">🌐 公共池访问权限</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">开启后，此 Key 可在共享网络任意节点访问全网资源</div>
-              </div>
-              <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
-                <input type="checkbox" id="gkAccessPublicPool" onchange="var s=this.nextElementSibling,d=s.firstElementChild;if(this.checked){s.style.background='#6c63ff';d.style.transform='translateX(20px)';}else{s.style.background='#555';d.style.transform='translateX(0)';}" style="opacity:0;width:0;height:0">
-                <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:24px;transition:.3s">
-                  <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
-                </span>
-              </label>
-            </div>
-          </div>
+
           <div style="display:flex;gap:8px;justify-content:flex-end">
             <button class="btn btn-secondary btn-sm" onclick="document.getElementById('guestKeyForm').remove()" style="font-size:12px;padding:6px 16px">取消</button>
             <button class="btn btn-primary btn-sm" onclick="doGenerateGuestKey()" style="font-size:12px;padding:6px 16px">✅ 签发</button>
@@ -3966,7 +3950,7 @@ if (authToken) {
       const rpm = parseInt(document.getElementById('gkRpm').value, 10) || 0;
       if (!note) { toast('请填写备注名称', 'error'); return; }
       try {
-        const body = { exp_days: expDays, quota: quota, quota_hourly: quotaHourly, quota_per_request: quotaPerRequest, rpm: rpm, note: note, access_public_pool: document.getElementById('gkAccessPublicPool')?.checked || false };
+        const body = { exp_days: expDays, quota: quota, quota_hourly: quotaHourly, quota_per_request: quotaPerRequest, rpm: rpm, note: note };
         const res = await authFetch('/api/network/guest-keys', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
