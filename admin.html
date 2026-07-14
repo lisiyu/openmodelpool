@@ -1813,7 +1813,6 @@ async function saveProvider() {
     priority: parseInt(document.getElementById('pPriority').value) || 5,
     enabled: document.getElementById('pEnabled').checked,
     access_control: {
-      allow_guest: editingId ? (allProviders.find(x=>x.id===editingId)?.access_control?.allow_guest ?? true) : true,
       share_to_pool: editingId ? (allProviders.find(x=>x.id===editingId)?.access_control?.share_to_pool ?? true) : true,
       guest_pool_percent: parseInt(document.getElementById('poolRatioSlider')?.value) || 50,
     },

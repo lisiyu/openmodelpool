@@ -456,7 +456,6 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		if p.Proxy == "" || p.Proxy == "vmess://***" {
 			p.Proxy = existing.Proxy
 		}
-		p.AccessControl.AllowGuest = existing.AccessControl.AllowGuest
 		p.AccessControl.ShareToPool = existing.AccessControl.ShareToPool
 		if len(p.Models) == 0 {
 			p.Models = existing.Models
@@ -858,15 +857,12 @@ func handleUpdateProviderAccessControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize: if both false, default to guest+shared
-	if !ac.AllowGuest && !ac.ShareToPool {
-		ac = DefaultAccessControl()
-	}
+	// ShareToPool is managed by the admin UI/API; no normalization needed.
 
 	p.AccessControl = ac
 	pm.Add(p)
 
-	slog.Info("provider access control updated", "provider", id, "allow_guest", ac.AllowGuest, "share_to_pool", ac.ShareToPool)
+	slog.Info("provider access control updated", "provider", id, "share_to_pool", ac.ShareToPool)
 	writeJSON(w, 200, map[string]any{"success": true, "access_control": ac})
 }
 

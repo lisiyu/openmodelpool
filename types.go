@@ -179,8 +179,6 @@ type Provider struct {
 
 // ProviderAccessControl defines which key types can access a provider (v2.0).
 type ProviderAccessControl struct {
-	// AllowGuest allows sk-guest-* keys (default true)
-	AllowGuest bool `json:"allow_guest"`
 	// ShareToPool controls whether this provider's resources are shared to the
 	// global public pool accessible via sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1 keys.
 	// Default: true — providers are shared to the pool when the node joins the network.
@@ -211,16 +209,6 @@ func (ac *ProviderAccessControl) UnmarshalJSON(data []byte) error {
 		ac.MigrationAllowPublic = nil // clear after migration
 	}
 	return nil
-}
-
-// DefaultAccessControl returns the default access control settings for v2.0.
-// ShareToPool defaults to true: any provider on a shared-network node is
-// automatically part of the global public pool accessible via sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1.
-func DefaultAccessControl() ProviderAccessControl {
-	return ProviderAccessControl{
-		AllowGuest:  true,
-		ShareToPool: true,
-	}
 }
 
 // Safe returns a copy with API key masked

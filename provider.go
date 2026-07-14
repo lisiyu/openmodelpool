@@ -311,13 +311,9 @@ func (m *ProviderManager) Get(id string) (Provider, bool) {
 	return p.Safe(), true
 }
 
-// normalizeAccessControl ensures sensible defaults for access control (v2.0).
-// If neither flag is explicitly set (both false, the zero value), default to guest+shared.
+// normalizeAccessControl is retained for backward compatibility.
+// After removing AllowGuest, ShareToPool is managed entirely by the admin UI/API.
 func normalizeAccessControl(ac ProviderAccessControl) ProviderAccessControl {
-	// Zero value means "not set" — apply defaults (guest=true, share_to_pool=true)
-	if !ac.AllowGuest && !ac.ShareToPool {
-		return DefaultAccessControl()
-	}
 	return ac
 }
 
@@ -472,7 +468,7 @@ func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 		ac := c.Provider.AccessControl
 		switch keyType {
 		case "guest":
-			if ac.AllowGuest {
+			if hasNonPrivateKey(c.Provider) {
 				filtered = append(filtered, c)
 			}
 		case "public":
@@ -820,7 +816,7 @@ func providerAllowsKeyType(p Provider, keyType string) bool {
 	case "admin", "proxy":
 		return true // proxy/admin keys always allowed
 	case "guest":
-		return ac.AllowGuest && hasNonPrivateKey(p)
+		return hasNonPrivateKey(p)
 	case "public":
 		// Public key only works in shared mode, and provider must be shared with non-private keys
 		if netMgr == nil || !netMgr.IsSharedMode() {
