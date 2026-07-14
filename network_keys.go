@@ -239,6 +239,11 @@ func ValidateGuestKey(key string) (nodeID string, valid bool) {
 
 // GetGuestKeyAccessPublicPool checks if a guest key has public pool access.
 // Returns: nodeID, accessPublicPool flag, and whether the key is valid.
+//
+// v3.2: When the issuing node has joined the shared network (NetworkModeShared),
+// ALL guest keys automatically get public pool access regardless of the explicit
+// AccessPublicPool flag. The difference between consumer and collaborator guest
+// keys is only about admin panel access, not resource access permissions.
 func GetGuestKeyAccessPublicPool(key string) (nodeID string, accessPublicPool bool, valid bool) {
 	if !strings.HasPrefix(key, "sk-guest-") {
 		return "", false, false
@@ -256,6 +261,11 @@ func GetGuestKeyAccessPublicPool(key string) (nodeID string, accessPublicPool bo
 					if err == nil && time.Now().After(expTime) {
 						return "", false, false
 					}
+				}
+				// v3.2: When the issuing node has joined the shared network,
+				// all guest keys (both consumer and collaborator) get public pool access.
+				if netMgr != nil && netMgr.IsSharedMode() {
+					return rec.NodeID, true, true
 				}
 				return rec.NodeID, rec.AccessPublicPool, true
 			}
