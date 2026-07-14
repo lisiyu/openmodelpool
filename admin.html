@@ -1027,7 +1027,8 @@ function openModelMatrix(pid) {
         if (isModelEnabledForKey(models[mi], k.id)) enabledCount++;
       }
     }
-    thead += '<th><div class="v8-key-label"><span class="v8-key-name">🔑 ' + alias + '</span><span class="v8-key-mask">' + mask + '</span><span class="v8-key-count">已选 ' + enabledCount + '/' + availCount + '</span></div></th>';
+    var acBadge = k.access_control === 'shared' ? '<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(16,185,129,.12);color:#059669;margin-left:4px">🔗共享</span>' : '<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(59,130,246,.12);color:#3b82f6;margin-left:4px">🔒私有</span>';
+    thead += '<th><div class="v8-key-label"><span class="v8-key-name">🔑 ' + alias + '</span>' + acBadge + '<span class="v8-key-mask">' + mask + '</span><span class="v8-key-count">已选 ' + enabledCount + '/' + availCount + '</span></div></th>';
   }
   thead += '</tr>';
 
