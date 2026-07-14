@@ -448,10 +448,7 @@ func RequestKeyType(r *http.Request) string {
 //
 // Design principle:
 // - Admin keys: unrestricted access to all providers
-// - Proxy keys (sk-{random}): v3.1 behavior depends on share_to_pool:
-//   - share_to_pool=true: Proxy API Key can access the full network shared pool
-//   - share_to_pool=false: Proxy API Key can only access this node's own providers
-// - Guest keys (sk-guest-*): controlled by per-provider AllowGuest flag
+// - Proxy keys (Admin Key / Proxy Key): unrestricted access, same as admin
 // - Public key (sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1): accesses providers with ShareToPool=true
 func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 	if keyType == "admin" {
@@ -465,14 +462,9 @@ func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 		}
 	}
 
-	// v3.1: Proxy API Key behavior depends on share_to_pool
+	// Proxy key: same as admin, unrestricted access to all candidates
 	if keyType == "proxy" {
-		if netMgr != nil && netMgr.IsSharingToPool() {
-			return cands // share_to_pool=true: proxy key can access the full network pool
-		}
-		// share_to_pool=false: proxy key can only access this node's own providers
-		// All local providers are accessible; remote (relayed) providers are not
-		return cands // local providers are always accessible via proxy key
+		return cands
 	}
 
 	filtered := make([]candidate, 0, len(cands))
