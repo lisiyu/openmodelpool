@@ -974,57 +974,219 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		}
 		client := proxyHTTPClient(testProvider, 15 * time.Second)
 		baseURL := strings.TrimRight(testProvider.BaseURL, "/")
-		// Try /models first
-		req, _ := http.NewRequest("GET", baseURL+"/models", nil)
-		req.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
-		resp, err := client.Do(req)
+
+		// Step 1: Fetch /models to verify key and get available model names
+		modelsReq, _ := http.NewRequest("GET", baseURL+"/models", nil)
+		modelsReq.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
+		modelsResp, err := client.Do(modelsReq)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}
 		}
-		if resp.StatusCode == 200 {
-			var data struct {
-				Data []any `json:"data"`
-			}
-			json.NewDecoder(resp.Body).Decode(&data)
-			resp.Body.Close()
-			return map[string]any{"success": true, "message": fmt.Sprintf("Connected, %d models", len(data.Data))}
+		modelsBody, _ := io.ReadAll(modelsResp.Body)
+		modelsResp.Body.Close()
+
+		if modelsResp.StatusCode == 401 || modelsResp.StatusCode == 403 {
+			return map[string]any{"success": false, "error": fmt.Sprintf("API key invalid (HTTP %d)", modelsResp.StatusCode)}
 		}
-		resp.Body.Close()
-		// If /models returns 404/405/403 (endpoint not supported or forbidden), fall back to a lightweight chat request
-		if resp.StatusCode == 404 || resp.StatusCode == 405 || resp.StatusCode == 403 {
-			// Try multiple model names for compatibility with different providers
-			fallbackModels := []string{"gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1", "@cf/tinyllama/tinyllama-1.1b-chat-v1.0"}
-			var lastErr string
-			for _, model := range fallbackModels {
-				testPayload := map[string]any{
-					"model":      model,
-					"max_tokens": 1,
-					"messages":   []map[string]any{{"role": "user", "content": "hi"}},
-				}
-				testBody, _ := json.Marshal(testPayload)
-				testReq, _ := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewReader(testBody))
-				testReq.Header.Set("Authorization", "Bearer " + testProvider.APIKey)
-				testReq.Header.Set("Content-Type", "application/json")
-				testResp, err := client.Do(testReq)
-				if err != nil {
-					return map[string]any{"success": false, "error": err.Error()}
-				}
-				if testResp.StatusCode == 200 {
-					testResp.Body.Close()
-					return map[string]any{"success": true, "message": "Connected (chat verified)"}
-				}
-				b, _ := io.ReadAll(testResp.Body)
-				testResp.Body.Close()
-				lastErr = fmt.Sprintf("HTTP %d: %s", testResp.StatusCode, truncate(string(b), 200))
-				if testResp.StatusCode == 401 {
-					return map[string]any{"success": false, "error": "API key invalid (HTTP 401)"}
+
+		// Collect available model IDs
+		var availableModels []string
+		if modelsResp.StatusCode == 200 {
+			var modelsData struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			}
+			if json.Unmarshal(modelsBody, &modelsData) == nil {
+				for _, m := range modelsData.Data {
+					if m.ID != "" {
+						availableModels = append(availableModels, m.ID)
+					}
 				}
 			}
-			return map[string]any{"success": false, "error": lastErr}
 		}
-		b, _ := io.ReadAll(resp.Body)
-		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", resp.StatusCode, truncate(string(b), 200))}
+
+		// Step 2: Pick a model to chat-test with
+		var testModel string
+		availSet := make(map[string]bool)
+		for _, m := range availableModels {
+			availSet[m] = true
+		}
+		// Prefer an enabled model from config that the provider actually has
+		for _, m := range testProvider.Models {
+			if m.Enabled && availSet[m.ID] {
+				testModel = m.ID
+				break
+			}
+		}
+		// Fallback: first available model from API
+		if testModel == "" && len(availableModels) > 0 {
+			testModel = availableModels[0]
+		}
+		// Fallback: first model from provider config
+		if testModel == "" && len(testProvider.Models) > 0 {
+			for _, m := range testProvider.Models {
+				if m.Enabled {
+					testModel = m.ID
+					break
+				}
+			}
+			if testModel == "" {
+				testModel = testProvider.Models[0].ID
+			}
+		}
+
+		if testModel == "" {
+			if modelsResp.StatusCode == 200 {
+				return map[string]any{"success": true, "message": fmt.Sprintf("Connected, %d models available", len(availableModels))}
+			}
+			return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", modelsResp.StatusCode, truncate(string(modelsBody), 200))}
+		}
+
+		// Step 3: Verify key with a lightweight chat request
+		testPayload := map[string]any{
+			"model":      testModel,
+			"max_tokens": 1,
+			"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+		}
+		testBody, _ := json.Marshal(testPayload)
+		testReq, _ := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewReader(testBody))
+		testReq.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
+		testReq.Header.Set("Content-Type", "application/json")
+		testResp, err := client.Do(testReq)
+		if err != nil {
+			return map[string]any{"success": false, "error": err.Error()}
+		}
+		chatBody, _ := io.ReadAll(testResp.Body)
+		testResp.Body.Close()
+
+		if testResp.StatusCode == 200 {
+			return map[string]any{"success": true, "message": fmt.Sprintf("Connected (chat verified with %s)", testModel)}
+		}
+		if testResp.StatusCode == 401 || testResp.StatusCode == 403 {
+			return map[string]any{"success": false, "error": fmt.Sprintf("API key invalid (HTTP %d)", testResp.StatusCode)}
+		}
+		// Chat 404 but /models returned 200 means key is valid
+		if testResp.StatusCode == 404 && modelsResp.StatusCode == 200 {
+			return map[string]any{"success": true, "message": fmt.Sprintf("Connected (key valid, %d models available)", len(availableModels))}
+		}
+		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", testResp.StatusCode, truncate(string(chatBody), 200))}
 	}
+}
+
+// queryKeyBalance attempts to query the upstream API for remaining balance/quota.
+// Tries common OpenAI-compatible billing endpoints.
+// Returns remaining tokens (if discoverable) or -1 if not available.
+func queryKeyBalance(baseURL, apiKey string) map[string]any {
+	result := map[string]any{
+		"available": false,
+	}
+	if baseURL == "" || apiKey == "" {
+		return result
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// Try multiple common billing endpoints
+	endpoints := []struct {
+		path   string
+		parser func([]byte) map[string]any
+	}{
+		{"/dashboard/billing/subscription", parseOpenAISubscription},
+		{"/dashboard/billing/usage", parseOpenAIUsage},
+		{"/v1/dashboard/billing/subscription", parseOpenAISubscription},
+		{"/v1/dashboard/billing/usage", parseOpenAIUsage},
+	}
+
+	for _, ep := range endpoints {
+		req, err := http.NewRequest("GET", baseURL+ep.path, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			continue
+		}
+		parsed := ep.parser(body)
+		if parsed != nil {
+			parsed["available"] = true
+			parsed["source"] = ep.path
+			return parsed
+		}
+	}
+	return result
+}
+
+// parseOpenAISubscription parses /dashboard/billing/subscription response
+// OpenAI format: {"hard_limit_usd": 120.0, "soft_limit_usd": 120.0, "access_until": 1234567890, ...}
+func parseOpenAISubscription(body []byte) map[string]any {
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil
+	}
+	result := make(map[string]any)
+
+	// Hard limit (total budget)
+	if hardLimit, ok := data["hard_limit_usd"].(float64); ok && hardLimit > 0 {
+		result["hard_limit_usd"] = hardLimit
+	}
+	// Soft limit
+	if softLimit, ok := data["soft_limit_usd"].(float64); ok && softLimit > 0 {
+		result["soft_limit_usd"] = softLimit
+	}
+	// Used amount
+	if used, ok := data["used"].(float64); ok {
+		result["used_usd"] = used
+	}
+	// Access until (timestamp)
+	if accessUntil, ok := data["access_until"].(float64); ok {
+		result["access_until"] = int64(accessUntil)
+	}
+	// Some providers return total_granted, used_granted
+	if totalGranted, ok := data["total_granted"].(float64); ok && totalGranted > 0 {
+		result["total_granted_usd"] = totalGranted
+	}
+	if usedGranted, ok := data["used_granted"].(float64); ok {
+		result["used_granted_usd"] = usedGranted
+	}
+
+	// Must have at least one useful field
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// parseOpenAIUsage parses /dashboard/billing/usage response
+// OpenAI format: {"total_usage": 123.45, "daily_costs": [...]}
+func parseOpenAIUsage(body []byte) map[string]any {
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil
+	}
+	result := make(map[string]any)
+
+	if totalUsage, ok := data["total_usage"].(float64); ok {
+		result["total_usage_cents"] = totalUsage // OpenAI returns cents
+	}
+	// Some providers return balance directly
+	if balance, ok := data["balance"].(float64); ok && balance > 0 {
+		result["balance"] = balance
+	}
+	if remaining, ok := data["remaining"].(float64); ok {
+		result["remaining"] = remaining
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // fetchRemoteModels fetches model list from an OpenAI-compatible provider.

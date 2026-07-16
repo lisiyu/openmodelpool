@@ -1,0 +1,2008 @@
+[
+  {
+    "id": "nvidia",
+    "name": "NVIDIA",
+    "type": "openai_compatible",
+    "base_url": "https://integrate.api.nvidia.com/v1",
+    "enabled": true,
+    "models": [
+      {
+        "id": "01-ai/yi-large",
+        "name": "01-ai/yi-large",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "abacusai/dracarys-llama-3.1-70b-instruct",
+        "name": "abacusai/dracarys-llama-3.1-70b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "adept/fuyu-8b",
+        "name": "adept/fuyu-8b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "ai21labs/jamba-1.5-large-instruct",
+        "name": "ai21labs/jamba-1.5-large-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "aisingapore/sea-lion-7b-instruct",
+        "name": "aisingapore/sea-lion-7b-instruct",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": true,
+          "key_d18221e97f68c20a": true
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "baai/bge-m3",
+        "name": "baai/bge-m3",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "bigcode/starcoder2-15b",
+        "name": "bigcode/starcoder2-15b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "bytedance/seed-oss-36b-instruct",
+        "name": "bytedance/seed-oss-36b-instruct",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": true,
+          "key_d18221e97f68c20a": true
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "databricks/dbrx-instruct",
+        "name": "databricks/dbrx-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "deepseek-ai/deepseek-coder-6.7b-instruct",
+        "name": "deepseek-ai/deepseek-coder-6.7b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "deepseek-ai/deepseek-v4-flash",
+        "name": "deepseek-ai/deepseek-v4-flash",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "deepseek-ai/deepseek-v4-pro",
+        "name": "deepseek-ai/deepseek-v4-pro",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/codegemma-1.1-7b",
+        "name": "google/codegemma-1.1-7b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/codegemma-7b",
+        "name": "google/codegemma-7b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/deplot",
+        "name": "google/deplot",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/diffusiongemma-26b-a4b-it",
+        "name": "google/diffusiongemma-26b-a4b-it",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/gemma-2-2b-it",
+        "name": "google/gemma-2-2b-it",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/gemma-2b",
+        "name": "google/gemma-2b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/gemma-3-12b-it",
+        "name": "google/gemma-3-12b-it",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/gemma-3-4b-it",
+        "name": "google/gemma-3-4b-it",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/gemma-3n-e2b-it",
+        "name": "google/gemma-3n-e2b-it",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/gemma-3n-e4b-it",
+        "name": "google/gemma-3n-e4b-it",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/gemma-4-31b-it",
+        "name": "google/gemma-4-31b-it",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "google/recurrentgemma-2b",
+        "name": "google/recurrentgemma-2b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "ibm/granite-3.0-3b-a800m-instruct",
+        "name": "ibm/granite-3.0-3b-a800m-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "ibm/granite-3.0-8b-instruct",
+        "name": "ibm/granite-3.0-8b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "ibm/granite-34b-code-instruct",
+        "name": "ibm/granite-34b-code-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "ibm/granite-8b-code-instruct",
+        "name": "ibm/granite-8b-code-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/codellama-70b",
+        "name": "meta/codellama-70b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/llama-3.1-70b-instruct",
+        "name": "meta/llama-3.1-70b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/llama-3.1-8b-instruct",
+        "name": "meta/llama-3.1-8b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/llama-3.2-11b-vision-instruct",
+        "name": "meta/llama-3.2-11b-vision-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/llama-3.2-1b-instruct",
+        "name": "meta/llama-3.2-1b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/llama-3.2-3b-instruct",
+        "name": "meta/llama-3.2-3b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/llama-3.2-90b-vision-instruct",
+        "name": "meta/llama-3.2-90b-vision-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/llama-3.3-70b-instruct",
+        "name": "meta/llama-3.3-70b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/llama-4-maverick-17b-128e-instruct",
+        "name": "meta/llama-4-maverick-17b-128e-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/llama-guard-4-12b",
+        "name": "meta/llama-guard-4-12b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "meta/llama2-70b",
+        "name": "meta/llama2-70b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "microsoft/kosmos-2",
+        "name": "microsoft/kosmos-2",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "microsoft/phi-3-vision-128k-instruct",
+        "name": "microsoft/phi-3-vision-128k-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "microsoft/phi-3.5-moe-instruct",
+        "name": "microsoft/phi-3.5-moe-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "microsoft/phi-4-mini-instruct",
+        "name": "microsoft/phi-4-mini-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "microsoft/phi-4-multimodal-instruct",
+        "name": "microsoft/phi-4-multimodal-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "minimaxai/minimax-m2.7",
+        "name": "minimaxai/minimax-m2.7",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": true
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "minimaxai/minimax-m3",
+        "name": "minimaxai/minimax-m3",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": true,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/codestral-22b-instruct-v0.1",
+        "name": "mistralai/codestral-22b-instruct-v0.1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/ministral-14b-instruct-2512",
+        "name": "mistralai/ministral-14b-instruct-2512",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/mistral-7b-instruct-v0.3",
+        "name": "mistralai/mistral-7b-instruct-v0.3",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/mistral-large",
+        "name": "mistralai/mistral-large",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/mistral-large-2-instruct",
+        "name": "mistralai/mistral-large-2-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/mistral-large-3-675b-instruct-2512",
+        "name": "mistralai/mistral-large-3-675b-instruct-2512",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/mistral-medium-3.5-128b",
+        "name": "mistralai/mistral-medium-3.5-128b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/mistral-nemotron",
+        "name": "mistralai/mistral-nemotron",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/mistral-small-4-119b-2603",
+        "name": "mistralai/mistral-small-4-119b-2603",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/mixtral-8x22b-v0.1",
+        "name": "mistralai/mixtral-8x22b-v0.1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "mistralai/mixtral-8x7b-instruct-v0.1",
+        "name": "mistralai/mixtral-8x7b-instruct-v0.1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "moonshotai/kimi-k2.6",
+        "name": "moonshotai/kimi-k2.6",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": true,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nv-mistralai/mistral-nemo-12b-instruct",
+        "name": "nv-mistralai/mistral-nemo-12b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/ai-synthetic-video-detector",
+        "name": "nvidia/ai-synthetic-video-detector",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/cosmos-reason2-8b",
+        "name": "nvidia/cosmos-reason2-8b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/embed-qa-4",
+        "name": "nvidia/embed-qa-4",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/gliner-pii",
+        "name": "nvidia/gliner-pii",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/ising-calibration-1-35b-a3b",
+        "name": "nvidia/ising-calibration-1-35b-a3b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.1-nemoguard-8b-content-safety",
+        "name": "nvidia/llama-3.1-nemoguard-8b-content-safety",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.1-nemoguard-8b-topic-control",
+        "name": "nvidia/llama-3.1-nemoguard-8b-topic-control",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.1-nemotron-51b-instruct",
+        "name": "nvidia/llama-3.1-nemotron-51b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.1-nemotron-70b-instruct",
+        "name": "nvidia/llama-3.1-nemotron-70b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.1-nemotron-nano-8b-v1",
+        "name": "nvidia/llama-3.1-nemotron-nano-8b-v1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+        "name": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+        "name": "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+        "name": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1",
+        "name": "nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.2-nv-embedqa-1b-v1",
+        "name": "nvidia/llama-3.2-nv-embedqa-1b-v1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "name": "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        "name": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-nemotron-embed-1b-v2",
+        "name": "nvidia/llama-nemotron-embed-1b-v2",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama-nemotron-embed-vl-1b-v2",
+        "name": "nvidia/llama-nemotron-embed-vl-1b-v2",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/llama3-chatqa-1.5-70b",
+        "name": "nvidia/llama3-chatqa-1.5-70b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/mistral-nemo-minitron-8b-8k-instruct",
+        "name": "nvidia/mistral-nemo-minitron-8b-8k-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemoretriever-parse",
+        "name": "nvidia/nemoretriever-parse",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-3-content-safety",
+        "name": "nvidia/nemotron-3-content-safety",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-3-nano-30b-a3b",
+        "name": "nvidia/nemotron-3-nano-30b-a3b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-3-super-120b-a12b",
+        "name": "nvidia/nemotron-3-super-120b-a12b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-3-ultra-550b-a55b",
+        "name": "nvidia/nemotron-3-ultra-550b-a55b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-3.5-content-safety",
+        "name": "nvidia/nemotron-3.5-content-safety",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-4-340b-instruct",
+        "name": "nvidia/nemotron-4-340b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-4-340b-reward",
+        "name": "nvidia/nemotron-4-340b-reward",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-content-safety-reasoning-4b",
+        "name": "nvidia/nemotron-content-safety-reasoning-4b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-mini-4b-instruct",
+        "name": "nvidia/nemotron-mini-4b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-nano-12b-v2-vl",
+        "name": "nvidia/nemotron-nano-12b-v2-vl",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-nano-3-30b-a3b",
+        "name": "nvidia/nemotron-nano-3-30b-a3b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nemotron-parse",
+        "name": "nvidia/nemotron-parse",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/neva-22b",
+        "name": "nvidia/neva-22b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nv-embed-v1",
+        "name": "nvidia/nv-embed-v1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nv-embedcode-7b-v1",
+        "name": "nvidia/nv-embedcode-7b-v1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nv-embedqa-e5-v5",
+        "name": "nvidia/nv-embedqa-e5-v5",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nv-embedqa-mistral-7b-v2",
+        "name": "nvidia/nv-embedqa-mistral-7b-v2",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nvclip",
+        "name": "nvidia/nvclip",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/nvidia-nemotron-nano-9b-v2",
+        "name": "nvidia/nvidia-nemotron-nano-9b-v2",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/riva-translate-4b-instruct",
+        "name": "nvidia/riva-translate-4b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/riva-translate-4b-instruct-v1.1",
+        "name": "nvidia/riva-translate-4b-instruct-v1.1",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "nvidia/vila",
+        "name": "nvidia/vila",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "openai/gpt-oss-120b",
+        "name": "openai/gpt-oss-120b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "openai/gpt-oss-20b",
+        "name": "openai/gpt-oss-20b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "qwen/qwen3-next-80b-a3b-instruct",
+        "name": "qwen/qwen3-next-80b-a3b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "qwen/qwen3.5-122b-a10b",
+        "name": "qwen/qwen3.5-122b-a10b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "qwen/qwen3.5-397b-a17b",
+        "name": "qwen/qwen3.5-397b-a17b",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": true,
+          "key_d18221e97f68c20a": true
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "sarvamai/sarvam-m",
+        "name": "sarvamai/sarvam-m",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "snowflake/arctic-embed-l",
+        "name": "snowflake/arctic-embed-l",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "stepfun-ai/step-3.5-flash",
+        "name": "stepfun-ai/step-3.5-flash",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "stepfun-ai/step-3.7-flash",
+        "name": "stepfun-ai/step-3.7-flash",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "stockmark/stockmark-2-100b-instruct",
+        "name": "stockmark/stockmark-2-100b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "upstage/solar-10.7b-instruct",
+        "name": "upstage/solar-10.7b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "writer/palmyra-creative-122b",
+        "name": "writer/palmyra-creative-122b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "writer/palmyra-fin-70b-32k",
+        "name": "writer/palmyra-fin-70b-32k",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "writer/palmyra-med-70b",
+        "name": "writer/palmyra-med-70b",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "writer/palmyra-med-70b-32k",
+        "name": "writer/palmyra-med-70b-32k",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "z-ai/glm-5.2",
+        "name": "z-ai/glm-5.2",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      },
+      {
+        "id": "zyphra/zamba2-7b-instruct",
+        "name": "zyphra/zamba2-7b-instruct",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_1d158adb3ac84e0e": false,
+          "key_d18221e97f68c20a": false
+        },
+        "available_keys": [
+          "key_1d158adb3ac84e0e",
+          "key_d18221e97f68c20a"
+        ]
+      }
+    ],
+    "priority": 5,
+    "description": "NVIDIA 推理微服务平台，100+ 开源模型免费调用（40 RPM），OpenAI 兼容",
+    "access_control": {
+      "allow_guest": true,
+      "share_to_pool": true,
+      "guest_pool_percent": 36
+    },
+    "api_keys": [
+      {
+        "id": "key_1d158adb3ac84e0e",
+        "alias": "共享1",
+        "key": "omp:e:KfeB3JnfHTi9Y97uowY/hx+SqR1KaF7S1mh7ONk+jBhCnHBPNpNXwHJFnvEEJ/YBe679P9hVliDlprnMUZKHJW0TNbr1TR3Dm1tJ7tazPFwVsr2vCBNUYjSYnFT3zilmAc8=",
+        "quota": 8000000,
+        "quota_daily": 0,
+        "quota_monthly": 0,
+        "used": 0,
+        "used_daily": 0,
+        "used_monthly": 0,
+        "access_control": "shared",
+        "enabled": true,
+        "priority": 1,
+        "expires_at": "",
+        "created_at": "2026-07-13T08:22:44+08:00",
+        "updated_at": "2026-07-14T02:35:35+08:00"
+      },
+      {
+        "id": "key_d18221e97f68c20a",
+        "alias": "私有1",
+        "key": "omp:e:wm/1UNhINpF+YvMx0PebIXMV8uPhIyQKHk9T7ooidG0Cz+B8gWNUnAj3Ug==",
+        "quota": 5555550,
+        "quota_daily": 0,
+        "quota_monthly": 0,
+        "used": 0,
+        "used_daily": 0,
+        "used_monthly": 0,
+        "access_control": "private",
+        "enabled": true,
+        "priority": 1,
+        "expires_at": "",
+        "created_at": "2026-07-14T00:16:09+08:00",
+        "updated_at": "2026-07-14T02:14:18+08:00"
+      }
+    ],
+    "created_at": "2026-07-13T07:55:13+08:00",
+    "updated_at": "2026-07-14T03:24:33+08:00"
+  },
+  {
+    "id": "cloudflare-workers-ai",
+    "name": "Cloudflare Workers AI",
+    "type": "openai_compatible",
+    "base_url": "https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/v1",
+    "enabled": true,
+    "models": [
+      {
+        "id": "@cf/meta/llama-3.1-8b-instruct",
+        "name": "",
+        "enabled": true
+      },
+      {
+        "id": "@cf/meta/llama-3.1-70b-instruct",
+        "name": "",
+        "enabled": true
+      }
+    ],
+    "priority": 5,
+    "description": "Cloudflare 提供的 AI 推理服务，支持多种开源模型，每天有免费额度",
+    "access_control": {
+      "allow_guest": true,
+      "share_to_pool": true
+    },
+    "created_at": "2026-07-13T08:38:52+08:00",
+    "updated_at": "2026-07-13T08:38:52+08:00"
+  },
+  {
+    "id": "huggingface-inference",
+    "name": "HuggingFace Inference API",
+    "type": "openai_compatible",
+    "base_url": "https://api-inference.huggingface.co/models",
+    "enabled": true,
+    "models": [
+      {
+        "id": "meta-llama/Llama-3.1-8B-Instruct",
+        "name": "",
+        "enabled": true
+      },
+      {
+        "id": "mistralai/Mistral-7B-Instruct-v0.3",
+        "name": "",
+        "enabled": true
+      }
+    ],
+    "priority": 5,
+    "description": "HuggingFace 免费推理 API，可调用数千个开源模型",
+    "access_control": {
+      "allow_guest": true,
+      "share_to_pool": true
+    },
+    "created_at": "2026-07-13T08:39:09+08:00",
+    "updated_at": "2026-07-13T08:39:09+08:00"
+  },
+  {
+    "id": "chutes-ai",
+    "name": "Chutes AI",
+    "type": "openai_compatible",
+    "base_url": "https://chutes.ai/v1",
+    "enabled": true,
+    "models": [
+      {
+        "id": "deepseek-ai/DeepSeek-V3",
+        "name": "",
+        "enabled": true
+      },
+      {
+        "id": "deepseek-ai/DeepSeek-R1",
+        "name": "",
+        "enabled": true
+      }
+    ],
+    "priority": 5,
+    "description": "免费开源模型推理平台，无需信用卡注册",
+    "access_control": {
+      "allow_guest": true,
+      "share_to_pool": true
+    },
+    "created_at": "2026-07-13T08:39:14+08:00",
+    "updated_at": "2026-07-13T08:39:14+08:00"
+  },
+  {
+    "id": "custom-mrinacv2",
+    "name": "创业沙拉",
+    "type": "openai_compatible",
+    "base_url": "https://tikbit.ai/v1",
+    "enabled": true,
+    "models": [
+      {
+        "id": "claude-fable-5",
+        "name": "claude-fable-5",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_d38dd37240d5e0d6"
+        ]
+      },
+      {
+        "id": "claude-haiku-4-5",
+        "name": "claude-haiku-4-5",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_52a57195f4603865"
+        ]
+      },
+      {
+        "id": "claude-haiku-4-5-20251001",
+        "name": "claude-haiku-4-5-20251001",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_52a57195f4603865",
+          "key_d38dd37240d5e0d6"
+        ]
+      },
+      {
+        "id": "claude-opus-4-6",
+        "name": "claude-opus-4-6",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": false
+        },
+        "available_keys": [
+          "key_52a57195f4603865",
+          "key_d38dd37240d5e0d6"
+        ]
+      },
+      {
+        "id": "claude-opus-4-7",
+        "name": "claude-opus-4-7",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_52a57195f4603865",
+          "key_d38dd37240d5e0d6"
+        ]
+      },
+      {
+        "id": "claude-opus-4-8",
+        "name": "claude-opus-4-8",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_52a57195f4603865",
+          "key_d38dd37240d5e0d6"
+        ]
+      },
+      {
+        "id": "claude-sonnet-4-6",
+        "name": "claude-sonnet-4-6",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": false
+        },
+        "available_keys": [
+          "key_52a57195f4603865",
+          "key_d38dd37240d5e0d6"
+        ]
+      },
+      {
+        "id": "claude-sonnet-5",
+        "name": "claude-sonnet-5",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_52a57195f4603865",
+          "key_d38dd37240d5e0d6"
+        ]
+      },
+      {
+        "id": "gpt-5.5",
+        "name": "gpt-5.5",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_52a57195f4603865"
+        ]
+      },
+      {
+        "id": "gpt-5.5-codex",
+        "name": "gpt-5.5-codex",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_52a57195f4603865"
+        ]
+      },
+      {
+        "id": "gpt-5.6-luna",
+        "name": "gpt-5.6-luna",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": false,
+          "key_d38dd37240d5e0d6": false
+        },
+        "available_keys": [
+          "key_52a57195f4603865"
+        ]
+      },
+      {
+        "id": "gpt-5.6-sol",
+        "name": "gpt-5.6-sol",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_52a57195f4603865"
+        ]
+      },
+      {
+        "id": "gpt-5.6-terra",
+        "name": "gpt-5.6-terra",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": false,
+          "key_d38dd37240d5e0d6": false
+        },
+        "available_keys": [
+          "key_52a57195f4603865"
+        ]
+      },
+      {
+        "id": "gpt-image-2",
+        "name": "gpt-image-2",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": false,
+          "key_d38dd37240d5e0d6": false
+        },
+        "available_keys": [
+          "key_52a57195f4603865"
+        ]
+      },
+      {
+        "id": "gpt-image-2-4K",
+        "name": "gpt-image-2-4K",
+        "enabled": false,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": false,
+          "key_d38dd37240d5e0d6": false
+        },
+        "available_keys": [
+          "key_52a57195f4603865"
+        ]
+      },
+      {
+        "id": "gpt-image-2-adobe",
+        "name": "gpt-image-2-adobe",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_52a57195f4603865"
+        ]
+      },
+      {
+        "id": "gpt-image-2-count",
+        "name": "gpt-image-2-count",
+        "enabled": true,
+        "enabled_by_keys": {
+          "key_52a57195f4603865": true,
+          "key_d38dd37240d5e0d6": true
+        },
+        "available_keys": [
+          "key_52a57195f4603865"
+        ]
+      }
+    ],
+    "priority": 1,
+    "rate_limit_per_min": 60,
+    "private_quota_monthly": 500000000,
+    "shared_quota_monthly": 2000000000,
+    "access_control": {
+      "allow_guest": true,
+      "share_to_pool": true,
+      "guest_pool_percent": 90
+    },
+    "api_keys": [
+      {
+        "id": "key_52a57195f4603865",
+        "alias": "4x",
+        "key": "omp:e:6OuGLBpf7cYghVG/YxuHehFRpg9wXBZXGfnubNJ6M3syjTjtNHtWVo4CauR5tA4qxuqJHRGyx7Z8ExS1+ACVOCiPfA0BiIHFaiqBdNUEcA==",
+        "quota": 316048962,
+        "quota_daily": 10000000,
+        "quota_monthly": 316083556,
+        "used": 0,
+        "used_daily": 0,
+        "used_monthly": 0,
+        "access_control": "private",
+        "enabled": true,
+        "priority": 1,
+        "expires_at": "",
+        "created_at": "2026-07-13T11:20:43+08:00",
+        "updated_at": "2026-07-14T03:17:07+08:00"
+      },
+      {
+        "id": "key_d38dd37240d5e0d6",
+        "alias": "5X",
+        "key": "omp:e:bfVdpoY5feMWP2rYF2wGyvRuR7oZX9XElCHgb0eqbnX1htf346Of9BkIcuFsXzsgoZQ8drJCWoxAn14XbSdQ2tMau5OcbSjtV3Wn0YuNkQ==",
+        "quota": 316048962,
+        "quota_daily": 0,
+        "quota_monthly": 316083678,
+        "used": 0,
+        "used_daily": 0,
+        "used_monthly": 0,
+        "access_control": "shared",
+        "enabled": true,
+        "priority": 2,
+        "expires_at": "",
+        "created_at": "2026-07-13T17:40:32+08:00",
+        "updated_at": "2026-07-14T03:17:07+08:00"
+      },
+      {
+        "id": "key_2e3444013f3d66dc",
+        "alias": "错误key",
+        "key": "omp:e:/qwceWtIQ8owb1DzpgdJUSRg5tJYnHMzZ+x9+fKFutgBWHM1aDCF",
+        "quota": 0,
+        "quota_daily": 0,
+        "quota_monthly": 0,
+        "used": 0,
+        "used_daily": 0,
+        "used_monthly": 0,
+        "access_control": "private",
+        "enabled": true,
+        "priority": 1,
+        "expires_at": "",
+        "created_at": "2026-07-14T02:07:55+08:00",
+        "updated_at": "2026-07-14T02:07:55+08:00"
+      }
+    ],
+    "created_at": "2026-07-13T11:11:18+08:00",
+    "updated_at": "2026-07-14T03:23:21+08:00"
+  },
+  {
+    "id": "vllm-local",
+    "name": "vLLM (本地/自建)",
+    "type": "openai_compatible",
+    "base_url": "http://localhost:8000/v1",
+    "enabled": true,
+    "models": null,
+    "priority": 5,
+    "description": "vLLM 高性能推理引擎，自建部署后 OpenAI 兼容",
+    "access_control": {
+      "allow_guest": true,
+      "share_to_pool": true
+    },
+    "created_at": "2026-07-13T08:39:19+08:00",
+    "updated_at": "2026-07-13T08:39:19+08:00"
+  }
+]

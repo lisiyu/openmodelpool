@@ -50,6 +50,36 @@ This is not a commercial product. This is the continuation of internet spirit: *
 
 ---
 
+## 📋 Implementation Status（诚实状态）
+
+> This section honestly tracks what is actually wired up in the current `workbody` branch versus what remains planned. It is kept in sync with the **code**, not the vision. Items marked ⚠️ are partially designed or stubbed and are **not yet functional end-to-end**.
+
+### ✅ Implemented & Usable
+
+| Area | State |
+|------|-------|
+| OpenAI-compatible unified gateway (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, `/v1/completions`) | ✅ Real, working |
+| Personal-mode **4-dimension** routing weights (priority / cost / latency / tokens), editable via admin sliders | ✅ Real |
+| Automatic failover, multi-user, token budget, provider health check | ✅ Real |
+| **Real AES-256-GCM encryption** (`encryptor.go`; prefix `omp:e:`) for API keys / config fields | ✅ Real |
+| Request logging, usage archiving, SMTP email, Web admin panel | ✅ Real |
+| Network mode — reputation system (EWMA, S/A/B/C/D), contribution credits, key system (guest/public key issue/list/revoke), quota allocation, health-aware load balancing, Global Pool (join/contribute/nodes/stats), algorithm governance chain params (current/history/propose/vote/validate), region (minimal stub, compiles) | ✅ Implemented (some as minimal/partial stubs — see ⚠️ below) |
+| Federated trust pool (registry-based `trust_pool.json`) | ✅ Real |
+
+### ⚠️ Planned / Not Yet Wired
+
+| Area | Current State |
+|------|---------------|
+| BIP39 mnemonic node identity | ⚠️ `handleNodePubKey` returns empty pubkey; UI not yet exposed. The "Identity System (BIP39 Mnemonic)" below is currently a **vision**; the node pubkey interface is not yet generated/displayed |
+| DHT | ⚠️ Former empty shell removed; `GetDHTStats` returns `{"enabled":false}`. The DHT layer in triple-layer discovery is **currently disabled**; P2P discovery relies on registry/gossip, not DHT |
+| IPFS ledger | ⚠️ Ledger is currently an **in-memory `GossipLedger` stub**, no IPFS persistence; contribution credits stored locally only |
+| WAF 4-layer protection | ⚠️ `handleWAFStatus` returns `enabled:false`; the WAF engine is **not yet wired into the proxy request path** |
+| Algorithm governance DAO voting | ⚠️ `propose`/`vote` endpoints accept locally and return status; on-chain / decentralized voting is **not implemented** |
+| 5-dimension network routing | ⚠️ README describes network mode as 5-dimension (trust/reputation/latency/availability/contribution), but the admin weight editor currently exposes **only 4 sliders** |
+| Regional routing | ⚠️ Compiles (minimal stub), but real geo-based routing is not wired (`handleNetworkRegions` returns empty) |
+
+---
+
 ## ✨ Core Features
 
 ### 🏠 Personal Mode (Default)
@@ -63,16 +93,16 @@ Personal Mode is a pure-local proxy — no network participation, no identity ge
 - **`provider/model` syntax** — Route to specific platforms via `deepseek/deepseek-chat` format, also supports OpenRouter-style routing
 - **Auto platform discovery** — Automatically scans and discovers free AI platforms on the internet
 
-#### 🧠 5-Dimension Intelligent Routing
+#### 🧠 4-Dimension Intelligent Routing
 
 | Mode | Strategy |
 |------|----------|
 | 🎯 Priority | Sorted by preset priority |
 | 💰 Cheapest | Selects the cheapest platform by `platform × model` pricing |
 | ⚡ Fastest | Selects the fastest platform based on EWMA historical latency |
-| 🧠 Composite | Weighted fusion of **5 dimensions**: **Trust 25%** + **Reputation 25%** + **Latency 20%** + **Availability 15%** + **Contribution 15%** |
+| 🧠 Composite | Weighted fusion of **4 dimensions**: **priority / cost / latency / tokens** (all customizable via the admin panel sliders) |
 
-> All 5 composite weight dimensions are customizable via the admin panel.
+> **Personal Mode is 4-dimension** (priority / cost / latency / tokens). Network Mode's **design target** is 5-dimension (trust / reputation / latency / availability / contribution), but the admin weight editor currently exposes **only 4 sliders** — the 5th (network-specific) dimension is not yet surfaced in the UI.
 
 #### 🔗 Automatic Failover
 
@@ -99,20 +129,20 @@ Failed requests automatically switch to the next available Provider, forming a f
 - Status tracking: `healthy` / `degraded` / `down` / `unknown`
 - Consecutive failure count, last success/failure time, failure reasons
 
-#### 🛡️ WAF 4-Layer Protection
+#### 🛡️ WAF 4-Layer Protection（架构已设计，尚未激活）
 
-| Layer | Function |
+| Layer | Function (designed) |
 |-------|----------|
 | Layer 1: Rate Limit | Global QPS + per-NodeID QPS + per-IP QPS (token bucket) |
 | Layer 2: Token Limit | Pre-request token estimation guardrails |
 | Layer 3: Content Safety | L1 hard block / L2 soft block / L3 log-only |
 | Layer 4: Behavioral | High-frequency repetition / anomaly detection |
 
-Escalating enforcement: warn → record → temp ban (2h) → long ban (7d) → permanent ban.
+> **⚠️ Status: not yet active.** The WAF engine is **not yet wired into the proxy request path**. `handleWAFStatus` currently returns `enabled:false`. The four-layer rules and escalation model (warn → record → temp ban (2h) → long ban (7d) → permanent ban) are **designed and documented**, but enforcement is pending integration.
 
-#### 🔐 Security & Encryption
+#### 🔐 Security & Encryption（真实实现）
 
-- **AES-256-GCM** — All sensitive data (API Keys, SMTP passwords, Proxy API Keys) encrypted at rest
+- **AES-256-GCM — real implementation** — `encryptor.go` provides genuine AES-256-GCM symmetric encryption. All sensitive data (API Keys, SMTP passwords, Proxy API Keys) is encrypted at rest, with ciphertext tagged by the `omp:e:` prefix. This is **not** a placeholder: keys are derived and the GCM auth tag is verified on decrypt.
 - **bcrypt** — Admin password hashing
 - **JWT** — Token authentication with expiration
 - **Data integrity** — HMAC-SHA256 signatures on critical data files to detect tampering
@@ -161,7 +191,9 @@ Escalating enforcement: warn → record → temp ban (2h) → long ban (7d) → 
 
 When you opt in, your node joins the **AI Capability Sharing Network** — a decentralized P2P network where nodes share AI model access and exchange Contribution Credits.
 
-#### 🔑 Identity System (BIP39 Mnemonic)
+#### 🔑 Identity System (BIP39 Mnemonic) ⚠️
+
+> **⚠️ Planned / not yet exposed.** The node mnemonic identity described below is currently a **vision**. `handleNodePubKey` returns an **empty pubkey** and the UI does **not** yet surface mnemonic generation or the derived Ed25519 key pair. No node identity is generated or broadcast in the current build.
 
 | Component | Description |
 |-----------|-------------|
@@ -170,7 +202,9 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 | **Node ID** | Unique identifier: `mmx-` + Base58(Ed25519 public key first 16 bytes) |
 | **Signing** | All broadcast data (Providers, scores, credit transactions) signed by node private key |
 
-#### 🌍 P2P Node Discovery (Triple-Layer)
+#### 🌍 P2P Node Discovery (Triple-Layer) ⚠️
+
+> **⚠️ DHT layer currently disabled.** The former Kademlia DHT shell was removed; `GetDHTStats` returns `{"enabled":false}`. In the current build, P2P discovery actually relies on the **registry + gossip** path, **not** DHT. The DHT row below represents the design target.
 
 | Mechanism | Purpose | Protocol |
 |-----------|---------|----------|
@@ -192,7 +226,9 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 **Scoring formula**: `Score = Success Rate × 40% + Avg Latency × 25% + Uptime × 20% + Peer Rating × 15%`
 **EWMA smoothing**: `New Score = 0.3 × Current + 0.7 × Previous` (α=0.3)
 
-#### 💎 Contribution Credit System
+#### 💎 Contribution Credit System ⚠️
+
+> **⚠️ Ledger is currently in-memory.** The ledger is an in-memory **`GossipLedger` stub** — there is **no IPFS persistence** yet, and contribution credits are stored **locally only**. The anti-double-spend chain described below is designed but not yet backed by durable/IPFS storage.
 
 - **Earn**: Provide Provider resources that other nodes consume → earn Contribution Credits (requests without request-id are not counted)
 - **Spend**: Call other nodes' Providers, send P2P messages, etc.
@@ -585,7 +621,9 @@ Embeddings endpoint (same handler, supports embedding models).
 | `GET` | `/api/network/global-pool/nodes` | Pool nodes |
 | `GET` | `/api/network/global-pool/stats` | Pool statistics |
 
-#### Algorithm Governance
+#### Algorithm Governance ⚠️
+
+> **⚠️ Local-only.** The `propose` / `vote` endpoints **accept requests locally and return a status**, but **on-chain / decentralized DAO voting is not implemented**. Governance is currently a local parameter store (current / history / propose / vote / validate), not a distributed consensus.
 
 | Method | Path | Description |
 |--------|------|-------------|

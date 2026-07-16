@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -161,4 +163,45 @@ func extractToken(r *http.Request) string {
 		return cookie.Value
 	}
 	return ""
+}
+
+// localOnly restricts access to localhost and private network IPs only.
+// Used for sensitive endpoints like password reset that should not be accessible from the public internet.
+func localOnly(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ip := extractClientIP(r.RemoteAddr)
+		if !isLocalOrPrivateIP(ip) {
+			slog.Warn("blocked non-local access to sensitive endpoint", "ip", ip, "path", r.URL.Path)
+			writeError(w, 403, "this endpoint is only accessible from localhost or private network")
+			return
+		}
+		handler(w, r)
+	}
+}
+
+// isLocalOrPrivateIP checks if an IP is localhost or in a private network range.
+func isLocalOrPrivateIP(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	// Loopback: 127.0.0.0/8, ::1
+	if parsed.IsLoopback() {
+		return true
+	}
+	// Private networks: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+	privateRanges := []struct {
+		network string
+	}{
+		{"10.0.0.0/8"},
+		{"172.16.0.0/12"},
+		{"192.168.0.0/16"},
+	}
+	for _, r := range privateRanges {
+		_, cidr, _ := net.ParseCIDR(r.network)
+		if cidr.Contains(parsed) {
+			return true
+		}
+	}
+	return false
 }

@@ -124,8 +124,8 @@ func handleGetDiscoveredPlatforms(w http.ResponseWriter, r *http.Request) {
 
 // handleUpdateDiscoveredPlatform updates the status of a discovered platform.
 func handleUpdateDiscoveredPlatform(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/discovered-platforms/")
-	id := strings.TrimSpace(path)
+	id := r.PathValue("id")
+	
 	if id == "" {
 		writeError(w, 400, "platform ID required")
 		return
@@ -387,9 +387,7 @@ func parseMarkdownForPlatforms(content string, source string) []DiscoveredPlatfo
 
 // handleCheckDiscoveredPlatform checks if a discovered platform is OpenAI API compatible.
 func handleCheckDiscoveredPlatform(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/discovered-platforms/")
-	id := strings.TrimSuffix(path, "/check")
-	id = strings.TrimSpace(id)
+	id := r.PathValue("id")
 	if id == "" {
 		writeError(w, 400, "platform ID required")
 		return

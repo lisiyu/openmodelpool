@@ -621,7 +621,9 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
 
 		if stream {
+			IncrProviderConn(p.ID)
 			dataSent, err := handleStreamProxy(w, p, actualModel, req.Messages, extra, model, startTime)
+			DecrProviderConn(p.ID)
 			if err == nil {
 				if consumerID != "" {
 					multiUser.RecordConsumerUsage(consumerID, 0)
@@ -637,7 +639,9 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("stream failed before data sent, trying next provider", "provider", p.Name, "error", err)
 			lastErr = err
 		} else {
+			IncrProviderConn(p.ID)
 			resp, err := doNonStream(p, actualModel, req.Messages, extra)
+			DecrProviderConn(p.ID)
 			if err != nil {
 				lastErr = err
 				tracker.Record(p.ID, p.Name, model, 0, 0, float64(time.Since(startTime).Milliseconds()), false, err.Error())

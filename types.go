@@ -115,9 +115,11 @@ type ModelListResponse struct {
 // ============================================================
 
 type ModelDef struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Enabled bool   `json:"enabled"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Enabled       bool            `json:"enabled"`
+	EnabledByKeys map[string]bool `json:"enabled_by_keys,omitempty"` // per-key enabled state: keyID -> enabled
+	AvailableKeys []string        `json:"available_keys,omitempty"`  // keyIDs that have this model available
 }
 
 // APIKeyConfig represents a single API key with its own quota and access control.
@@ -126,7 +128,13 @@ type APIKeyConfig struct {
 	Alias         string `json:"alias,omitempty"` // human-readable alias (optional)
 	Key           string `json:"key"`             // API key (encrypted at rest)
 	Quota         int64  `json:"quota"`           // total quota (tokens), 0=unlimited
-	Used          int64  `json:"used"`            // used quota
+	QuotaDaily    int64  `json:"quota_daily"`     // daily quota limit, 0=unlimited
+	QuotaMonthly  int64  `json:"quota_monthly"`   // monthly quota limit, 0=unlimited
+	Used          int64  `json:"used"`            // used quota (total)
+	UsedDaily     int64  `json:"used_daily"`      // used today
+	UsedMonthly   int64  `json:"used_monthly"`    // used this month
+	LastDailyReset   string `json:"last_daily_reset,omitempty"`   // date of last daily reset (YYYY-MM-DD)
+	LastMonthlyReset string `json:"last_monthly_reset,omitempty"` // month of last monthly reset (YYYY-MM)
 	AccessControl string `json:"access_control"`  // "private" | "shared" | "public"
 	Enabled       bool   `json:"enabled"`         // whether this key is enabled
 	Priority      int    `json:"priority"`        // priority for rotation (higher = preferred)
@@ -145,8 +153,15 @@ type Provider struct {
 	Models      []ModelDef `json:"models"`
 	Priority    int        `json:"priority"`
 	TokenLimit  int64      `json:"token_limit,omitempty"` // monthly token budget, 0=unlimited
-	DailyTokenLimit int64 `json:"daily_token_limit,omitempty"` // daily token limit, 0=unlimited
-	RateLimitPerMin int   `json:"rate_limit_per_min,omitempty"` // requests per minute limit, 0=unlimited
+	RateLimitEnabled  bool  `json:"rate_limit_enabled,omitempty"`    // master toggle for rate limiting
+	DailyRequestLimit int64 `json:"daily_request_limit,omitempty"` // max requests per day, 0=unlimited
+	RateLimitPerMin     int   `json:"rate_limit_per_min,omitempty"`     // requests per minute, 0=unlimited
+	PrivateTokensDaily   int64 `json:"private_tokens_daily,omitempty"`   // private pool max tokens per day, 0=unlimited
+	PrivateQuotaMonthly int64 `json:"private_quota_monthly,omitempty"`  // private key quota limit per month, 0=unlimited
+	PrivateQuotaTotal   int64 `json:"private_quota_total,omitempty"`    // private key total quota cap, 0=unlimited
+	SharedTokensDaily    int64 `json:"shared_tokens_daily,omitempty"`    // shared pool max tokens per day, 0=unlimited
+	SharedQuotaMonthly  int64 `json:"shared_quota_monthly,omitempty"`   // shared key quota limit per month, 0=unlimited
+	SharedQuotaTotal    int64 `json:"shared_quota_total,omitempty"`     // shared key total quota cap, 0=unlimited
 	Description string     `json:"description,omitempty"`
 	Icon        string     `json:"icon,omitempty"`
 	APIKeyURL   string     `json:"api_key_url,omitempty"`
@@ -164,15 +179,16 @@ type Provider struct {
 
 // ProviderAccessControl defines which key types can access a provider (v2.0).
 type ProviderAccessControl struct {
-	// AllowGuest allows sk-guest-* keys (default true)
-	AllowGuest bool `json:"allow_guest"`
-	// AllowSharedKey allows shared/public API keys to access this provider
-	AllowSharedKey bool `json:"allow_shared_key"`
 	// ShareToPool controls whether this provider's resources are shared to the
 	// global public pool accessible via sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1 keys.
 	// Default: true — providers are shared to the pool when the node joins the network.
 	// Set to false to opt out of the shared pool (admin/proxy keys are unaffected).
 	ShareToPool bool `json:"share_to_pool"`
+
+	// GuestPoolPercent defines what percentage of shared key quota is allocated
+	// to the Guest pool (0-100). The remainder goes to the Public pool.
+	// Default: 50.
+	GuestPoolPercent int `json:"guest_pool_percent,omitempty"`
 
 	// MigrationAllowPublic is a legacy field for backward compatibility.
 	// It is read from old JSON data with "allow_public" and migrated to ShareToPool.
@@ -193,16 +209,6 @@ func (ac *ProviderAccessControl) UnmarshalJSON(data []byte) error {
 		ac.MigrationAllowPublic = nil // clear after migration
 	}
 	return nil
-}
-
-// DefaultAccessControl returns the default access control settings for v2.0.
-// ShareToPool defaults to true: any provider on a shared-network node is
-// automatically part of the global public pool accessible via sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1.
-func DefaultAccessControl() ProviderAccessControl {
-	return ProviderAccessControl{
-		AllowGuest:  true,
-		ShareToPool: true,
-	}
 }
 
 // Safe returns a copy with API key masked
@@ -346,6 +352,7 @@ type ProviderHealth struct {
 	LastSuccess      string  `json:"last_success"`
 	LastFailure      string  `json:"last_failure"`
 	FailureReason    string  `json:"failure_reason,omitempty"`
+	FailedKeyCount   int     `json:"failed_key_count"` // number of keys that failed health check
 }
 
 // ============================================================
@@ -426,7 +433,6 @@ type NodeInfo struct {
 	GitHubUser     string             `json:"github_user"`
 	GitHubID       int64              `json:"github_id,omitempty"`
 	Endpoint       string             `json:"endpoint"`
-	Addresses      []string           `json:"addresses,omitempty"` // all reachable URLs (HTTPS preferred)
 	PubKey         string             `json:"pub_key"` // ed25519 base64
 	SharedModels   []string           `json:"shared_models"`
 	SharedProviders []SharedProvider  `json:"shared_providers"`
@@ -439,6 +445,7 @@ type NodeInfo struct {
 	InviteBy       string             `json:"invite_by,omitempty"`
 	TokenBudget    int64              `json:"token_budget"`    // monthly token budget declaration (0 = unlimited)
 	TokenUsed      int64              `json:"token_used"`      // tokens used this month
+	Addresses      []string           `json:"addresses,omitempty"` // multi-address support (P2P)
 }
 
 // SharedProvider is a provider advertised by a remote node (no API key!).

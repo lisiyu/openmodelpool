@@ -80,13 +80,11 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/addresses", handleGetAddresses)
 	mux.HandleFunc("POST /api/setup", rateLimitByIP(3, "setup")(handleSetup))
 	mux.HandleFunc("POST /api/login", rateLimitByIP(5, "login")(handleLogin))
-	mux.HandleFunc("GET /api/collaborator/check-key", rateLimitByIP(10, "check-key")(handleCollaboratorCheckKey))
-	mux.HandleFunc("POST /api/collaborator/register", rateLimitByIP(5, "register")(handleCollaboratorRegister))
 	mux.HandleFunc("POST /api/refresh", rateLimitByIP(10, "refresh")(handleRefreshToken))
-	mux.HandleFunc("POST /api/forgot-password", rateLimitByIP(3, "forgot_password")(handleForgotPassword))
-	mux.HandleFunc("POST /api/reset-password", rateLimitByIP(5, "reset_password")(handleResetPassword))
-	mux.HandleFunc("POST /api/reset-password/verify", rateLimitByIP(10, "reset_verify")(handleVerifyResetToken))
-	mux.HandleFunc("POST /api/auth/reset-with-code", rateLimitByIP(5, "reset_code")(handleResetWithCode))
+	mux.HandleFunc("POST /api/forgot-password", localOnly(rateLimitByIP(3, "forgot_password")(handleForgotPassword)))
+	mux.HandleFunc("POST /api/reset-password", localOnly(rateLimitByIP(5, "reset_password")(handleResetPassword)))
+	mux.HandleFunc("POST /api/reset-password/verify", localOnly(rateLimitByIP(10, "reset_verify")(handleVerifyResetToken)))
+	mux.HandleFunc("POST /api/auth/reset-with-code", localOnly(rateLimitByIP(5, "reset_code")(handleResetWithCode)))
 
 	// Auth (protected)
 	mux.HandleFunc("GET /api/auth/verify", withAuth(handleVerifyAuth))
@@ -104,17 +102,6 @@ func setupRoutes() *http.ServeMux {
 	// Provider management (admin + consumer)
 	mux.HandleFunc("GET /api/providers", withConsumerOrAdminAuth(handleListProviders))
 	mux.HandleFunc("GET /api/providers/presets", handleGetPresets)
-
-	// Platform discovery (admin)
-	mux.HandleFunc("GET /api/discovered-platforms", withAuth(handleGetDiscoveredPlatforms))
-	mux.HandleFunc("POST /api/discovered-platforms/trigger", withAuth(handleTriggerDiscovery))
-	mux.HandleFunc("POST /api/discovered-platforms/", withAuth(func(w http.ResponseWriter, r *http.Request) {
-	if strings.HasSuffix(r.URL.Path, "/check") {
-		handleCheckDiscoveredPlatform(w, r)
-		return
-	}
-	handleUpdateDiscoveredPlatform(w, r)
-}))
 	mux.HandleFunc("POST /api/providers", withConsumerOrAdminAuth(handleCreateProvider))
 	mux.HandleFunc("GET /api/providers/{id}", withConsumerOrAdminAuth(handleGetProvider))
 	mux.HandleFunc("PUT /api/providers/{id}", withConsumerOrAdminAuth(handleUpdateProvider))
@@ -140,6 +127,12 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/providers/sider/status", withConsumerOrAdminAuth(handleSiderStatus))
 	mux.HandleFunc("POST /api/providers/sider/test", withConsumerOrAdminAuth(handleSiderTest))
 
+	// Platform discovery (admin + consumer)
+	mux.HandleFunc("GET /api/discovery/platforms", withConsumerOrAdminAuth(handleGetDiscoveredPlatforms))
+	mux.HandleFunc("PUT /api/discovery/platforms/{id}", withConsumerOrAdminAuth(handleUpdateDiscoveredPlatform))
+	mux.HandleFunc("POST /api/discovery/scan", withConsumerOrAdminAuth(handleTriggerDiscovery))
+	mux.HandleFunc("POST /api/discovery/platforms/{id}/check", withConsumerOrAdminAuth(handleCheckDiscoveredPlatform))
+
 	// Usage & routing (admin + consumer)
 	mux.HandleFunc("GET /api/usage/summary", withConsumerOrAdminAuth(handleUsageSummary))
 	mux.HandleFunc("GET /api/usage/providers", withConsumerOrAdminAuth(handleUsageProviders))
@@ -164,7 +157,6 @@ func setupRoutes() *http.ServeMux {
 	// Domain binding APIs
 	mux.HandleFunc("POST /api/domain/verify", rateLimitByIP(5, "domain_verify")(withAuth(handleVerifyDomainToken)))
 	mux.HandleFunc("POST /api/domain/bind", rateLimitByIP(3, "domain_bind")(withAuth(handleBindDomain)))
-	mux.HandleFunc("POST /api/domain/manual-bind", rateLimitByIP(3, "domain_manual_bind")(withAuth(handleManualDomainBind)))
 	mux.HandleFunc("GET /api/domain/status", withAuth(handleGetDomainStatus))
 	mux.HandleFunc("POST /api/domain/unbind", rateLimitByIP(3, "domain_unbind")(withAuth(handleUnbindDomain)))
 
@@ -249,9 +241,6 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/network/guest-keys", withAuth(handleGuestKeyIssue))
 	mux.HandleFunc("GET /api/network/guest-keys", withAuth(handleGuestKeyList))
 	mux.HandleFunc("DELETE /api/network/guest-keys/{key}", withAuth(handleGuestKeyRevoke))
-	mux.HandleFunc("DELETE /api/network/guest-keys/{key}/permanent", withAuth(handleGuestKeyDelete))
-	mux.HandleFunc("POST /api/network/guest-keys/{key}/mark-collaborator", withAuth(handleGuestKeyMarkCollaborator))
-	mux.HandleFunc("POST /api/network/guest-keys/{key}/share-type", withAuth(handleGuestKeyShareType))
 	mux.HandleFunc("POST /api/network/keys/validate", rateLimitByIP(30, "key_validate")(handleNetworkKeyValidate))
 	mux.HandleFunc("PUT /api/network/guest-keys/{key}/quota", withAuth(handleGuestKeyUpdateQuota))
 
