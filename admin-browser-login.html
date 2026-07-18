@@ -7,8 +7,8 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--bg-primary:#0f0f23;--bg-secondary:#1a1a2e;--bg-card:#16213e;--bg-input:#1a1a3e;--border-color:#2a2a4a;--border-focus:#6c63ff;--text-primary:#e8e8f0;--text-secondary:#a0a0b8;--text-muted:#6a6a8a;--accent-start:#6c63ff;--accent-end:#b24bf3;--success:#22c55e;--error:#ef4444;--warning:#f59e0b;--info:#3b82f6;--radius:12px;--shadow:0 4px 24px rgba(0,0,0,.3)}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;min-height:100vh}
-.container{max-width:960px;margin:0 auto;padding:24px 20px 60px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;min-height:100vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.container{max-width:960px;margin:0 auto;padding:16px 14px 60px}
 .header{text-align:center;padding:32px 0 28px;position:relative}
 .header::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:120px;height:3px;background:linear-gradient(90deg,var(--accent-start),var(--accent-end));border-radius:2px}
 .logo{font-size:28px;font-weight:700;background:linear-gradient(135deg,var(--accent-start),var(--accent-end));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:6px}
@@ -336,6 +336,13 @@ select.form-input{appearance:none;cursor:pointer}
 .v5-quota-bar{grid-template-columns:1fr!important}
 .v5-quota-cell{border-right:none!important;border-bottom:1px solid rgba(51,65,85,.3)}
 .v5-quota-cell:last-child{border-bottom:none}
+}
+
+@media(max-width:768px){
+  .container{padding:12px 10px 40px}
+  .header{padding:20px 0 18px}
+  .logo{font-size:22px}
+  .logo-sub{font-size:12px}
 }
 </style>
 </head>
