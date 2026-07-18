@@ -15,7 +15,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $GITHUB_REPO = "lisiyu/openmodelpool"
-$RELEASE_TAG = "v3.2.1-release"
+$RELEASE_TAG = "v3.4.1-release"
 $PKG = "openmodelpool-windows-amd64.zip"
 $DOWNLOAD_URL = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/$PKG"
 

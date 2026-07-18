@@ -1,0 +1,1659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>平台编辑 - OpenModelPool</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg-primary:#0f0f23;--bg-secondary:#1a1a2e;--bg-card:#16213e;--bg-input:#1a1a3e;--border-color:#2a2a4a;--border-focus:#6c63ff;--text-primary:#e8e8f0;--text-secondary:#a0a0b8;--text-muted:#6a6a8a;--accent-start:#6c63ff;--accent-end:#b24bf3;--success:#22c55e;--error:#ef4444;--warning:#f59e0b;--info:#3b82f6;--radius:12px;--shadow:0 4px 24px rgba(0,0,0,.3)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;min-height:100vh}
+.container{max-width:960px;margin:0 auto;padding:24px 20px 60px}
+.header{text-align:center;padding:32px 0 28px;position:relative}
+.header::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:120px;height:3px;background:linear-gradient(90deg,var(--accent-start),var(--accent-end));border-radius:2px}
+.logo{font-size:28px;font-weight:700;background:linear-gradient(135deg,var(--accent-start),var(--accent-end));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:6px}
+.logo-sub{font-size:14px;color:var(--text-muted);letter-spacing:1px}
+.header-actions{display:flex;justify-content:center;gap:12px;margin-top:12px}
+.btn-logout{padding:6px 16px;font-size:12px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:var(--error);border-radius:6px;cursor:pointer;transition:all .2s}
+.btn-logout:hover{background:rgba(239,68,68,.25)}
+.card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:24px;margin-bottom:20px;box-shadow:var(--shadow);transition:border-color .3s}
+.card:hover{border-color:rgba(108,99,255,.3)}
+.card-title{font-size:16px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card-title .icon{font-size:18px}
+.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px}
+.status-item{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius);padding:18px 20px;display:flex;align-items:center;gap:14px;transition:all .3s}
+.status-item:hover{border-color:rgba(108,99,255,.4);transform:translateY(-1px)}
+.status-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.status-dot.green{background:var(--success)}
+.status-dot.red{background:var(--error)}
+.status-label{font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+.status-value{font-size:14px;font-weight:500;margin-top:2px}
+.form-group{margin-bottom:18px}
+.form-label{display:block;font-size:13px;font-weight:500;color:var(--text-secondary);margin-bottom:6px}
+.form-input{width:100%;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none;transition:border-color .3s}
+.form-input:focus{border-color:var(--border-focus)}
+select.form-input{appearance:none;cursor:pointer}
+.btn{padding:10px 24px;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:all .3s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:#fff}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+.btn-secondary{background:rgba(51,65,85,.08);border:1px solid rgba(148,163,184,.25);color:var(--text-primary)}
+.btn-secondary:hover{border-color:var(--border-focus)}
+.btn-sm{padding:6px 14px;font-size:12px;border-radius:8px;border:1px solid rgba(148,163,184,.25);transition:all .2s}
+.btn-danger{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:var(--error)}
+.btn-danger:hover{background:rgba(239,68,68,.25)}
+.btn-success{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:var(--success)}
+.btn-success:hover{background:rgba(34,197,94,.25)}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap}
+.toast{position:fixed;top:20px;right:20px;padding:14px 24px;border-radius:10px;font-size:14px;z-index:10000;animation:slideIn .3s ease;max-width:400px}
+.toast.success{background:rgba(34,197,94,.9);color:#fff}
+.toast.error{background:rgba(239,68,68,.9);color:#fff}
+.toast.info{background:rgba(59,130,246,.9);color:#fff}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap;flex-shrink:0}
+.badge-green{background:rgba(34,197,94,.15);color:var(--success);border:1px solid rgba(34,197,94,.3)}
+.badge-red{background:rgba(239,68,68,.15);color:var(--error);border:1px solid rgba(239,68,68,.3)}
+.badge-blue{background:rgba(59,130,246,.15);color:var(--info);border:1px solid rgba(59,130,246,.3)}
+.badge-yellow{background:rgba(245,158,11,.15);color:var(--warning);border:1px solid rgba(245,158,11,.3)}
+/* Provider List */
+.provider-list{display:flex;flex-direction:column;gap:12px}
+.provider-item{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;overflow:hidden;transition:all .3s}
+.provider-item:hover{border-color:rgba(108,99,255,.3)}
+.provider-header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:12px}
+.provider-info{flex:1;min-width:0}
+.provider-name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.provider-url{font-size:12px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.provider-meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:12px;color:var(--text-secondary)}
+.provider-actions{display:flex;gap:5px;flex-shrink:0}
+.provider-models{padding:0 20px 16px;display:none;border-top:1px solid var(--border-color);margin-top:0}
+.provider-models.open{display:block;padding-top:12px}
+.model-item{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-card);border-radius:6px;margin-bottom:6px;font-size:13px}
+.model-name{color:var(--text-secondary);font-size:12px}
+.toggle{position:relative;width:36px;height:20px;background:var(--border-color);border-radius:10px;cursor:pointer;transition:background .3s}
+.toggle.active{background:var(--success)}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .3s}
+.toggle.active::after{transform:translateX(16px)}
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);width:100%;max-width:600px;max-height:80vh;overflow-y:auto;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal-title{font-size:18px;font-weight:600;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+.modal-close{background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px}
+.modal-close:hover{color:var(--text-primary)}
+/* Preset Grid */
+.preset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+.preset-card{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:14px;cursor:pointer;transition:all .3s;text-align:center}
+.preset-card:hover{border-color:var(--border-focus);transform:translateY(-2px)}
+.preset-card.selected{border-color:var(--accent-start);background:rgba(108,99,255,.1)}
+.preset-card .preset-icon{font-size:24px;margin-bottom:6px}
+.preset-card .preset-name{font-size:13px;font-weight:600}
+.preset-card .preset-desc{font-size:11px;color:var(--text-muted);margin-top:4px}
+.loading{display:inline-block;width:16px;height:16px;border:2px solid var(--border-color);border-top-color:var(--accent-start);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.section-note{font-size:12px;color:var(--text-muted);padding:10px 14px;background:rgba(108,99,255,.08);border-radius:8px;margin-bottom:16px;border-left:3px solid var(--accent-start)}
+.routing-btn{padding:6px 14px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;font-size:12px;transition:all .2s}
+.routing-btn:hover{border-color:var(--accent-start)}
+.routing-btn.active{background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:white;border-color:transparent}
+.usage-table{width:100%;border-collapse:collapse;font-size:12px}
+.usage-table th{text-align:left;padding:8px 6px;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500}
+.usage-table td{padding:8px 6px;border-bottom:1px solid rgba(0,0,0,.04)}
+.usage-table tr:hover{background:rgba(108,99,255,.03)}
+.cost-tag{font-weight:600;color:var(--success)}
+.latency-tag{font-weight:500}
+.latency-tag.slow{color:var(--danger)}
+.latency-tag.medium{color:var(--warning)}
+.latency-tag.fast{color:var(--success)}
+.priority-input{width:42px;padding:2px 4px;border:1px solid var(--border-color);border-radius:4px;font-size:12px;text-align:center;background:rgba(108,99,255,.06);color:var(--text-primary)}
+.priority-input:focus{border-color:var(--accent-start);outline:none;background:white}
+@media(max-width:640px){
+.container{padding:16px 12px 40px}
+.preset-grid{grid-template-columns:repeat(2,1fr)}
+.provider-header{flex-direction:column;align-items:flex-start}
+.provider-actions{margin-top:8px}
+/* Mobile: merged row wraps - action buttons go to next line */
+.v7-merged-row{flex-wrap:wrap!important}
+.v7-merged-row .v7-separator{display:none}
+.v7-merged-row>div:last-child{margin-left:0!important;width:100%;margin-top:8px;justify-content:flex-start}
+/* Mobile: left border already removed globally */
+/* Mobile: quota stacking moved to end of CSS */
+/* Mobile: node stats stack */
+.ns-row{grid-template-columns:repeat(2,1fr)!important}
+.ns-traffic-row{grid-template-columns:1fr!important}
+/* Mobile: stat pills wrap */
+.v7-stats-group{flex-wrap:wrap!important;flex-shrink:1!important}
+.v7-merged-row .v7-stats-group{width:100%}
+}
+
+/* ============ V5 Node Stats ============ */
+.ns-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+.ns-cell{text-align:center;padding:12px 8px;border-right:1px solid rgba(51,65,85,.35)}
+.ns-cell:last-child{border-right:none}
+.ns-cell .ns-value{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:4px}
+.ns-cell .ns-value.white{color:var(--text-primary)}
+.ns-cell .ns-value.green{color:var(--success)}
+.ns-cell .ns-label{font-size:11px;color:var(--text-muted);letter-spacing:.3px}
+.ns-traffic-row{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:12px;padding-top:12px;border-top:1px solid rgba(51,65,85,.35)}
+.ns-traffic-cell{padding:10px 14px;border-right:1px solid rgba(51,65,85,.3);text-align:center}
+.ns-traffic-cell:last-child{border-right:none}
+.ns-traffic-cell .ntc-header{font-size:12px;color:var(--text-secondary);margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:600}
+.ns-traffic-cell .ntc-header .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dot-yellow{background:#fbbf24}
+.dot-blue{background:#3b82f6}
+.dot-purple{background:#a855f7}
+.dot-green{background:#22c55e}
+.dot-gray{background:#475569}
+.ns-traffic-cell .ntc-stats{display:flex;gap:16px;justify-content:center}
+.ns-traffic-cell .ntc-stat .ntc-num{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.ns-traffic-cell .ntc-stat .ntc-num.yellow-text{color:#fbbf24}
+.ns-traffic-cell .ntc-stat .ntc-num.blue-text{color:#60a5fa}
+.ns-traffic-cell .ntc-stat .ntc-num.purple-text{color:#c084fc}
+.ns-traffic-cell .ntc-stat .ntc-sublabel{font-size:10px;color:var(--text-muted);margin-top:2px}
+.ns-quota-row{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:12px;padding-top:12px;border-top:1px dashed rgba(51,65,85,.5)}
+.nq-cell{text-align:center;padding:10px 14px;border-right:1px solid rgba(51,65,85,.3)}
+.nq-cell:last-child{border-right:none}
+.nq-cell .nq-header{font-size:12px;color:var(--text-secondary);margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:5px}
+.nq-cell .nq-header .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.nq-cell .nq-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:8px;line-height:1.4}
+.nq-cell .nq-value.yellow-text{color:#fbbf24}
+.nq-cell .nq-value.blue-text{color:#60a5fa}
+.nq-cell .nq-value.purple-text{color:#c084fc}
+.nq-cell .nq-bar-wrap{height:6px;border-radius:3px;background:var(--bg-primary);margin:0 auto 8px;overflow:hidden;max-width:180px}
+.nq-cell .nq-bar-fill{height:100%;border-radius:3px}
+.nq-bar-fill.yellow{background:#f59e0b}
+.nq-bar-fill.blue{background:#3b82f6}
+.nq-bar-fill.purple{background:#a855f7}
+.nq-bar-fill.green{background:#22c55e}
+.nq-row{display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;margin-top:2px;max-width:180px;margin-left:auto;margin-right:auto}
+.nq-row .nq-value{font-size:12px!important;margin-bottom:0!important;font-weight:600;line-height:1.4!important}
+.nq-row .nq-label{font-size:12px!important;line-height:1.4!important;font-weight:600}
+.v5-quota-cell .nq-row{max-width:120px}
+.nq-label{font-weight:600;font-size:12px;line-height:1.4;min-width:14px}
+.ns-traffic-cell .nq-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:8px;line-height:1.4}
+.ns-traffic-cell .nq-value.blue-text{color:#60a5fa}
+.ns-traffic-cell .nq-value.purple-text{color:#c084fc}
+.ns-traffic-cell .nq-value.green-text{color:#22c55e}
+.ns-traffic-cell .nq-bar-wrap{height:6px;border-radius:3px;background:var(--bg-primary);margin:0 auto 8px;overflow:hidden;max-width:180px}
+.ns-traffic-cell .nq-bar-fill{height:100%;border-radius:3px}
+.nq-cell .nq-detail{font-size:11px;color:var(--text-muted)}
+.nq-cell .nq-detail .num{font-weight:600;color:var(--text-secondary)}
+
+/* ============ V5 Provider Cards (V6 Centered Layout) ============ */
+.v5-provider-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;transition:all .3s}
+.v5-provider-card:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(108,99,255,.25),0 0 0 2px rgba(108,99,255,.3);border-color:rgba(108,99,255,.5)}
+.v5-provider-card:focus-within{box-shadow:0 8px 32px rgba(108,99,255,.3),0 0 0 2px rgba(108,99,255,.4);border-color:rgba(108,99,255,.6)}
+.v5-provider-card.disabled{opacity:.5}
+/* Color accent: dim by default, brighten on hover */
+
+
+
+
+
+
+
+
+
+
+
+
+.v5-row-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;text-align:center}
+.v5-status-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.v5-status-dot.green{background:var(--success);box-shadow:0 0 8px rgba(34,197,94,.5)}
+.v5-status-dot.red{background:var(--error);box-shadow:0 0 8px rgba(239,68,68,.5)}
+.v5-status-dot.yellow{background:var(--warning);box-shadow:0 0 8px rgba(245,158,11,.5)}
+.v5-provider-name{font-size:18px;font-weight:700;white-space:nowrap;letter-spacing:.5px}
+.v5-badge{font-size:11px;padding:2px 8px;border-radius:12px;display:inline-flex;align-items:center;gap:3px;font-weight:500;white-space:nowrap}
+.v5-badge-blue{background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.3)}
+.v5-badge-yellow{background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.3)}
+.v5-badge-red{background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3)}
+.v5-badge-green{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3)}
+.v5-key-badge{font-size:11px;padding:2px 8px;border-radius:12px;display:inline-flex;align-items:center;gap:4px;font-weight:600;white-space:nowrap}
+.v5-key-badge .key-count{font-size:10px;padding:1px 5px;border-radius:8px;font-weight:700;margin-left:2px}
+.v5-key-badge-private{background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.3)}
+.v5-key-badge-private .key-count{background:rgba(245,158,11,.25)}
+.v5-key-badge-shared{background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.3)}
+.v5-key-badge-shared .key-count{background:rgba(59,130,246,.25)}
+.v7-stats-group{display:inline-flex;align-items:center;gap:4px;flex-shrink:0}
+.v7-stat-pill{display:inline-flex;align-items:center;height:28px;padding:0 10px;font-size:12px;font-weight:500;color:var(--text-secondary);background:rgba(51,65,85,.12);border:1px solid rgba(148,163,184,.25);border-radius:8px;white-space:nowrap;line-height:1;transition:all .2s}
+.v7-card-btn{display:inline-flex;align-items:center;height:28px;padding:0 12px;font-size:12px;font-weight:500;border-radius:8px;border:1px solid rgba(148,163,184,.25);background:rgba(51,65,85,.08);color:var(--text-secondary);cursor:pointer;white-space:nowrap;transition:all .2s;gap:4px}
+.v7-card-btn:hover{background:rgba(51,65,85,.18);border-color:rgba(148,163,184,.5);color:var(--text-primary)}
+.v7-card-btn.btn-danger{background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2);color:rgba(239,68,68,.9)}
+.v7-card-btn.btn-danger:hover{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.4)}
+.v7-card-btn.btn-success{background:rgba(34,197,94,.06);border-color:rgba(34,197,94,.2);color:rgba(34,197,94,.9)}
+.v7-card-btn.btn-success:hover{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.4)}
+.v7-stat-pill b{font-weight:600;color:var(--text-primary);margin-left:3px;font-variant-numeric:tabular-nums}
+.v7-stat-pill b.green{color:var(--success)}
+.v7-stat-pill b.yellow{color:#fbbf24}
+.v7-stat-pill b.blue{color:#60a5fa}
+.v5-base-url{font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;font-family:'SF Mono',Monaco,Consolas,monospace}
+.v5-btn-row{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:12px}
+.v7-merged-row{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:nowrap;margin-top:10px}
+.v7-separator{width:1px;height:24px;background:rgba(100,116,139,.4);margin:0 12px;flex-shrink:0}
+.v5-provider-name-link{color:var(--text-primary);text-decoration:none;border-bottom:1px dashed rgba(148,163,184,.4);transition:all .2s}
+.v5-provider-name-link:hover{color:#60a5fa;border-bottom-color:#60a5fa}
+.v5-quota-bar{display:flex;align-items:stretch;margin-top:12px;padding-top:12px;border-top:1px dashed rgba(51,65,85,.5)}
+.v5-quota-cell{flex:1;text-align:center;padding:10px 10px 8px;border-right:1px solid rgba(51,65,85,.3);min-width:0}
+.v5-quota-cell:last-child{border-right:none}
+.v5-quota-cell .qc-header{font-size:12px;color:var(--text-secondary);margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:600}
+.v5-quota-cell .qc-header .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.v5-quota-cell .qc-traffic{display:flex;justify-content:center;gap:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(51,65,85,.2)}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.yellow-text{color:#fbbf24}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.blue-text{color:#60a5fa}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.purple-text{color:#c084fc}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.gray-text{color:#475569}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.green-text{color:#22c55e}
+.v5-quota-cell .qc-traffic .qt-stat .qt-sublabel{font-size:9px;color:var(--text-muted);margin-top:1px}
+.v5-quota-cell .qc-quota{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:6px}
+.v5-quota-cell .qc-quota.yellow-text{color:#fbbf24}
+.v5-quota-cell .qc-quota.blue-text{color:#60a5fa}
+.v5-quota-cell .qc-quota.purple-text{color:#c084fc}
+.v5-quota-cell .qc-quota.gray-text{color:#475569}
+.v5-quota-cell .qc-quota.red-text{color:#f87171}
+.v5-quota-cell .qc-quota.green-text{color:#22c55e}
+.v5-quota-cell .qc-bar-wrap{height:5px;border-radius:3px;background:var(--bg-primary);margin:0 auto 6px;overflow:hidden;max-width:120px}
+.v5-quota-cell .qc-bar-fill{height:100%;border-radius:3px}
+.qc-bar-fill.yellow{background:#f59e0b}
+.qc-bar-fill.blue{background:#3b82f6}
+.qc-bar-fill.purple{background:#a855f7}
+.qc-bar-fill.gray{background:#475569}
+.qc-bar-fill.red{background:#ef4444}
+.v5-quota-cell .qc-connect{font-size:11px;color:var(--text-muted);padding-top:6px;border-top:1px solid rgba(51,65,85,.25);margin-top:6px}
+.v5-quota-cell .qc-connect .conn-num{font-weight:600;color:var(--text-secondary)}
+
+
+/* ===== V8 CSS OVERRIDES ===== */
+/* Make row-header left-aligned instead of centered */
+.v5-row-header{justify-content:flex-start !important;text-align:left !important}
+/* Make merged-row left-aligned instead of centered */
+.v7-merged-row{justify-content:flex-start !important}
+/* Action buttons push to right */
+.v7-merged-row > div:last-child{margin-left:auto}
+/* Make quota bar use grid layout */
+.v5-quota-bar{display:grid !important;grid-template-columns:repeat(3,1fr) !important;gap:12px;border-top:1px solid rgba(148,163,184,.08)}
+
+/* V8: Model Stats Pills (for provider card row-header) */
+.v8-model-stats{display:inline-flex;align-items:center;gap:3px;flex-shrink:0;margin-left:auto}
+.v8-model-stats .v8-ms-label{font-size:12px;font-weight:500;color:var(--text-muted);margin-right:4px;white-space:nowrap}
+.v8-ms-pill{display:inline-flex;align-items:center;height:22px;padding:0 7px;font-size:11px;font-weight:500;border-radius:6px;white-space:nowrap;line-height:1}
+.v8-ms-pill .v8-ms-val{font-weight:700;font-size:12px;margin-left:3px;font-variant-numeric:tabular-nums}
+.v8-ms-pill.private{background:#3b82f6;color:#fff;border:1px solid rgba(59,130,246,.6)}
+.v8-ms-pill.shared{background:#8b5cf6;color:#fff;border:1px solid rgba(139,92,246,.6)}
+.v8-ms-pill.enabled{background:rgba(34,197,94,.08);color:#22c55e;border:1px solid rgba(34,197,94,.18);cursor:pointer;transition:all .2s}
+.v8-ms-pill.enabled:hover{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.4)}
+.v8-ms-pill.total{background:rgba(148,163,184,.15);color:#e2e8f0;border:1px solid rgba(148,163,184,.25)}
+/* V8: Keys Pill */
+.v8-keys-pill{display:inline-flex;align-items:center;height:28px;padding:0 12px;font-size:12px;font-weight:500;color:var(--text-secondary);background:rgba(51,65,85,.12);border:1px solid rgba(148,163,184,.25);border-radius:8px;white-space:nowrap;line-height:1;gap:8px}
+.v8-keys-pill b{font-weight:600;color:var(--text-primary);margin-left:3px}
+.v8-keys-pill .v8-ksub{font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;margin-left:6px}
+.v8-keys-pill .v8-ksub.private{background:#3b82f6;color:#fff}
+.v8-keys-pill .v8-ksub.shared{background:#8b5cf6;color:#fff}
+/* V8: Model Matrix Modal */
+.v8-modal-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:10000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.v8-modal-backdrop.show{display:flex}
+.v8-modal{background:#1c1c1e;border:1px solid rgba(148,163,184,.15);border-radius:16px;width:90%;max-width:900px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.5)}
+.v8-modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid rgba(148,163,184,.1)}
+.v8-modal-header h2{font-size:18px;font-weight:600;color:#e5e5e5;margin:0}
+.v8-close-btn{width:28px;height:28px;border-radius:50%;border:none;background:rgba(148,163,184,.12);color:#94a3b8;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.v8-close-btn:hover{background:rgba(239,68,68,.2);color:#ef4444}
+.v8-toolbar{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid rgba(148,163,184,.06);gap:12px;flex-wrap:wrap}
+.v8-toolbar-left{display:flex;gap:6px}
+.v8-toolbar-btn{height:26px;padding:0 12px;font-size:11px;font-weight:500;border-radius:6px;border:1px solid rgba(148,163,184,.2);background:rgba(51,65,85,.08);color:#94a3b8;cursor:pointer;transition:all .2s}
+.v8-toolbar-btn:hover{background:rgba(51,65,85,.2);color:#e5e5e5}
+.v8-search-box{height:26px;padding:0 10px;font-size:12px;border-radius:6px;border:1px solid rgba(148,163,184,.2);background:rgba(51,65,85,.08);color:#e5e5e5;outline:none;width:200px}
+.v8-matrix-wrap{padding:0;overflow:hidden}
+.v8-matrix-container{display:flex;flex-direction:column;max-height:100%}
+.v8-matrix-thead{flex-shrink:0;padding:16px 24px 0}
+.v8-matrix-body{flex:1;overflow-y:auto;max-height:360px;padding:0 24px 16px}
+.v8-matrix-table{width:100%;border-collapse:separate;border-spacing:0;margin:0;table-layout:fixed}
+.v8-matrix-table th{padding:8px 12px;font-size:11px;font-weight:600;color:#94a3b8;text-align:left;border-bottom:1px solid rgba(148,163,184,.15);background:#1c1c1e}
+.v8-matrix-table td{padding:6px 12px;border-bottom:1px solid rgba(148,163,184,.06)}
+.v8-section-row td{padding:8px 12px 4px;font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(148,163,184,.08)}
+.v8-key-label{display:flex;flex-direction:column;gap:2px}
+.v8-key-name{font-size:11px;font-weight:600;color:#e5e5e5}
+.v8-key-mask{font-size:9px;color:#64748b;font-family:'SF Mono',Monaco,Consolas,monospace}
+.v8-key-count{font-size:9px;color:#22c55e;font-weight:500}
+.v8-model-name{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:#e5e5e5}
+.v8-model-tag{font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px}
+.v8-model-tag.system{background:rgba(59,130,246,.12);color:#60a5fa}
+.v8-model-tag.synced{background:rgba(34,197,94,.1);color:#22c55e}
+.v8-toggle-wrap{display:flex;justify-content:center}
+.v8-toggle{width:36px;height:20px;border-radius:10px;background:rgba(148,163,184,.2);position:relative;cursor:pointer;transition:all .2s}
+.v8-toggle.on{background:#22c55e}
+.v8-toggle .v8-knob{width:16px;height:16px;border-radius:50%;background:white;position:absolute;top:2px;left:2px;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.v8-toggle.on .v8-knob{left:18px}
+.v8-modal-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-top:1px solid rgba(148,163,184,.1)}
+.v8-footer-stats{font-size:12px;color:#94a3b8}
+.v8-footer-stats b{color:#e5e5e5;font-weight:600}
+.v8-save-btn{height:32px;padding:0 20px;font-size:13px;font-weight:600;border-radius:8px;border:none;background:#3b82f6;color:white;cursor:pointer;transition:all .2s}
+.v8-save-btn:hover{background:#2563eb}
+
+
+/* V8: stat-pill color variants */
+.v7-stat-pill b.blue{color:#60a5fa}
+.v7-stat-pill b.purple{color:#a855f7}
+
+/* ===== Mobile Responsive (after V8 overrides) ===== */
+@media(max-width:640px){
+.v5-quota-bar{grid-template-columns:1fr!important}
+.v5-quota-cell{border-right:none!important;border-bottom:1px solid rgba(51,65,85,.3)}
+.v5-quota-cell:last-child{border-bottom:none}
+}
+
+</style>
+</head>
+<body>
+<div class="container" style="max-width:680px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+    <h2 id="modalTitle" style="margin:0;font-size:20px;font-weight:700">添加平台</h2>
+    <a href="/admin" style="color:var(--text-secondary);font-size:13px;text-decoration:none" onclick="if(window.parent&&window.parent.closeSubPage){window.parent.closeSubPage();return false;}">← 返回管理面板</a>
+  </div>
+
+  <!-- Hidden fields for legacy compatibility -->
+  <input type="hidden" id="pLoginUrl" value="">
+  <div id="loginPageStatus" style="display:none"></div>
+
+<input type="hidden" id="pLoginUrl" value="">
+
+<input type="hidden" id="pLoginUrl" value="">
+
+    <div id="modalStep1">
+      <div class="form-label">选择平台（或选择「自定义平台」）</div>
+      <input class="form-input" id="presetSearch" placeholder="搜索平台..." oninput="filterPresets()" style="margin-bottom:12px">
+      <div class="preset-grid" id="presetGrid"></div>
+    </div>
+    <div id="modalStep2" style="display:none">
+      <button class="btn btn-secondary btn-sm" onclick="backToStep1()" style="margin-bottom:16px">← 返回选择</button>
+      <div id="presetRegLink" style="display:none;margin-bottom:12px;padding:10px 14px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.15);border-radius:8px"></div>
+      <div class="form-group"><label class="form-label">平台 ID</label><input class="form-input" id="pId" placeholder="deepseek"></div>
+      <div class="form-group"><label class="form-label">显示名称</label><input class="form-input" id="pName" placeholder="DeepSeek"></div>
+      <div class="form-group" id="providerModeSelector">
+        <label class="form-label">接入模式</label>
+        <div style="display:flex;gap:12px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 14px;border:1px solid var(--border-color);border-radius:8px;font-size:13px" id="modeApiLabel">
+            <input type="radio" name="providerMode" value="api" checked onchange="toggleProviderMode()">
+            <span>🔑 API Key 模式</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 14px;border:1px solid var(--border-color);border-radius:8px;font-size:13px" id="modeWebLabel">
+            <input type="radio" name="providerMode" value="web" onchange="toggleProviderMode()">
+            <span>🌐 网页登录模式</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group"><label class="form-label">API Base URL</label><input class="form-input" id="pUrl" placeholder="https://api.deepseek.com/v1"></div>
+      <div class="form-group"><label class="form-label" id="pKeyLabel">API Key *</label><input class="form-input" id="pKey" placeholder="sk-..."></div>
+      <div id="webSessionFields" style="display:none">
+        <div id="webLoginGuide" style="margin-bottom:16px;padding:16px;background:linear-gradient(135deg,rgba(52,199,89,.06),rgba(52,199,89,.02));border:1px solid rgba(52,199,89,.2);border-radius:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:16px">🤖</span>
+            <span style="font-size:13px;font-weight:600;color:var(--text-primary)">内置浏览器登录</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin-bottom:12px">
+            点击下方按钮启动内置浏览器，在浏览器中完成登录（支持 Google / Apple / 邮箱 / 手机等任意方式）。登录成功后点击「完成」即可自动保存 Cookie 和 Token，无需手动复制。
+          </div>
+          <button class="btn btn-sm" onclick="openBrowserLogin()" style="width:100%;background:linear-gradient(135deg,#34c759,#30b14e);color:#fff;font-weight:600;padding:10px">
+            <span style="font-size:13px">🌐 启动内置浏览器</span>
+          </button>
+        </div>
+        <div class="form-group" id="pExtraCookiesGroup" style="display:none">
+          <label class="form-label">🌐 浏览器 Cookie</label>
+          <textarea class="form-input" id="pExtraCookies" rows="2" style="font-family:monospace;font-size:11px" readonly placeholder="由内置浏览器登录自动填充"></textarea>
+          <div class="section-note" style="margin-top:4px">✅ 使用内置浏览器登录后自动填充，无需手动填写</div>
+        </div>
+        <div class="form-group"><label class="form-label">API 端点</label><input class="form-input" id="pApiEndpoint" placeholder="https://sider.ai/api/v3/completion/text"></div>
+        <div class="form-group"><label class="form-label">认证方式</label><select class="form-input" id="pAuthMode"><option value="bearer">Bearer Token</option><option value="cookie">Cookie</option></select></div>
+        <div class="form-group"><label class="form-label">模型字段名</label><input class="form-input" id="pModelField" placeholder="model" value="model"></div>
+        <div class="form-group"><label class="form-label">消息字段名</label><input class="form-input" id="pPromptField" placeholder="prompt" value="prompt"></div>
+        <div class="form-group"><label class="form-label">响应类型</label><select class="form-input" id="pResponseType"><option value="sse">SSE (流式)</option><option value="json">JSON (一次性)</option></select></div>
+        <div class="form-group"><label class="form-label">文本路径</label><input class="form-input" id="pTextPath" placeholder="data.text" value="data.text"></div>
+        <div class="form-group"><label class="form-label">额外请求头 (JSON)</label><textarea class="form-input" id="pExtraHeaders" rows="3" placeholder='{"Origin":"https://sider.ai"}' style="font-family:monospace;font-size:12px"></textarea></div>
+        <div class="form-group"><label class="form-label">额外请求体 (JSON)</label><textarea class="form-input" id="pExtraBody" rows="4" placeholder='{"app_name":"MyApp"}' style="font-family:monospace;font-size:12px"></textarea></div>
+      </div>
+
+      <div id="editKeysSection" style="display:none;margin-bottom:18px;padding:14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <label style="font-size:13px;font-weight:500;color:var(--text-secondary)">🔑 已配置的多 Key 管理</label>
+          <button class="btn btn-secondary btn-sm" onclick="testAllEditKeys()" style="font-size:11px;padding:3px 10px">🧪 批量测试</button>
+        </div>
+        <div id="editKeysList"></div>
+        <div id="editKeysInlineRow" style="display:none;margin-top:10px;padding:12px;border-top:1px dashed var(--border-color)">
+          <div style="display:grid;grid-template-columns:1fr 2fr 100px 100px 80px;gap:8px;align-items:end;margin-bottom:8px">
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">别名</label>
+              <input id="newKeyAlias" class="form-input" style="font-size:12px;height:32px" placeholder="可选">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">API Key *</label>
+              <input id="newKeyValue" class="form-input" style="font-size:12px;height:32px" placeholder="sk-...">
+            </div>
+            <div style="grid-column:span 3">
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">额度限制 (tokens, 0=不限)</label>
+              <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <thead><tr style="background:rgba(108,99,255,.03)">
+                  <th style="padding:3px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每日</th>
+                  <th style="padding:3px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每月Token</th>
+                  <th style="padding:3px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">总额</th>
+                </tr></thead>
+                <tbody><tr>
+                  <td style="padding:2px"><input id="newKeyQuotaDaily" class="form-input" type="number" style="font-size:12px;height:28px;width:100%;text-align:center" value="0" placeholder="不限"></td>
+                  <td style="padding:2px"><input id="newKeyQuotaMonthly" class="form-input" type="number" style="font-size:12px;height:28px;width:100%;text-align:center" value="0" placeholder="不限"></td>
+                  <td style="padding:2px"><input id="newKeyQuota" class="form-input" type="number" style="font-size:12px;height:28px;width:100%;text-align:center" value="0" placeholder="不限"></td>
+                </tr></tbody>
+              </table>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">优先级</label>
+              <input id="newKeyPriority" class="form-input" type="number" style="font-size:12px;height:32px" value="1" min="1">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">权限</label>
+              <select id="newKeyAccess" class="form-input" style="font-size:12px;height:32px">
+                <option value="private">私有</option>
+                <option value="shared">共享</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button class="btn btn-sm btn-secondary" onclick="cancelInlineKey()" style="font-size:11px;padding:3px 10px">取消</button>
+            <button class="btn btn-sm btn-primary" onclick="saveInlineKey()" style="font-size:11px;padding:3px 10px">💾 保存</button>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">代理（可选）</label>
+        <input class="form-input" id="pProxy" placeholder="vmess://... 或 socks5://127.0.0.1:1080 或 http://proxy:port">
+        <div class="section-note" style="margin-top:4px">支持 vmess:// 链接（自动启动本地代理）、socks5:// 或 http:// 代理地址</div>
+      </div>
+      <div class="form-group"><label class="form-label">描述</label><input class="form-input" id="pDesc" placeholder="平台描述"></div>
+      <div class="form-group"><label class="form-label">优先级（数字越小越优先）</label><input class="form-input" id="pPriority" type="number" value="5"></div>
+      <div class="form-group">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <label class="form-label" style="margin:0">⚡ 调用频率限制</label>
+          <div class="toggle" id="pRateLimitToggle" onclick="toggleRateLimit()" style="flex-shrink:0"></div>
+        </div>
+        <div id="pRateLimitFields" style="display:none;opacity:0;transition:opacity .2s">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="form-group" style="margin-bottom:8px"><label class="form-label" >每分钟请求数 (RPM)</label><input class="form-input" id="pRateLimit" type="number" value="0" min="0" placeholder="0=不限" style="height:36px;font-size:13px"></div>
+            <div class="form-group" style="margin-bottom:8px"><label class="form-label" >每日总请求数</label><input class="form-input" id="pDailyRequestLimit" type="number" value="0" min="0" placeholder="0=不限" style="height:36px;font-size:13px"></div>
+          </div>
+          <div style="font-size:10px;color:var(--text-muted)">开启后对该平台的所有请求执行频率限制</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">📊 额度上限控制</label>
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">每日Token：限制每天的token消耗量（到期重置）；每月Token/总额上限：限制token消耗量。0=不限制</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:rgba(108,99,255,.04)">
+              <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500;width:80px">池类型</th>
+              <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每日Token</th>
+              <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每月Token</th>
+              <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">总额上限</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding:6px 8px;border-bottom:1px solid rgba(0,0,0,.04)"><span class="dot dot-blue" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle"></span>私有池</td>
+              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivTokensDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaMonthly" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaTotal" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+            </tr>
+            <tr>
+              <td style="padding:6px 8px"><span class="dot dot-purple" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle"></span>共享池</td>
+              <td style="padding:4px 6px"><input class="form-input" id="pSharedTokensDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaMonthly" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaTotal" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="form-group">
+        <label class="form-label">📊 共享池额度分配</label>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">设定标记为「共享」的 Key 额度中，多少比例分配给 Guest Key Pool，多少比例分配给 Public Key Pool</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+          <span style="font-size:12px;white-space:nowrap">👤 Guest Key: <span id="guestPoolPercent">50%</span></span>
+          <input type="range" id="poolRatioSlider" min="0" max="100" value="50" oninput="updatePoolRatio(this.value)" style="flex:1;accent-color:var(--accent-start)">
+          <span style="font-size:12px;white-space:nowrap">🌐 Public Key: <span id="publicPoolPercent">50%</span></span>
+        </div>
+        <input type="hidden" id="pAccessControlValue" value="shared">
+        <div class="section-note" style="margin-top:4px;font-size:11px">💡 后台会查询所有标记为「共享」的 Key 的剩余额度并加总，按此比例分别注入 Guest Pool 和 Public Pool。标记为「私有」的 Key 额度不参与共享池。</div>
+      </div>
+      <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="pEnabled" checked> 启用此平台</label></div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveProvider()">💾 保存</button>
+        <a href="/admin" class="btn btn-secondary" style="text-decoration:none" onclick="if(window.parent&&window.parent.closeSubPage){window.parent.closeSubPage();return false;}">取消</a>
+      </div>
+    </div>
+</div>
+
+<script src="/admin-common.js"></script>
+<script>
+var allProviders = [];
+var editingId = null;
+let selectedPresetKeyOptional = false;
+let presets = [];
+let discoveredPlatforms = [];
+
+// No-op stubs for functions that exist on admin.html but not here
+async function loadProviders() {}
+async function loadStatus() {}
+function renderDiscoveredPlatforms() {}
+
+// Page load
+window.addEventListener('load', async function() {
+  // Load presets
+  try {
+    const r = await fetch('/api/providers/presets');
+    const d = await r.json();
+    presets = d.presets || [];
+  } catch(e) {}
+
+  // Load providers
+  try {
+    var r = await authFetch('/api/providers');
+    var data = await r.json();
+    allProviders = data.providers || [];
+  } catch(e) {
+    toast('加载失败: ' + e.message, 'error');
+  }
+
+  var pid = getQueryParam('id');
+  if (pid) {
+    editProvider(pid);
+  } else {
+    showAddProvider();
+  }
+});
+
+function getIcon(id) {
+  const icons = {openai:'🟢',deepseek:'🔵',qwen:'🟠',zhipu:'🟣',moonshot:'🌙',lingyiwanwu:'🔶',minimax:'⬛',siliconflow:'💎',groq:'⚡',xai:'🤖',together:'🔗',mistral:'🇪🇺',doubao:'🫘',spark:'✨',hunyuan:'🐧','tokenhub-coding':'🐧','tokenhub-plan':'🐧','tokenhub-enterprise':'🐧',gemini:'♊',openrouter:'🌐',poe:'🎭',sid:'🧠',sider:'🌐',ollama:'🦙',coze:'🎯',nvidia:'🟩',anthropic:'🟠',qianfan:'🔴',novita:'🔮',fireworks:'🎆',cohere:'🔷',cerebras:'⚡',stepfun:'🌟',baichuan:'🌊',agnes:'🎨'};
+  return icons[id] || '🔌';
+}
+
+function updatePoolRatio(val) {
+  val = parseInt(val);
+  document.getElementById('guestPoolPercent').textContent = val + '%';
+  document.getElementById('publicPoolPercent').textContent = (100 - val) + '%';
+}
+
+function setAccessControl(mode) {
+  // Legacy compatibility: always set shared mode (access control is now per-key)
+  let hidden = document.getElementById('pAccessControlValue');
+  if (!hidden) return;
+  hidden.value = 'shared';
+}
+
+async function showAddProvider() {
+  editingId = null;
+  selectedPresetKeyOptional = false;
+  document.getElementById('editKeysSection').style.display = 'none';
+  document.getElementById('modalTitle').textContent = '添加平台';
+  document.getElementById('modalStep1').style.display = '';
+  document.getElementById('modalStep2').style.display = 'none';
+  document.getElementById('presetSearch').value = '';
+  // Load discovered platforms if not yet loaded (for 🆕 badges in preset grid)
+  if (discoveredPlatforms.length === 0) {
+    try {
+      const r = await authFetch('/api/discovery/platforms');
+      const d = await r.json();
+      discoveredPlatforms = d.platforms || [];
+    } catch(e) {}
+  }
+  renderPresets();
+}
+
+function toggleProviderMode() {
+  const mode = document.querySelector('input[name="providerMode"]:checked').value;
+  const isWeb = mode === 'web';
+  // Toggle field visibility
+  document.getElementById('webSessionFields').style.display = isWeb ? 'block' : 'none';
+  // Hide/show Base URL field
+  document.getElementById('pUrl').parentElement.style.display = isWeb ? 'none' : 'block';
+  // Toggle Key label and placeholder
+  const keyInput = document.getElementById('pKey');
+  const keyLabel = document.getElementById('pKeyLabel');
+  if (isWeb) {
+    keyInput.placeholder = '粘贴从浏览器获取的 Token';
+    if (keyLabel) keyLabel.textContent = '登录 Token（内置浏览器自动填充）';
+    var pKeyEl = document.getElementById('pKey');
+    if (pKeyEl) { pKeyEl.placeholder = '点击下方「启动内置浏览器」自动获取'; }
+  } else {
+    keyInput.placeholder = '输入 API Key';
+    if (keyLabel) keyLabel.textContent = 'API Key *';
+  }
+  // Update selected style
+  document.getElementById('modeApiLabel').style.borderColor = isWeb ? 'var(--border-color)' : 'var(--primary)';
+  document.getElementById('modeWebLabel').style.borderColor = isWeb ? 'var(--primary)' : 'var(--border-color)';
+}
+
+function openLoginPage() {
+  const loginUrl = document.getElementById('pLoginUrl').value.trim();
+  if (!loginUrl) {
+    const status = document.getElementById('loginPageStatus');
+    status.style.display = 'block';
+    status.style.background = 'rgba(255,99,71,.1)';
+    status.style.color = '#e74c3c';
+    status.textContent = '请先填写登录页面 URL';
+    setTimeout(() => { status.style.display = 'none'; }, 3000);
+    return;
+  }
+  const status = document.getElementById('loginPageStatus');
+  status.style.display = 'block';
+  status.style.background = 'rgba(46,204,113,.1)';
+  status.style.color = '#27ae60';
+  status.textContent = '✅ 已打开登录页面，登录后请按上方步骤获取 Token';
+  window.open(loginUrl, '_blank');
+}
+
+function editProvider(pid) {
+  const p = allProviders.find(x => x.id === pid);
+  if (!p) return;
+  editingId = pid;
+  selectedPresetKeyOptional = false;
+  document.getElementById('modalTitle').textContent = '编辑平台';
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  document.getElementById('pId').value = p.id;
+  document.getElementById('pId').readOnly = true;
+  document.getElementById('pName').value = p.name || '';
+  document.getElementById('pUrl').value = p.base_url || '';
+  document.getElementById('pKey').value = '';
+  document.getElementById('pKey').placeholder = p.api_key ? `当前: ${p.api_key}（留空不修改）` : '输入 API Key';
+  document.getElementById('pProxy').value = p.proxy && p.proxy.startsWith('vmess://') && p.proxy !== 'vmess://***' ? p.proxy : '';
+  document.getElementById('pProxy').placeholder = p.proxy && !p.proxy.startsWith('vmess://') ? `当前代理: ${p.proxy}（输入新值覆盖）` : (p.proxy === 'vmess://***' ? '当前已配置 VMess 代理（输入新值覆盖）' : 'vmess://... 或 socks5://127.0.0.1:1080');
+  document.getElementById('pDesc').value = p.description || '';
+  document.getElementById('pPriority').value = p.priority || 5;
+  document.getElementById('pEnabled').checked = p.enabled !== false;
+  // Handle web_session provider
+  if (p.type === 'web_session' && p.web_session) {
+    document.querySelector('input[name="providerMode"][value="web"]').checked = true;
+    toggleProviderMode();
+    const ws = p.web_session;
+    document.getElementById('pLoginUrl').value = ws.login_url || '';
+    document.getElementById('pApiEndpoint').value = ws.api_endpoint || '';
+    document.getElementById('pAuthMode').value = ws.auth_mode || 'bearer';
+    document.getElementById('pModelField').value = ws.model_field || 'model';
+    document.getElementById('pPromptField').value = ws.prompt_field || 'prompt';
+    document.getElementById('pResponseType').value = ws.response_type || 'sse';
+    document.getElementById('pTextPath').value = ws.text_path || 'data.text';
+    document.getElementById('pExtraHeaders').value = JSON.stringify(ws.extra_headers || {}, null, 2);
+    document.getElementById('pExtraBody').value = JSON.stringify(ws.extra_body || {}, null, 2);
+  } else {
+    document.querySelector('input[name="providerMode"][value="api"]').checked = true;
+    toggleProviderMode();
+  }
+  // Rate limit toggle
+  const rlEnabled = p.rate_limit_enabled || false;
+  const rlToggle = document.getElementById('pRateLimitToggle');
+  if (rlToggle) { rlToggle.classList.toggle('active', rlEnabled); }
+  const rlFields = document.getElementById('pRateLimitFields');
+  if (rlFields) { rlFields.style.display = rlEnabled ? 'block' : 'none'; rlFields.style.opacity = rlEnabled ? '1' : '0'; }
+  if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = p.rate_limit_per_min || 0;
+  if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = p.daily_request_limit || 0;
+  if (document.getElementById('pPrivTokensDaily')) document.getElementById('pPrivTokensDaily').value = p.private_tokens_daily || 0;
+  if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = p.private_quota_monthly || 0;
+  if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = p.private_quota_total || 0;
+  if (document.getElementById('pSharedTokensDaily')) document.getElementById('pSharedTokensDaily').value = p.shared_tokens_daily || 0;
+  if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = p.shared_quota_monthly || 0;
+  if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = p.shared_quota_total || 0;
+  // Load access control state and pool ratio
+  const ac = p.access_control || {};
+  const guestPct = ac.guest_pool_percent ?? 50;
+  const slider = document.getElementById('poolRatioSlider');
+  if (slider) { slider.value = guestPct; updatePoolRatio(guestPct); }
+  // Show registration link if available (from presets)
+  const regLinkEl = document.getElementById('presetRegLink');
+  if (regLinkEl) {
+    const preset = presets.find(x => x.id === pid);
+    const apiKeyUrl = preset?.api_key_url || '';
+    if (apiKeyUrl) {
+      regLinkEl.innerHTML = `<a href="${apiKeyUrl}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+      regLinkEl.style.display = '';
+    } else {
+      regLinkEl.style.display = 'none';
+    }
+  }
+  // Show multi-key management section when editing
+  document.getElementById('editKeysSection').style.display = '';
+  loadEditKeys(pid);
+}
+
+function selectPreset(pid) {
+  const p = presets.find(x => x.id === pid);
+  if (!p) return;
+  editingId = null;
+  document.getElementById('editKeysSection').style.display = 'none';
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  // Show registration link if available
+  const regLinkEl = document.getElementById('presetRegLink');
+  if (regLinkEl) {
+    if (p.api_key_url) {
+      regLinkEl.innerHTML = `<a href="${p.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+      regLinkEl.style.display = '';
+    } else {
+      regLinkEl.style.display = 'none';
+    }
+  }
+  document.getElementById('pId').value = p.id;
+  document.getElementById('pId').readOnly = false;
+  document.getElementById('pName').value = p.name;
+  document.getElementById('pUrl').value = p.base_url;
+  document.getElementById('pKey').value = '';
+  document.getElementById('pKey').placeholder = '输入 API Key';
+  document.getElementById('pDesc').value = p.description || '';
+  document.getElementById('pPriority').value = p.id === 'openai' ? 10 : p.id === 'openrouter' ? 20 : p.id === 'ollama' ? 50 : 5;
+  document.getElementById('pEnabled').checked = true;
+  setAccessControl('private'); // default: private only
+  if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = '0';
+  const rlT = document.getElementById('pRateLimitToggle'); if (rlT) rlT.classList.remove('active');
+  const rlF = document.getElementById('pRateLimitFields'); if (rlF) { rlF.style.display='none'; rlF.style.opacity='0'; }
+  if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
+  if (document.getElementById('pPrivTokensDaily')) document.getElementById('pPrivTokensDaily').value = '0';
+  if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
+  if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
+  if (document.getElementById('pSharedTokensDaily')) document.getElementById('pSharedTokensDaily').value = '0';
+  if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
+  if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
+  // Handle web_session preset
+  if (p.type === 'web_session' && p.web_session) {
+    document.querySelector('input[name="providerMode"][value="web"]').checked = true;
+    toggleProviderMode();
+    const ws = p.web_session;
+    document.getElementById('pLoginUrl').value = ws.login_url || '';
+    document.getElementById('pApiEndpoint').value = ws.api_endpoint || '';
+    document.getElementById('pAuthMode').value = ws.auth_mode || 'bearer';
+    document.getElementById('pModelField').value = ws.model_field || 'model';
+    document.getElementById('pPromptField').value = ws.prompt_field || 'prompt';
+    document.getElementById('pResponseType').value = ws.response_type || 'sse';
+    document.getElementById('pTextPath').value = ws.text_path || 'data.text';
+    document.getElementById('pExtraHeaders').value = JSON.stringify(ws.extra_headers || {}, null, 2);
+    document.getElementById('pExtraBody').value = JSON.stringify(ws.extra_body || {}, null, 2);
+  } else {
+    document.querySelector('input[name="providerMode"][value="api"]').checked = true;
+    toggleProviderMode();
+  }
+}
+
+function backToStep1() {
+  document.getElementById('modalStep1').style.display = '';
+  document.getElementById('modalStep2').style.display = 'none';
+}
+
+function closeModal() { location.href = '/admin'; }
+
+async function saveProvider() {
+  const id = document.getElementById('pId').value.trim();
+  if (!id) { toast('请填写平台 ID', 'error'); return; }
+  const accessMode = document.getElementById('pAccessControlValue')?.value || 'private';
+  
+  // Check contradiction between provider access mode and key access_control
+  if (editingId) {
+    try {
+      const keysR = await authFetch('/api/providers/' + editingId + '/keys');
+      const keysD = await keysR.json();
+      const keys = keysD.keys || [];
+      if (keys.length > 0) {
+        if (accessMode === 'shared') {
+          const allPrivate = keys.every(k => k.access_control === 'private');
+          if (allPrivate) {
+            const proceed = confirm('⚠️ 提示\n\n所有 API Key 都是 "🔒 私有"\n\n→ 没有 Key 的额度会贡献到共享池。\n\n建议：将至少一个 Key 改为 "共享"\n\n是否仍然继续保存？');
+            if (!proceed) return;
+          }
+        } else if (accessMode === 'private') {
+          const hasNonPrivate = keys.some(k => k.access_control !== 'private');
+          if (hasNonPrivate) {
+            const proceed = confirm('⚠️ 提示\n\n存在 Key 设为 "共享"，但平台未开启共享模式。\n\n建议：将 Key 权限改回 "私有"\n\n是否仍然继续保存？');
+            if (!proceed) return;
+          }
+        }
+      }
+    } catch(e) { console.warn('Failed to check key access:', e); }
+  }
+  const mode = document.querySelector('input[name="providerMode"]:checked')?.value || 'api';
+  let providerType = 'openai_compatible';
+  let webSessionData = null;
+  if (mode === 'web') {
+    providerType = 'web_session';
+    let extraHeaders = {};
+    let extraBody = {};
+    try { extraHeaders = JSON.parse(document.getElementById('pExtraHeaders').value || '{}'); } catch(e) {}
+    try { extraBody = JSON.parse(document.getElementById('pExtraBody').value || '{}'); } catch(e) {}
+    webSessionData = {
+      login_url: document.getElementById('pLoginUrl').value.trim(),
+      extra_cookies: document.getElementById('pExtraCookies').value.trim(),
+      api_endpoint: document.getElementById('pApiEndpoint').value.trim(),
+      auth_mode: document.getElementById('pAuthMode').value,
+      token_prefix: 'Bearer ',
+      extra_headers: extraHeaders,
+      prompt_field: document.getElementById('pPromptField').value.trim() || 'prompt',
+      model_field: document.getElementById('pModelField').value.trim() || 'model',
+      stream_field: 'stream',
+      extra_body: extraBody,
+      message_format: 'prefix_role',
+      response_type: document.getElementById('pResponseType').value,
+      text_path: document.getElementById('pTextPath').value.trim() || 'data.text',
+      done_marker: '[DONE]',
+    };
+  }
+  const data = {
+    id, name: document.getElementById('pName').value.trim() || id,
+    type: providerType, base_url: document.getElementById('pUrl').value.trim(),
+    description: document.getElementById('pDesc').value.trim(),
+    priority: parseInt(document.getElementById('pPriority').value) || 5,
+    enabled: document.getElementById('pEnabled').checked,
+    access_control: {
+      share_to_pool: editingId ? (allProviders.find(x=>x.id===editingId)?.access_control?.share_to_pool ?? true) : true,
+      guest_pool_percent: parseInt(document.getElementById('poolRatioSlider')?.value) || 50,
+    },
+  };
+  // Rate limit
+  const rlEnabled = document.getElementById('pRateLimitToggle')?.classList.contains('active') || false;
+  data.rate_limit_enabled = rlEnabled;
+  if (rlEnabled) {
+    data.rate_limit_per_min = parseInt(document.getElementById('pRateLimit')?.value) || 0;
+    data.daily_request_limit = parseInt(document.getElementById('pDailyRequestLimit')?.value) || 0;
+  } else {
+    data.rate_limit_per_min = 0;
+    data.daily_request_limit = 0;
+  }
+  data.private_tokens_daily = parseInt(document.getElementById('pPrivTokensDaily')?.value) || 0;
+  data.private_quota_monthly = parseInt(document.getElementById('pPrivQuotaMonthly')?.value) || 0;
+  data.private_quota_total = parseInt(document.getElementById('pPrivQuotaTotal')?.value) || 0;
+  data.shared_tokens_daily = parseInt(document.getElementById('pSharedTokensDaily')?.value) || 0;
+  data.shared_quota_monthly = parseInt(document.getElementById('pSharedQuotaMonthly')?.value) || 0;
+  data.shared_quota_total = parseInt(document.getElementById('pSharedQuotaTotal')?.value) || 0;
+  const key = document.getElementById('pKey').value.trim();
+  if (key) data.api_key = key;
+  else if (!editingId && !selectedPresetKeyOptional && mode !== 'web') { toast('请填写 API Key', 'error'); return; }
+  else if (!editingId && !selectedPresetKeyOptional && mode === 'web') { toast('请先点击「启动内置浏览器」完成登录', 'error'); return; }
+  const proxy = document.getElementById('pProxy').value.trim();
+  if (proxy) data.proxy = proxy;
+  // Add web_session config if in web mode
+  if (webSessionData) {
+    data.web_session = webSessionData;
+    // For web_session, derive base_url from login_url if empty
+    if (!data.base_url) {
+      try { data.base_url = new URL(webSessionData.login_url).origin; } catch(e) {}
+    }
+  }
+  // Carry over models from existing if editing
+  if (editingId) {
+    const existing = allProviders.find(x => x.id === editingId);
+    if (existing) data.models = existing.models || [];
+  }
+  if (!data.models) data.models = (presets.find(p=>p.id===id)||{}).default_models || [];
+  try {
+    const url = editingId ? '/api/providers/' + editingId : '/api/providers';
+    const method = editingId ? 'PUT' : 'POST';
+    const r = await authFetch(url, { method, body: JSON.stringify(data) });
+    if (!r.ok) { const e = await r.json(); throw new Error(extractError(e) || '保存失败'); }
+    toast(editingId ? '已更新' : '已添加');
+    // Mark as added in discovery if it was a discovered platform
+    if (!editingId) {
+      const disc = (discoveredPlatforms || []).find(x => x.id === id);
+      if (disc) {
+        try { await authFetch('/api/discovery/platforms/' + id, { method: 'PUT', body: JSON.stringify({status: 'added'}) }); } catch(e) {}
+        discoveredPlatforms = discoveredPlatforms.filter(x => x.id !== id);
+        renderDiscoveredPlatforms();
+        renderPresets();
+      }
+    }
+    location.href = '/admin';
+    return;
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function renderPresets() {
+  const grid = document.getElementById('presetGrid');
+  const search = document.getElementById('presetSearch').value.toLowerCase();
+  const filtered = presets.filter(p => !search || p.name.toLowerCase().includes(search) || p.id.includes(search) || (p.description||'').toLowerCase().includes(search));
+  // Merge discovered platforms (not dismissed/ignored/added) into preset grid
+  const addedProviderIds = new Set((allProviders||[]).map(p => p.id));
+  const discovered = (typeof discoveredPlatforms !== 'undefined' ? discoveredPlatforms : []).filter(p => {
+    if (p.status === 'dismissed' || p.status === 'ignored' || p.status === 'added') return false;
+    if (addedProviderIds.has(p.id)) return false;
+    // Also filter if base name matches an existing provider (e.g. openrouter-free vs openrouter)
+    const baseId = p.id.split('-').slice(0, -1).join('-') || p.id;
+    for (const eid of addedProviderIds) {
+      if (eid === baseId || baseId === eid || p.id.startsWith(eid + '-') || eid.startsWith(p.id.replace(/-.+$/, ''))) return false;
+    }
+    return true;
+  });
+  const discoveredHtml = discovered.map(p => {
+    const badge = '<span style="position:absolute;top:4px;right:6px;font-size:9px;background:var(--success);color:#fff;padding:1px 5px;border-radius:8px">🆕 新发现</span>';
+    return `<div class="preset-card" onclick="selectDiscoveredPreset('${p.id}')" style="position:relative;border-color:var(--success)">${badge}<div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${(p.description||'').substring(0,40)}</div></div>`;
+  }).join('');
+  grid.innerHTML = filtered.map(p => `<div class="preset-card" onclick="selectPreset('${p.id}')"><div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${p.description||''}</div></div>`).join('') + discoveredHtml + `<div class="preset-card" onclick="selectCustomPreset()" style="border-style:dashed"><div class="preset-icon">🔌</div><div class="preset-name">自定义平台</div><div class="preset-desc">手动填写地址</div></div>`;
+}
+
+function filterPresets() { renderPresets(); }
+
+function selectCustomPreset() {
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  document.getElementById('modalTitle').textContent = '添加自定义平台';
+  document.getElementById('pId').value = 'custom-' + Date.now().toString(36);
+  document.getElementById('pName').value = '';
+  document.getElementById('pUrl').value = '';
+  document.getElementById('pKey').value = '';
+  document.getElementById('pDesc').value = '';
+  document.getElementById('pPriority').value = '5';
+  document.getElementById('pEnabled').checked = true;
+  setAccessControl('private'); // default: private only
+  document.getElementById('editKeysSection').style.display = 'none';
+  if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = '0';
+  const rlT = document.getElementById('pRateLimitToggle'); if (rlT) rlT.classList.remove('active');
+  const rlF = document.getElementById('pRateLimitFields'); if (rlF) { rlF.style.display='none'; rlF.style.opacity='0'; }
+  if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
+  if (document.getElementById('pPrivTokensDaily')) document.getElementById('pPrivTokensDaily').value = '0';
+  if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
+  if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
+  if (document.getElementById('pSharedTokensDaily')) document.getElementById('pSharedTokensDaily').value = '0';
+  if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
+  if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
+  // Reset mode selector to API Key mode
+  document.querySelector('input[name="providerMode"][value="api"]').checked = true;
+  toggleProviderMode();
+  // Clear web_session fields
+  document.getElementById('pLoginUrl').value = '';
+  document.getElementById('pApiEndpoint').value = '';
+  document.getElementById('pAuthMode').value = 'bearer';
+  document.getElementById('pModelField').value = 'model';
+  document.getElementById('pPromptField').value = 'prompt';
+  document.getElementById('pResponseType').value = 'sse';
+  document.getElementById('pTextPath').value = 'data.text';
+  document.getElementById('pExtraHeaders').value = '';
+  document.getElementById('pExtraBody').value = '';
+  editingId = '';
+  selectedPresetKeyOptional = false;
+}
+
+function selectDiscoveredPreset(id) {
+  const dp = (typeof discoveredPlatforms !== 'undefined' ? discoveredPlatforms : []).find(x => x.id === id);
+  if (!dp) return;
+  editingId = null;
+  selectedPresetKeyOptional = true;
+  document.getElementById('editKeysSection').style.display = 'none';
+  document.getElementById('modalTitle').textContent = '添加平台（来自发现）';
+  document.getElementById('modalStep1').style.display = 'none';
+  document.getElementById('modalStep2').style.display = '';
+  document.getElementById('pId').value = dp.id;
+  document.getElementById('pId').readOnly = false;
+  document.getElementById('pName').value = dp.name;
+  document.getElementById('pUrl').value = dp.base_url;
+  document.getElementById('pKey').value = '';
+  document.getElementById('pKey').placeholder = '可选：输入 API Key（也可稍后在编辑中添加）';
+  document.getElementById('pDesc').value = dp.description || '';
+  document.getElementById('pPriority').value = 5;
+  document.getElementById('pEnabled').checked = true;
+  // Reset mode selector to API Key mode
+  document.querySelector('input[name="providerMode"][value="api"]').checked = true;
+  toggleProviderMode();
+  setAccessControl('private');
+  const regLinkEl = document.getElementById('presetRegLink');
+  if (regLinkEl && dp.api_key_url) {
+    regLinkEl.innerHTML = `<a href="${dp.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 前往官网注册获取 API Key →</a>`;
+    regLinkEl.style.display = '';
+  } else if (regLinkEl) { regLinkEl.style.display = 'none'; }
+  if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = '0';
+  const rlT = document.getElementById('pRateLimitToggle'); if (rlT) rlT.classList.remove('active');
+  const rlF = document.getElementById('pRateLimitFields'); if (rlF) { rlF.style.display='none'; rlF.style.opacity='0'; }
+  if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
+  if (document.getElementById('pPrivTokensDaily')) document.getElementById('pPrivTokensDaily').value = '0';
+  if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
+  if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
+  if (document.getElementById('pSharedTokensDaily')) document.getElementById('pSharedTokensDaily').value = '0';
+  if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
+  if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
+}
+
+function initApiUrls() {
+  const lanEl = document.getElementById('lanApiUrl');
+  const pubEl = document.getElementById('publicApiUrl');
+  const hintEl = document.getElementById('publicUrlHint');
+  const badgeEl = document.getElementById('publicUrlBadge');
+  const domainUrlEl = document.getElementById('domainApiUrl');
+  const domainHintEl = document.getElementById('domainUrlHint');
+  const domainBadgeEl = document.getElementById('domainUrlBadge');
+  const domainQuickCard = document.getElementById('domainBindingQuickCard');
+  authFetch('/api/federation/config').then(r => r.json()).then(d => {
+    const lanIP = d.lan_ip || '';
+    const servicePort = d.service_port || '8000';
+    const tunnelDomain = d.tunnel_domain || '';
+    const boundIP = d.bound_ip || '';
+    const boundPort = d.bound_port || '8000';
+    // 1. 局域网地址
+    if (lanEl) {
+      if (lanIP) {
+        lanEl.value = 'http://' + lanIP + ':' + servicePort + '/v1';
+        lanEl.style.color = 'var(--text-primary)';
+      } else {
+        lanEl.value = '无法获取局域网IP';
+        lanEl.style.color = 'var(--text-muted)';
+      }
+    }
+    // 2. 公网地址（固定IP）- 独立于域名
+    if (boundIP) {
+      if (pubEl) {
+        pubEl.value = 'http://' + boundIP + ':' + boundPort + '/v1';
+        pubEl.style.color = 'var(--text-primary)';
+      }
+      if (hintEl) hintEl.innerHTML = '✅ 固定公网IP地址，可<a href="javascript:void(0)" onclick="showBindMode(\'ip\')" style="color:var(--accent);text-decoration:underline">修改</a>';
+      if (badgeEl) badgeEl.textContent = '(已绑定)';
+    } else {
+      if (pubEl) { pubEl.value = ''; pubEl.placeholder = '未绑定公网IP'; pubEl.style.color = 'var(--text-muted)'; }
+      if (hintEl) hintEl.textContent = '在下方绑定您的公网IP获得固定地址';
+      if (badgeEl) badgeEl.textContent = '';
+    }
+    // 3. 固定域名地址 - 独立于IP
+    if (tunnelDomain) {
+      const domainUrl = 'https://' + tunnelDomain + '/v1';
+      if (domainUrlEl) {
+        domainUrlEl.value = domainUrl;
+        domainUrlEl.style.color = 'var(--accent-green)';
+      }
+      if (domainHintEl) domainHintEl.innerHTML = '✅ 已绑定域名，地址永久固定，可<a href="javascript:void(0)" onclick="showBindMode(\'domain\')" style="color:var(--accent);text-decoration:underline">修改</a>';
+      if (domainBadgeEl) domainBadgeEl.textContent = '(已绑定)';
+    } else {
+      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '未绑定域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
+      if (domainHintEl) domainHintEl.textContent = '在下方绑定域名获得固定地址';
+      if (domainBadgeEl) domainBadgeEl.textContent = '';
+    }
+    // 4. 绑定引导卡片 - 只要有一个未绑定就显示
+    if (domainQuickCard) {
+      if (!boundIP || !tunnelDomain) {
+        domainQuickCard.style.display = 'block';
+        if (boundIP && !tunnelDomain) switchBindMode('domain');
+        if (!boundIP && tunnelDomain) switchBindMode('ip');
+      } else {
+        domainQuickCard.style.display = 'none';
+      }
+    }
+  }).catch(() => {
+    if (hintEl) hintEl.textContent = '获取地址信息失败';
+    if (domainHintEl) domainHintEl.textContent = '获取地址信息失败';
+  });
+}
+
+async function toggleApiKeys(pid) {
+  const el = document.getElementById('apikeys-' + pid);
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    await loadApiKeys(pid);
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function loadApiKeys(pid) {
+  const container = document.getElementById('apikeys-list-' + pid);
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys');
+    const d = await r.json();
+    const keys = d.keys || [];
+    if (!keys.length) {
+      container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:8px">未配置多 Key，点击下方按钮添加</div>';
+    } else {
+      let html = '<table class="usage-table" ><thead><tr><th>别名/Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>可用</th><th>操作</th><th>测试</th></tr></thead><tbody>';
+      for (const k of keys) {
+        var qParts = [];
+        if (k.quota_daily > 0) qParts.push('日:' + k.quota_daily.toLocaleString());
+        if (k.quota_monthly > 0) qParts.push('月:' + k.quota_monthly.toLocaleString());
+        if (k.quota > 0) qParts.push('总:' + k.quota.toLocaleString());
+        if (k.quota > 0) qParts.push('总:' + k.quota.toLocaleString());
+        const quotaText = qParts.length > 0 ? qParts.join('/') : '无限';
+        const hourlyText = k.quota_hourly > 0 ? k.quota_hourly.toLocaleString() + '/h' : '';
+        const rpmText = k.rpm > 0 ? k.rpm + ' RPM' : '';
+        const extraLimits = [hourlyText, rpmText].filter(Boolean).join(' · ');
+        const accessLabel = k.access_control === 'shared' ? '🔗 共享' : '🔒 私有';
+        const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
+        const expiresText = k.expires_at ? '<br><small style="color:var(--text-muted)">过期: ' + new Date(k.expires_at).toLocaleDateString('zh-CN') + '</small>' : '';
+        html += '<tr>';
+        html += '<td style="font-family:monospace">' + (k.alias || k.key.substring(0, 8) + '...') + '</td>';
+        html += '<td>' + quotaText + '<br><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:1px 6px;margin-top:2px" onclick="resetKeyQuota(\'' + pid + '\',\'' + k.id + '\')">重置</button></td>';
+        html += '<td>' + accessLabel + '</td>';
+        html += '<td>' + (k.priority || 1) + '</td>';
+        html += '<td>' + statusBadge + expiresText + '</td>';
+        // Key availability status indicator
+        const tableKeyStatusId = 'table-keystatus-' + k.id;
+        html += '<td><span id="' + tableKeyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试按钮检测">⏳</span></td>';
+        html += '<td>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="editKeyAccessControl(\'' + pid + '\',\'' + k.id + '\',\'' + k.access_control + '\')">编辑权限</button> ';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteApiKey(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
+        html += '</td>';
+        html += '<td><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testSingleKey(\'' + pid + '\',\'' + k.id + '\')">测试</button></td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+    // Add key button
+    container.innerHTML += '<div style="margin-top:8px;display:flex;justify-content:space-between"><button class="btn btn-secondary btn-sm" onclick="testAllKeys(\'' + pid + '\')">🧪 测试全部 Key</button><button class="btn btn-primary btn-sm" onclick="showAddApiKey(\'' + pid + '\')">+ 添加 API Key</button></div>';
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error)">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function showAddApiKey(pid) {
+  const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
+  const key = prompt('请输入 API Key:');
+  if (!key) return;
+  const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
+  const access = prompt('访问权限 (private/shared):', 'private') || 'private';
+  const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys', {
+      method: 'POST',
+      body: JSON.stringify({ key: key, alias: alias, quota: quota, quota_daily: quotaDaily, quota_monthly: quotaMonthly, access_control: access, priority: priority, enabled: true })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ API Key 已添加', 'success');
+      await loadApiKeys(pid);
+      await loadProviders();
+    } else {
+      toast('添加失败: ' + extractError(d) || '未知错误', 'error');
+    }
+  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+
+async function toggleKeyEnabled(pid, keyId, enabled) {
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: enabled })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast(enabled ? '✅ 已启用' : '⏸ 已禁用', 'success');
+      await loadApiKeys(pid);
+    } else {
+      toast('操作失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('操作失败: ' + e.message, 'error'); }
+}
+
+async function editKeyAccessControl(pid, keyId, currentAccess) {
+  const newAccess = prompt('修改 Key 访问权限\n\n当前: ' + currentAccess + '\n\n可选值:\n- private: 私有（额度仅自用）\n- shared: 共享（额度贡献到共享池）', currentAccess);
+  if (!newAccess || newAccess === currentAccess) return;
+  if (!['private', 'shared'].includes(newAccess)) {
+    toast('无效权限值，请输入 private/shared', 'error');
+    return;
+  }
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+      method: 'PUT',
+      body: JSON.stringify({ access_control: newAccess })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ 权限已更新为: ' + newAccess, 'success');
+      await loadApiKeys(pid);
+      await loadProviders();
+    } else {
+      toast('更新失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('更新失败: ' + e.message, 'error'); }
+}
+
+async function deleteApiKey(pid, keyId) {
+  if (!confirm('确定删除此 API Key？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId, { method: 'DELETE' });
+    toast('已删除');
+    await loadApiKeys(pid);
+    await loadProviders();
+  } catch(e) { toast('删除失败: ' + e.message, 'error'); }
+}
+
+async function resetKeyQuota(pid, keyId) {
+  if (!confirm('确定重置此 Key 的已用额度？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId + '/reset-quota', { method: 'POST' });
+    toast('额度已重置');
+    await loadApiKeys(pid);
+  } catch(e) { toast('重置失败: ' + e.message, 'error'); }
+}
+
+async function testSingleKey(pid, keyId) {
+  const statusEl = document.getElementById('table-keystatus-' + keyId);
+  if (statusEl) {
+    statusEl.innerHTML = '⏳';
+    statusEl.style.background = 'rgba(59,130,246,.1)';
+    statusEl.style.color = 'var(--info)';
+  }
+  toast('正在测试...', 'info');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test?key_id=' + keyId, {method:'POST'});
+    const d = await r.json();
+    if (statusEl) {
+      if (d.success) {
+        statusEl.innerHTML = '✅';
+        statusEl.style.background = 'rgba(34,197,94,.1)';
+        statusEl.style.color = '#22c55e';
+      } else {
+        statusEl.innerHTML = '❌';
+        statusEl.style.background = 'rgba(239,68,68,.1)';
+        statusEl.style.color = '#ef4444';
+      }
+    }
+    toast(d.success ? '✅ Key 可用' : '❌ Key 不可用: ' + (d.error||''), d.success ? 'success' : 'error');
+  } catch(e) {
+    if (statusEl) {
+      statusEl.innerHTML = '❌';
+      statusEl.style.background = 'rgba(239,68,68,.1)';
+      statusEl.style.color = '#ef4444';
+    }
+    toast('测试失败: ' + e.message, 'error');
+  }
+}
+
+async function testAllKeys(pid) {
+  toast('正在测试所有 Key...', 'info');
+  // Set all table indicators to testing state
+  document.querySelectorAll('[id^="table-keystatus-"]').forEach(el => {
+    el.innerHTML = '⏳';
+    el.style.background = 'rgba(59,130,246,.1)';
+    el.style.color = 'var(--info)';
+  });
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test-all-keys', {method:'POST'});
+    const d = await r.json();
+    if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    // Update each key's status indicator
+    d.results.forEach(k => {
+      if (k.key_id) {
+        const statusEl = document.getElementById('table-keystatus-' + k.key_id);
+        if (statusEl) {
+          if (k.success) {
+            statusEl.innerHTML = '✅';
+            statusEl.style.background = 'rgba(34,197,94,.1)';
+            statusEl.style.color = '#22c55e';
+          } else {
+            statusEl.innerHTML = '❌';
+            statusEl.style.background = 'rgba(239,68,68,.1)';
+            statusEl.style.color = '#ef4444';
+          }
+        }
+      }
+    });
+    let msg = d.results.map(k => {
+      let status = k.success ? '✅' : '❌';
+      let label = k.alias || ('Key#' + k.index);
+      return status + ' ' + label + (k.error ? ': ' + k.error : '');
+    }).join('\n');
+    
+    const lines = msg.split('\n');
+    const successCount = lines.filter(l => l.startsWith('✅')).length;
+    const failCount = lines.filter(l => l.startsWith('❌')).length;
+    toast(`Key 测试完成: ${successCount} 成功, ${failCount} 失败`, failCount > 0 ? 'error' : 'success');
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+function showInlineKeyForm() {
+  document.getElementById('editKeysInlineRow').style.display = 'block';
+  document.getElementById('newKeyAlias').value = '';
+  document.getElementById('newKeyValue').value = '';
+  document.getElementById('newKeyQuota').value = '0';
+        document.getElementById('newKeyQuotaDaily').value = '0';
+        document.getElementById('newKeyQuotaMonthly').value = '0';
+  document.getElementById('newKeyPriority').value = '1';
+  document.getElementById('newKeyAccess').value = 'private';
+  document.getElementById('newKeyValue').focus();
+  // Add a "+" button row at bottom of key list if not exists
+  if (!document.getElementById('addKeyRow')) {
+    const addBtn = document.createElement('div');
+    addBtn.id = 'addKeyRow';
+    addBtn.style.cssText = 'margin-top:10px;text-align:center';
+    addBtn.innerHTML = '<button class="btn btn-primary btn-sm" onclick="showInlineKeyForm()" style="font-size:11px;padding:4px 14px;border:1px dashed var(--border-color)">+ 添加新 Key</button>';
+    document.getElementById('editKeysList').appendChild(addBtn);
+  }
+}
+
+function cancelInlineKey() {
+  document.getElementById('editKeysInlineRow').style.display = 'none';
+}
+
+async function saveInlineKey() {
+  if (!editingId) return;
+  const alias = document.getElementById('newKeyAlias').value.trim();
+  const key = document.getElementById('newKeyValue').value.trim();
+  if (!key) { toast('请输入 API Key', 'error'); return; }
+  const quota = parseInt(document.getElementById('newKeyQuota').value, 10) || 0;
+  const quotaDaily = parseInt(document.getElementById('newKeyQuotaDaily').value, 10) || 0;
+  const quotaMonthly = parseInt(document.getElementById('newKeyQuotaMonthly').value, 10) || 0;
+  const priority = parseInt(document.getElementById('newKeyPriority').value, 10) || 1;
+  const access = document.getElementById('newKeyAccess').value;
+  try {
+    const r = await authFetch('/api/providers/' + editingId + '/keys', {
+      method: 'POST',
+      body: JSON.stringify({ key: key, alias: alias, quota: quota, access_control: access, priority: priority, enabled: true })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ Key 已添加', 'success');
+      document.getElementById('editKeysInlineRow').style.display = 'none';
+      await loadEditKeys(editingId);
+      await loadProviders();
+    } else {
+      toast('添加失败: ' + extractError(d) || '未知错误', 'error');
+    }
+  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+
+async function loadEditKeys(pid) {
+  const container = document.getElementById('editKeysList');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys');
+    const d = await r.json();
+    const keys = d.keys || [];
+    let html = '';
+    if (!keys.length) {
+      html = '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">暂无 Key，点击下方按钮添加</div>';
+    } else {
+      for (const k of keys) {
+        // Build multi-period quota text
+        var quotaParts = [];
+        if (k.quota_daily > 0) quotaParts.push('日:' + k.quota_daily.toLocaleString());
+        if (k.quota_monthly > 0) quotaParts.push('月:' + k.quota_monthly.toLocaleString());
+        if (k.quota > 0) quotaParts.push('总:' + k.quota.toLocaleString());
+        if (k.quota > 0) quotaParts.push('总:' + k.quota.toLocaleString());
+        const quotaText = quotaParts.length > 0 ? (k.used.toLocaleString() + ' 已用 | ' + quotaParts.join(' · ')) : '无限制';
+        const statusBadge = k.enabled ? '<span class="badge badge-green" style="font-size:11px;padding:2px 8px">启用</span>' : '<span class="badge badge-red" style="font-size:11px;padding:2px 8px">禁用</span>';
+        const accessLabel = k.access_control === 'shared' ? '🔗 共享' : '🔒 私有';
+        const maskedKey = k.key ? (k.key.includes('...') ? k.key.replace('...', '••••') : (k.key.length > 8 ? k.key.substring(0, 4) + '••••••••' + k.key.substring(k.key.length - 4) : '••••••••')) : '<span style="color:var(--text-muted)">未设置</span>';
+        const aliasDisplay = k.alias ? k.alias : '<span style="color:var(--text-muted)">未命名</span>';
+        html += '<div id="keycard-' + k.id + '" style="padding:14px 16px;margin-bottom:10px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
+        html += '<div style="display:flex;align-items:center;gap:8px">';
+        html += '<span style="font-size:13px;font-weight:600">' + aliasDisplay + '</span>';
+        html += statusBadge;
+        html += '<span style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(108,99,255,.1);color:var(--accent-start)">' + accessLabel + '</span>';
+        // Key availability status indicator
+        const keyStatusId = 'keystatus-' + k.id;
+        html += '<span id="' + keyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试此Key">⏳ 未测试</span>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:6px">';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="editInlineKey(\'' + pid + '\',\'' + k.id + '\')">✏️ 编辑</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="toggleEditKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '⏸ 禁用' : '▶ 启用') + '</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="testEditKey(\'' + pid + '\',\'' + k.id + '\')">🧪 测试</button>';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:11px;padding:3px 10px" onclick="deleteKeyInEdit(\'' + pid + '\',\'' + k.id + '\')">🗑 删除</button>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:20px;font-size:12px;color:var(--text-secondary)">';
+        html += '<span>Key: <code style="font-family:monospace;font-size:11px">' + maskedKey + '</code></span>';
+        html += '<span>额度: ' + quotaText + '</span>';
+        html += '<span>优先级: ' + k.priority + '</span>';
+        html += '</div>';
+        html += '</div>';
+      }
+    }
+    html += '<div id="addKeyRow" style="margin-top:12px;text-align:center"><button class="btn btn-primary btn-sm" onclick="showInlineKeyForm()" style="font-size:12px;padding:6px 18px;border:1px dashed var(--border-color)">+ 添加新 Key</button></div>';
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error);font-size:12px">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function editInlineKey(pid, keyId) {
+  const card = document.getElementById('keycard-' + keyId);
+  if (!card) return;
+  const r = await authFetch('/api/providers/' + pid + '/keys');
+  const d = await r.json();
+  const k = (d.keys || []).find(x => x.id === keyId);
+  if (!k) { toast('Key 未找到', 'error'); return; }
+  card.innerHTML = buildKeyEditForm(pid, keyId, k);
+}
+
+function buildKeyEditForm(pid, keyId, k) {
+  const maskedKey = k.key ? (k.key.includes('...') ? k.key.replace('...', '••••') : (k.key.length > 8 ? k.key.substring(0, 4) + '••••••••' + k.key.substring(k.key.length - 4) : '••••••••')) : '';
+  const accessOptions = [
+    {value:'private', label:'🔒 私有'},
+    {value:'shared', label:'🔗 共享'},
+
+  ];
+  // Format expires_at for datetime-local input
+  let expiresVal = '';
+  if (k.expires_at && k.expires_at !== '') {
+    try { expiresVal = k.expires_at.substring(0, 16); } catch(e) {}
+  }
+  // Usage percentage
+  const usagePct = k.quota > 0 ? Math.round((k.used||0) / k.quota * 100) : -1;
+  const usageColor = usagePct < 0 ? 'var(--text-muted)' : usagePct < 70 ? '#22c55e' : usagePct < 90 ? '#f59e0b' : '#ef4444';
+  
+  let h = '';
+  // Header
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
+  h += '<span style="font-size:14px;font-weight:600">编辑 Key</span>';
+  h += '<span style="font-size:11px;font-family:monospace;color:var(--text-muted)">' + maskedKey + '</span>';
+  h += '</div>';
+  
+  // Read-only info row
+  h += '<div style="display:flex;gap:16px;margin-bottom:14px;padding:8px 12px;background:rgba(108,99,255,.04);border-radius:8px;font-size:12px;color:var(--text-secondary)">';
+  h += '<span>状态: <b style="color:' + (k.enabled ? '#22c55e' : '#ef4444') + '">' + (k.enabled ? '✅ 启用' : '⏸ 禁用') + '</b></span>';
+  h += '<span>已用: <b>' + (k.used||0).toLocaleString() + '</b>';
+  if (k.quota > 0) {
+    h += ' / ' + k.quota.toLocaleString() + ' <span style="color:' + usageColor + '">(' + usagePct + '%)</span>';
+  } else {
+    h += ' / <span style="color:var(--text-muted)">无限制</span>';
+  }
+  h += '</span>';
+  if (k.created_at) h += '<span>创建: ' + k.created_at.substring(0, 10) + '</span>';
+  h += '</div>';
+  
+  // Editable fields - 3 column grid
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 14px">';
+  
+  // Row 1: Alias, Priority, Access Control
+  h += '<div>';
+  h += '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">别名</label>';
+  h += '<input id="ekf-alias" type="text" value="' + (k.alias||'').replace(/"/g,'&quot;') + '" placeholder="输入别名" style="width:100%;padding:6px 10px;font-size:13px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box">';
+  h += '</div>';
+  h += '<div>';
+  h += '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">优先级 <span style="font-size:10px;color:var(--text-muted)">(越高越优先)</span></label>';
+  h += '<input id="ekf-priority" type="number" value="' + (k.priority||1) + '" min="0" style="width:100%;padding:6px 10px;font-size:13px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box">';
+  h += '</div>';
+  h += '<div>';
+  h += '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">访问权限</label>';
+  h += '<select id="ekf-access" style="width:100%;padding:6px 10px;font-size:13px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box">';
+  for (const opt of accessOptions) {
+    const sel = (k.access_control === opt.value) ? ' selected' : '';
+    h += '<option value="' + opt.value + '"' + sel + '>' + opt.label + '</option>';
+  }
+  h += '</select>';
+  h += '</div>';
+  
+  // Row 2: Quota table (daily / monthly / total) + ExpiresAt
+  h += '<div style="grid-column:1/3">';
+  h += '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">额度限制 <span style="font-size:10px;color:var(--text-muted)">(tokens, 0=不限)</span></label>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  h += '<thead><tr style="background:rgba(108,99,255,.03)">';
+  h += '<th style="padding:4px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每日</th>';
+  h += '<th style="padding:4px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每月Token</th>';
+  h += '<th style="padding:4px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">总额</th>';
+  h += '</tr></thead><tbody><tr>';
+  h += '<td style="padding:3px"><input id="ekf-quota-daily" type="number" value="' + (k.quota_daily||0) + '" min="0" placeholder="不限" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box;text-align:center"></td>';
+  h += '<td style="padding:3px"><input id="ekf-quota-monthly" type="number" value="' + (k.quota_monthly||0) + '" min="0" placeholder="不限" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box;text-align:center"></td>';
+  h += '<td style="padding:3px"><input id="ekf-quota" type="number" value="' + (k.quota||0) + '" min="0" placeholder="不限" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box;text-align:center"></td>';
+  h += '</tr></tbody></table>';
+  h += '</div>';
+  h += '<div>';
+  h += '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">过期时间 <span style="font-size:10px;color:var(--text-muted)">(留空=永不过期)</span></label>';
+  h += '<input id="ekf-expires" type="datetime-local" value="' + expiresVal + '" style="width:100%;padding:6px 10px;font-size:13px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box">';
+  h += '</div>';
+  h += '</div>';
+  
+  // Buttons
+  h += '<div style="display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color)">';
+  h += '<span style="font-size:11px;color:var(--text-muted);flex:1">ID: ' + k.id + '</span>';
+  h += '<button class="btn btn-sm btn-secondary" onclick="cancelEditKey(\'' + pid + '\')" style="font-size:12px;padding:5px 14px">取消</button>';
+  h += '<button class="btn btn-sm btn-primary" onclick="saveEditKeyForm(\'' + pid + '\',\'' + keyId + '\')" style="font-size:12px;padding:5px 14px">💾 保存</button>';
+  h += '</div>';
+  return h;
+}
+
+async function saveEditKeyForm(pid, keyId) {
+  const alias = document.getElementById('ekf-alias').value.trim();
+  const quota = parseInt(document.getElementById('ekf-quota').value, 10) || 0;
+  const quotaDaily = parseInt(document.getElementById('ekf-quota-daily').value, 10) || 0;
+  const quotaMonthly = parseInt(document.getElementById('ekf-quota-monthly').value, 10) || 0;
+  const priority = parseInt(document.getElementById('ekf-priority').value, 10) || 1;
+  const access = document.getElementById('ekf-access').value;
+  const expiresEl = document.getElementById('ekf-expires');
+  const expiresAt = expiresEl && expiresEl.value ? new Date(expiresEl.value).toISOString() : '';
+  // Key sharing is independent of provider - shared key quota goes to public pool
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+      method: 'PUT',
+      body: JSON.stringify({ alias: alias, quota: quota, quota_daily: quotaDaily, quota_monthly: quotaMonthly, priority: priority, access_control: access, expires_at: expiresAt })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ Key 已更新', 'success');
+      await loadEditKeys(pid);
+    } else {
+      toast('更新失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('更新失败: ' + e.message, 'error'); }
+}
+
+function cancelEditKey(pid) {
+  loadEditKeys(pid);
+}
+
+async function toggleEditKeyEnabled(pid, keyId, enabled) {
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: enabled })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast(enabled ? '✅ 已启用' : '⏸ 已禁用', 'success');
+      await loadEditKeys(pid);
+    } else {
+      toast('操作失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('操作失败: ' + e.message, 'error'); }
+}
+
+async function deleteKeyInEdit(pid, keyId) {
+  if (!confirm('确定删除此 API Key？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId, { method: 'DELETE' });
+    toast('已删除');
+    await loadEditKeys(pid);
+    await loadProviders();
+  } catch(e) { toast('删除失败: ' + e.message, 'error'); }
+}
+
+async function testEditKey(pid, keyId) {
+  const statusEl = document.getElementById('keystatus-' + keyId);
+  if (statusEl) {
+    statusEl.innerHTML = '⏳ 测试中...';
+    statusEl.style.background = 'rgba(59,130,246,.1)';
+    statusEl.style.color = 'var(--info)';
+  }
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test?key_id=' + keyId, {method:'POST'});
+    const d = await r.json();
+    if (statusEl) {
+      if (d.success) {
+        statusEl.innerHTML = '✅ 可用';
+        statusEl.style.background = 'rgba(34,197,94,.1)';
+        statusEl.style.color = '#22c55e';
+      } else {
+        statusEl.innerHTML = '❌ 不可用';
+        statusEl.style.background = 'rgba(239,68,68,.1)';
+        statusEl.style.color = '#ef4444';
+      }
+    }
+    toast(d.success ? '✅ Key 可用' : '❌ Key 不可用: ' + (d.error||''), d.success ? 'success' : 'error');
+  } catch(e) {
+    if (statusEl) {
+      statusEl.innerHTML = '❌ 测试失败';
+      statusEl.style.background = 'rgba(239,68,68,.1)';
+      statusEl.style.color = '#ef4444';
+    }
+    toast('测试失败: ' + e.message, 'error');
+  }
+}
+
+async function testAllEditKeys() {
+  if (!editingId) return;
+  toast('正在测试所有 Key...', 'info');
+  // Set all indicators to testing state
+  document.querySelectorAll('[id^="keystatus-"]').forEach(el => {
+    el.innerHTML = '⏳ 测试中...';
+    el.style.background = 'rgba(59,130,246,.1)';
+    el.style.color = 'var(--info)';
+  });
+  try {
+    const r = await authFetch('/api/providers/' + editingId + '/test-all-keys', {method:'POST'});
+    const d = await r.json();
+    if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    // Update each key's status indicator
+    d.results.forEach(k => {
+      if (k.key_id) {
+        const statusEl = document.getElementById('keystatus-' + k.key_id);
+        if (statusEl) {
+          if (k.success) {
+            let balanceText = '';
+            if (k.balance && k.balance.available) {
+              if (k.balance.hard_limit_usd) {
+                balanceText = ' 💰$' + k.balance.hard_limit_usd.toFixed(2);
+              } else if (k.balance.balance) {
+                balanceText = ' 💰' + k.balance.balance.toFixed(2);
+              }
+              if (k.quota_updated) {
+                balanceText += ' (已同步)';
+              }
+            }
+            statusEl.innerHTML = '✅ 可用' + balanceText;
+            statusEl.style.background = 'rgba(34,197,94,.1)';
+            statusEl.style.color = '#22c55e';
+          } else {
+            statusEl.innerHTML = '❌ 不可用';
+            statusEl.style.background = 'rgba(239,68,68,.1)';
+            statusEl.style.color = '#ef4444';
+          }
+        }
+      }
+    });
+    let msg = d.results.map(k => {
+      let status = k.success ? '✅' : '❌';
+      let label = k.alias || ('Key#' + k.index);
+      return status + ' ' + label + (k.error ? ': ' + k.error : '');
+    }).join('\n');
+    
+    const lines = msg.split('\n');
+    const successCount = lines.filter(l => l.startsWith('✅')).length;
+    const failCount = lines.filter(l => l.startsWith('❌')).length;
+    toast(`Key 测试完成: ${successCount} 成功, ${failCount} 失败`, failCount > 0 ? 'error' : 'success');
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+function toggleRateLimit() {
+  var toggle = document.getElementById('pRateLimitToggle');
+  var fields = document.getElementById('pRateLimitFields');
+  if (!toggle || !fields) return;
+  toggle.classList.toggle('active');
+  var isActive = toggle.classList.contains('active');
+  fields.style.display = isActive ? 'block' : 'none';
+  setTimeout(function() { fields.style.opacity = isActive ? '1' : '0'; }, 10);
+}
+
+function openBrowserLogin() {
+  var pid = editingId || document.getElementById('pId').value;
+  if (!pid) { toast('请先选择或保存一个 Provider', 'error'); return; }
+  if (window.parent && window.parent.openSubPage) {
+    window.parent.openSubPage('/admin/browser-login?id=' + pid, '内置浏览器');
+  } else {
+    location.href = '/admin/browser-login?id=' + pid;
+  }
+}
+
+</script>
+</body>
+</html>

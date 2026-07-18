@@ -1646,6 +1646,34 @@ func handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	serveEmbeddedHTML(w, r, "login.html")
 }
 
+func handleProviderPage(w http.ResponseWriter, r *http.Request) {
+	if !auth.Initialized() {
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
+	serveEmbeddedHTML(w, r, "admin-provider.html")
+}
+
+func handleModelsPage(w http.ResponseWriter, r *http.Request) {
+	if !auth.Initialized() {
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
+	serveEmbeddedHTML(w, r, "admin-models.html")
+}
+
+func handleBrowserLoginPage(w http.ResponseWriter, r *http.Request) {
+	if !auth.Initialized() {
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
+	serveEmbeddedHTML(w, r, "admin-browser-login.html")
+}
+
+func handleAdminCommonJS(w http.ResponseWriter, r *http.Request) {
+	serveEmbeddedJS(w, r, "admin-common.js")
+}
+
 // ============================================================
 // Utility
 // ============================================================
@@ -2209,4 +2237,20 @@ func handleCollaboratorRegister(w http.ResponseWriter, r *http.Request) {
 		"role":         "collaborator",
 		"username":     body.Username,
 	})
+}
+
+func handleAdminSettingsJS(w http.ResponseWriter, r *http.Request) {
+	serveEmbeddedJS(w, r, "admin-settings.js")
+}
+
+func handleAdminNetworkJS(w http.ResponseWriter, r *http.Request) {
+	serveEmbeddedJS(w, r, "admin-network.js")
+}
+
+func handleAdminShareJS(w http.ResponseWriter, r *http.Request) {
+	serveEmbeddedJS(w, r, "admin-share.js")
+}
+
+func handleAdminLogsJS(w http.ResponseWriter, r *http.Request) {
+	serveEmbeddedJS(w, r, "admin-logs.js")
 }

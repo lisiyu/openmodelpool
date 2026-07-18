@@ -11,7 +11,7 @@
 set -e
 
 GITHUB_REPO="lisiyu/openmodelpool"
-RELEASE_TAG="v3.2.1-release"
+RELEASE_TAG="v3.4.1-release"
 XRAY_VERSION="v26.3.27"
 INSTALL_DIR="${1:-/opt/openmodelpool}"
 PORT="${2:-8000}"
