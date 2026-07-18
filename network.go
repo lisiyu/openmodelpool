@@ -306,11 +306,12 @@ func (rt *RouteTable) SelectBestNode(model string) *RouteEntry {
 // ============================================================
 
 type NetworkManager struct {
-	mu          sync.RWMutex
-	config      NetworkConfig
-	dataPath    string
-	startTime   time.Time
-	stopRefresh chan struct{}
+	mu              sync.RWMutex
+	config          NetworkConfig
+	dataPath        string
+	startTime       time.Time
+	stopRefresh     chan struct{}
+	pendingMnemonic string // mnemonic from auto-generation, shown to user once
 }
 
 var netMgr *NetworkManager
@@ -511,6 +512,15 @@ func (nm *NetworkManager) EnableSharedNetwork() error {
 		return fmt.Errorf("consent not accepted")
 	}
 	if nm.config.NodeID == "" {
+		if node != nil && !node.IsInitialized() {
+			// Auto-generate node identity on first join
+			mnemonic, err := node.GenerateWithMnemonic(12)
+			if err != nil {
+				return fmt.Errorf("failed to generate node identity: %w", err)
+			}
+			nm.pendingMnemonic = mnemonic
+			slog.Info("auto-generated node identity on network join", "node_id", node.NodeID())
+		}
 		if node != nil && node.IsInitialized() {
 			nm.config.NodeID = DeriveP2PNodeID()
 		}
@@ -1048,6 +1058,12 @@ func handleNetworkEnable(w http.ResponseWriter, r *http.Request) {
 		"node_id":         netMgr.config.NodeID,
 		"share_to_pool":   netMgr.config.ShareToPool,
 		"capabilities":    netMgr.config.Capabilities,
+	}
+	// Return mnemonic if auto-generated (first-time join)
+	if netMgr.pendingMnemonic != "" {
+		resp["mnemonic"] = netMgr.pendingMnemonic
+		resp["mnemonic_warning"] = "请安全保存以下助记词，用于恢复节点身份和贡献积分。此提示仅显示一次。"
+		netMgr.pendingMnemonic = ""
 	}
 	writeJSON(w, 200, resp)
 }
