@@ -1,0 +1,19 @@
+# golangci-lint configuration.
+# Starts conservative (formatting + obvious issues) so the first CI run is
+# green; enable stricter linters (errcheck, staticcheck, gosec, etc.) as the
+# codebase is cleaned up.
+run:
+  timeout: 5m
+
+linters:
+  disable-all: true
+  enable:
+    - gofmt
+    - goimports
+    - misspell
+    - ineffassign
+    - unconvert
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
