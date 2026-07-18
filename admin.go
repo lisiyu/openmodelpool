@@ -6,6 +6,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"fmt"
 	"net/smtp"
 	"strings"
@@ -1621,6 +1622,17 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 // Static pages
 // ============================================================
 
+
+// resolveHTMLPath returns the absolute path to an HTML file, relative to the executable directory.
+// This ensures files are found regardless of the current working directory.
+func resolveHTMLPath(name string) string {
+	exe, err := os.Executable()
+	if err != nil {
+		return name // fallback to relative
+	}
+	return filepath.Join(filepath.Dir(exe), name)
+}
+
 func handleAdminPage(w http.ResponseWriter, r *http.Request) {
 	if !auth.Initialized() {
 		http.Redirect(w, r, "/setup", http.StatusFound)
@@ -1631,7 +1643,7 @@ func handleAdminPage(w http.ResponseWriter, r *http.Request) {
 	// This avoids redirect loops when cookies don't persist (e.g. behind tunnels).
 	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
-	http.ServeFile(w, r, "admin.html")
+	http.ServeFile(w, r, resolveHTMLPath("admin.html"))
 }
 
 func handleSetupPage(w http.ResponseWriter, r *http.Request) {
@@ -1639,7 +1651,7 @@ func handleSetupPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
-	http.ServeFile(w, r, "setup.html")
+	http.ServeFile(w, r, resolveHTMLPath("setup.html"))
 }
 
 func handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -1647,7 +1659,7 @@ func handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
-	http.ServeFile(w, r, "login.html")
+	http.ServeFile(w, r, resolveHTMLPath("login.html"))
 }
 
 // ============================================================

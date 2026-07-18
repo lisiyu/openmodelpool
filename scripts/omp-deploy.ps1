@@ -24,7 +24,6 @@ Write-Host "   OpenModelPool 一键部署 (Windows 自动下载)" -ForegroundCol
 Write-Host "  ============================================" -ForegroundColor Cyan
 Write-Host ""
 
-# 检查管理员权限
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
     Write-Host "[错误] 请使用管理员权限运行 PowerShell" -ForegroundColor Red
@@ -45,7 +44,7 @@ $size = [math]::Round((Get-Item $tmpZip).Length / 1MB, 1)
 Write-Host "      下载完成 (${size} MB)" -ForegroundColor Green
 
 # [2/5] 解压
-Write-Host "[2/5] 解压到临时目录..." -ForegroundColor Cyan
+Write-Host "[2/5] 解压..." -ForegroundColor Cyan
 $tmpDir = Join-Path $env:TEMP "omp-deploy-extract"
 if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
 Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
@@ -57,10 +56,17 @@ $dataDir = Join-Path $InstallDir "data"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
+# 复制所有文件
 Copy-Item (Join-Path $tmpDir "openmodelpool.exe") -Destination (Join-Path $InstallDir "openmodelpool.exe") -Force
-if (Test-Path (Join-Path $tmpDir "admin.html")) {
-    Copy-Item (Join-Path $tmpDir "admin.html") -Destination $InstallDir -Force
+
+# 复制所有 HTML 文件
+foreach ($html in @("admin.html", "setup.html", "login.html")) {
+    $src = Join-Path $tmpDir $html
+    if (Test-Path $src) {
+        Copy-Item $src -Destination $InstallDir -Force
+    }
 }
+
 if (Test-Path (Join-Path $tmpDir "docs")) {
     Copy-Item (Join-Path $tmpDir "docs") -Destination $InstallDir -Force -Recurse
 }
@@ -69,7 +75,6 @@ Write-Host "      安装完成" -ForegroundColor Green
 # [4/5] 配置服务
 Write-Host "[4/5] 配置服务 (端口 $Port)..." -ForegroundColor Cyan
 
-# 启动脚本
 $startBat = Join-Path $InstallDir "start.bat"
 @"
 @echo off
@@ -78,7 +83,13 @@ set OMP_PORT=$Port
 openmodelpool.exe >> "$dataDir\app.log" 2>&1
 "@ | Set-Content $startBat -Encoding ASCII
 
-# 尝试 NSSM，否则用计划任务
+$stopBat = Join-Path $InstallDir "stop.bat"
+@"
+@echo off
+taskkill /f /im openmodelpool.exe 2>nul
+echo stopped
+"@ | Set-Content $stopBat -Encoding ASCII
+
 $nssm = Get-Command nssm -ErrorAction SilentlyContinue
 if ($nssm) {
     & nssm install openmodelpool (Join-Path $InstallDir "openmodelpool.exe")
@@ -98,18 +109,16 @@ if ($nssm) {
 
 # [5/5] 启动
 Write-Host "[5/5] 启动服务..." -ForegroundColor Cyan
-# 先停掉已有进程
 Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 1
 
 if ($nssm) {
     & nssm start openmodelpool
 } else {
-    Start-ScheduledTask -TaskName "OpenModelPool"
+    Start-Process -FilePath (Join-Path $InstallDir "openmodelpool.exe") -WorkingDirectory $InstallDir -WindowStyle Hidden
 }
 Start-Sleep -Seconds 3
 
-# 检查
 $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
 if ($proc) {
     $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback" -and $_.IPAddress -notmatch "^169\.254" } | Select-Object -First 1).IPAddress
@@ -119,20 +128,18 @@ if ($proc) {
     Write-Host "  ============================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "  管理面板:  http://${ip}:$Port/admin" -ForegroundColor Cyan
-    Write-Host "  API 地址:  http://${ip}:$Port/v1" -ForegroundColor Cyan
     Write-Host "  安装目录:  $InstallDir"
     Write-Host "  日志文件:  $dataDir\app.log"
     Write-Host ""
     Write-Host "  常用命令:" -ForegroundColor Yellow
+    Write-Host "    启动:  $startBat"
+    Write-Host "    停止:  $stopBat"
     if ($nssm) {
-        Write-Host "    启动: nssm start openmodelpool"
-        Write-Host "    停止: nssm stop openmodelpool"
-        Write-Host "    重启: nssm restart openmodelpool"
+        Write-Host "    服务:  nssm start/stop/restart openmodelpool"
     } else {
-        Write-Host "    启动: Start-ScheduledTask -TaskName OpenModelPool"
-        Write-Host "    停止: Stop-ScheduledTask -TaskName OpenModelPool"
+        Write-Host "    任务:  Start/Stop-ScheduledTask -TaskName OpenModelPool"
     }
-    Write-Host "    日志: Get-Content $dataDir\app.log -Tail 50 -Wait"
+    Write-Host "    日志:  Get-Content $dataDir\app.log -Tail 50 -Wait"
     Write-Host ""
     Write-Host "  ⚠️  首次使用请访问管理面板设置管理员账号" -ForegroundColor Yellow
     Write-Host ""
@@ -142,6 +149,5 @@ if ($proc) {
     exit 1
 }
 
-# 清理临时文件
 Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
 Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue

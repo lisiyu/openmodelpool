@@ -10,13 +10,11 @@
 # ============================================================
 set -e
 
-# ---- 配置 ----
 GITHUB_REPO="lisiyu/openmodelpool"
 RELEASE_TAG="v3.2.0-release"
 INSTALL_DIR="${1:-/opt/openmodelpool}"
 PORT="${2:-8000}"
 
-# 群晖默认路径检测
 if [ -d /volume1 ]; then
   INSTALL_DIR="${1:-/volume1/@appstore/openmodelpool}"
 fi
@@ -33,10 +31,8 @@ echo "  ║     OpenModelPool 一键部署 (自动下载)    ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo -e "${NC}"
 
-# ---- 检查 root ----
 if [ "$(id -u)" -ne 0 ]; then
   echo -e "${RED}[错误] 请使用 root 权限运行${NC}"
-  echo "  sudo bash omp-deploy.sh"
   exit 1
 fi
 
@@ -48,7 +44,6 @@ case "$ARCH" in
   armv7l|arm)    PKG="openmodelpool-linux-armv7";  ARCH_LABEL="ARMv7";;
   *)
     echo -e "${RED}[错误] 不支持的架构: ${ARCH}${NC}"
-    echo "支持: x86_64, ARM64, ARMv7"
     exit 1
     ;;
 esac
@@ -69,7 +64,7 @@ else
   echo -e "${GREEN}[2/7] 系统: Linux ($(cat /etc/os-release 2>/dev/null | grep ^PRETTY_NAME | cut -d= -f2 | tr -d '"' || echo 'unknown'))${NC}"
 fi
 
-# ---- 检测下载工具 ----
+# ---- 下载 ----
 DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${PKG}.tar.gz"
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
@@ -93,7 +88,7 @@ fi
 echo -e "${GREEN}       下载完成 ($(du -h "$TMP_DIR/${PKG}.tar.gz" | cut -f1))${NC}"
 
 # ---- 解压 ----
-echo -e "${CYAN}[4/7] 解压到临时目录...${NC}"
+echo -e "${CYAN}[4/7] 解压...${NC}"
 tar xzf "$TMP_DIR/${PKG}.tar.gz" -C "$TMP_DIR"
 echo -e "${GREEN}       解压完成${NC}"
 
@@ -102,14 +97,20 @@ echo -e "${CYAN}[5/7] 安装到 ${INSTALL_DIR}...${NC}"
 mkdir -p "$INSTALL_DIR/data"
 cp "$TMP_DIR/openmodelpool" "$INSTALL_DIR/openmodelpool"
 chmod +x "$INSTALL_DIR/openmodelpool"
-cp "$TMP_DIR/admin.html" "$INSTALL_DIR/admin.html" 2>/dev/null
+
+# 复制所有 HTML 文件
+for html in admin.html setup.html login.html; do
+  if [ -f "$TMP_DIR/$html" ]; then
+    cp "$TMP_DIR/$html" "$INSTALL_DIR/$html"
+  fi
+done
+
 cp -r "$TMP_DIR/docs" "$INSTALL_DIR/docs" 2>/dev/null
 echo -e "${GREEN}       安装完成${NC}"
 
 # ---- 创建管理脚本 ----
 echo -e "${CYAN}[6/7] 配置服务 (端口 ${PORT})...${NC}"
 
-# 启动脚本
 cat > "$INSTALL_DIR/start.sh" << EOF
 #!/bin/bash
 cd "$INSTALL_DIR"
@@ -118,7 +119,6 @@ exec ./openmodelpool >> "$INSTALL_DIR/data/app.log" 2>&1
 EOF
 chmod +x "$INSTALL_DIR/start.sh"
 
-# 停止脚本
 cat > "$INSTALL_DIR/stop.sh" << 'EOF'
 #!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -131,7 +131,6 @@ fi
 EOF
 chmod +x "$INSTALL_DIR/stop.sh"
 
-# 状态脚本
 cat > "$INSTALL_DIR/status.sh" << 'EOF'
 #!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -144,9 +143,8 @@ fi
 EOF
 chmod +x "$INSTALL_DIR/status.sh"
 
-# ---- 配置开机自启 ----
+# ---- 开机自启 ----
 if $IS_SYNOLOGY; then
-  # 群晖: rc.d 脚本
   RC_SCRIPT="/usr/local/etc/rc.d/openmodelpool.sh"
   mkdir -p /usr/local/etc/rc.d
   cat > "$RC_SCRIPT" << EOF
@@ -163,7 +161,6 @@ EOF
   chmod +x "$RC_SCRIPT"
   echo -e "${GREEN}       开机自启: $RC_SCRIPT${NC}"
 elif command -v systemctl &>/dev/null; then
-  # 通用 Linux: systemd
   cat > /etc/systemd/system/openmodelpool.service << EOF
 [Unit]
 Description=OpenModelPool - AI Model Router & Load Balancer
@@ -182,9 +179,8 @@ WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
   systemctl enable openmodelpool
-  echo -e "${GREEN}       开机自启: systemd (openmodelpool.service)${NC}"
+  echo -e "${GREEN}       开机自启: systemd${NC}"
 else
-  # 通用 Linux: rc.local
   echo "su root -c '$INSTALL_DIR/start.sh &'" >> /etc/rc.local 2>/dev/null
   echo -e "${YELLOW}       开机自启: /etc/rc.local${NC}"
 fi
@@ -204,7 +200,6 @@ if pgrep -f "$INSTALL_DIR/openmodelpool" >/dev/null; then
   echo -e "${GREEN}  ╚══════════════════════════════════════════╝${NC}"
   echo ""
   echo -e "  管理面板:  ${CYAN}http://${NAS_IP}:${PORT}/admin${NC}"
-  echo -e "  API 地址:  ${CYAN}http://${NAS_IP}:${PORT}/v1${NC}"
   echo -e "  安装目录:  $INSTALL_DIR"
   echo -e "  日志文件:  $INSTALL_DIR/data/app.log"
   echo ""
@@ -213,11 +208,6 @@ if pgrep -f "$INSTALL_DIR/openmodelpool" >/dev/null; then
   echo -e "    停止:  bash $INSTALL_DIR/stop.sh"
   echo -e "    状态:  bash $INSTALL_DIR/status.sh"
   echo -e "    日志:  tail -f $INSTALL_DIR/data/app.log"
-  if $IS_SYNOLOGY; then
-    echo -e "    开机:  $RC_SCRIPT (已配置)"
-  else
-    echo -e "    开机:  systemctl enable openmodelpool (已配置)"
-  fi
   echo ""
   echo -e "  ${YELLOW}⚠️  首次使用请访问管理面板设置管理员账号${NC}"
   echo ""
