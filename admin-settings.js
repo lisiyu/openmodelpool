@@ -206,119 +206,160 @@ async function importConfig(input) {
     // ============================================================
     let networkStatus = null;
 
-    async function quickSetPublicUrl() {
-      const url = document.getElementById('quickPublicUrlInput').value.trim();
-      if (!url) { 
-        toast('请输入完整的域名 URL', 'error'); 
-        return; 
-      }
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        toast('URL 必须以 http:// 或 https:// 开头', 'error');
-        return;
-      }
-      
-      const btn = document.getElementById('quickSetBtn');
-      const result = document.getElementById('quickSetResult');
-      btn.disabled = true;
-      btn.textContent = '⏳ 处理中...';
-      result.innerHTML = '';
-      
-      try {
-        const r = await authFetch('/api/config', {
-          method: 'POST',
-          body: JSON.stringify({ public_url: url })
-        });
-        const d = await r.json();
-        
-        if (url.startsWith('https://')) {
-          result.innerHTML = '<div style="padding:8px;background:rgba(46,204,113,.1);border-radius:6px;color:#2ecc71">' +
-            '✅ 已保存！服务正在申请 Let\'s Encrypt 证书并启动 HTTPS...<br>' +
-            '<span style="font-size:10px">DNS 生效后（通常 1-5 分钟），访问 <a href="' + url + '" target="_blank" style="color:#2ecc71">' + url + '</a> 验证</span>' +
-            '</div>';
-          // 显示解绑按钮
-          document.getElementById('quickUnbindBtn').style.display = '';
-          document.getElementById('quickSetBtn').style.display = 'none';
-        } else {
-          result.innerHTML = '<div style="padding:8px;background:rgba(46,204,113,.1);border-radius:6px;color:#2ecc71">' +
-            '✅ 已保存！服务将使用 HTTP 模式（适合隧道场景）' +
-            '</div>';
-        }
-        
-        toast('配置已保存', 'success');
-        setTimeout(() => loadConfig(), 1000);
-        
-      } catch(e) {
-        result.innerHTML = '<div style="padding:8px;background:rgba(231,76,60,.1);border-radius:6px;color:#e74c3c">❌ 保存失败: ' + e.message + '</div>';
-        toast('保存失败', 'error');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = '保存并启用';
-      }
-    }
+// ===== API URL & Domain/IP Binding =====
+// ===== API URL & Domain/IP Binding =====
 
-    async function quickUnbindDomain() {
-      if (!confirm('确定要解绑当前域名吗？服务将切换到 HTTP 模式（或隧道模式）。')) {
-        return;
-      }
-      
-      const btn = document.getElementById('quickUnbindBtn');
-      const result = document.getElementById('quickSetResult');
-      btn.disabled = true;
-      btn.textContent = '⏳ 解绑中...';
-      result.innerHTML = '';
-      
-      try {
-        const r = await authFetch('/api/config', {
-          method: 'POST',
-          body: JSON.stringify({ public_url: '' })
-        });
-        const d = await r.json();
-        
-        result.innerHTML = '<div style="padding:8px;background:rgba(52,152,219,.1);border-radius:6px;color:#3498db">' +
-          '✅ 已解绑域名！服务正在切换到 HTTP 模式...<br>' +
-          '<span style="font-size:10px">如需重新绑定，请在上方输入新的域名 URL</span>' +
-          '</div>';
-        
-        toast('域名已解绑', 'success');
-        
-        // 隐藏解绑按钮，显示绑定按钮
-        document.getElementById('quickUnbindBtn').style.display = 'none';
-        document.getElementById('quickSetBtn').style.display = '';
-        document.getElementById('quickPublicUrlInput').value = '';
-        
-        setTimeout(() => {
-          loadConfig();
-        }, 1000);
-        
-      } catch(e) {
-        result.innerHTML = '<div style="padding:8px;background:rgba(231,76,60,.1);border-radius:6px;color:#e74c3c">❌ 解绑失败: ' + e.message + '</div>';
-        toast('解绑失败', 'error');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = '解绑域名';
+function initApiUrls() {
+  const lanEl = document.getElementById('lanApiUrl');
+  const pubEl = document.getElementById('publicApiUrl');
+  const hintEl = document.getElementById('publicUrlHint');
+  const badgeEl = document.getElementById('publicUrlBadge');
+  const domainUrlEl = document.getElementById('domainApiUrl');
+  const domainHintEl = document.getElementById('domainUrlHint');
+  const domainBadgeEl = document.getElementById('domainUrlBadge');
+  const domainQuickCard = document.getElementById('domainBindingQuickCard');
+  authFetch('/api/federation/config').then(r => r.json()).then(d => {
+    const lanIP = d.lan_ip || '';
+    const servicePort = d.service_port || '8000';
+    const tunnelDomain = d.tunnel_domain || '';
+    const boundIP = d.bound_ip || '';
+    const boundPort = d.bound_port || '8000';
+    // 1. 局域网地址
+    if (lanEl) {
+      if (lanIP) {
+        lanEl.value = 'http://' + lanIP + ':' + servicePort + '/v1';
+        lanEl.style.color = 'var(--text-primary)';
+      } else {
+        lanEl.value = '无法获取局域网IP';
+        lanEl.style.color = 'var(--text-muted)';
       }
     }
-    // 页面加载时检查当前是否有绑定域名
-    setTimeout(() => {
-      authFetch('/api/config').then(r => r.json()).then(d => {
-        const publicUrl = d.public_url || '';
-        const input = document.getElementById('quickPublicUrlInput');
-        const bindBtn = document.getElementById('quickSetBtn');
-        const unbindBtn = document.getElementById('quickUnbindBtn');
-        
-        if (publicUrl && publicUrl.startsWith('https://')) {
-          // 已绑定 HTTPS 域名
-          if (input) input.value = publicUrl;
-          if (bindBtn) bindBtn.style.display = 'none';
-          if (unbindBtn) unbindBtn.style.display = '';
-        } else {
-          // 未绑定或 HTTP 模式
-          if (input) input.value = publicUrl || '';
-          if (bindBtn) bindBtn.style.display = '';
-          if (unbindBtn) unbindBtn.style.display = 'none';
-        }
-      }).catch(() => {});
-    }, 500);
+    // 2. 公网地址（固定IP）
+    if (boundIP) {
+      if (pubEl) {
+        pubEl.value = 'http://' + boundIP + ':' + boundPort + '/v1';
+        pubEl.style.color = 'var(--text-primary)';
+      }
+      if (hintEl) hintEl.innerHTML = '✅ 固定公网IP地址，可<a href="javascript:void(0)" onclick="showBindMode(\'ip\')" style="color:var(--accent);text-decoration:underline">修改</a>';
+      if (badgeEl) badgeEl.textContent = '(已绑定)';
+    } else {
+      if (pubEl) { pubEl.value = ''; pubEl.placeholder = '未绑定公网IP'; pubEl.style.color = 'var(--text-muted)'; }
+      if (hintEl) hintEl.textContent = '在下方绑定您的公网IP获得固定地址';
+      if (badgeEl) badgeEl.textContent = '';
+    }
+    // 3. 固定域名地址
+    if (tunnelDomain) {
+      const domainUrl = 'https://' + tunnelDomain + '/v1';
+      if (domainUrlEl) {
+        domainUrlEl.value = domainUrl;
+        domainUrlEl.style.color = 'var(--accent-green)';
+      }
+      if (domainHintEl) domainHintEl.innerHTML = '✅ 已绑定域名，地址永久固定，可<a href="javascript:void(0)" onclick="showBindMode(\'domain\')" style="color:var(--accent);text-decoration:underline">修改</a>';
+      if (domainBadgeEl) domainBadgeEl.textContent = '(已绑定)';
+    } else {
+      if (domainUrlEl) { domainUrlEl.value = ''; domainUrlEl.placeholder = '未绑定域名'; domainUrlEl.style.color = 'var(--text-muted)'; }
+      if (domainHintEl) domainHintEl.textContent = '在下方绑定域名获得固定地址';
+      if (domainBadgeEl) domainBadgeEl.textContent = '';
+    }
+    // 4. 绑定引导卡片
+    if (domainQuickCard) {
+      if (!boundIP || !tunnelDomain) {
+        domainQuickCard.style.display = 'block';
+        if (boundIP && !tunnelDomain) switchBindMode('domain');
+        if (!boundIP && tunnelDomain) switchBindMode('ip');
+      } else {
+        domainQuickCard.style.display = 'none';
+      }
+    }
+  }).catch(() => {
+    if (hintEl) hintEl.textContent = '获取地址信息失败';
+    if (domainHintEl) domainHintEl.textContent = '获取地址信息失败';
+  });
+}
+
+function switchBindMode(mode) {
+  const domainMode = document.getElementById('domainBindMode');
+  const ipMode = document.getElementById('ipBindMode');
+  const tabDomain = document.getElementById('tabDomainBtn');
+  const tabIp = document.getElementById('tabIpBtn');
+  if (mode === 'domain') {
+    if (domainMode) domainMode.style.display = '';
+    if (ipMode) ipMode.style.display = 'none';
+    if (tabDomain) tabDomain.classList.add('btn-primary');
+    if (tabDomain) tabDomain.classList.remove('btn-secondary');
+    if (tabIp) tabIp.classList.add('btn-secondary');
+    if (tabIp) tabIp.classList.remove('btn-primary');
+  } else {
+    if (domainMode) domainMode.style.display = 'none';
+    if (ipMode) ipMode.style.display = '';
+    if (tabDomain) tabDomain.classList.add('btn-secondary');
+    if (tabDomain) tabDomain.classList.remove('btn-primary');
+    if (tabIp) tabIp.classList.add('btn-primary');
+    if (tabIp) tabIp.classList.remove('btn-secondary');
+  }
+}
+
+function showBindMode(mode) {
+  const quickCard = document.getElementById('domainBindingQuickCard');
+  if (quickCard) {
+    quickCard.style.display = 'block';
+    quickCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  switchBindMode(mode);
+}
+
+async function quickBindDomain() {
+  const domain = document.getElementById('quickDomainInput').value.trim();
+  if (!domain) { toast('请输入域名', 'error'); return; }
+  const apiToken = prompt('请输入 Cloudflare API Token（用于创建隧道和 DNS 绑定）：');
+  if (!apiToken) return;
+  const result = document.getElementById('domainBindResult');
+  result.innerHTML = '<span style="color:var(--text-muted)">⏳ 正在绑定域名...</span>';
+  try {
+    const r = await authFetch('/api/domain/bind', {
+      method: 'POST',
+      body: JSON.stringify({ api_token: apiToken, domain: domain })
+    });
+    const d = await r.json();
+    if (d.error) {
+      result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + d.error + '</span>';
+      toast('绑定失败', 'error');
+    } else {
+      result.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定成功！</span><br><span style="font-size:11px;color:var(--text-muted)">公网地址: ' + (d.public_url || d.tunnel_url || '') + '</span>';
+      toast('域名绑定成功', 'success');
+      setTimeout(() => initApiUrls(), 2000);
+    }
+  } catch(e) {
+    result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + e.message + '</span>';
+    toast('绑定失败', 'error');
+  }
+}
+
+async function quickBindIp() {
+  const ip = document.getElementById('quickIpInput').value.trim();
+  if (!ip) { toast('请输入公网IP', 'error'); return; }
+  const result = document.getElementById('domainBindResult');
+  result.innerHTML = '<span style="color:var(--text-muted)">⏳ 正在绑定IP...</span>';
+  try {
+    const r = await authFetch('/api/ip/bind', {
+      method: 'POST',
+      body: JSON.stringify({ ip: ip, port: '8000' })
+    });
+    const d = await r.json();
+    if (d.error) {
+      result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + d.error + '</span>';
+      toast('绑定失败', 'error');
+    } else {
+      result.innerHTML = '<span style="color:var(--accent-green)">✅ IP 绑定成功！公网地址: ' + d.url + '</span>';
+      toast('IP绑定成功', 'success');
+      setTimeout(() => initApiUrls(), 1000);
+    }
+  } catch(e) {
+    result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + e.message + '</span>';
+    toast('绑定失败', 'error');
+  }
+}
+
 // ===== Discovery Functions =====
 let discoveredPlatforms = [];
 

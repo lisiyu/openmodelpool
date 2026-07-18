@@ -899,8 +899,11 @@ func (m *ProviderManager) SyncModels(providerID string) (int, error) {
 		return 0, fmt.Errorf("provider '%s' not found", providerID)
 	}
 
+	if p.Type == "web_session" {
+		return 0, fmt.Errorf("网页版平台不支持自动同步模型，请在平台设置中手动管理模型列表")
+	}
 	if p.Type != "openai_compatible" {
-		return 0, fmt.Errorf("sync only supported for openai_compatible providers (current type: %s)", p.Type)
+		return 0, fmt.Errorf("仅支持 openai_compatible 类型平台的模型同步 (当前类型: %s)", p.Type)
 	}
 
 	if p.APIKey == "" && len(p.APIKeys) == 0 {
