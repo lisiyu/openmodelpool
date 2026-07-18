@@ -21,8 +21,8 @@ Write-Host "   OpenModelPool 外网穿透配置向导 (Windows)" -ForegroundColo
 Write-Host "  ============================================" -ForegroundColor $C
 Write-Host ""
 Write-Host "  请选择穿透方案："
-Write-Host "    1) Cloudflare Tunnel  — 完全免费，固定域名+HTTPS，需自有域名" -ForegroundColor $G
-Write-Host "    2) FRP              — 免费，固定IP+端口，需公网服务器" -ForegroundColor $G
+Write-Host "    1) Cloudflare Tunnel — 完全免费，固定域名+HTTPS，需自有域名" -ForegroundColor $G
+Write-Host "    2) FRP — 免费，固定IP+端口，需公网服务器" -ForegroundColor $G
 Write-Host "    3) 跳过"
 Write-Host ""
 $choice = Read-Host "  请输入选项 [1/2/3]"
@@ -142,12 +142,63 @@ function Setup-FRP {
     Write-Host ""
     Write-Host "[FRP 内网穿透]" -ForegroundColor $Y
     Write-Host ""
+    Write-Host "  FRP 需要一台有公网 IP 的服务器作为中转。" -ForegroundColor $Y
+    Write-Host "  如果还没有，请按以下步骤搭建：" -ForegroundColor $Y
+    Write-Host ""
+    Write-Host "  ──────────────────────────────────────────" -ForegroundColor $C
+    Write-Host "   如何搭建 FRP 服务器（在公网服务器上执行）" -ForegroundColor $C
+    Write-Host "  ──────────────────────────────────────────" -ForegroundColor $C
+    Write-Host ""
+    Write-Host "  1. 购买一台云服务器（腾讯云/阿里云轻量级即可，约 30-50 元/月）"
+    Write-Host "  2. 在公网服务器上执行以下命令：" -ForegroundColor $Y
+    Write-Host ""
+    Write-Host "     # 下载 FRP" -ForegroundColor $G
+    Write-Host "     wget https://github.com/fatedier/frp/releases/download/v0.61.1/frp_0.61.1_linux_amd64.tar.gz"
+    Write-Host "     tar xzf frp_0.61.1_linux_amd64.tar.gz && cd frp_0.61.1_linux_amd64"
+    Write-Host ""
+    Write-Host "     # 创建配置" -ForegroundColor $G
+    Write-Host '     cat > frps.toml << EOF'
+    Write-Host '     bindPort = 7000'
+    Write-Host '     auth.token = "your-secret-token-here"'
+    Write-Host '     EOF'
+    Write-Host ""
+    Write-Host "     # 启动" -ForegroundColor $G
+    Write-Host "     ./frps -c frps.toml"
+    Write-Host ""
+    Write-Host "     # 开机自启 (systemd)" -ForegroundColor $G
+    Write-Host '     sudo tee /etc/systemd/system/frps.service << EOF'
+    Write-Host '     [Unit]'
+    Write-Host '     Description=frps server'
+    Write-Host '     After=network.target'
+    Write-Host '     [Service]'
+    Write-Host '     Type=simple'
+    Write-Host '     ExecStart=/root/frp_0.61.1_linux_amd64/frps -c /root/frp_0.61.1_linux_amd64/frps.toml'
+    Write-Host '     Restart=always'
+    Write-Host '     RestartSec=5'
+    Write-Host '     [Install]'
+    Write-Host '     WantedBy=multi-user.target'
+    Write-Host '     EOF'
+    Write-Host '     sudo systemctl enable frps && sudo systemctl start frps'
+    Write-Host ""
+    Write-Host "     # 安全组放行端口" -ForegroundColor $G
+    Write-Host "     在云服务器控制台安全组中放行: TCP 7000 + 映射端口(如 8001-8010)"
+    Write-Host ""
+    Write-Host "  ──────────────────────────────────────────" -ForegroundColor $C
+    Write-Host ""
+    Write-Host "  搭建完成后，请在下方填写你的 FRP 服务器信息：" -ForegroundColor $Y
+    Write-Host ""
+    
+    $frpServer = Read-Host "  FRP 服务器公网 IP"
+    if (-not $frpServer) {
+        Write-Host "  服务器地址不能为空" -ForegroundColor $R
+        return
+    }
 
-    $frpServer = Read-Host "  FRP 服务器地址 [默认: YOUR_FRP_SERVER_IP]"
-    if (-not $frpServer) { $frpServer = "YOUR_FRP_SERVER_IP" }
-
-    $frpToken = Read-Host "  FRP 认证 Token [默认: 使用内置]"
-    if (-not $frpToken) { $frpToken = "YOUR_FRP_TOKEN" }
+    $frpToken = Read-Host "  FRP 认证 Token"
+    if (-not $frpToken) {
+        Write-Host "  Token 不能为空" -ForegroundColor $R
+        return
+    }
 
     $remotePortStr = Read-Host "  远程映射端口 [默认: 8001]"
     if (-not $remotePortStr) { $remotePort = 8001 } else { $remotePort = [int]$remotePortStr }
@@ -217,8 +268,8 @@ remotePort = $remotePort
     Write-Host "  ============================================" -ForegroundColor $G
     Write-Host "   FRP 穿透配置完成！" -ForegroundColor $G
     Write-Host "  ============================================" -ForegroundColor $G
-    Write-Host "  外网地址: http://$frpServer`:$remotePort" -ForegroundColor $G
-    Write-Host "  管理面板: http://$frpServer`:$remotePort/admin" -ForegroundColor $G
+    Write-Host "  外网地址: http://${frpServer}:$remotePort" -ForegroundColor $G
+    Write-Host "  管理面板: http://${frpServer}:$remotePort/admin" -ForegroundColor $G
     Write-Host "  已设置开机自启" -ForegroundColor $G
     Write-Host ""
 }

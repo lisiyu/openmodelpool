@@ -301,36 +301,52 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/o
 ### 方案二：FRP
 
 - **完全免费**，固定 IP + 端口
-- 需要：一台有公网 IP 的服务器运行 frps
-- 默认使用内置 FRP 服务器（`YOUR_FRP_SERVER_IP`），也可自建
+- 需要：一台有公网 IP 的服务器运行 frps（自建）
 
-配置流程：
-1. 选择方案 2（FRP）
-2. 确认 FRP 服务器地址（回车使用默认）
-3. 确认认证 Token（回车使用默认）
-4. 输入远程映射端口（每个节点用不同端口，如 8001、8002、8003...）
-5. 脚本自动安装 frpc、创建配置、设置开机自启
+#### 第一步：在公网服务器上搭建 FRP 服务端
 
-配置完成后访问：`http://YOUR_FRP_SERVER_IP:8001/admin`
-
-### 自建 FRP 服务器
-
-如果你有自己的公网服务器，可以自建 FRP：
+购买一台云服务器（腾讯云/阿里云轻量级即可，约 ¥30-50/月），然后执行：
 
 ```bash
-# 在公网服务器上下载 frps
+# 下载 FRP
 wget https://github.com/fatedier/frp/releases/download/v0.61.1/frp_0.61.1_linux_amd64.tar.gz
 tar xzf frp_0.61.1_linux_amd64.tar.gz
 cd frp_0.61.1_linux_amd64
 
-# 创建 frps.toml
+# 创建服务端配置
 cat > frps.toml << 'EOF'
 bindPort = 7000
-auth.token = "your-secret-token"
+auth.token = "your-secret-token-here"
 EOF
 
 # 启动
 ./frps -c frps.toml
+
+# 设置开机自启 (systemd)
+sudo tee /etc/systemd/system/frps.service << EOF
+[Unit]
+Description=frps server
+After=network.target
+[Service]
+Type=simple
+ExecStart=/root/frp_0.61.1_linux_amd64/frps -c /root/frp_0.61.1_linux_amd64/frps.toml
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl enable frps && sudo systemctl start frps
 ```
 
-然后在节点配置时输入你自己的服务器地址和 Token。
+> **重要：** 在云服务器控制台的安全组中放行端口：TCP 7000 + 你要映射的端口范围（如 8001-8010）
+
+#### 第二步：在本地节点上配置 FRP 客户端
+
+运行穿透配置脚本，选择方案 2（FRP），按提示输入：
+1. FRP 服务器公网 IP（你刚搭建的服务器地址）
+2. FRP 认证 Token（你在 frps.toml 中设置的 auth.token）
+3. 远程映射端口（每个节点用不同端口，如 8001、8002、8003...）
+
+脚本会自动安装 frpc、创建配置、设置开机自启。
+
+配置完成后访问：`http://你的公网IP:8001/admin`
