@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
@@ -198,11 +199,12 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 		chromedp.Flag("disable-features", "AutomationControlled"),
 		chromedp.Flag("disable-infobars", true),
 		chromedp.Flag("enable-automation", false),
-		chromedp.Flag("host-resolver-rules", "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"),
 		chromedp.WindowSize(1280, 800),
 	}
 	if proxyURL != "" {
 		opts = append(opts, chromedp.ProxyServer(proxyURL))
+		// Force DNS through proxy to prevent leaks; only when proxy is active
+		opts = append(opts, chromedp.Flag("host-resolver-rules", "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"))
 		slog.Info("browser login starting", "provider", id, "proxy", proxyURL)
 	} else {
 		slog.Info("browser login starting", "provider", id, "proxy", "none")
@@ -490,6 +492,143 @@ func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 
 	case "screenshot":
 		// Just refresh screenshot
+
+	case "scroll":
+		// Scroll page up or down
+		direction := req.Value
+		if direction == "" {
+			direction = "down"
+		}
+		scrollScript := "window.scrollBy(0, 400)"
+		if direction == "up" {
+			scrollScript = "window.scrollBy(0, -400)"
+		}
+		if err := chromedp.Run(sess.ctx, chromedp.Evaluate(scrollScript, nil)); err != nil {
+			errMsg = "滚动失败: " + err.Error()
+		}
+		time.Sleep(500 * time.Millisecond)
+
+	case "mouse":
+		// Real mouse event via CDP: type=move|click|dblclick|wheel, x,y, deltaX, deltaY
+		// Value format: "type,x,y" or "type,x,y,deltaX,deltaY"
+		parts := strings.Split(req.Value, ",")
+		if len(parts) < 3 {
+			writeError(w, 400, "鼠标事件格式错误")
+			return
+		}
+		mouseType := parts[0]
+		var x, y float64
+		fmt.Sscanf(parts[1], "%f", &x)
+		fmt.Sscanf(parts[2], "%f", &y)
+
+		switch mouseType {
+		case "move":
+			_ = chromedp.Run(sess.ctx,
+				input.DispatchMouseEvent(input.MouseMoved, x, y),
+			)
+		case "click":
+			_ = chromedp.Run(sess.ctx,
+				input.DispatchMouseEvent(input.MouseMoved, x, y),
+				input.DispatchMouseEvent(input.MousePressed, x, y).
+					WithButton(input.Left).WithClickCount(1),
+				input.DispatchMouseEvent(input.MouseReleased, x, y).
+					WithButton(input.Left).WithClickCount(1),
+			)
+			time.Sleep(300 * time.Millisecond)
+		case "dblclick":
+			_ = chromedp.Run(sess.ctx,
+				input.DispatchMouseEvent(input.MouseMoved, x, y),
+				input.DispatchMouseEvent(input.MousePressed, x, y).
+					WithButton(input.Left).WithClickCount(2),
+				input.DispatchMouseEvent(input.MouseReleased, x, y).
+					WithButton(input.Left).WithClickCount(2),
+			)
+			time.Sleep(300 * time.Millisecond)
+		case "wheel":
+			deltaY := -100.0
+			if len(parts) > 4 {
+				fmt.Sscanf(parts[4], "%f", &deltaY)
+			}
+			_ = chromedp.Run(sess.ctx,
+				input.DispatchMouseEvent(input.MouseWheel, x, y).
+					WithDeltaX(0).WithDeltaY(deltaY),
+			)
+			time.Sleep(300 * time.Millisecond)
+		}
+		// No error message for mouse events - they should be silent
+
+
+	case "keyboard":
+		// Keyboard event via CDP: type=text for printable chars, type=special for special keys
+		// Value format: "text,<char>" or "special,<keyname>"
+		parts := strings.SplitN(req.Value, ",", 2)
+		if len(parts) < 2 {
+			writeError(w, 400, "键盘事件格式错误")
+			return
+		}
+		kbType := parts[0]
+		kbValue := parts[1]
+
+		switch kbType {
+		case "text":
+			// Insert printable character using InsertText
+			_ = chromedp.Run(sess.ctx,
+				input.InsertText(kbValue),
+			)
+		case "special":
+			// Handle special keys via DispatchKeyEvent
+			var keyCode int64
+			var code string
+			switch kbValue {
+			case "Enter":
+				keyCode = 13
+				code = "Enter"
+			case "Backspace":
+				keyCode = 8
+				code = "Backspace"
+			case "Tab":
+				keyCode = 9
+				code = "Tab"
+			case "Escape":
+				keyCode = 27
+				code = "Escape"
+			case "ArrowUp":
+				keyCode = 38
+				code = "ArrowUp"
+			case "ArrowDown":
+				keyCode = 40
+				code = "ArrowDown"
+			case "ArrowLeft":
+				keyCode = 37
+				code = "ArrowLeft"
+			case "ArrowRight":
+				keyCode = 39
+				code = "ArrowRight"
+			case "Space":
+				keyCode = 32
+				code = "Space"
+				kbValue = " "
+			default:
+				keyCode = 0
+				code = kbValue
+			}
+			if keyCode == 32 {
+				// Space - use char type
+				_ = chromedp.Run(sess.ctx,
+					input.DispatchKeyEvent(input.KeyChar).WithText(" "),
+				)
+			} else {
+				_ = chromedp.Run(sess.ctx,
+					input.DispatchKeyEvent(input.KeyDown).
+						WithKey(kbValue).WithCode(code).
+						WithWindowsVirtualKeyCode(keyCode),
+					input.DispatchKeyEvent(input.KeyUp).
+						WithKey(kbValue).WithCode(code).
+						WithWindowsVirtualKeyCode(keyCode),
+				)
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
 
 	default:
 		writeError(w, 400, "未知操作: "+req.Action)

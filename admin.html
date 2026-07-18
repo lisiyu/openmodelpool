@@ -22,6 +22,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hira
 .btn-logout:hover{background:rgba(239,68,68,.25)}
 .card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:24px;margin-bottom:20px;box-shadow:var(--shadow);transition:border-color .3s}
 .card:hover{border-color:rgba(108,99,255,.3)}
+.provider-item,.status-item{will-change:transform}
 .card-title{font-size:16px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .card-title .icon{font-size:18px}
 .status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px}
@@ -466,7 +467,7 @@ select.form-input{appearance:none;cursor:pointer}
         <span style="font-size:10px;padding:2px 6px;background:rgba(52,199,89,.12);color:var(--accent-green);border-radius:4px">零门槛</span>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-        <input class="form-input" value="sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="copyText(this.value)">
+        <input class="form-input" value="sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="copyText(this.value)" title="点击复制完整Key">
         <button class="btn btn-secondary btn-sm" onclick="copyText('sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1')">📋</button>
       </div>
       <div style="font-size:11px;color:var(--text-muted)">无需搭建节点即可使用，访问全网共享的公共模型算力资源（有基础额度上限）</div>
@@ -842,11 +843,11 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
   </div>
 <!-- 添加/编辑平台模态框 -->
-<script src="/admin-common.js"></script>
-<script src="/admin-settings.js"></script>
-<script src="/admin-network.js"></script>
-<script src="/admin-share.js"></script>
-<script src="/admin-logs.js"></script>
+<script src="/admin-common.js?v=344"></script>
+<script src="/admin-settings.js?v=344"></script>
+<script src="/admin-network.js?v=344"></script>
+<script src="/admin-share.js?v=344"></script>
+<script src="/admin-logs.js?v=344"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async></script>
 
 <!-- Sub-page Modal (iframe) -->
@@ -856,17 +857,25 @@ select.form-input{appearance:none;cursor:pointer}
       <span id="subPageModalTitle">页面</span>
       <button class="subpage-modal-close" onclick="closeSubPage()">✕</button>
     </div>
-    <iframe id="subPageFrame" src="" style="flex:1;border:none;width:100%"></iframe>
+    <iframe id="subPageFrame" src="" scrolling="auto"></iframe>
   </div>
 </div>
 <style>
-.subpage-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:none;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
-.subpage-modal-overlay.open{display:flex}
+.subpage-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:none;align-items:center;justify-content:center;padding:24px;overflow:hidden;touch-action:none}@media(min-width:769px){.subpage-modal-overlay{backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}}
+.subpage-modal-overlay.open{display:flex;animation:modalFadeIn .15s ease-out}
+@keyframes modalFadeIn{from{opacity:0}to{opacity:1}}
+.subpage-modal-container{animation:modalSlideUp .2s ease-out}
+@keyframes modalSlideUp{from{transform:translateY(12px);opacity:.8}to{transform:translateY(0);opacity:1}}
 .subpage-modal-container{background:var(--bg-card,#fff);border-radius:14px;width:100%;max-width:1100px;height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.25)}
 .subpage-modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border-color,#e5e5e7);flex-shrink:0}
 #subPageModalTitle{font-size:15px;font-weight:600;color:var(--text-primary,#1d1d1f)}
 .subpage-modal-close{background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-secondary,#86868b);padding:4px 8px;border-radius:6px;transition:all .2s}
 .subpage-modal-close:hover{background:rgba(0,0,0,.06);color:var(--text-primary,#1d1d1f)}
+#subPageFrame{flex:1;border:none;width:100%;min-height:0;-webkit-overflow-scrolling:touch;scrollbar-width:none;-ms-overflow-style:none}#subPageFrame::-webkit-scrollbar{display:none}
+@media(max-width:768px){
+  .subpage-modal-overlay{padding:0}
+  .subpage-modal-container{border-radius:0;max-width:100%;height:100vh;height:100dvh}
+}
 </style>
 <script>
 // Sub-page modal navigation
@@ -878,14 +887,17 @@ function openSubPage(url, title) {
   frame.src = url;
   modal.classList.add('open');
   modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
 }
 function closeSubPage() {
   var modal = document.getElementById('subPageModal');
   var frame = document.getElementById('subPageFrame');
-  frame.src = '';
+  frame.src = 'about:blank';
   modal.classList.remove('open');
   modal.style.display = 'none';
-  try { loadProviders(); refreshHealth(); } catch(e) {}
+  document.body.style.overflow = '';
+  // Lightweight refresh: only health (renders providers too), skip separate loadProviders
+  setTimeout(function() { try { refreshHealth(); loadStatus(); } catch(e) {} }, 100);
 }
 function showAddProvider() { openSubPage('/admin/provider', '添加平台'); }
 function editProvider(pid) { openSubPage('/admin/provider?id=' + pid, '编辑平台'); }
@@ -900,9 +912,11 @@ function openBrowserLogin() {
 // Module: CoreAuth - Authentication, utilities, and initialization
 // ================================================================
 async function init() {
-  try { await loadStatus(); await loadProviders(); } catch(e) { console.error(e); }
-  // Load presets in background
-  try { const r = await fetch('/api/providers/presets'); const d = await r.json(); presets = d.presets || []; } catch(e) {}
+  try {
+    await Promise.all([loadStatus(), loadProviders()]);
+  } catch(e) { console.error(e); }
+  // Load presets in background (non-blocking)
+  fetch('/api/providers/presets').then(r => r.json()).then(d => { presets = d.presets || []; }).catch(() => {});
 }
 async function loadStatus() {
   const r = await authFetch('/api/status');
@@ -2210,12 +2224,12 @@ if (authToken) {
     console.log('[CHAIN] Starting post-init chain (optimized)');
     // P0: Critical — render provider cards & node stats immediately
     try { refreshHealth(); } catch(e) { console.error('[CHAIN] refreshHealth FAILED:', e); }
-    // P1: Secondary — usage & weights (visible below the fold, defer 300ms)
+    // P1: Secondary — usage & weights (defer 50ms, let P0 render first)
     setTimeout(() => {
       try { refreshUsage(); } catch(e) {}
       try { loadWeights(); } catch(e) {}
-    }, 300);
-    // P2: Lazy — settings panels (defer 1.5s, skip network-related if personal mode)
+    }, 50);
+    // P2: Settings panels (defer 500ms)
     setTimeout(() => {
       try { initApiUrls(); } catch(e) {}
       try { loadProxyApiKey(); } catch(e) {}
@@ -2223,8 +2237,8 @@ if (authToken) {
       try { loadAdminInfo(); } catch(e) {}
       try { refreshSiderStatus(); } catch(e) {}
       try { refreshLogs(); } catch(e) {}
-    }, 1500);
-    // P3: Check network mode, load shared-network features only if enabled
+    }, 500);
+    // P3: Network mode check (defer 800ms)
     setTimeout(async () => {
       try {
         const nr = await authFetch('/api/network/status');
@@ -2238,20 +2252,25 @@ if (authToken) {
           console.log('[CHAIN] Personal mode: skipping federation/share/guestKeys');
         }
       } catch(e) { console.warn('network mode check failed', e); }
-    }, 2000);
+    }, 800);
     console.log('[CHAIN] All functions scheduled');
 });
-  // Auto-refresh status and usage every 30 seconds with error handling
-  let _pollTimer = setInterval(async () => {
-    try { await loadStatus(); await refreshUsage(); } catch(e) {
-      console.error('状态刷新失败:', e);
-      clearInterval(_pollTimer); _pollTimer = null;
-    }
+  // Lightweight polling: status every 30s, usage every 60s (separate timers)
+  let _statusTimer = setInterval(async () => {
+    try { await loadStatus(); } catch(e) { console.error('状态刷新失败:', e); clearInterval(_statusTimer); _statusTimer = null; }
   }, 30000);
+  let _usageTimer = setInterval(async () => {
+    try { await refreshUsage(); } catch(e) { console.error('使用量刷新失败:', e); clearInterval(_usageTimer); _usageTimer = null; }
+  }, 60000);
   // Pause polling when tab is hidden
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; } }
-    else { if (!_pollTimer) { _pollTimer = setInterval(async () => { try { await loadStatus(); await refreshUsage(); } catch(e) { clearInterval(_pollTimer); _pollTimer = null; } }, 30000); } }
+    if (document.hidden) {
+      if (_statusTimer) { clearInterval(_statusTimer); _statusTimer = null; }
+      if (_usageTimer) { clearInterval(_usageTimer); _usageTimer = null; }
+    } else {
+      if (!_statusTimer) { _statusTimer = setInterval(async () => { try { await loadStatus(); } catch(e) { clearInterval(_statusTimer); _statusTimer = null; } }, 30000); }
+      if (!_usageTimer) { _usageTimer = setInterval(async () => { try { await refreshUsage(); } catch(e) { clearInterval(_usageTimer); _usageTimer = null; } }, 60000); }
+    }
   });
 }
 // ================================================================
