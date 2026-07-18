@@ -155,6 +155,8 @@ func webSessionBuildHeaders(cfg *WebSessionConfig, token string) http.Header {
 	for k, v := range cfg.ExtraHeaders {
 		h.Set(k, v)
 	}
+	// Build cookie string
+	var cookieParts []string
 	switch cfg.AuthMode {
 	case "cookie":
 		cookieName := cfg.TokenCookieName
@@ -165,7 +167,7 @@ func webSessionBuildHeaders(cfg *WebSessionConfig, token string) http.Header {
 		if cfg.TokenPrefix != "" {
 			cookieVal = cfg.TokenPrefix + token
 		}
-		h.Set("Cookie", cookieName+"="+url.QueryEscape(cookieVal)+"; refresh_token=discard")
+		cookieParts = append(cookieParts, cookieName+"="+url.QueryEscape(cookieVal), "refresh_token=discard")
 		if cfg.TokenPrefix != "" {
 			h.Set("Authorization", cfg.TokenPrefix+token)
 		} else {
@@ -178,8 +180,15 @@ func webSessionBuildHeaders(cfg *WebSessionConfig, token string) http.Header {
 		}
 		h.Set("Authorization", prefix+token)
 		if cfg.TokenCookieName != "" {
-			h.Set("Cookie", cfg.TokenCookieName+"="+url.QueryEscape(prefix+token)+"; refresh_token=discard")
+			cookieParts = append(cookieParts, cfg.TokenCookieName+"="+url.QueryEscape(prefix+token), "refresh_token=discard")
 		}
+	}
+	// Append extra cookies (e.g. cf_clearance, __cf_bm from browser)
+	if cfg.ExtraCookies != "" {
+		cookieParts = append(cookieParts, cfg.ExtraCookies)
+	}
+	if len(cookieParts) > 0 {
+		h.Set("Cookie", strings.Join(cookieParts, "; "))
 	}
 	return h
 }

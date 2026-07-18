@@ -889,11 +889,13 @@ select.form-input{appearance:none;cursor:pointer}
           </div>
           <div style="font-size:12px;color:var(--text-secondary);line-height:1.8;margin-bottom:12px">
             <div style="margin-bottom:4px">1. 点击下方按钮打开登录页面</div>
-            <div style="margin-bottom:4px">2. 使用你的账号登录（Google / 邮箱等）</div>
+            <div style="margin-bottom:4px">2. 使用你的账号登录（Google / 邮箱等），完成验证码</div>
             <div style="margin-bottom:4px">3. 登录成功后，按 <kbd style="padding:1px 5px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;font-size:11px">F12</kbd> 打开开发者工具</div>
             <div style="margin-bottom:4px">4. 切换到 <span style="font-weight:500">Application</span> → <span style="font-weight:500">Cookies</span> → 选择网站域名</div>
-            <div style="margin-bottom:4px">5. 找到名为 <code style="padding:1px 4px;background:var(--bg-secondary);border-radius:3px;font-size:11px">token</code> 的 Cookie，复制它的值</div>
-            <div>6. 将复制的值粘贴到下方的 Token 输入框中</div>
+            <div style="margin-bottom:4px">5. 找到名为 <code style="padding:1px 4px;background:var(--bg-secondary);border-radius:3px;font-size:11px">token</code> 的 Cookie，复制它的值（去掉前面的 Bearer 前缀）</div>
+            <div style="margin-bottom:4px">6. 将 Token 值粘贴到下方的 Token 输入框中</div>
+            <div style="margin-bottom:4px">7. <span style="font-weight:500;color:var(--primary)">重要</span>：在开发者工具的 <span style="font-weight:500">Network</span> 标签中，找到任意请求，复制完整的 <code style="padding:1px 4px;background:var(--bg-secondary);border-radius:3px;font-size:11px">Cookie</code> 请求头值</div>
+            <div>8. 将完整 Cookie 粘贴到下方的「浏览器 Cookie」输入框中（用于通过 Cloudflare 验证）</div>
           </div>
           <button class="btn btn-primary btn-sm" onclick="openLoginPage()" style="width:100%">
             <span style="font-size:13px">🌐 打开登录页面</span>
@@ -901,6 +903,11 @@ select.form-input{appearance:none;cursor:pointer}
           <div id="loginPageStatus" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;font-size:11px;text-align:center"></div>
         </div>
         <div class="form-group"><label class="form-label">登录页面 URL</label><input class="form-input" id="pLoginUrl" placeholder="https://sider.ai"></div>
+        <div class="form-group">
+          <label class="form-label">🌐 浏览器 Cookie（用于通过 Cloudflare 验证）</label>
+          <textarea class="form-input" id="pExtraCookies" rows="3" placeholder="从浏览器开发者工具 Network 标签复制完整 Cookie 请求头值，例如：cf_clearance=...; __cf_bm=...; token=Bearer ..." style="font-family:monospace;font-size:11px"></textarea>
+          <div class="section-note" style="margin-top:4px">粘贴浏览器中完整的 Cookie 字符串，包含 Cloudflare 验证 cookie（cf_clearance 等）。首次登录需要过验证码，这些 cookie 是通过验证的凭证。</div>
+        </div>
         <div class="form-group"><label class="form-label">API 端点</label><input class="form-input" id="pApiEndpoint" placeholder="https://sider.ai/api/v3/completion/text"></div>
         <div class="form-group"><label class="form-label">认证方式</label><select class="form-input" id="pAuthMode"><option value="bearer">Bearer Token</option><option value="cookie">Cookie</option></select></div>
         <div class="form-group"><label class="form-label">模型字段名</label><input class="form-input" id="pModelField" placeholder="model" value="model"></div>
@@ -1938,6 +1945,7 @@ async function saveProvider() {
     try { extraBody = JSON.parse(document.getElementById('pExtraBody').value || '{}'); } catch(e) {}
     webSessionData = {
       login_url: document.getElementById('pLoginUrl').value.trim(),
+      extra_cookies: document.getElementById('pExtraCookies').value.trim(),
       api_endpoint: document.getElementById('pApiEndpoint').value.trim(),
       auth_mode: document.getElementById('pAuthMode').value,
       token_prefix: 'Bearer ',

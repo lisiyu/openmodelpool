@@ -198,6 +198,7 @@ type WebSessionConfig struct {
 	ResponseType    string            `json:"response_type"`               // "sse" or "json"
 	TextPath        string            `json:"text_path"`                   // JSON path to text in response (e.g. "data.text")
 	DoneMarker      string            `json:"done_marker,omitempty"`       // SSE done marker (default: [DONE])
+	ExtraCookies    string            `json:"extra_cookies,omitempty"`     // raw cookie string from browser (e.g. cf_clearance, __cf_bm)
 }
 
 // ProviderAccessControl defines which key types can access a provider (v2.0).
