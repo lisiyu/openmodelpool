@@ -67,6 +67,11 @@ func (m *ProviderManager) load() {
 			}
 		}
 		slog.Info("providers loaded", "count", len(m.providers))
+	for _, p := range m.providers {
+		for _, k := range p.APIKeys {
+			slog.Info("after load", "provider", p.ID, "keyID", k.ID, "keyLen", len(k.Key), "isEncrypted", IsEncrypted(k.Key))
+		}
+	}
 	}
 }
 
@@ -136,6 +141,13 @@ func (m *ProviderManager) saveLocked() {
 func (m *ProviderManager) makeProviderListLocked() []Provider {
 	list := make([]Provider, 0, len(m.providers))
 	for _, p := range m.providers {
+		// Deep copy APIKeys slice to avoid modifying in-memory data
+		if len(p.APIKeys) > 0 {
+			keysCopy := make([]APIKeyConfig, len(p.APIKeys))
+			copy(keysCopy, p.APIKeys)
+			p.APIKeys = keysCopy
+		}
+		
 		if p.APIKey != "" && !IsEncrypted(p.APIKey) {
 			p.APIKey = encryptField(p.APIKey)
 		}
@@ -186,6 +198,17 @@ func (m *ProviderManager) GetAll() []Provider {
 
 	m.cachedAll = result
 	m.cacheValid = true
+	return result
+}
+
+// GetConfigured returns only user-configured providers (excluding preset templates without keys).
+func (m *ProviderManager) GetConfigured() []Provider {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var result []Provider
+	for _, p := range m.providers {
+		result = append(result, p.Safe())
+	}
 	return result
 }
 
@@ -288,13 +311,9 @@ func (m *ProviderManager) Get(id string) (Provider, bool) {
 	return p.Safe(), true
 }
 
-// normalizeAccessControl ensures sensible defaults for access control (v2.0).
-// If neither flag is explicitly set (both false, the zero value), default to guest+shared.
+// normalizeAccessControl is retained for backward compatibility.
+// After removing AllowGuest, ShareToPool is managed entirely by the admin UI/API.
 func normalizeAccessControl(ac ProviderAccessControl) ProviderAccessControl {
-	// Zero value means "not set" — apply defaults (guest=true, share_to_pool=true)
-	if !ac.AllowGuest && !ac.ShareToPool {
-		return DefaultAccessControl()
-	}
 	return ac
 }
 
@@ -425,24 +444,23 @@ func RequestKeyType(r *http.Request) string {
 //
 // Design principle:
 // - Admin keys: unrestricted access to all providers
-// - Proxy keys (sk-{random}): v3.1 behavior depends on share_to_pool:
-//   - share_to_pool=true: Proxy API Key can access the full network shared pool
-//   - share_to_pool=false: Proxy API Key can only access this node's own providers
-// - Guest keys (sk-guest-*): controlled by per-provider AllowGuest flag
+// - Proxy keys (Admin Key / Proxy Key): unrestricted access, same as admin
 // - Public key (sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1): accesses providers with ShareToPool=true
 func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 	if keyType == "admin" {
 		return cands // admin keys always have unrestricted access
 	}
 
-	// v3.1: Proxy API Key behavior depends on share_to_pool
-	if keyType == "proxy" {
-		if netMgr != nil && netMgr.IsSharingToPool() {
-			return cands // share_to_pool=true: proxy key can access the full network pool
+	// Public key only works when node is in shared mode
+	if keyType == "public" {
+		if netMgr == nil || !netMgr.IsSharedMode() {
+			return nil // personal mode: public key has no access
 		}
-		// share_to_pool=false: proxy key can only access this node's own providers
-		// All local providers are accessible; remote (relayed) providers are not
-		return cands // local providers are always accessible via proxy key
+	}
+
+	// Proxy key: same as admin, unrestricted access to all candidates
+	if keyType == "proxy" {
+		return cands
 	}
 
 	filtered := make([]candidate, 0, len(cands))
@@ -450,7 +468,7 @@ func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 		ac := c.Provider.AccessControl
 		switch keyType {
 		case "guest":
-			if ac.AllowGuest {
+			if hasNonPrivateKey(c.Provider) {
 				filtered = append(filtered, c)
 			}
 		case "public":
@@ -639,10 +657,6 @@ func (m *ProviderManager) sortAuto(cands *[]candidate) {
 	if len(boundedRem) > 0 {
 		minTok, maxTok = minMax(boundedRem)
 	}
-	tokRange := maxTok - minTok
-	if tokRange == 0 {
-		tokRange = 1
-	}
 
 	scores := make([]float64, n)
 	for i := range c {
@@ -710,6 +724,10 @@ func (m *ProviderManager) AllModels() []ModelInfo {
 		if !p.Enabled {
 			continue
 		}
+		// Skip providers without API keys — models can't be served
+		if p.APIKey == "" && len(p.APIKeys) == 0 {
+			continue
+		}
 		for _, mdl := range p.Models {
 			if !mdl.Enabled || seen[mdl.ID] {
 				continue
@@ -752,6 +770,10 @@ func (m *ProviderManager) AllModelsFiltered(keyType string) []ModelInfo {
 
 	for _, p := range m.GetAll() {
 		if !p.Enabled {
+			continue
+		}
+		// Skip providers without API keys — models can't be served
+		if p.APIKey == "" && len(p.APIKeys) == 0 {
 			continue
 		}
 		// Check access control
@@ -798,9 +820,12 @@ func providerAllowsKeyType(p Provider, keyType string) bool {
 	case "admin", "proxy":
 		return true // proxy/admin keys always allowed
 	case "guest":
-		return ac.AllowGuest && hasNonPrivateKey(p)
+		return hasNonPrivateKey(p)
 	case "public":
-		// Public key: accessible if provider is shared to the pool AND has at least one non-private key
+		// Public key only works in shared mode, and provider must be shared with non-private keys
+		if netMgr == nil || !netMgr.IsSharedMode() {
+			return false
+		}
 		return ac.ShareToPool && hasNonPrivateKey(p)
 	default:
 		return false // unknown → deny (fail-closed)
@@ -867,43 +892,122 @@ func (m *ProviderManager) RoutingAdvice(model string) []map[string]any {
 
 // SyncModels fetches the available model list from an OpenAI-compatible provider
 // and updates the provider's Models field. Returns the number of models synced.
+// When multiple API keys exist, it fetches models per key and tracks per-key availability.
 func (m *ProviderManager) SyncModels(providerID string) (int, error) {
 	p, ok := m.GetRaw(providerID)
 	if !ok {
 		return 0, fmt.Errorf("provider '%s' not found", providerID)
 	}
 
+	if p.Type == "web_session" {
+		return 0, fmt.Errorf("网页版平台不支持自动同步模型，请在平台设置中手动管理模型列表")
+	}
 	if p.Type != "openai_compatible" {
-		return 0, fmt.Errorf("sync only supported for openai_compatible providers (current type: %s)", p.Type)
+		return 0, fmt.Errorf("仅支持 openai_compatible 类型平台的模型同步 (当前类型: %s)", p.Type)
 	}
 
-	if p.APIKey == "" {
+	if p.APIKey == "" && len(p.APIKeys) == 0 {
 		return 0, fmt.Errorf("provider '%s' has no API key configured", providerID)
 	}
 
-	models := fetchRemoteModels(p)
-	if len(models) == 0 {
+	// Preserve existing enabled state
+	existingModels := make(map[string]ModelDef)
+	for _, md := range p.Models {
+		existingModels[md.ID] = md
+	}
+
+	// Build per-key model availability
+	type keyModels struct {
+		keyID   string
+		modelIDs []string
+	}
+	var keyResults []keyModels
+	allModelIDs := make(map[string]string) // id -> name
+
+	// Fetch models from each key
+	if len(p.APIKeys) > 0 {
+		for _, k := range p.APIKeys {
+			if !k.Enabled {
+				continue
+			}
+			decryptedKey, err := decryptAPIKey(k.Key)
+			if err != nil {
+				slog.Warn("failed to decrypt key for sync", "key_id", k.ID, "error", err)
+				continue
+			}
+			tmp := p
+			tmp.APIKey = decryptedKey
+			models := fetchRemoteModels(tmp)
+			var ids []string
+			for _, rm := range models {
+				ids = append(ids, rm["id"])
+				allModelIDs[rm["id"]] = rm["name"]
+			}
+			keyResults = append(keyResults, keyModels{keyID: k.ID, modelIDs: ids})
+		}
+	} else {
+		// Legacy single key - decrypt if encrypted
+		if p.APIKey != "" {
+			decrypted, err := decryptAPIKey(p.APIKey)
+			if err == nil {
+				p.APIKey = decrypted
+			} else {
+				slog.Warn("failed to decrypt legacy key for sync", "error", err)
+			}
+		}
+		models := fetchRemoteModels(p)
+		var ids []string
+		for _, rm := range models {
+			ids = append(ids, rm["id"])
+			allModelIDs[rm["id"]] = rm["name"]
+		}
+		keyResults = append(keyResults, keyModels{keyID: "default", modelIDs: ids})
+	}
+
+	if len(allModelIDs) == 0 {
 		return 0, fmt.Errorf("no models returned from provider '%s'", providerID)
 	}
 
-	// Convert to ModelDef slice, preserving enabled state for existing models
-	existingModels := make(map[string]bool)
-	for _, md := range p.Models {
-		existingModels[md.ID] = md.Enabled
+	// Build available-by-key lookup
+	modelKeyAvailability := make(map[string]map[string]bool) // modelID -> keyID -> available
+	for _, kr := range keyResults {
+		for _, mid := range kr.modelIDs {
+			if modelKeyAvailability[mid] == nil {
+				modelKeyAvailability[mid] = make(map[string]bool)
+			}
+			modelKeyAvailability[mid][kr.keyID] = true
+		}
 	}
 
+	// Build new Models list
 	var newModels []ModelDef
-	for _, rm := range models {
-		enabled := false // new models default to disabled; users opt-in via UI
-		if wasEnabled, exists := existingModels[rm["id"]]; exists {
-			enabled = wasEnabled
+	for mid, mname := range allModelIDs {
+		def := ModelDef{
+			ID:   mid,
+			Name: mname,
 		}
-		newModels = append(newModels, ModelDef{
-			ID:      rm["id"],
-			Name:    rm["name"],
-			Enabled: enabled,
-		})
+
+		// Preserve existing state
+		if existing, ok := existingModels[mid]; ok {
+			def.Enabled = existing.Enabled
+			def.EnabledByKeys = existing.EnabledByKeys
+		}
+
+		// Set available keys
+		if avail, ok := modelKeyAvailability[mid]; ok {
+			for keyID := range avail {
+				def.AvailableKeys = append(def.AvailableKeys, keyID)
+			}
+			sort.Strings(def.AvailableKeys)
+		}
+
+		newModels = append(newModels, def)
 	}
+
+	// Sort models by ID for consistent ordering
+	sort.Slice(newModels, func(i, j int) bool {
+		return newModels[i].ID < newModels[j].ID
+	})
 
 	m.mu.Lock()
 	if existing, ok := m.providers[providerID]; ok {
@@ -914,7 +1018,7 @@ func (m *ProviderManager) SyncModels(providerID string) (int, error) {
 	m.saveLocked()
 	m.mu.Unlock()
 
-	slog.Info("provider models synced", "provider", providerID, "count", len(newModels))
+	slog.Info("provider models synced", "provider", providerID, "count", len(newModels), "keys", len(keyResults))
 	return len(newModels), nil
 }
 
@@ -1058,9 +1162,30 @@ func (m *ProviderManager) RecordKeyUsage(providerID, keyID string, tokens int64)
 	if !ok {
 		return
 	}
+
+	now := time.Now()
+	todayStr := now.Format("2006-01-02")
+	monthStr := now.Format("2006-01")
+
 	for i := range p.APIKeys {
 		if p.APIKeys[i].ID == keyID {
-			p.APIKeys[i].Used += tokens
+			k := &p.APIKeys[i]
+			k.Used += tokens
+
+			// Reset daily counter if day changed
+			if k.LastDailyReset != todayStr {
+				k.UsedDaily = 0
+				k.LastDailyReset = todayStr
+			}
+			k.UsedDaily += tokens
+
+			// Reset monthly counter if month changed
+			if k.LastMonthlyReset != monthStr {
+				k.UsedMonthly = 0
+				k.LastMonthlyReset = monthStr
+			}
+			k.UsedMonthly += tokens
+
 			m.providers[providerID] = p
 			m.saveLocked()
 			return
@@ -1140,6 +1265,16 @@ func (m *ProviderManager) UpdateAPIKey(providerID, keyID string, updates map[str
 					p.APIKeys[i].Quota = int64(f)
 				}
 			}
+			if v, ok := updates["quota_daily"]; ok {
+				if f, ok := v.(float64); ok {
+					p.APIKeys[i].QuotaDaily = int64(f)
+				}
+			}
+			if v, ok := updates["quota_monthly"]; ok {
+				if f, ok := v.(float64); ok {
+					p.APIKeys[i].QuotaMonthly = int64(f)
+				}
+			}
 			if v, ok := updates["access_control"]; ok {
 				if s, ok := v.(string); ok {
 					p.APIKeys[i].AccessControl = s
@@ -1217,14 +1352,15 @@ func (m *ProviderManager) GetAPIKeys(providerID string) ([]APIKeyConfig, error) 
 		return nil, fmt.Errorf("provider '%s' not found", providerID)
 	}
 
-	// Return masked keys
+	// Return masked keys with all fields populated
 	result := make([]APIKeyConfig, len(p.APIKeys))
 	for i, k := range p.APIKeys {
-		result[i] = k
-		if len(result[i].Key) > 8 {
-			result[i].Key = result[i].Key[:4] + "..." + result[i].Key[len(result[i].Key)-4:]
-		} else if result[i].Key != "" {
-			result[i].Key = "***"
+		result[i] = k // copy all fields
+		// Mask the actual key value for security
+		if len(k.Key) > 8 {
+			result[i].Key = k.Key[:4] + "••••••••" + k.Key[len(k.Key)-4:]
+		} else if k.Key != "" {
+			result[i].Key = "••••••••"
 		}
 	}
 	return result, nil
