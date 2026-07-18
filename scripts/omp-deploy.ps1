@@ -178,5 +178,28 @@ if ($proc) {
     exit 1
 }
 
+
+# ============================================================
+# 外网穿透配置（可选）
+# ============================================================
+Write-Host "  是否配置外网穿透？" -ForegroundColor Cyan
+Write-Host "    1) Cloudflare Tunnel — 免费，固定域名+HTTPS" -ForegroundColor Green
+Write-Host "    2) FRP — 免费，固定IP+端口" -ForegroundColor Green
+Write-Host "    3) 跳过（稍后可单独配置）"
+$tunnelChoice = Read-Host "  请选择 [1/2/3]"
+
+if ($tunnelChoice -eq "1" -or $tunnelChoice -eq "2") {
+    Write-Host ""
+    Write-Host "  正在下载穿透配置脚本..." -ForegroundColor Yellow
+    $tunnelUrl = "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.ps1"
+    $tunnelScript = (Invoke-WebRequest -Uri $tunnelUrl -UseBasicParsing).Content
+    $tunnelScript | Out-File -FilePath (Join-Path $env:TEMP "omp-tunnel.ps1") -Encoding UTF8
+    & (Join-Path $env:TEMP "omp-tunnel.ps1") -InstallDir $InstallDir -LocalPort $Port
+} else {
+    Write-Host "  跳过外网穿透配置。后续可运行:" -ForegroundColor Yellow
+    Write-Host "    irm https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.ps1 | iex" -ForegroundColor Cyan
+}
+Write-Host ""
+
 Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
 Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue

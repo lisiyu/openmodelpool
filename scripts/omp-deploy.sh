@@ -216,3 +216,23 @@ else
   echo "  查看日志: tail -f $INSTALL_DIR/data/app.log"
   exit 1
 fi
+
+# ============================================================
+# 外网穿透配置（可选）
+# ============================================================
+echo ""
+echo -e "${CYAN}  是否配置外网穿透？${NC}"
+echo -e "    ${GREEN}1${NC}) Cloudflare Tunnel — 免费，固定域名+HTTPS"
+echo -e "    ${GREEN}2${NC}) FRP — 免费，固定IP+端口"
+echo -e "    ${GREEN}3${NC}) 跳过（稍后可单独配置）"
+read -p "  请选择 [1/2/3]: " tunnel_choice
+
+if [ "$tunnel_choice" = "1" ] || [ "$tunnel_choice" = "2" ]; then
+    echo ""
+    echo -e "${YELLOW}  正在下载穿透配置脚本...${NC}"
+    curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.sh" | bash -s -- "$INSTALL_DIR" "$PORT"
+else
+    echo -e "  ${YELLOW}跳过外网穿透配置。后续可运行:${NC}"
+    echo -e "    curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.sh | sudo bash"
+fi
+echo ""

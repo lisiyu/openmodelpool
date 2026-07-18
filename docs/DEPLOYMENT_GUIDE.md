@@ -266,3 +266,71 @@ Get-Content C:\openmodelpool\data\app.log -Tail 50 -Wait
 1. DSM 防火墙是否放行了对应端口（控制面板 → 安全性 → 防火墙）
 2. DSM 控制面板 → 登录门户 → 高级 → 反向代理，可配置反向代理
 3. SSH 登录后执行 `ps aux | grep openmodelpool` 确认进程正在运行
+
+---
+
+## 外网穿透配置
+
+安装完成后，部署脚本会自动询问是否配置外网穿透。也可以随时单独运行配置：
+
+### Windows
+```powershell
+irm https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.ps1 | iex
+```
+
+### Linux / 群晖
+```bash
+curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.sh | sudo bash
+```
+
+### 方案一：Cloudflare Tunnel（推荐）
+
+- **完全免费**，固定域名 + HTTPS
+- 需要：一个托管在 Cloudflare 的域名（域名注册约 ¥50/年，Cloudflare DNS 免费使用）
+- 注册：https://dash.cloudflare.com/sign-up
+
+配置流程：
+1. 选择方案 1（Cloudflare Tunnel）
+2. 脚本自动安装 cloudflared
+3. 浏览器授权（选择你的域名）
+4. 输入子域名（如 `omp.yourdomain.com`）
+5. 脚本自动创建隧道、绑定域名、设置开机自启
+
+配置完成后访问：`https://omp.yourdomain.com/admin`
+
+### 方案二：FRP
+
+- **完全免费**，固定 IP + 端口
+- 需要：一台有公网 IP 的服务器运行 frps
+- 默认使用内置 FRP 服务器（`YOUR_FRP_SERVER_IP`），也可自建
+
+配置流程：
+1. 选择方案 2（FRP）
+2. 确认 FRP 服务器地址（回车使用默认）
+3. 确认认证 Token（回车使用默认）
+4. 输入远程映射端口（每个节点用不同端口，如 8001、8002、8003...）
+5. 脚本自动安装 frpc、创建配置、设置开机自启
+
+配置完成后访问：`http://YOUR_FRP_SERVER_IP:8001/admin`
+
+### 自建 FRP 服务器
+
+如果你有自己的公网服务器，可以自建 FRP：
+
+```bash
+# 在公网服务器上下载 frps
+wget https://github.com/fatedier/frp/releases/download/v0.61.1/frp_0.61.1_linux_amd64.tar.gz
+tar xzf frp_0.61.1_linux_amd64.tar.gz
+cd frp_0.61.1_linux_amd64
+
+# 创建 frps.toml
+cat > frps.toml << 'EOF'
+bindPort = 7000
+auth.token = "your-secret-token"
+EOF
+
+# 启动
+./frps -c frps.toml
+```
+
+然后在节点配置时输入你自己的服务器地址和 Token。
