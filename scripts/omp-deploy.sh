@@ -133,6 +133,166 @@ else
   echo -e "       可手动下载: $XRAY_URL"
 fi
 
+
+# ---- 安装内置浏览器依赖 (Chrome + Xvfb) ----
+echo -e "${CYAN}[5.6/7] 检查内置浏览器依赖...${NC}"
+
+NEED_CHROME=false
+NEED_XVFB=false
+
+# --- 检查 Chrome ---
+if command -v google-chrome &>/dev/null; then
+  CHROME_VER=$(google-chrome --version 2>/dev/null | grep -oP '\d+' | head -1)
+  if [ -n "$CHROME_VER" ] && [ "$CHROME_VER" -ge 120 ]; then
+    echo -e "${GREEN}       Chrome 已安装 (v$(google-chrome --version 2>/dev/null | awk '{print $3}'))${NC}"
+  else
+    echo -e "${YELLOW}       Chrome 版本过旧 (v${CHROME_VER})，需要更新${NC}"
+    NEED_CHROME=true
+  fi
+elif command -v chromium &>/dev/null; then
+  CHROME_VER=$(chromium --version 2>/dev/null | grep -oP '\d+' | head -1)
+  if [ -n "$CHROME_VER" ] && [ "$CHROME_VER" -ge 120 ]; then
+    echo -e "${GREEN}       Chromium 已安装 (v$(chromium --version 2>/dev/null | awk '{print $2}'))${NC}"
+  else
+    echo -e "${YELLOW}       Chromium 版本过旧，需要更新${NC}"
+    NEED_CHROME=true
+  fi
+else
+  echo -e "${YELLOW}       Chrome 未安装${NC}"
+  NEED_CHROME=true
+fi
+
+# --- 检查 Xvfb ---
+if command -v Xvfb &>/dev/null; then
+  echo -e "${GREEN}       Xvfb 已安装${NC}"
+else
+  echo -e "${YELLOW}       Xvfb 未安装${NC}"
+  NEED_XVFB=true
+fi
+
+# --- 安装缺失的依赖 ---
+if [ "$NEED_CHROME" = true ] || [ "$NEED_XVFB" = true ]; then
+  # 检测包管理器
+  if command -v apt-get &>/dev/null; then
+    PKG_MANAGER="apt-get"
+    echo -e "${CYAN}       使用 apt-get 安装依赖...${NC}"
+    apt-get update -qq 2>/dev/null
+
+    if [ "$NEED_XVFB" = true ]; then
+      apt-get install -y -qq xvfb 2>/dev/null
+      if command -v Xvfb &>/dev/null; then
+        echo -e "${GREEN}       Xvfb 安装完成${NC}"
+      else
+        echo -e "${YELLOW}       ⚠️ Xvfb 安装失败，内置浏览器将不可用${NC}"
+      fi
+    fi
+
+    if [ "$NEED_CHROME" = true ]; then
+      # 安装 Chrome 依赖库
+      apt-get install -y -qq wget gnupg2 2>/dev/null
+      # 尝试通过官方源安装
+      if [ ! -f /etc/apt/sources.list.d/google-chrome.list ] || [ "$NEED_CHROME" = true ]; then
+        wget -q -O /tmp/chrome-signing-key.pub https://dl.google.com/linux/linux_signing_key.pub 2>/dev/null
+        if [ $? -eq 0 ]; then
+          apt-key add /tmp/chrome-signing-key.pub 2>/dev/null || true
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
+          apt-get update -qq 2>/dev/null
+          apt-get install -y -qq google-chrome-stable 2>/dev/null
+        fi
+      fi
+
+      # 验证安装
+      if command -v google-chrome &>/dev/null; then
+        echo -e "${GREEN}       Chrome 安装完成 (v$(google-chrome --version 2>/dev/null | awk '{print $3}'))${NC}"
+      else
+        # 降级方案：尝试安装 chromium
+        echo -e "${YELLOW}       尝试安装 Chromium 作为替代...${NC}"
+        apt-get install -y -qq chromium-browser 2>/dev/null || apt-get install -y -qq chromium 2>/dev/null
+        if command -v chromium &>/dev/null || command -v chromium-browser &>/dev/null; then
+          echo -e "${GREEN}       Chromium 安装完成${NC}"
+        else
+          echo -e "${RED}       ⚠️ Chrome/Chromium 安装失败！${NC}"
+          echo -e "       内置浏览器功能将不可用（不影响其他功能）"
+          echo -e "       手动安装: apt-get install google-chrome-stable xvfb"
+        fi
+      fi
+    fi
+
+  elif command -v yum &>/dev/null; then
+    PKG_MANAGER="yum"
+    echo -e "${CYAN}       使用 yum 安装依赖...${NC}"
+
+    if [ "$NEED_XVFB" = true ]; then
+      yum install -y -q xorg-x11-server-Xvfb 2>/dev/null
+      if command -v Xvfb &>/dev/null; then
+        echo -e "${GREEN}       Xvfb 安装完成${NC}"
+      else
+        echo -e "${YELLOW}       ⚠️ Xvfb 安装失败${NC}"
+      fi
+    fi
+
+    if [ "$NEED_CHROME" = true ]; then
+      cat > /etc/yum.repos.d/google-chrome.repo << 'CHROME_REPO'
+[google-chrome]
+name=google-chrome
+baseurl=https://dl.google.com/linux/chrome/rpm/stable/x86_64
+enabled=1
+gpgcheck=1
+gpgkey=https://dl.google.com/linux/linux_signing_key.pub
+CHROME_REPO
+      yum install -y -q google-chrome-stable 2>/dev/null
+      if command -v google-chrome &>/dev/null; then
+        echo -e "${GREEN}       Chrome 安装完成${NC}"
+      else
+        echo -e "${RED}       ⚠️ Chrome 安装失败，手动安装: yum install google-chrome-stable${NC}"
+      fi
+    fi
+
+  elif command -v dnf &>/dev/null; then
+    PKG_MANAGER="dnf"
+    echo -e "${CYAN}       使用 dnf 安装依赖...${NC}"
+
+    if [ "$NEED_XVFB" = true ]; then
+      dnf install -y -q xorg-x11-server-Xvfb 2>/dev/null
+      if command -v Xvfb &>/dev/null; then
+        echo -e "${GREEN}       Xvfb 安装完成${NC}"
+      fi
+    fi
+
+    if [ "$NEED_CHROME" = true ]; then
+      dnf install -y -q https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm 2>/dev/null
+      if command -v google-chrome &>/dev/null; then
+        echo -e "${GREEN}       Chrome 安装完成${NC}"
+      else
+        echo -e "${RED}       ⚠️ Chrome 安装失败${NC}"
+      fi
+    fi
+
+  elif command -v apk &>/dev/null; then
+    # Alpine Linux (如在 Docker 中)
+    echo -e "${CYAN}       使用 apk 安装依赖...${NC}"
+    if [ "$NEED_CHROME" = true ]; then
+      apk add --no-cache chromium nss freetype harfbuzz ttf-freefont 2>/dev/null
+      echo -e "${GREEN}       Chromium 安装完成 (Alpine)${NC}"
+    fi
+    if [ "$NEED_XVFB" = true ]; then
+      apk add --no-cache xvfb-run 2>/dev/null || echo -e "${YELLOW}       ⚠️ Xvfb 在 Alpine 上不可用${NC}"
+    fi
+
+  else
+    echo -e "${YELLOW}       ⚠️ 无法识别的包管理器，请手动安装:${NC}"
+    echo -e "       Chrome: https://www.google.com/chrome/"
+    echo -e "       Xvfb:   系统包管理器安装 xvfb 或 xorg-x11-server-Xvfb"
+  fi
+else
+  echo -e "${GREEN}       内置浏览器依赖已就绪${NC}"
+fi
+
+# 安装 Chrome 需要的额外字体（中文等）
+if [ "$NEED_CHROME" = true ] && command -v apt-get &>/dev/null; then
+  apt-get install -y -qq fonts-liberation fonts-noto-cjk 2>/dev/null || true
+fi
+
 # ---- 创建管理脚本 ----
 echo -e "${CYAN}[6/7] 配置服务 (端口 ${PORT})...${NC}"
 
