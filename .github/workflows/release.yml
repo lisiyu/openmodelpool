@@ -1,0 +1,67 @@
+name: Release
+
+# Cross-compile release binaries for every supported platform and publish a
+# GitHub release with checksums whenever a `v*` tag is pushed.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set VERSION
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+
+      - name: Build all platforms
+        run: |
+          mkdir -p dist
+          targets=(
+            "linux/amd64"
+            "linux/arm64"
+            "linux/arm/armv7"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+          )
+          for t in "${targets[@]}"; do
+            goos=${t%/*}
+            rest=${t#*/}
+            if [[ "$rest" == */* ]]; then
+              goarch=${rest%/*}
+              goarm=${rest#*/}
+            else
+              goarch=$rest
+              goarm=""
+            fi
+            ext=""
+            [ "$goos" = "windows" ] && ext=".exe"
+            name="openmodelpool-${goos}-${goarch}"
+            [ -n "$goarm" ] && name="${name}-${goarm}"
+            echo "Building ${name}${ext}"
+            env GOOS="$goos" GOARCH="$goarch" ${goarm:+GOARM="$goarm"} \
+              go build -ldflags="-s -w -X main.AppVersion=${VERSION}" -trimpath -o "dist/${name}${ext}" .
+            ( cd dist && sha256sum "${name}${ext}" > "${name}${ext}.sha256" )
+          done
+
+      - name: Generate aggregate checksums
+        run: ( cd dist && sha256sum * > SHA256SUMS )
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

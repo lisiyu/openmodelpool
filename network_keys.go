@@ -200,10 +200,8 @@ func ValidateGuestKey(key string) (nodeID string, valid bool) {
 	// Key MUST be found in store — unknown keys are rejected
 	if guestKeyStore != nil {
 		guestKeyStore.mu.RLock()
-		found := false
 		for _, rec := range guestKeyStore.keys {
 			if rec.Key == key {
-				found = true
 				// Check if revoked
 				if rec.Revoked {
 					guestKeyStore.mu.RUnlock()
@@ -223,10 +221,8 @@ func ValidateGuestKey(key string) (nodeID string, valid bool) {
 		}
 		guestKeyStore.mu.RUnlock()
 		// Key not found in store — reject
-		if !found {
-			slog.Warn("guest key not found in store, rejecting", "node_id", candidateNodeID)
-			return "", false
-		}
+		slog.Warn("guest key not found in store, rejecting", "node_id", candidateNodeID)
+		return "", false
 	}
 
 	// No store initialized — reject (fail-closed)

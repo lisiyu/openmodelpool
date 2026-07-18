@@ -1,0 +1,13 @@
+services:
+  openmodelpool:
+    build:
+      context: .
+      args:
+        VERSION: latest
+    image: ghcr.io/lisiyu/openmodelpool:latest
+    container_name: openmodelpool
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

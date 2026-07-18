@@ -1,6 +1,7 @@
 package ledger
 
 import (
+	"encoding/json"
 	"crypto/ed25519"
 	"fmt"
 	"sync"
@@ -111,6 +112,10 @@ func (g *GossipLedger) RecordContribution(record *ContributionRecord) (string, e
 	if record.Timestamp.IsZero() {
 		record.Timestamp = time.Now()
 	}
+	// Sign the record content so consumers can verify its authenticity.
+	if data, err := json.Marshal(record); err == nil {
+		record.Signature = g.Sign(data)
+	}
 	cp := *record
 	g.recs[record.ID] = &cp
 	g.mu.Unlock()
@@ -213,6 +218,10 @@ func (g *GossipLedger) RecordPenalty(rec *PenaltyRecord) (string, error) {
 	}
 	if rec.Timestamp.IsZero() {
 		rec.Timestamp = time.Now()
+	}
+	// Sign the penalty so consumers can verify its authenticity.
+	if data, err := json.Marshal(rec); err == nil {
+		rec.Signature = g.Sign(data)
 	}
 	cp := *rec
 	g.penalties[rec.ID] = &cp

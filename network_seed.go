@@ -162,7 +162,10 @@ func handleSeedRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate shared secret (if configured)
-	expectedSecret := cfg.Get("seed_secret", "")
+	expectedSecret := ""
+	if cfg != nil {
+		expectedSecret = cfg.Get("seed_secret", "")
+	}
 	if expectedSecret != "" && req.Secret != expectedSecret {
 		http.Error(w, `{"error":"invalid secret"}`, http.StatusUnauthorized)
 		return

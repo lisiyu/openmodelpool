@@ -657,10 +657,6 @@ func (m *ProviderManager) sortAuto(cands *[]candidate) {
 	if len(boundedRem) > 0 {
 		minTok, maxTok = minMax(boundedRem)
 	}
-	tokRange := maxTok - minTok
-	if tokRange == 0 {
-		tokRange = 1
-	}
 
 	scores := make([]float64, n)
 	for i := range c {
