@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-const AppVersion = "3.2.0"
+const AppVersion = "3.3.0"
 
 // checkAndFixFilePermissions ensures sensitive files have restricted permissions. (SA-08)
 func checkAndFixFilePermissions(paths []string) {

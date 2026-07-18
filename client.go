@@ -98,6 +98,8 @@ func doNonStream(p Provider, model string, messages []ChatMessage, extra map[str
 	switch p.Type {
 	case "sider":
 		return siderNonStream(p, model, messages)
+	case "web_session":
+		return webSessionNonStream(p, model, messages)
 	case "coze":
 		return cozeNonStream(p, model, messages)
 	case "anthropic":
@@ -112,6 +114,8 @@ func doStream(p Provider, model string, messages []ChatMessage, extra map[string
 	switch p.Type {
 	case "sider":
 		return siderStream(p, model, messages, w)
+	case "web_session":
+		return webSessionStream(p, model, messages, w)
 	case "coze":
 		return cozeStream(p, model, messages, w)
 	case "anthropic":
@@ -120,6 +124,331 @@ func doStream(p Provider, model string, messages []ChatMessage, extra map[string
 		return openaiStream(p, model, messages, extra, w)
 	}
 }
+// ============================================================
+// Web Session (generic template for web-login-only platforms)
+// ============================================================
+
+// webSessionFormatMessages converts OpenAI messages to a single prompt string.
+func webSessionFormatMessages(messages []ChatMessage, format, sep string) string {
+	if sep == "" {
+		sep = "\n"
+	}
+	var parts []string
+	for _, m := range messages {
+		switch m.Role {
+		case "system":
+			parts = append(parts, "[System Instructions]"+sep+m.Content)
+		case "assistant":
+			parts = append(parts, "[Assistant]: "+m.Content)
+		default:
+			parts = append(parts, "[User]: "+m.Content)
+		}
+	}
+	return strings.Join(parts, sep)
+}
+
+// webSessionBuildHeaders builds HTTP headers from a WebSessionConfig.
+func webSessionBuildHeaders(cfg *WebSessionConfig, token string) http.Header {
+	h := make(http.Header)
+	h.Set("Content-Type", "application/json")
+	h.Set("Accept", "*/*")
+	for k, v := range cfg.ExtraHeaders {
+		h.Set(k, v)
+	}
+	switch cfg.AuthMode {
+	case "cookie":
+		cookieName := cfg.TokenCookieName
+		if cookieName == "" {
+			cookieName = "token"
+		}
+		cookieVal := token
+		if cfg.TokenPrefix != "" {
+			cookieVal = cfg.TokenPrefix + token
+		}
+		h.Set("Cookie", cookieName+"="+url.QueryEscape(cookieVal)+"; refresh_token=discard")
+		if cfg.TokenPrefix != "" {
+			h.Set("Authorization", cfg.TokenPrefix+token)
+		} else {
+			h.Set("Authorization", "Bearer "+token)
+		}
+	default:
+		prefix := cfg.TokenPrefix
+		if prefix == "" {
+			prefix = "Bearer "
+		}
+		h.Set("Authorization", prefix+token)
+		if cfg.TokenCookieName != "" {
+			h.Set("Cookie", cfg.TokenCookieName+"="+url.QueryEscape(prefix+token)+"; refresh_token=discard")
+		}
+	}
+	return h
+}
+
+// webSessionBuildPayload builds the request body from a WebSessionConfig.
+func webSessionBuildPayload(cfg *WebSessionConfig, model string, messages []ChatMessage, stream bool) map[string]any {
+	payload := make(map[string]any)
+	for k, v := range cfg.ExtraBody {
+		payload[k] = v
+	}
+	promptField := cfg.PromptField
+	if promptField == "" {
+		promptField = "prompt"
+	}
+	payload[promptField] = webSessionFormatMessages(messages, cfg.MessageFormat, cfg.MessageSep)
+	if cfg.ModelField != "" {
+		payload[cfg.ModelField] = model
+	}
+	if cfg.StreamField != "" {
+		payload[cfg.StreamField] = stream
+	}
+	return payload
+}
+
+// webSessionExtractText extracts text from a JSON object using a dot-separated path.
+func webSessionExtractText(data map[string]any, path string) string {
+	parts := strings.Split(path, ".")
+	var current any = data
+	for _, part := range parts {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return ""
+		}
+		current, ok = m[part]
+		if !ok {
+			return ""
+		}
+	}
+	if s, ok := current.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// webSessionNonStream sends a non-streaming request and returns OpenAI-format response.
+func webSessionNonStream(p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
+	cfg := p.WebSession
+	if cfg == nil {
+		return nil, fmt.Errorf("web_session config missing for provider %s", p.ID)
+	}
+	token := p.APIKey
+	if token == "" && len(p.APIKeys) > 0 {
+		token = p.APIKeys[0].Key
+	}
+	if token == "" {
+		return nil, fmt.Errorf("no token configured for web_session provider %s", p.ID)
+	}
+
+	payload := webSessionBuildPayload(cfg, model, messages, false)
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", cfg.APIEndpoint, bytes.NewReader(body))
+	req.Header = webSessionBuildHeaders(cfg, token)
+
+	client := proxyHTTPClient(p, 300*time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		return nil, fmt.Errorf("token expired (HTTP %d) for %s", resp.StatusCode, p.Name)
+	}
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("%s error (%d): %s", p.Name, resp.StatusCode, truncate(string(b), 200))
+	}
+
+	respBody, _ := io.ReadAll(resp.Body)
+	textPath := cfg.TextPath
+	if textPath == "" {
+		textPath = "data.text"
+	}
+	doneMarker := cfg.DoneMarker
+	if doneMarker == "" {
+		doneMarker = "[DONE]"
+	}
+
+	var fullText strings.Builder
+	if cfg.ResponseType == "json" {
+		var data map[string]any
+		if json.Unmarshal(respBody, &data) == nil {
+			fullText.WriteString(webSessionExtractText(data, textPath))
+		}
+	} else {
+		for _, line := range strings.Split(string(respBody), "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			dataStr := strings.TrimSpace(line[5:])
+			if dataStr == doneMarker {
+				break
+			}
+			var data map[string]any
+			if json.Unmarshal([]byte(dataStr), &data) != nil {
+				continue
+			}
+			fullText.WriteString(webSessionExtractText(data, textPath))
+		}
+	}
+
+	content := fullText.String()
+	stop := "stop"
+	return &ChatResponse{
+		ID:      fmt.Sprintf("chatcmpl-%s", randomString(24)),
+		Object:  "chat.completion",
+		Created: time.Now().Unix(),
+		Model:   model,
+		Choices: []Choice{{Message: &Msg{Role: "assistant", Content: &content}, FinishReason: &stop}},
+		Usage:   &Usage{},
+	}, nil
+}
+
+// webSessionStream sends a streaming request and writes SSE chunks in OpenAI format.
+func webSessionStream(p Provider, model string, messages []ChatMessage, w io.Writer) error {
+	cfg := p.WebSession
+	if cfg == nil {
+		return fmt.Errorf("web_session config missing for provider %s", p.ID)
+	}
+	token := p.APIKey
+	if token == "" && len(p.APIKeys) > 0 {
+		token = p.APIKeys[0].Key
+	}
+	if token == "" {
+		return fmt.Errorf("no token configured for web_session provider %s", p.ID)
+	}
+
+	payload := webSessionBuildPayload(cfg, model, messages, true)
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", cfg.APIEndpoint, bytes.NewReader(body))
+	req.Header = webSessionBuildHeaders(cfg, token)
+
+	client := proxyHTTPClient(p, 300*time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		writeSSEError(w, model, fmt.Sprintf("%s token expired (HTTP %d)", p.Name, resp.StatusCode))
+		return nil
+	}
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		writeSSEError(w, model, fmt.Sprintf("%s error (%d): %s", p.Name, resp.StatusCode, truncate(string(b), 200)))
+		return nil
+	}
+
+	textPath := cfg.TextPath
+	if textPath == "" {
+		textPath = "data.text"
+	}
+	doneMarker := cfg.DoneMarker
+	if doneMarker == "" {
+		doneMarker = "[DONE]"
+	}
+
+	cmplID := fmt.Sprintf("chatcmpl-%s", randomString(24))
+	created := time.Now().Unix()
+	flusher, hasFlusher := w.(interface{ Flush() })
+
+	if cfg.ResponseType == "json" {
+		respBody, _ := io.ReadAll(resp.Body)
+		var data map[string]any
+		if json.Unmarshal(respBody, &data) == nil {
+			text := webSessionExtractText(data, textPath)
+			if text != "" {
+				chunk := ChatChunk{
+					ID: cmplID, Object: "chat.completion.chunk",
+					Created: created, Model: model,
+					Choices: []Choice{{Delta: &Msg{Content: &text}}},
+				}
+				writeSSEChunk(w, chunk)
+				if hasFlusher {
+					flusher.Flush()
+				}
+			}
+		}
+	} else {
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			dataStr := strings.TrimSpace(line[5:])
+			if dataStr == doneMarker {
+				break
+			}
+			var data map[string]any
+			if json.Unmarshal([]byte(dataStr), &data) != nil {
+				continue
+			}
+			text := webSessionExtractText(data, textPath)
+			if text != "" {
+				chunk := ChatChunk{
+					ID: cmplID, Object: "chat.completion.chunk",
+					Created: created, Model: model,
+					Choices: []Choice{{Delta: &Msg{Content: &text}}},
+				}
+				writeSSEChunk(w, chunk)
+				if hasFlusher {
+					flusher.Flush()
+				}
+			}
+		}
+	}
+
+	stop := "stop"
+	final := ChatChunk{
+		ID: cmplID, Object: "chat.completion.chunk",
+		Created: created, Model: model,
+		Choices: []Choice{{Delta: &Msg{}, FinishReason: &stop}},
+	}
+	writeSSEChunk(w, final)
+	if hasFlusher {
+		flusher.Flush()
+	}
+	fmt.Fprint(w, "data: [DONE]\n\n")
+	return nil
+}
+
+// testWebSession tests a web_session provider's token validity.
+func testWebSession(p Provider) map[string]any {
+	cfg := p.WebSession
+	if cfg == nil {
+		return map[string]any{"success": false, "error": "Web session config missing"}
+	}
+	token := p.APIKey
+	if token == "" && len(p.APIKeys) > 0 {
+		token = p.APIKeys[0].Key
+	}
+	if token == "" {
+		return map[string]any{"success": false, "error": "Token not configured"}
+	}
+	payload := webSessionBuildPayload(cfg, "auto", []ChatMessage{{Role: "user", Content: "hi"}}, false)
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", cfg.APIEndpoint, bytes.NewReader(body))
+	req.Header = webSessionBuildHeaders(cfg, token)
+	client := proxyHTTPClient(p, 30*time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		return map[string]any{"success": false, "error": err.Error()}
+	}
+	resp.Body.Close()
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		return map[string]any{"success": false, "error": fmt.Sprintf("Token expired (HTTP %d)", resp.StatusCode)}
+	}
+	if resp.StatusCode >= 400 {
+		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d", resp.StatusCode)}
+	}
+	return map[string]any{"success": true, "message": p.Name + " connected"}
+}
+
+
+
 
 // ============================================================
 // OpenAI-compatible

@@ -386,12 +386,16 @@ func handleListProviders(w http.ResponseWriter, r *http.Request) {
 func handleGetPresets(w http.ResponseWriter, r *http.Request) {
 	var presets []map[string]any
 	for _, p := range presetProviders {
-		presets = append(presets, map[string]any{
+		item := map[string]any{
 			"id": p.ID, "name": p.Name, "type": p.Type,
 			"base_url": p.BaseURL, "description": p.Description,
 			"icon": p.Icon, "default_models": p.Models,
 			"api_key_url": p.APIKeyURL,
-		})
+		}
+		if p.WebSession != nil {
+			item["web_session"] = p.WebSession
+		}
+		presets = append(presets, item)
 	}
 	writeJSON(w, 200, map[string]any{"presets": presets})
 }

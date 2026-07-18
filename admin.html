@@ -865,8 +865,34 @@ select.form-input{appearance:none;cursor:pointer}
       <div id="presetRegLink" style="display:none;margin-bottom:12px;padding:10px 14px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.15);border-radius:8px"></div>
       <div class="form-group"><label class="form-label">平台 ID</label><input class="form-input" id="pId" placeholder="deepseek"></div>
       <div class="form-group"><label class="form-label">显示名称</label><input class="form-input" id="pName" placeholder="DeepSeek"></div>
+      <div class="form-group" id="providerModeSelector">
+        <label class="form-label">接入模式</label>
+        <div style="display:flex;gap:12px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 14px;border:1px solid var(--border-color);border-radius:8px;font-size:13px" id="modeApiLabel">
+            <input type="radio" name="providerMode" value="api" checked onchange="toggleProviderMode()">
+            <span>🔑 API Key 模式</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 14px;border:1px solid var(--border-color);border-radius:8px;font-size:13px" id="modeWebLabel">
+            <input type="radio" name="providerMode" value="web" onchange="toggleProviderMode()">
+            <span>🌐 网页登录模式</span>
+          </label>
+        </div>
+      </div>
+
       <div class="form-group"><label class="form-label">API Base URL</label><input class="form-input" id="pUrl" placeholder="https://api.deepseek.com/v1"></div>
       <div class="form-group"><label class="form-label">API Key *</label><input class="form-input" id="pKey" placeholder="sk-..."></div>
+      <div id="webSessionFields" style="display:none">
+        <div class="form-group"><label class="form-label">登录页面 URL</label><input class="form-input" id="pLoginUrl" placeholder="https://sider.ai"></div>
+        <div class="form-group"><label class="form-label">API 端点</label><input class="form-input" id="pApiEndpoint" placeholder="https://sider.ai/api/v3/completion/text"></div>
+        <div class="form-group"><label class="form-label">认证方式</label><select class="form-input" id="pAuthMode"><option value="bearer">Bearer Token</option><option value="cookie">Cookie</option></select></div>
+        <div class="form-group"><label class="form-label">模型字段名</label><input class="form-input" id="pModelField" placeholder="model" value="model"></div>
+        <div class="form-group"><label class="form-label">消息字段名</label><input class="form-input" id="pPromptField" placeholder="prompt" value="prompt"></div>
+        <div class="form-group"><label class="form-label">响应类型</label><select class="form-input" id="pResponseType"><option value="sse">SSE (流式)</option><option value="json">JSON (一次性)</option></select></div>
+        <div class="form-group"><label class="form-label">文本路径</label><input class="form-input" id="pTextPath" placeholder="data.text" value="data.text"></div>
+        <div class="form-group"><label class="form-label">额外请求头 (JSON)</label><textarea class="form-input" id="pExtraHeaders" rows="3" placeholder='{"Origin":"https://sider.ai"}' style="font-family:monospace;font-size:12px"></textarea></div>
+        <div class="form-group"><label class="form-label">额外请求体 (JSON)</label><textarea class="form-input" id="pExtraBody" rows="4" placeholder='{"app_name":"MyApp"}' style="font-family:monospace;font-size:12px"></textarea></div>
+      </div>
+
       <div id="editKeysSection" style="display:none;margin-bottom:18px;padding:14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <label style="font-size:13px;font-weight:500;color:var(--text-secondary)">🔑 已配置的多 Key 管理</label>
@@ -1681,6 +1707,24 @@ async function showAddProvider() {
   renderPresets();
   document.getElementById('providerModal').classList.add('open');
 }
+function toggleProviderMode() {
+  const mode = document.querySelector('input[name="providerMode"]:checked').value;
+  const isWeb = mode === 'web';
+  // Toggle field visibility
+  document.getElementById('webSessionFields').style.display = isWeb ? 'block' : 'none';
+  // Hide/show Base URL field
+  document.getElementById('pUrl').parentElement.style.display = isWeb ? 'none' : 'block';
+  // Toggle Key label and placeholder
+  const keyInput = document.getElementById('pKey');
+  if (isWeb) {
+    keyInput.placeholder = '粘贴网页登录后的 Token';
+  } else {
+    keyInput.placeholder = '输入 API Key';
+  }
+  // Update selected style
+  document.getElementById('modeApiLabel').style.borderColor = isWeb ? 'var(--border-color)' : 'var(--primary)';
+  document.getElementById('modeWebLabel').style.borderColor = isWeb ? 'var(--primary)' : 'var(--border-color)';
+}
 function editProvider(pid) {
   const p = allProviders.find(x => x.id === pid);
   if (!p) return;
@@ -1700,6 +1744,24 @@ function editProvider(pid) {
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.priority || 5;
   document.getElementById('pEnabled').checked = p.enabled !== false;
+  // Handle web_session provider
+  if (p.type === 'web_session' && p.web_session) {
+    document.querySelector('input[name="providerMode"][value="web"]').checked = true;
+    toggleProviderMode();
+    const ws = p.web_session;
+    document.getElementById('pLoginUrl').value = ws.login_url || '';
+    document.getElementById('pApiEndpoint').value = ws.api_endpoint || '';
+    document.getElementById('pAuthMode').value = ws.auth_mode || 'bearer';
+    document.getElementById('pModelField').value = ws.model_field || 'model';
+    document.getElementById('pPromptField').value = ws.prompt_field || 'prompt';
+    document.getElementById('pResponseType').value = ws.response_type || 'sse';
+    document.getElementById('pTextPath').value = ws.text_path || 'data.text';
+    document.getElementById('pExtraHeaders').value = JSON.stringify(ws.extra_headers || {}, null, 2);
+    document.getElementById('pExtraBody').value = JSON.stringify(ws.extra_body || {}, null, 2);
+  } else {
+    document.querySelector('input[name="providerMode"][value="api"]').checked = true;
+    toggleProviderMode();
+  }
   // Rate limit toggle
   const rlEnabled = p.rate_limit_enabled || false;
   const rlToggle = document.getElementById('pRateLimitToggle');
@@ -1773,6 +1835,24 @@ function selectPreset(pid) {
   if (document.getElementById('pSharedTokensDaily')) document.getElementById('pSharedTokensDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
   if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
+  // Handle web_session preset
+  if (p.type === 'web_session' && p.web_session) {
+    document.querySelector('input[name="providerMode"][value="web"]').checked = true;
+    toggleProviderMode();
+    const ws = p.web_session;
+    document.getElementById('pLoginUrl').value = ws.login_url || '';
+    document.getElementById('pApiEndpoint').value = ws.api_endpoint || '';
+    document.getElementById('pAuthMode').value = ws.auth_mode || 'bearer';
+    document.getElementById('pModelField').value = ws.model_field || 'model';
+    document.getElementById('pPromptField').value = ws.prompt_field || 'prompt';
+    document.getElementById('pResponseType').value = ws.response_type || 'sse';
+    document.getElementById('pTextPath').value = ws.text_path || 'data.text';
+    document.getElementById('pExtraHeaders').value = JSON.stringify(ws.extra_headers || {}, null, 2);
+    document.getElementById('pExtraBody').value = JSON.stringify(ws.extra_body || {}, null, 2);
+  } else {
+    document.querySelector('input[name="providerMode"][value="api"]').checked = true;
+    toggleProviderMode();
+  }
 }
 function backToStep1() {
   document.getElementById('modalStep1').style.display = '';
@@ -1807,9 +1887,34 @@ async function saveProvider() {
       }
     } catch(e) { console.warn('Failed to check key access:', e); }
   }
+  const mode = document.querySelector('input[name="providerMode"]:checked')?.value || 'api';
+  let providerType = 'openai_compatible';
+  let webSessionData = null;
+  if (mode === 'web') {
+    providerType = 'web_session';
+    let extraHeaders = {};
+    let extraBody = {};
+    try { extraHeaders = JSON.parse(document.getElementById('pExtraHeaders').value || '{}'); } catch(e) {}
+    try { extraBody = JSON.parse(document.getElementById('pExtraBody').value || '{}'); } catch(e) {}
+    webSessionData = {
+      login_url: document.getElementById('pLoginUrl').value.trim(),
+      api_endpoint: document.getElementById('pApiEndpoint').value.trim(),
+      auth_mode: document.getElementById('pAuthMode').value,
+      token_prefix: 'Bearer ',
+      extra_headers: extraHeaders,
+      prompt_field: document.getElementById('pPromptField').value.trim() || 'prompt',
+      model_field: document.getElementById('pModelField').value.trim() || 'model',
+      stream_field: 'stream',
+      extra_body: extraBody,
+      message_format: 'prefix_role',
+      response_type: document.getElementById('pResponseType').value,
+      text_path: document.getElementById('pTextPath').value.trim() || 'data.text',
+      done_marker: '[DONE]',
+    };
+  }
   const data = {
     id, name: document.getElementById('pName').value.trim() || id,
-    type: 'openai_compatible', base_url: document.getElementById('pUrl').value.trim(),
+    type: providerType, base_url: document.getElementById('pUrl').value.trim(),
     description: document.getElementById('pDesc').value.trim(),
     priority: parseInt(document.getElementById('pPriority').value) || 5,
     enabled: document.getElementById('pEnabled').checked,
@@ -1836,9 +1941,18 @@ async function saveProvider() {
   data.shared_quota_total = parseInt(document.getElementById('pSharedQuotaTotal')?.value) || 0;
   const key = document.getElementById('pKey').value.trim();
   if (key) data.api_key = key;
-  else if (!editingId && !selectedPresetKeyOptional) { toast('请填写 API Key', 'error'); return; }
+  else if (!editingId && !selectedPresetKeyOptional && mode !== 'web') { toast('请填写 API Key', 'error'); return; }
+  else if (!editingId && !selectedPresetKeyOptional && mode === 'web') { toast('请填写网页登录后的 Token', 'error'); return; }
   const proxy = document.getElementById('pProxy').value.trim();
   if (proxy) data.proxy = proxy;
+  // Add web_session config if in web mode
+  if (webSessionData) {
+    data.web_session = webSessionData;
+    // For web_session, derive base_url from login_url if empty
+    if (!data.base_url) {
+      try { data.base_url = new URL(webSessionData.login_url).origin; } catch(e) {}
+    }
+  }
   // Carry over models from existing if editing
   if (editingId) {
     const existing = allProviders.find(x => x.id === editingId);
@@ -1913,6 +2027,19 @@ function selectCustomPreset() {
   if (document.getElementById('pSharedTokensDaily')) document.getElementById('pSharedTokensDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
   if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
+  // Reset mode selector to API Key mode
+  document.querySelector('input[name="providerMode"][value="api"]').checked = true;
+  toggleProviderMode();
+  // Clear web_session fields
+  document.getElementById('pLoginUrl').value = '';
+  document.getElementById('pApiEndpoint').value = '';
+  document.getElementById('pAuthMode').value = 'bearer';
+  document.getElementById('pModelField').value = 'model';
+  document.getElementById('pPromptField').value = 'prompt';
+  document.getElementById('pResponseType').value = 'sse';
+  document.getElementById('pTextPath').value = 'data.text';
+  document.getElementById('pExtraHeaders').value = '';
+  document.getElementById('pExtraBody').value = '';
   editingId = '';
   selectedPresetKeyOptional = false;
 }
@@ -1934,6 +2061,9 @@ function selectDiscoveredPreset(id) {
   document.getElementById('pDesc').value = dp.description || '';
   document.getElementById('pPriority').value = 5;
   document.getElementById('pEnabled').checked = true;
+  // Reset mode selector to API Key mode
+  document.querySelector('input[name="providerMode"][value="api"]').checked = true;
+  toggleProviderMode();
   setAccessControl('private');
   const regLinkEl = document.getElementById('presetRegLink');
   if (regLinkEl && dp.api_key_url) {

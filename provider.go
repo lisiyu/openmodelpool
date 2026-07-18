@@ -728,6 +728,10 @@ func (m *ProviderManager) AllModels() []ModelInfo {
 		if !p.Enabled {
 			continue
 		}
+		// Skip providers without API keys — models can't be served
+		if p.APIKey == "" && len(p.APIKeys) == 0 {
+			continue
+		}
 		for _, mdl := range p.Models {
 			if !mdl.Enabled || seen[mdl.ID] {
 				continue
@@ -770,6 +774,10 @@ func (m *ProviderManager) AllModelsFiltered(keyType string) []ModelInfo {
 
 	for _, p := range m.GetAll() {
 		if !p.Enabled {
+			continue
+		}
+		// Skip providers without API keys — models can't be served
+		if p.APIKey == "" && len(p.APIKeys) == 0 {
 			continue
 		}
 		// Check access control

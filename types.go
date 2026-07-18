@@ -146,7 +146,7 @@ type APIKeyConfig struct {
 type Provider struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
-	Type        string     `json:"type"` // "openai_compatible", "coze", "sider", "anthropic"
+	Type        string     `json:"type"` // "openai_compatible", "coze", "sider", "anthropic", "web_session"
 	BaseURL     string     `json:"base_url"`
 	APIKey      string     `json:"api_key,omitempty"` // deprecated: use APIKeys instead
 	Enabled     bool       `json:"enabled"`
@@ -173,8 +173,31 @@ type Provider struct {
 	// Multi API key support
 	APIKeys     []APIKeyConfig `json:"api_keys,omitempty"` // multiple API keys
 
+	// Web session template (for web_session type providers)
+	WebSession *WebSessionConfig `json:"web_session,omitempty"`
+
 	CreatedAt   string     `json:"created_at,omitempty"`
 	UpdatedAt   string     `json:"updated_at,omitempty"`
+}
+
+// WebSessionConfig defines the template for web-session-based providers
+// (platforms without official API, using browser session tokens).
+type WebSessionConfig struct {
+	LoginURL        string            `json:"login_url"`                   // login page URL for token extraction guide
+	APIEndpoint     string            `json:"api_endpoint"`                // internal API endpoint for chat requests
+	AuthMode        string            `json:"auth_mode"`                   // "bearer" or "cookie"
+	TokenCookieName string            `json:"token_cookie_name,omitempty"` // cookie name (for cookie auth mode)
+	TokenPrefix     string            `json:"token_prefix,omitempty"`      // prefix added to token (e.g. "Bearer ")
+	ExtraHeaders    map[string]string `json:"extra_headers,omitempty"`     // required HTTP headers
+	PromptField     string            `json:"prompt_field"`                // body field name for formatted messages
+	ModelField      string            `json:"model_field,omitempty"`       // body field name for model
+	StreamField     string            `json:"stream_field,omitempty"`      // body field name for stream bool
+	ExtraBody       map[string]any    `json:"extra_body,omitempty"`        // extra fixed body fields
+	MessageFormat   string            `json:"message_format"`              // "prefix_role" or "openai"
+	MessageSep      string            `json:"message_sep,omitempty"`       // separator between messages (default: \n)
+	ResponseType    string            `json:"response_type"`               // "sse" or "json"
+	TextPath        string            `json:"text_path"`                   // JSON path to text in response (e.g. "data.text")
+	DoneMarker      string            `json:"done_marker,omitempty"`       // SSE done marker (default: [DONE])
 }
 
 // ProviderAccessControl defines which key types can access a provider (v2.0).
