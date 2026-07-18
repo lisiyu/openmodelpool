@@ -10,7 +10,7 @@ param(
     [int]$LocalPort = 8000
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $C = "Cyan"; $Y = "Yellow"; $G = "Green"; $R = "Red"
@@ -138,18 +138,13 @@ function Setup-Cloudflare {
     Write-Host "  请输入要绑定的子域名（例如: omp.yourdomain.com）:"
     $subdomain = Read-Host "  > "
     
-    try {
-        & $cfExe tunnel route dns openmodelpool $subdomain 2>&1 | Out-Null
+    $routeOutput = & $cfExe tunnel route dns openmodelpool $subdomain 2>&1 | Out-String
+    if ($routeOutput -match "Added CNAME" -or $routeOutput -match "already exists") {
         Write-Host "  域名已绑定: $subdomain" -ForegroundColor $G
-    } catch {
-        $errMsg = $_.Exception.Message
-        if ($errMsg -match "already exists") {
-            Write-Host "  域名记录已存在，跳过: $subdomain" -ForegroundColor $G
-        } else {
-            Write-Host "  域名绑定失败: $errMsg" -ForegroundColor $R
-            Write-Host "  提示: 如果使用根域名已有DNS记录，请换用子域名（如 omp.yourdomain.com）" -ForegroundColor $Y
-            return
-        }
+    } else {
+        Write-Host "  域名绑定失败: $routeOutput" -ForegroundColor $R
+        Write-Host "  提示: 如果使用根域名已有DNS记录，请换用子域名（如 omp.yourdomain.com）" -ForegroundColor $Y
+        return
     }
 
     # 5. Config and service
@@ -170,10 +165,8 @@ ingress:
 "@ | Set-Content "$configDir\config.yml" -Encoding UTF8
 
     # Install as Windows service
-    try {
-        & $cfExe service install 2>&1 | Out-Null
-    } catch {}
-    if ($LASTEXITCODE -eq 0 -or (Get-Service cloudflared -ErrorAction SilentlyContinue)) {
+    $svcOutput = & $cfExe service install 2>&1 | Out-String
+    if (Get-Service cloudflared -ErrorAction SilentlyContinue) {
         Write-Host "  已安装为 Windows 服务并启动" -ForegroundColor $G
     } else {
         Write-Host "  服务安装失败，使用计划任务替代..." -ForegroundColor $Y
