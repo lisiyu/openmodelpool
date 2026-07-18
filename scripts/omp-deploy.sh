@@ -11,7 +11,7 @@
 set -e
 
 GITHUB_REPO="lisiyu/openmodelpool"
-RELEASE_TAG="v3.2.0-release"
+RELEASE_TAG="v3.2.1-release"
 INSTALL_DIR="${1:-/opt/openmodelpool}"
 PORT="${2:-8000}"
 
@@ -114,7 +114,7 @@ echo -e "${CYAN}[6/7] 配置服务 (端口 ${PORT})...${NC}"
 cat > "$INSTALL_DIR/start.sh" << EOF
 #!/bin/bash
 cd "$INSTALL_DIR"
-export OMP_PORT="$PORT"
+export PORT="$PORT"
 exec ./openmodelpool >> "$INSTALL_DIR/data/app.log" 2>&1
 EOF
 chmod +x "$INSTALL_DIR/start.sh"
