@@ -10,6 +10,7 @@ set -e
 
 INSTALL_DIR="${1:-/opt/openmodelpool}"
 RELEASE_TAG="v3.2.1-release"
+XRAY_VERSION="v26.3.27"
 
 # Detect architecture
 ARCH=$(uname -m)
@@ -46,8 +47,40 @@ tar xzf "$TMP_DIR/pkg.tar.gz" -C "$TMP_DIR"
 cp "$TMP_DIR/openmodelpool" "$INSTALL_DIR/openmodelpool"
 chmod +x "$INSTALL_DIR/openmodelpool"
 
-# 4. 重启
-echo "[4/4] 启动服务..."
+# 4. 安装/更新 Xray (VMess 代理支持)
+echo "[4/5] 检查 Xray..."
+XRAY_DIR="$INSTALL_DIR/xray"
+XRAY_BIN="$XRAY_DIR/xray"
+NEED_XRAY=false
+if [ ! -f "$XRAY_BIN" ]; then
+  NEED_XRAY=true
+elif [ "$1" = "--with-xray" ]; then
+  NEED_XRAY=true
+fi
+if [ "$NEED_XRAY" = true ]; then
+  mkdir -p "$XRAY_DIR"
+  case "$ARCH" in
+    x86_64|amd64)  XRAY_PKG="Xray-linux-64.zip" ;;
+    aarch64|arm64) XRAY_PKG="Xray-linux-arm64-v8a.zip" ;;
+    armv7l)        XRAY_PKG="Xray-linux-arm32-v7a.zip" ;;
+  esac
+  XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}"
+  echo "  下载 Xray..."
+  if curl -fsSL "$XRAY_URL" -o "$TMP_DIR/xray.zip" 2>/dev/null || wget -q -O "$TMP_DIR/xray.zip" "$XRAY_URL" 2>/dev/null; then
+    unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null
+    cp "$TMP_DIR/xray/xray" "$XRAY_BIN" 2>/dev/null && chmod +x "$XRAY_BIN"
+    cp "$TMP_DIR/xray/geoip.dat" "$XRAY_DIR/" 2>/dev/null
+    cp "$TMP_DIR/xray/geosite.dat" "$XRAY_DIR/" 2>/dev/null
+    echo "  ✅ Xray 已安装"
+  else
+    echo "  ⚠️ Xray 下载失败，VMess 代理不可用（不影响其他功能）"
+  fi
+else
+  echo "  ✅ Xray 已存在，跳过"
+fi
+
+# 5. 重启
+echo "[5/5] 启动服务..."
 if command -v systemctl &>/dev/null && [ -f /etc/systemd/system/openmodelpool.service ]; then
     systemctl start openmodelpool
 elif [ -f /usr/local/etc/rc.d/openmodelpool.sh ]; then

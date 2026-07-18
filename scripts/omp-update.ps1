@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $RELEASE_TAG = "v3.2.1-release"
+$XRAY_VERSION = "v26.3.27"
 $URL = "https://github.com/lisiyu/openmodelpool/releases/download/$RELEASE_TAG/openmodelpool-windows-amd64.zip"
 
 Write-Host "  OpenModelPool 增量更新" -ForegroundColor Cyan
@@ -32,8 +33,36 @@ Expand-Archive -Path $tmp -DestinationPath $tmpDir -Force
 Write-Host "[3/4] 替换二进制..." -ForegroundColor Yellow
 Copy-Item (Join-Path $tmpDir "openmodelpool.exe") -Destination (Join-Path $InstallDir "openmodelpool.exe") -Force
 
-# 4. 重启
-Write-Host "[4/4] 启动服务..." -ForegroundColor Yellow
+# 4. 安装/更新 Xray (VMess 代理支持)
+Write-Host "[4/5] 检查 Xray..." -ForegroundColor Yellow
+$xrayDir = Join-Path $InstallDir "xray"
+$xrayExe = Join-Path $xrayDir "xray.exe"
+$needXray = $true
+if ((Test-Path $xrayExe) -and $args[0] -ne "--with-xray") { $needXray = $false }
+if ($needXray) {
+    New-Item -ItemType Directory -Path $xrayDir -Force | Out-Null
+    $xrayUrl = "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
+    Write-Host "  下载 Xray..."
+    try {
+        $xrayTmp = Join-Path $env:TEMP "xray-update.zip"
+        Invoke-WebRequest -Uri $xrayUrl -OutFile $xrayTmp -UseBasicParsing
+        $xrayExtract = Join-Path $env:TEMP "xray-update-extract"
+        if (Test-Path $xrayExtract) { Remove-Item $xrayExtract -Recurse -Force }
+        Expand-Archive -Path $xrayTmp -DestinationPath $xrayExtract -Force
+        Copy-Item (Join-Path $xrayExtract "xray.exe") -Destination $xrayExe -Force
+        Copy-Item (Join-Path $xrayExtract "geoip.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
+        Copy-Item (Join-Path $xrayExtract "geosite.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
+        Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
+        Write-Host "  Xray 已安装" -ForegroundColor Green
+    } catch {
+        Write-Host "  Xray 下载失败，VMess 代理不可用（不影响其他功能）" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  Xray 已存在，跳过" -ForegroundColor Green
+}
+
+# 5. 重启
+Write-Host "[5/5] 启动服务..." -ForegroundColor Yellow
 $svc = Get-Service -Name "openmodelpool" -ErrorAction SilentlyContinue
 if ($svc) {
     & nssm start openmodelpool 2>$null

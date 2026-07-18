@@ -571,18 +571,14 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	// Preserve ownership — consumer cannot change owner
 	merged.Owner = existing.Owner
 
-	// Validate VMess proxy link if changed
+	// Validate VMess proxy link if changed (lazy start — proxy starts on first use)
 	if merged.Proxy != "" && merged.Proxy != existing.Proxy {
 		if strings.HasPrefix(merged.Proxy, "vmess://") {
 			if _, err := ParseVMessLink(merged.Proxy); err != nil {
 				writeError(w, 400, "Invalid VMess link: "+err.Error())
 				return
 			}
-			if _, err := ResolveProxy(id, merged.Proxy); err != nil {
-				slog.Warn("failed to start VMess proxy", "provider", id, "error", err)
-				writeError(w, 400, "VMess proxy failed: "+err.Error())
-				return
-			}
+			slog.Info("VMess proxy link saved, will start on first use", "provider", id)
 		}
 	}
 

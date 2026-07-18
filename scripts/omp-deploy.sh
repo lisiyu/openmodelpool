@@ -12,6 +12,7 @@ set -e
 
 GITHUB_REPO="lisiyu/openmodelpool"
 RELEASE_TAG="v3.2.1-release"
+XRAY_VERSION="v26.3.27"
 INSTALL_DIR="${1:-/opt/openmodelpool}"
 PORT="${2:-8000}"
 
@@ -107,6 +108,30 @@ done
 
 cp -r "$TMP_DIR/docs" "$INSTALL_DIR/docs" 2>/dev/null
 echo -e "${GREEN}       安装完成${NC}"
+
+# ---- 安装 Xray (VMess 代理支持) ----
+echo -e "${CYAN}[5.5/7] 安装 Xray (VMess 代理支持)...${NC}"
+XRAY_DIR="$INSTALL_DIR/xray"
+mkdir -p "$XRAY_DIR"
+case "$ARCH" in
+  x86_64|amd64)  XRAY_PKG="Xray-linux-64.zip" ;;
+  aarch64|arm64) XRAY_PKG="Xray-linux-arm64-v8a.zip" ;;
+  armv7l|arm)    XRAY_PKG="Xray-linux-arm32-v7a.zip" ;;
+esac
+XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}"
+if curl -fsSL "$XRAY_URL" -o "$TMP_DIR/xray.zip" 2>/dev/null || wget -q -O "$TMP_DIR/xray.zip" "$XRAY_URL" 2>/dev/null; then
+  if unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null; then
+    cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
+    cp "$TMP_DIR/xray/geoip.dat" "$XRAY_DIR/" 2>/dev/null
+    cp "$TMP_DIR/xray/geosite.dat" "$XRAY_DIR/" 2>/dev/null
+    echo -e "${GREEN}       Xray 安装完成${NC}"
+  else
+    echo -e "${YELLOW}       ⚠️ Xray 解压失败，VMess 代理不可用（不影响其他功能）${NC}"
+  fi
+else
+  echo -e "${YELLOW}       ⚠️ Xray 下载失败，VMess 代理不可用（不影响其他功能）${NC}"
+  echo -e "       可手动下载: $XRAY_URL"
+fi
 
 # ---- 创建管理脚本 ----
 echo -e "${CYAN}[6/7] 配置服务 (端口 ${PORT})...${NC}"
