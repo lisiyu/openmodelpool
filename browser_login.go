@@ -198,11 +198,12 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 		chromedp.Flag("disable-features", "AutomationControlled"),
 		chromedp.Flag("disable-infobars", true),
 		chromedp.Flag("enable-automation", false),
-		chromedp.Flag("host-resolver-rules", "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"),
 		chromedp.WindowSize(1280, 800),
 	}
 	if proxyURL != "" {
 		opts = append(opts, chromedp.ProxyServer(proxyURL))
+		// Force DNS through proxy to prevent leaks; only when proxy is active
+		opts = append(opts, chromedp.Flag("host-resolver-rules", "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"))
 		slog.Info("browser login starting", "provider", id, "proxy", proxyURL)
 	} else {
 		slog.Info("browser login starting", "provider", id, "proxy", "none")

@@ -413,12 +413,12 @@ window.addEventListener('load', function() {
     headers: { 'Authorization': 'Bearer ' + authToken }
   }).then(r => r.json()).then(data => {
     if (data.error) {
-      document.getElementById('browserLoginStatus').textContent = '错误: ' + data.error;
+      document.getElementById('browserLoginStatus').textContent = '错误: ' + (data.error.message || data.error);
       return;
     }
     startBrowserLoginPolling();
   }).catch(err => {
-    document.getElementById('browserLoginStatus').textContent = '请求失败: ' + err;
+    document.getElementById('browserLoginStatus').textContent = '请求失败: ' + (err.message || err);
   });
 });
 
@@ -430,7 +430,7 @@ function startBrowserLoginPolling() {
       headers: { 'Authorization': 'Bearer ' + authToken }
     }).then(r => r.json()).then(data => {
       if (data.error) {
-        document.getElementById('browserLoginStatus').textContent = '错误: ' + data.error;
+        document.getElementById('browserLoginStatus').textContent = '错误: ' + (data.error.message || data.error);
         clearInterval(browserLoginPolling); browserLoginPolling = null;
         return;
       }
@@ -466,7 +466,7 @@ function browserNavigate() {
     body: JSON.stringify({ action: 'navigate', value: url })
   }).then(r => r.json()).then(data => {
     if (data.error) {
-      document.getElementById('browserLoginStatus').textContent = '错误: ' + data.error;
+      document.getElementById('browserLoginStatus').textContent = '错误: ' + (data.error.message || data.error);
       return;
     }
     document.getElementById('browserLoginStatus').textContent = data.message || '导航完成';
@@ -486,7 +486,7 @@ function browserAction(action) {
     body: JSON.stringify({ action: action, selector: selector, value: value })
   }).then(r => r.json()).then(data => {
     if (data.error) {
-      document.getElementById('browserLoginStatus').textContent = '错误: ' + data.error;
+      document.getElementById('browserLoginStatus').textContent = '错误: ' + (data.error.message || data.error);
       return;
     }
     document.getElementById('browserLoginStatus').textContent = data.message || '操作完成';
@@ -504,7 +504,7 @@ function browserLoginFinish() {
   }).then(r => r.json()).then(data => {
     if (browserLoginPolling) { clearInterval(browserLoginPolling); browserLoginPolling = null; }
     if (data.error) {
-      document.getElementById('browserLoginStatus').textContent = '错误: ' + data.error;
+      document.getElementById('browserLoginStatus').textContent = '错误: ' + (data.error.message || data.error);
       return;
     }
     document.getElementById('browserLoginStatus').textContent = data.message || '完成';
