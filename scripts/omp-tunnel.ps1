@@ -60,28 +60,77 @@ function Setup-Cloudflare {
     }
 
     # 2. Login
-    Write-Host ""
-    Write-Host "[2/5] 登录 Cloudflare..." -ForegroundColor $Y
-    Write-Host "  即将打开浏览器授权，请在浏览器中选择你的域名并授权"
-    & $cfExe tunnel login
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  登录失败，请稍后手动执行: cloudflared tunnel login" -ForegroundColor $R
-        return
+    $configDir = "$env:USERPROFILE\.cloudflared"
+    $certFile = "$configDir\cert.pem"
+    
+    if (Test-Path $certFile) {
+        Write-Host "[2/5] 已检测到 Cloudflare 授权，跳过登录" -ForegroundColor $G
+    } else {
+        Write-Host "[2/5] 登录 Cloudflare..." -ForegroundColor $Y
+        Write-Host "  即将打开浏览器授权，请在浏览器中选择你的域名并授权"
+        Write-Host "  如果浏览器没有自动打开，请手动复制下方 URL 到浏览器访问：" -ForegroundColor $Y
+        
+        # Run login and capture the URL output
+        $loginProcess = Start-Process -FilePath $cfExe -ArgumentList "tunnel", "login" -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\cf-login-stdout.txt" -RedirectStandardError "$env:TEMP\cf-login-stderr.txt"
+        
+        # Wait for login to complete (check for cert.pem)
+        $timeout = 300  # 5 minutes
+        $elapsed = 0
+        while (-not (Test-Path $certFile) -and $elapsed -lt $timeout) {
+            Start-Sleep -Seconds 2
+            $elapsed += 2
+            # Show the URL from stderr if available
+            if ($elapsed -eq 4) {
+                $errContent = Get-Content "$env:TEMP\cf-login-stderr.txt" -ErrorAction SilentlyContinue
+                if ($errContent) {
+                    $urlLine = $errContent | Where-Object { $_ -match "https://" } | Select-Object -First 1
+                    if ($urlLine) {
+                        # Extract URL
+                        $url = [regex]::Match($urlLine, "https://\S+").Value
+                        if ($url) {
+                            Write-Host "  授权 URL: $url" -ForegroundColor $C
+                            Write-Host "  请在浏览器中打开此 URL 完成授权..." -ForegroundColor $Y
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (Test-Path $certFile) {
+            Write-Host "  授权成功！" -ForegroundColor $G
+        } else {
+            Write-Host "  登录超时，请稍后手动执行: cloudflared tunnel login" -ForegroundColor $R
+            return
+        }
     }
 
-    # 3. Create tunnel
+    # 3. Create tunnel (or reuse existing)
     Write-Host ""
     Write-Host "[3/5] 创建隧道..." -ForegroundColor $Y
-    $createOutput = & $cfExe tunnel create openmodelpool 2>&1
+    
+    # Check if tunnel already exists
+    $listOutput = & $cfExe tunnel list 2>&1 | Out-String
     $tunnelId = ""
-    if ($createOutput -match "([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})") {
+    
+    if ($listOutput -match "openmodelpool\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})") {
         $tunnelId = $Matches[1]
+        Write-Host "  已有 openmodelpool 隧道，复用: $tunnelId" -ForegroundColor $G
+    } else {
+        # Create new tunnel
+        $createOutput = & $cfExe tunnel create openmodelpool 2>&1 | Out-String
+        Write-Host "  创建输出: $createOutput" -ForegroundColor DarkGray
+        
+        if ($createOutput -match "([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})") {
+            $tunnelId = $Matches[1]
+        }
+        
+        if ($tunnelId) {
+            Write-Host "  隧道已创建: $tunnelId" -ForegroundColor $G
+        } else {
+            Write-Host "  隧道创建失败: $createOutput" -ForegroundColor $R
+            return
+        }
     }
-    if (-not $tunnelId) {
-        Write-Host "  隧道创建失败: $createOutput" -ForegroundColor $R
-        return
-    }
-    Write-Host "  隧道已创建: $tunnelId" -ForegroundColor $G
 
     # 4. Bind domain
     Write-Host ""
@@ -95,15 +144,13 @@ function Setup-Cloudflare {
     # 5. Config and service
     Write-Host ""
     Write-Host "[5/5] 配置并启动服务..." -ForegroundColor $Y
-    $configDir = "$env:USERPROFILE\.cloudflared"
     if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
     
-    $credFile = Get-ChildItem "$configDir\*.json" | Where-Object { $_.Name -like "$tunnelId*" } | Select-Object -First 1
-    $credPath = if ($credFile) { $credFile.FullName } else { "$configDir\$tunnelId.json" }
+    $credFile = "$configDir\$tunnelId.json"
     
     @"
 tunnel: $tunnelId
-credentials-file: $credPath
+credentials-file: $credFile
 
 ingress:
   - hostname: $subdomain
@@ -174,7 +221,7 @@ function Setup-FRP {
     Write-Host '     Type=simple'
     Write-Host '     ExecStart=/root/frp_0.61.1_linux_amd64/frps -c /root/frp_0.61.1_linux_amd64/frps.toml'
     Write-Host '     Restart=always'
-    Write-Host '     RestartSec=5'
+    Write-Host '    RestartSec=5'
     Write-Host '     [Install]'
     Write-Host '     WantedBy=multi-user.target'
     Write-Host '     EOF'
