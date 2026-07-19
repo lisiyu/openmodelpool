@@ -780,7 +780,13 @@ function backToStep1() {
   document.getElementById('modalStep2').style.display = 'none';
 }
 
-function closeModal() { location.href = '/admin'; }
+function closeModal() {
+  if (window.parent && window.parent.closeSubPage) {
+    window.parent.closeSubPage();
+  } else {
+    location.href = '/admin';
+  }
+}
 
 async function saveProvider() {
   const id = document.getElementById('pId').value.trim();
@@ -812,6 +818,13 @@ async function saveProvider() {
   }
   const mode = document.querySelector('input[name="providerMode"]:checked')?.value || 'api';
   let providerType = 'openai_compatible';
+  // 编辑模式下保留已有 provider type（如 coze）
+  if (editingId) {
+    const existingProvider = allProviders.find(x => x.id === editingId);
+    if (existingProvider && existingProvider.type && existingProvider.type !== 'openai_compatible' && existingProvider.type !== 'web_session') {
+      providerType = existingProvider.type;
+    }
+  }
   let webSessionData = null;
   if (mode === 'web') {
     providerType = 'web_session';
@@ -899,7 +912,11 @@ async function saveProvider() {
         renderPresets();
       }
     }
-    location.href = '/admin';
+    if (window.parent && window.parent.closeSubPage) {
+      window.parent.closeSubPage();
+    } else {
+      location.href = '/admin';
+    }
     return;
   } catch(e) { toast(e.message, 'error'); }
 }

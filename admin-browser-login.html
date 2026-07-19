@@ -459,7 +459,7 @@ function startBrowserLoginPolling() {
         if (data.status === 'done') {
           setTimeout(function() {
             toast(data.message || '登录完成', 'success');
-            location.href = '/admin';
+            if (window.parent && window.parent.closeSubPage) { window.parent.closeSubPage(); } else { location.href = '/admin'; }
           }, 2000);
         }
       }
@@ -675,23 +675,23 @@ function browserLoginFinish() {
     document.getElementById('browserLoginStatus').textContent = data.message || '完成';
     setTimeout(function() {
       toast(data.message || '登录完成', 'success');
-      location.href = '/admin';
+      if (window.parent && window.parent.closeSubPage) { window.parent.closeSubPage(); } else { location.href = '/admin'; }
     }, 2000);
   });
 }
 
 function browserLoginCancel() {
-  if (!browserLoginProviderId) { location.href = '/admin'; return; }
+  if (!browserLoginProviderId) { if (window.parent && window.parent.closeSubPage) { window.parent.closeSubPage(); } else { location.href = '/admin'; } return; }
   fetch('/api/providers/' + browserLoginProviderId + '/browser-login', {
     method: 'DELETE',
     headers: { 'Authorization': 'Bearer ' + authToken }
-  }).then(r => r.json()).finally(function() { location.href = '/admin'; });
+  }).then(r => r.json()).finally(function() { if (window.parent && window.parent.closeSubPage) { window.parent.closeSubPage(); } else { location.href = '/admin'; } });
 }
 
 function closeBrowserLoginModal() {
   if (browserLoginPolling) { clearInterval(browserLoginPolling); browserLoginPolling = null; }
   browserLoginProviderId = null;
-  location.href = '/admin';
+  if (window.parent && window.parent.closeSubPage) { window.parent.closeSubPage(); } else { location.href = '/admin'; }
 }
 </script>
 </body>

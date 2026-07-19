@@ -556,7 +556,7 @@ async function v8SaveModelMatrix(pid) {
   try {
     await authFetch('/api/providers/' + pid, { method: 'PUT', body: JSON.stringify({models: models}) });
     toast('✅ 模型配置已保存');
-    location.href = '/admin';
+    if (window.parent && window.parent.closeSubPage) { window.parent.closeSubPage(); } else { location.href = '/admin'; }
   } catch(e) {
     toast('保存失败: ' + e.message, 'error');
   }

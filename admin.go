@@ -570,6 +570,10 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	merged.ID = id
 	// Preserve ownership — consumer cannot change owner
 	merged.Owner = existing.Owner
+	// Preserve special provider type (e.g. "coze") — frontend may default to "openai_compatible" on edit
+	if existing.Type != "openai_compatible" && existing.Type != "web_session" && merged.Type == "openai_compatible" {
+		merged.Type = existing.Type
+	}
 
 	// Validate VMess proxy link if changed (lazy start — proxy starts on first use)
 	if merged.Proxy != "" && merged.Proxy != existing.Proxy {

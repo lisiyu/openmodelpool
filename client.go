@@ -786,9 +786,10 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 
 	// Create chat
 	payload := CozeChatPayload{
-		BotID:  botID,
-		UserID: "proxy-user",
-		Stream: false,
+		BotID:           botID,
+		UserID:          "proxy-user",
+		Stream:          false,
+		AutoSaveHistory: true,
 	}
 	for _, m := range messages {
 		role := "user"
@@ -833,10 +834,7 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 
 	for status != "completed" && status != "failed" {
 		time.Sleep(time.Second)
-		pollBody, _ := json.Marshal(map[string]string{
-			"conversation_id": convID, "chat_id": chatID,
-		})
-		pollReq, _ := http.NewRequest("POST", baseURL+"/v3/chat/retrieve", bytes.NewReader(pollBody))
+		pollReq, _ := http.NewRequest("GET", baseURL+"/v3/chat/retrieve?conversation_id="+convID+"&chat_id="+chatID, nil)
 		pollReq.Header.Set("Authorization", "Bearer "+token)
 		pollReq.Header.Set("Content-Type", "application/json")
 
@@ -857,7 +855,7 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 	}
 
 	// Get messages
-	msgReq, _ := http.NewRequest("GET", baseURL+"/v3/conversation/message/list?conversation_id="+convID+"&chat_id="+chatID, nil)
+	msgReq, _ := http.NewRequest("GET", baseURL+"/v3/chat/message/list?conversation_id="+convID+"&chat_id="+chatID, nil)
 	msgReq.Header.Set("Authorization", "Bearer "+token)
 	msgReq.Header.Set("Content-Type", "application/json")
 
@@ -879,7 +877,7 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 
 	var assistantContent string
 	for _, m := range msgList.Data {
-		if m.Role == "assistant" && (m.Type == "answer" || m.Type == "verbose") {
+		if m.Role == "assistant" && m.Type == "answer" {
 			assistantContent += m.Content
 		}
 	}
@@ -928,9 +926,10 @@ func cozeStream(p Provider, model string, messages []ChatMessage, w io.Writer) e
 	}
 
 	payload := CozeChatPayload{
-		BotID:  botID,
-		UserID: "proxy-user",
-		Stream: true,
+		BotID:           botID,
+		UserID:          "proxy-user",
+		Stream:          true,
+		AutoSaveHistory: true,
 	}
 	for _, m := range messages {
 		role := "user"
@@ -974,6 +973,10 @@ func cozeStream(p Provider, model string, messages []ChatMessage, w io.Writer) e
 			continue
 		}
 		if role, _ := event["role"].(string); role != "assistant" {
+			continue
+		}
+		// Only forward "answer" type messages, skip "verbose" (internal metadata) and "follow_up"
+		if eventType, _ := event["type"].(string); eventType != "answer" {
 			continue
 		}
 		content, _ := event["content"].(string)
@@ -1265,7 +1268,7 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		if baseURL == "" {
 			baseURL = "https://api.coze.cn"
 		}
-		req, _ := http.NewRequest("GET", baseURL+"/v1/bots?page_index=0&page_size=1", nil)
+		req, _ := http.NewRequest("GET", baseURL+"/v1/workspaces", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		client := proxyHTTPClient(testProvider, 15 * time.Second)
 		resp, err := client.Do(req)
