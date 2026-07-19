@@ -178,6 +178,45 @@ ingress:
         Write-Host "  已设置计划任务并启动" -ForegroundColor $G
     }
 
+    # Write domain to OMP config.json so admin panel knows it's bound
+    $configFile = "$InstallDir\data\config.json"
+    $configDir = Split-Path $configFile -Parent
+    if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
+    
+    $cfg = @{}
+    if (Test-Path $configFile) {
+        try {
+            $raw = Get-Content $configFile -Raw
+            $cfg = $raw | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+            if (-not $cfg) { $cfg = @{} }
+        } catch {
+            # Try parsing without HMAC prefix
+            try {
+                $idx = $raw.IndexOf('{')
+                if ($idx -gt 0) { $raw = $raw.Substring($idx) }
+                $cfg = $raw | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+            } catch { $cfg = @{} }
+        }
+    }
+    $cfg['bound_domain'] = $subdomain
+    $cfg['tunnel_domain'] = $subdomain
+    $cfg['tunnel_mode'] = 'manual'
+    $cfg['tunnel_url'] = "https://$subdomain"
+    $cfg | ConvertTo-Json -Depth 10 | Set-Content $configFile -Encoding UTF8
+    Write-Host "  域名已写入 OMP 配置" -ForegroundColor $G
+
+    # Restart OMP to pick up the new domain config
+    $ompProc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
+    if ($ompProc) {
+        Stop-Process -Name "openmodelpool" -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    }
+    if (Test-Path "$InstallDir\openmodelpool.exe") {
+        Start-Process -FilePath "$InstallDir\openmodelpool.exe" -WorkingDirectory $InstallDir -WindowStyle Hidden
+        Start-Sleep -Seconds 2
+        Write-Host "  OMP 服务已重启" -ForegroundColor $G
+    }
+
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor $G
     Write-Host "   Cloudflare Tunnel 配置完成！" -ForegroundColor $G

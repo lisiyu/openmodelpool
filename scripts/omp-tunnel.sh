@@ -117,6 +117,46 @@ EOF
         nohup cloudflared tunnel run "$TUNNEL_NAME" >> "$INSTALL_DIR/data/cloudflared.log" 2>&1 &
     }
 
+    # Write domain to OMP config.json so admin panel knows it's bound
+    CONFIG_FILE="$INSTALL_DIR/data/config.json"
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "
+import json, os
+cfg = {}
+path = '$CONFIG_FILE'
+if os.path.exists(path):
+    try:
+        with open(path) as f:
+            content = f.read().strip()
+            # Try to parse, skip HMAC prefix if present
+            try:
+                cfg = json.loads(content)
+            except:
+                # Try finding JSON start
+                idx = content.find('{')
+                if idx >= 0:
+                    cfg = json.loads(content[idx:])
+    except: pass
+cfg['bound_domain'] = '$SUBDOMAIN'
+cfg['tunnel_domain'] = '$SUBDOMAIN'
+cfg['tunnel_mode'] = 'manual'
+cfg['tunnel_url'] = 'https://$SUBDOMAIN'
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, 'w') as f:
+    json.dump(cfg, f, indent=2)
+print('OK')
+        " 2>/dev/null && echo -e "  ${GREEN}✓ 域名已写入 OMP 配置${NC}"
+    fi
+
+    # Restart OMP to pick up the new domain config
+    if [ -f "$INSTALL_DIR/openmodelpool" ]; then
+        pkill -f "$INSTALL_DIR/openmodelpool" 2>/dev/null || true
+        sleep 1
+        cd "$INSTALL_DIR" && nohup ./openmodelpool >> "$INSTALL_DIR/data/app.log" 2>&1 &
+        sleep 2
+        echo -e "  ${GREEN}✓ OMP 服务已重启${NC}"
+    fi
+
     echo ""
     echo -e "  ${GREEN}╔══════════════════════════════════════════╗${NC}"
     echo -e "  ${GREEN}║  Cloudflare Tunnel 配置完成！            ║${NC}"

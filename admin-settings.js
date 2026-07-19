@@ -123,7 +123,7 @@ async function importConfig(input) {
         if (!el) return;
         el.style.display = 'block';
         if (d.bound) {
-          el.innerHTML = '✅ 已绑定: <strong>' + escapeHtml(d.domain) + '</strong> | 公网地址: <a href="' + safeUrl(d.public_url) + '" target="_blank">' + escapeHtml(d.public_url) + '</a> | Tunnel ID: ' + escapeHtml(d.tunnel_id);
+          el.innerHTML = '✅ 已绑定: <strong>' + escapeHtml(d.domain) + '</strong> | 公网地址: <a href="' + escapeAttr(d.public_url) + '" target="_blank">' + escapeHtml(d.public_url) + '</a> | Tunnel ID: ' + escapeHtml(d.tunnel_id);
           el.style.background = 'rgba(16,185,129,0.1)';
           document.getElementById('unbindDomainBtn').style.display = '';
           document.getElementById('cfDomain').value = d.domain;
@@ -261,9 +261,9 @@ function initApiUrls() {
       if (domainHintEl) domainHintEl.textContent = '在下方绑定域名获得固定地址';
       if (domainBadgeEl) domainBadgeEl.textContent = '';
     }
-    // 4. 绑定引导卡片 - 只有 IP 与域名都未绑定时才显示
+    // 4. 绑定引导卡片
     if (domainQuickCard) {
-      if (!boundIP && !tunnelDomain) {
+      if (!boundIP || !tunnelDomain) {
         domainQuickCard.style.display = 'block';
         if (boundIP && !tunnelDomain) switchBindMode('domain');
         if (!boundIP && tunnelDomain) switchBindMode('ip');
@@ -311,23 +311,22 @@ function showBindMode(mode) {
 async function quickBindDomain() {
   const domain = document.getElementById('quickDomainInput').value.trim();
   if (!domain) { toast('请输入域名', 'error'); return; }
-  const apiToken = prompt('请输入 Cloudflare API Token（用于创建隧道和 DNS 绑定）：');
-  if (!apiToken) return;
   const result = document.getElementById('domainBindResult');
   result.innerHTML = '<span style="color:var(--text-muted)">⏳ 正在绑定域名...</span>';
   try {
-    const r = await authFetch('/api/domain/bind', {
+    // Use manual bind (no API token needed — for domains already configured via deploy script or external cloudflared)
+    const r = await authFetch('/api/domain/manual-bind', {
       method: 'POST',
-      body: JSON.stringify({ api_token: apiToken, domain: domain })
+      body: JSON.stringify({ domain: domain })
     });
     const d = await r.json();
     if (d.error) {
       result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + escapeHtml(d.error) + '</span>';
       toast('绑定失败', 'error');
     } else {
-      result.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定成功！</span><br><span style="font-size:11px;color:var(--text-muted)">公网地址: ' + escapeHtml(d.public_url || d.tunnel_url || '') + '</span>';
+      result.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定成功！</span><br><span style="font-size:11px;color:var(--text-muted)">公网地址: ' + escapeHtml(d.public_url || '') + '</span>';
       toast('域名绑定成功', 'success');
-      setTimeout(() => initApiUrls(), 2000);
+      setTimeout(() => { initApiUrls(); refreshDomainStatus(); }, 2000);
     }
   } catch(e) {
     result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + escapeHtml(e.message) + '</span>';

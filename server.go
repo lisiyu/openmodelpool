@@ -167,6 +167,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/domain/bind", rateLimitByIP(3, "domain_bind")(withAuth(handleBindDomain)))
 	mux.HandleFunc("GET /api/domain/status", withAuth(handleGetDomainStatus))
 	mux.HandleFunc("POST /api/domain/unbind", rateLimitByIP(3, "domain_unbind")(withAuth(handleUnbindDomain)))
+	mux.HandleFunc("POST /api/domain/manual-bind", rateLimitByIP(3, "domain_manual_bind")(withAuth(handleManualDomainBind)))
 
 	// IP binding
 	mux.HandleFunc("POST /api/ip/bind", withAuth(handleBindIP))
