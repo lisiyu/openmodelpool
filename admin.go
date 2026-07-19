@@ -1177,7 +1177,12 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		// Get total usage
 		totalUsed := tracker.TotalTokensByProvider()[p.ID]
 
-		keyCount := len(p.APIKeys)
+		keyCount := 0
+		for _, k := range p.APIKeys {
+			if k.Enabled {
+				keyCount++
+			}
+		}
 		if keyCount == 0 && p.APIKey != "" && p.APIKey != "your-api-key-here" {
 			keyCount = 1
 		}
