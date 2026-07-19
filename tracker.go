@@ -12,7 +12,7 @@ import (
 
 // Tracker records API usage with batched disk writes and EWMA latency cache.
 type Tracker struct {
-	mu           sync.Mutex
+	mu           sync.RWMutex
 	records      []UsageRecord
 	dirtyCount   int
 	lastFlush    time.Time
@@ -72,6 +72,8 @@ func (t *Tracker) rebuildEWMA() {
 			providerLats[r.ProviderID] = append(providerLats[r.ProviderID], r.LatencyMS)
 		}
 	}
+
+	t.mu.Lock()
 	for pid, lats := range providerLats {
 		recent := lats
 		if len(recent) > 20 {
@@ -83,6 +85,7 @@ func (t *Tracker) rebuildEWMA() {
 		}
 		t.ewmaCache[pid] = round1(ewma)
 	}
+	t.mu.Unlock()
 }
 
 func (t *Tracker) save() {
@@ -350,6 +353,8 @@ func (t *Tracker) archiveUsage() {
 
 // GetEWMA returns cached EWMA latency for a provider (O(1)).
 func (t *Tracker) GetEWMA(providerID string) float64 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.ewmaCache[providerID]
 }
 

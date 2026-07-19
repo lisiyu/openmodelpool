@@ -993,7 +993,7 @@ function selectDiscoveredPreset(id) {
   setAccessControl('private');
   const regLinkEl = document.getElementById('presetRegLink');
   if (regLinkEl && dp.api_key_url) {
-    regLinkEl.innerHTML = `<a href="${dp.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 前往官网注册获取 API Key →</a>`;
+    regLinkEl.innerHTML = `<a href="${escapeAttr(dp.api_key_url)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 前往官网注册获取 API Key →</a>`;
     regLinkEl.style.display = '';
   } else if (regLinkEl) { regLinkEl.style.display = 'none'; }
   if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = '0';
