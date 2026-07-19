@@ -707,7 +707,7 @@ function editProvider(pid) {
     const preset = presets.find(x => x.id === pid);
     const apiKeyUrl = preset?.api_key_url || '';
     if (apiKeyUrl) {
-      regLinkEl.innerHTML = `<a href="${safeUrl(apiKeyUrl)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+      regLinkEl.innerHTML = `<a href="${escapeAttr(apiKeyUrl)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
       regLinkEl.style.display = '';
     } else {
       regLinkEl.style.display = 'none';
@@ -729,7 +729,7 @@ function selectPreset(pid) {
   const regLinkEl = document.getElementById('presetRegLink');
   if (regLinkEl) {
     if (p.api_key_url) {
-      regLinkEl.innerHTML = `<a href="${safeUrl(p.api_key_url)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+      regLinkEl.innerHTML = `<a href="${escapeAttr(p.api_key_url)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
       regLinkEl.style.display = '';
     } else {
       regLinkEl.style.display = 'none';
@@ -879,7 +879,7 @@ async function saveProvider() {
   const key = document.getElementById('pKey').value.trim();
   if (key) data.api_key = key;
   else if (!editingId && !selectedPresetKeyOptional && mode !== 'web') { toast('请填写 API Key', 'error'); return; }
-  else if (!editingId && !selectedPresetKeyOptional && mode === 'web') { toast('请先点击「启动内置浏览器」完成登录', 'error'); return; }
+  // web_session mode: key is obtained via browser login, allow saving without key
   const proxy = document.getElementById('pProxy').value.trim();
   if (proxy) data.proxy = proxy;
   // Add web_session config if in web mode
@@ -1010,7 +1010,7 @@ function selectDiscoveredPreset(id) {
   setAccessControl('private');
   const regLinkEl = document.getElementById('presetRegLink');
   if (regLinkEl && dp.api_key_url) {
-    regLinkEl.innerHTML = `<a href="${safeUrl(dp.api_key_url)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 前往官网注册获取 API Key →</a>`;
+    regLinkEl.innerHTML = `<a href="${dp.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 前往官网注册获取 API Key →</a>`;
     regLinkEl.style.display = '';
   } else if (regLinkEl) { regLinkEl.style.display = 'none'; }
   if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = '0';
@@ -1128,7 +1128,7 @@ async function loadApiKeys(pid) {
         const expiresText = k.expires_at ? '<br><small style="color:var(--text-muted)">过期: ' + new Date(k.expires_at).toLocaleDateString('zh-CN') + '</small>' : '';
         html += '<tr>';
         html += '<td style="font-family:monospace">' + (k.alias || k.key.substring(0, 8) + '...') + '</td>';
-        html += '<td>' + quotaText + '<br><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:1px 6px;margin-top:2px" onclick="resetKeyQuota(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">重置</button></td>';
+        html += '<td>' + quotaText + '<br><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:1px 6px;margin-top:2px" onclick="resetKeyQuota(\'' + pid + '\',\'' + k.id + '\')">重置</button></td>';
         html += '<td>' + accessLabel + '</td>';
         html += '<td>' + (k.priority || 1) + '</td>';
         html += '<td>' + statusBadge + expiresText + '</td>';
@@ -1136,18 +1136,18 @@ async function loadApiKeys(pid) {
         const tableKeyStatusId = 'table-keystatus-' + k.id;
         html += '<td><span id="' + tableKeyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试按钮检测">⏳</span></td>';
         html += '<td>';
-        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="editKeyAccessControl(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\',\'' + escapeJS(k.access_control) + '\')">编辑权限</button> ';
-        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
-        html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteApiKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">删除</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="editKeyAccessControl(\'' + pid + '\',\'' + k.id + '\',\'' + k.access_control + '\')">编辑权限</button> ';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteApiKey(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
         html += '</td>';
-        html += '<td><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testSingleKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">测试</button></td>';
+        html += '<td><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testSingleKey(\'' + pid + '\',\'' + k.id + '\')">测试</button></td>';
         html += '</tr>';
       }
       html += '</tbody></table>';
       container.innerHTML = html;
     }
     // Add key button
-    container.innerHTML += '<div style="margin-top:8px;display:flex;justify-content:space-between"><button class="btn btn-secondary btn-sm" onclick="testAllKeys(\'' + escapeJS(pid) + '\')">🧪 测试全部 Key</button><button class="btn btn-primary btn-sm" onclick="showAddApiKey(\'' + escapeJS(pid) + '\')">+ 添加 API Key</button></div>';
+    container.innerHTML += '<div style="margin-top:8px;display:flex;justify-content:space-between"><button class="btn btn-secondary btn-sm" onclick="testAllKeys(\'' + pid + '\')">🧪 测试全部 Key</button><button class="btn btn-primary btn-sm" onclick="showAddApiKey(\'' + pid + '\')">+ 添加 API Key</button></div>';
   } catch(e) {
     container.innerHTML = '<div style="color:var(--error)">加载失败: ' + e.message + '</div>';
   }
@@ -1393,10 +1393,10 @@ async function loadEditKeys(pid) {
         html += '<span id="' + keyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试此Key">⏳ 未测试</span>';
         html += '</div>';
         html += '<div style="display:flex;gap:6px">';
-        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="editInlineKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">✏️ 编辑</button>';
-        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="toggleEditKeyEnabled(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\',' + !k.enabled + ')">' + (k.enabled ? '⏸ 禁用' : '▶ 启用') + '</button>';
-        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="testEditKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">🧪 测试</button>';
-        html += '<button class="btn btn-sm btn-danger" style="font-size:11px;padding:3px 10px" onclick="deleteKeyInEdit(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">🗑 删除</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="editInlineKey(\'' + pid + '\',\'' + k.id + '\')">✏️ 编辑</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="toggleEditKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '⏸ 禁用' : '▶ 启用') + '</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="testEditKey(\'' + pid + '\',\'' + k.id + '\')">🧪 测试</button>';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:11px;padding:3px 10px" onclick="deleteKeyInEdit(\'' + pid + '\',\'' + k.id + '\')">🗑 删除</button>';
         html += '</div>';
         html += '</div>';
         html += '<div style="display:flex;gap:20px;font-size:12px;color:var(--text-secondary)">';
@@ -1505,8 +1505,8 @@ function buildKeyEditForm(pid, keyId, k) {
   // Buttons
   h += '<div style="display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color)">';
   h += '<span style="font-size:11px;color:var(--text-muted);flex:1">ID: ' + k.id + '</span>';
-  h += '<button class="btn btn-sm btn-secondary" onclick="cancelEditKey(\'' + escapeJS(pid) + '\')" style="font-size:12px;padding:5px 14px">取消</button>';
-  h += '<button class="btn btn-sm btn-primary" onclick="saveEditKeyForm(\'' + escapeJS(pid) + '\',\'' + escapeJS(keyId) + '\')" style="font-size:12px;padding:5px 14px">💾 保存</button>';
+  h += '<button class="btn btn-sm btn-secondary" onclick="cancelEditKey(\'' + pid + '\')" style="font-size:12px;padding:5px 14px">取消</button>';
+  h += '<button class="btn btn-sm btn-primary" onclick="saveEditKeyForm(\'' + pid + '\',\'' + keyId + '\')" style="font-size:12px;padding:5px 14px">💾 保存</button>';
   h += '</div>';
   return h;
 }
@@ -1662,13 +1662,76 @@ function toggleRateLimit() {
   setTimeout(function() { fields.style.opacity = isActive ? '1' : '0'; }, 10);
 }
 
-function openBrowserLogin() {
+async function openBrowserLogin() {
   var pid = editingId || document.getElementById('pId').value;
-  if (!pid) { toast('请先选择或保存一个 Provider', 'error'); return; }
+  if (!pid) { toast('请先填写平台 ID', 'error'); return; }
+  // If adding a new provider, auto-save basic info first so browser login can find it
+  if (!editingId) {
+    toast('正在自动保存平台信息...', 'info');
+    const saved = await autoSaveForBrowserLogin(pid);
+    if (!saved) return;
+    editingId = pid;
+  }
   if (window.parent && window.parent.openSubPage) {
     window.parent.openSubPage('/admin/browser-login?id=' + pid, '内置浏览器');
   } else {
     location.href = '/admin/browser-login?id=' + pid;
+  }
+}
+
+async function autoSaveForBrowserLogin(pid) {
+  const mode = document.querySelector('input[name="providerMode"]:checked')?.value || 'api';
+  if (mode !== 'web') { toast('仅 Web 会话模式支持浏览器登录', 'error'); return false; }
+  const loginUrl = document.getElementById('pLoginUrl').value.trim();
+  if (!loginUrl) { toast('请填写登录 URL', 'error'); return false; }
+  let extraHeaders = {};
+  let extraBody = {};
+  try { extraHeaders = JSON.parse(document.getElementById('pExtraHeaders').value || '{}'); } catch(e) {}
+  try { extraBody = JSON.parse(document.getElementById('pExtraBody').value || '{}'); } catch(e) {}
+  const webSessionData = {
+    login_url: loginUrl,
+    extra_cookies: document.getElementById('pExtraCookies').value.trim(),
+    api_endpoint: document.getElementById('pApiEndpoint').value.trim(),
+    auth_mode: document.getElementById('pAuthMode').value,
+    token_prefix: 'Bearer ',
+    extra_headers: extraHeaders,
+    prompt_field: document.getElementById('pPromptField').value.trim() || 'prompt',
+    model_field: document.getElementById('pModelField').value.trim() || 'model',
+    stream_field: 'stream',
+    extra_body: extraBody,
+    message_format: 'prefix_role',
+    response_type: document.getElementById('pResponseType').value,
+    text_path: document.getElementById('pTextPath').value.trim() || 'data.text',
+    done_marker: '[DONE]',
+  };
+  let baseUrl = document.getElementById('pUrl').value.trim();
+  if (!baseUrl) { try { baseUrl = new URL(loginUrl).origin; } catch(e) {} }
+  const data = {
+    id: pid,
+    name: document.getElementById('pName').value.trim() || pid,
+    type: 'web_session',
+    base_url: baseUrl,
+    description: document.getElementById('pDesc').value.trim(),
+    priority: parseInt(document.getElementById('pPriority').value) || 5,
+    enabled: document.getElementById('pEnabled').checked,
+    access_control: { share_to_pool: true, guest_pool_percent: 50 },
+    rate_limit_per_min: 0, daily_request_limit: 0,
+    private_tokens_daily: 0, private_quota_monthly: 0, private_quota_total: 0,
+    shared_tokens_daily: 0, shared_quota_monthly: 0, shared_quota_total: 0,
+    web_session: webSessionData,
+  };
+  const proxy = document.getElementById('pProxy').value.trim();
+  if (proxy) data.proxy = proxy;
+  const existingModels = (presets.find(p=>p.id===pid)||{}).default_models || [];
+  data.models = existingModels;
+  try {
+    const r = await authFetch('/api/providers', { method: 'POST', body: JSON.stringify(data) });
+    if (!r.ok) { const e = await r.json(); throw new Error(e?.error?.message || '保存失败'); }
+    toast('平台已创建，正在启动浏览器...', 'success');
+    return true;
+  } catch(e) {
+    toast('自动保存失败: ' + e.message, 'error');
+    return false;
   }
 }
 
