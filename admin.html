@@ -1550,7 +1550,7 @@ async function refreshHealth() {
       var preset2 = (typeof presets !== 'undefined') ? presets.find(function(x){return x.id===pid}) : null;
       var officialUrl = preset2 ? preset2.api_key_url : '';
       if (officialUrl) {
-        row1 += '<a href="' + escapeAttr(officialUrl) + '" target="_blank" class="v5-provider-name v5-provider-name-link">' + escapeHtml(pname) + '</a>';
+        row1 += '<a href="' + safeUrl(officialUrl) + '" target="_blank" class="v5-provider-name v5-provider-name-link">' + escapeHtml(pname) + '</a>';
       } else {
         row1 += '<span class="v5-provider-name">' + escapeHtml(pname) + '</span>';
       }
@@ -2334,7 +2334,7 @@ function renderDiscoveredPlatforms() {
       ${models ? `<div style="font-size:11px;color:var(--text-muted)">模型: ${models}${modelsExtra}</div>` : ''}
       <div style="font-size:11px;color:var(--text-muted)">来源: ${escapeHtml(p.source)} · 发现时间: ${new Date(p.discovered_at).toLocaleString()}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-        ${p.api_key_url ? `<a href="${escapeAttr(p.api_key_url)}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;font-size:11px">🔗 官网注册</a>` : ''}
+        ${p.api_key_url ? `<a href="${safeUrl(p.api_key_url)}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;font-size:11px">🔗 官网注册</a>` : ''}
         ${p.status === 'new' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px" onclick="updateDiscoveredStatus('${escapeJS(p.id)}','reviewed')">✅ 标记已审核</button>` : ''}
         ${p.status !== 'dismissed' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px;border-color:rgba(239,68,68,.3);color:#ef4444" onclick="updateDiscoveredStatus('${escapeJS(p.id)}','dismissed')">❌ 忽略</button>` : ''}
         <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="addDiscoveredAsPreset('${escapeJS(p.id)}')">+ 添加为预设</button>

@@ -441,7 +441,7 @@ function renderModelMatrix(pid) {
       var kid = keyCols[ki].id;
       if (isModelAvailForKey(m, kid)) {
         var isOn = isModelEnabledForKey(m, kid);
-        html += '<td><div class="v8-toggle-wrap"><div class="v8-toggle ' + (isOn ? 'on' : '') + '" data-pid="' + pid + '" data-mid="' + m.id + '" data-kid="' + kid + '" onclick="v8ToggleModel(this)"><div class="v8-knob"></div></div></div></td>';
+        html += '<td><div class="v8-toggle-wrap"><div class="v8-toggle ' + (isOn ? 'on' : '') + '" data-pid="' + escapeAttr(pid) + '" data-mid="' + escapeAttr(m.id) + '" data-kid="' + escapeAttr(kid) + '" onclick="v8ToggleModel(this)"><div class="v8-knob"></div></div></div></td>';
       } else {
         // Model not available for this key — show disabled indicator
         html += '<td><div class="v8-toggle-wrap"><span style="color:#475569;font-size:11px">—</span></div></td>';
