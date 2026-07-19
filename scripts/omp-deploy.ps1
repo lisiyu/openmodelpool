@@ -15,9 +15,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $GITHUB_REPO = "lisiyu/openmodelpool"
-$RELEASE_TAG = "v3.4.1-release"
-$PKG = "openmodelpool-windows-amd64.zip"
-$DOWNLOAD_URL = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/$PKG"
+$PKG = "openmodelpool-windows-amd64.exe"
 
 Write-Host ""
 Write-Host "  ============================================" -ForegroundColor Cyan
@@ -66,44 +64,74 @@ if ($portConn) {
 }
 Write-Host "      清理完成" -ForegroundColor Green
 
-# [1/5] 下载
-Write-Host "[1/5] 下载: $PKG" -ForegroundColor Cyan
-Write-Host "      $DOWNLOAD_URL"
-$tmpZip = Join-Path $env:TEMP "omp-deploy.zip"
+# [1/5] 获取最新版本并下载
+Write-Host "[1/5] 获取最新版本..." -ForegroundColor Cyan
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$RELEASE_TAG = $env:OMP_RELEASE_TAG
+if (-not $RELEASE_TAG) {
+    try {
+        $releaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/$GITHUB_REPO/releases/latest" -UseBasicParsing
+        $RELEASE_TAG = $releaseInfo.tag_name
+    } catch {
+        Write-Host "[错误] 无法获取最新 Release 版本" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "      目标版本: $RELEASE_TAG" -ForegroundColor Green
+
+$DOWNLOAD_URL = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/$PKG"
+$CHECK_URL = "${DOWNLOAD_URL}.sha256"
+Write-Host "      下载: $DOWNLOAD_URL"
+
+$tmpDir = Join-Path $env:TEMP "omp-deploy-$(Get-Random)"
+New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+$tmpExe = Join-Path $tmpDir $PKG
+$tmpSha = Join-Path $tmpDir "$PKG.sha256"
+
 try {
-    # 使用 TLS 1.2 解决 GitHub 下载问题
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $tmpZip -UseBasicParsing
+    Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $tmpExe -UseBasicParsing
 } catch {
     Write-Host "[错误] 下载失败: $_" -ForegroundColor Red
     exit 1
 }
-$size = [math]::Round((Get-Item $tmpZip).Length / 1MB, 1)
+
+# 下载 SHA256 校验文件
+try {
+    Invoke-WebRequest -Uri $CHECK_URL -OutFile $tmpSha -UseBasicParsing
+} catch {
+    Write-Host "      ⚠️ 未找到校验文件，跳过校验" -ForegroundColor Yellow
+}
+
+# SHA256 校验
+if (Test-Path $tmpSha) {
+    $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
+    $actualHash = (Get-FileHash $tmpExe -Algorithm SHA256).Hash.ToLower()
+    if ($expectedHash.ToLower() -ne $actualHash) {
+        Write-Host "[错误] SHA256 校验失败，终止部署" -ForegroundColor Red
+        Write-Host "  期望: $expectedHash" -ForegroundColor Yellow
+        Write-Host "  实际: $actualHash" -ForegroundColor Yellow
+        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
+    Write-Host "      ✅ SHA256 校验通过" -ForegroundColor Green
+}
+
+$size = [math]::Round((Get-Item $tmpExe).Length / 1MB, 1)
 Write-Host "      下载完成 (${size} MB)" -ForegroundColor Green
 
-# [2/5] 解压
-Write-Host "[2/5] 解压..." -ForegroundColor Cyan
-$tmpDir = Join-Path $env:TEMP "omp-deploy-extract"
-if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
-Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
-Write-Host "      解压完成" -ForegroundColor Green
-
-# [3/5] 安装
-Write-Host "[3/5] 安装到 $InstallDir ..." -ForegroundColor Cyan
+# [2/5] 安装
+Write-Host "[2/5] 安装到 $InstallDir ..." -ForegroundColor Cyan
 $dataDir = Join-Path $InstallDir "data"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
-# 复制二进制文件（HTML 已嵌入，无需复制 HTML 文件）
-Copy-Item (Join-Path $tmpDir "openmodelpool.exe") -Destination (Join-Path $InstallDir "openmodelpool.exe") -Force
-
-if (Test-Path (Join-Path $tmpDir "docs")) {
-    Copy-Item (Join-Path $tmpDir "docs") -Destination $InstallDir -Force -Recurse
-}
+# 复制二进制文件（HTML 已嵌入，无需额外文件）
+Copy-Item $tmpExe -Destination (Join-Path $InstallDir "openmodelpool.exe") -Force
 Write-Host "      安装完成" -ForegroundColor Green
 
-# [4/5] 配置服务
-Write-Host "[4/5] 配置服务 (端口 $Port)..." -ForegroundColor Cyan
+# [3/5] 配置服务
+Write-Host "[3/5] 配置服务 (端口 $Port)..." -ForegroundColor Cyan
 
 $startBat = Join-Path $InstallDir "start.bat"
 @"
@@ -137,17 +165,18 @@ if ($nssm) {
     Write-Host "      服务方式: 计划任务 (开机自启)" -ForegroundColor Green
 }
 
-# [5/5] 启动
-Write-Host "[5/5] 启动服务..." -ForegroundColor Cyan
+# [4/5] 启动
+Write-Host "[4/5] 启动服务..." -ForegroundColor Cyan
 
 if ($nssm) {
     & nssm start openmodelpool
 } else {
-    # 通过 start.bat 启动，确保工作目录正确
     Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $startBat -WindowStyle Hidden
 }
 Start-Sleep -Seconds 3
 
+# [5/5] 验证
+Write-Host "[5/5] 验证服务..." -ForegroundColor Cyan
 $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
 if ($proc) {
     $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback" -and $_.IPAddress -notmatch "^169\.254" } | Select-Object -First 1).IPAddress
@@ -178,7 +207,6 @@ if ($proc) {
     exit 1
 }
 
-
 # ============================================================
 # 外网穿透配置（可选）
 # ============================================================
@@ -201,5 +229,4 @@ if ($tunnelChoice -eq "1" -or $tunnelChoice -eq "2") {
 }
 Write-Host ""
 
-Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
 Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
