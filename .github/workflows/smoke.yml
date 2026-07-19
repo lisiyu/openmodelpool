@@ -1,0 +1,65 @@
+name: Smoke Test (runtime)
+# 冒烟测试：在干净的 Ubuntu  runner 上真实启动 openmodelpool，
+# 验证它能在 ListenAndServe 之前不 panic，并正确绑定 :8000 / :8001。
+# 这是部署到 Codespaces 前的可观测性闸门——CI 日志能直接看到运行时报错。
+
+on:
+  push:
+    branches: [ci/rectify-2026-07-19]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Build
+        run: go build -o openmodelpool .
+
+      - name: Run openmodelpool & probe
+        id: probe
+        run: |
+          set -u
+          ./openmodelpool > /tmp/openmodelpool.log 2>&1 &
+          PID=$!
+          echo "started pid=$PID"
+          OK=0
+          for i in $(seq 1 25); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
+            if [ "$code" = "200" ]; then OK=1; break; fi
+            # 若进程已退出，立即停止轮询
+            if ! kill -0 $PID 2>/dev/null; then
+              echo "::error::openmodelpool exited early (see log below)"
+              break
+            fi
+            sleep 2
+          done
+
+          echo "----- /health code: $code -----"
+          echo "----- /api/version -----"
+          curl -s http://localhost:8000/api/version || true
+          echo
+          echo "----- startup log (openmodelpool.log) -----"
+          cat /tmp/openmodelpool.log || true
+
+          if [ "$OK" = "1" ]; then
+            echo "SMOKE_OK=1" >> "$GITHUB_OUTPUT"
+            echo "✅ openmodelpool is up and /health returns 200"
+          else
+            echo "SMOKE_OK=0" >> "$GITHUB_OUTPUT"
+            echo "::error::openmodelpool did not become healthy"
+            exit 1
+          fi
+
+      - name: Stop
+        if: always()
+        run: pkill -f './openmodelpool' || true

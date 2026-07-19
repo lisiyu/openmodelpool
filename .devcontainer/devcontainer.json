@@ -1,13 +1,20 @@
 {
   "name": "openmodelpool",
   "image": "mcr.microsoft.com/devcontainers/go:1.26",
-  "forwardPorts": [8000, 8001, 8443],
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
+  },
+  "forwardPorts": [8000, 8001, 8443, 8002],
   "portsAttributes": {
     "8000": { "label": "openmodelpool HTTP", "visibility": "public", "protocol": "http" },
     "8001": { "label": "seed discovery", "visibility": "private" },
-    "8443": { "label": "HTTPS (ACME)", "visibility": "private" }
+    "8443": { "label": "HTTPS (ACME)", "visibility": "private" },
+    "8002": { "label": "diagnostics log server", "visibility": "private", "protocol": "http" }
   },
-  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postCreateCommand": "bash /workspaces/openmodelpool/.devcontainer/build.sh",
+  "command": "bash /workspaces/openmodelpool/.devcontainer/run-omp.sh",
   "customizations": {
     "vscode": {
       "extensions": ["golang.go"]
