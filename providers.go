@@ -565,4 +565,16 @@ var presetProviders = []Provider{
 			{ID: "local-model", Name: "本地模型（自动加载）"},
 		},
 	},
+	{
+		ID: "xfyun-maas", Name: "讯飞星辰MaaS", Type: "openai_compatible",
+		BaseURL:    "https://maas-api.cn-huabei-1.xf-yun.com/v1",
+		Priority:   5,
+		Description: "科大讯飞星辰MaaS平台，OpenAI兼容，支持Qwen等开源模型，有限时免费额度",
+		Icon:        "xfyun",
+		APIKeyURL:   "https://maas.xfyun.cn/packageSubscription",
+		Models: []ModelDef{
+			{ID: "Qwen3.6-35B-A3B", Name: "Qwen3.6-35B-A3B", Enabled: true},
+			{ID: "Qwen3.5-35B-A3B", Name: "Qwen3.5-35B-A3B", Enabled: true},
+		},
+	},
 }
