@@ -12,6 +12,9 @@ RUN CGO_ENABLED=0 GOOS=linux \
 
 # --- runtime stage ---
 FROM debian:bookworm-slim
+# Install chromium for chromedp-based browser automation (headless login, etc.).
+# chromedp passes --no-sandbox, so the non-root openmodelpool user can run it.
+RUN apt-get update && apt-get install -y --no-install-recommends chromium && rm -rf /var/lib/apt/lists/*
 RUN groupadd -r openmodelpool \
  && useradd -r -g openmodelpool openmodelpool \
  && mkdir -p /app/data \

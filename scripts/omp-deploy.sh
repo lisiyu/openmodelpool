@@ -11,7 +11,9 @@
 set -e
 
 GITHUB_REPO="lisiyu/openmodelpool"
-RELEASE_TAG="v3.4.1-release"
+# RELEASE_TAG 默认动态获取最新 GitHub Release；可通过环境变量 OMP_RELEASE_TAG
+# 或第 3 个位置参数覆盖：$0 <安装目录> <端口> <ReleaseTag>
+RELEASE_TAG="${OMP_RELEASE_TAG:-${3:-}}"
 XRAY_VERSION="v26.3.27"
 INSTALL_DIR="${1:-/opt/openmodelpool}"
 PORT="${2:-8000}"
@@ -65,48 +67,62 @@ else
   echo -e "${GREEN}[2/7] 系统: Linux ($(cat /etc/os-release 2>/dev/null | grep ^PRETTY_NAME | cut -d= -f2 | tr -d '"' || echo 'unknown'))${NC}"
 fi
 
-# ---- 下载 ----
-DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${PKG}.tar.gz"
+# ---- 解析 Release Tag (动态获取最新版，支持覆盖) ----
+if [ -z "$RELEASE_TAG" ]; then
+  echo -e "${CYAN}[2.5/7] 获取最新 Release 版本...${NC}"
+  RELEASE_TAG=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | \
+    python3 -c 'import sys,json;print(json.load(sys.stdin).get("tag_name",""))' 2>/dev/null)
+fi
+if [ -z "$RELEASE_TAG" ]; then
+  echo -e "${RED}[错误] 无法获取最新 Release tag${NC}"
+  exit 1
+fi
+echo -e "${GREEN}[2.5/7] 目标版本: ${RELEASE_TAG}${NC}"
+
+# ---- 下载 (裸二进制 + SHA256 校验，无 tar 打包) ----
+DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${PKG}"
+CHECK_URL="${DOWNLOAD_URL}.sha256"
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 
-echo -e "${CYAN}[3/7] 下载: ${PKG}.tar.gz${NC}"
+echo -e "${CYAN}[3/7] 下载: ${PKG}${NC}"
 echo "       ${DOWNLOAD_URL}"
 
 if command -v curl &>/dev/null; then
-  curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/${PKG}.tar.gz"
+  curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$PKG"
+  curl -fsSL "$CHECK_URL" -o "$TMP_DIR/$PKG.sha256"
 elif command -v wget &>/dev/null; then
-  wget -q -O "$TMP_DIR/${PKG}.tar.gz" "$DOWNLOAD_URL"
+  wget -q -O "$TMP_DIR/$PKG" "$DOWNLOAD_URL"
+  wget -q -O "$TMP_DIR/$PKG.sha256" "$CHECK_URL"
 else
   echo -e "${RED}[错误] 需要 curl 或 wget${NC}"
   exit 1
 fi
 
-if [ ! -s "$TMP_DIR/${PKG}.tar.gz" ]; then
+if [ ! -s "$TMP_DIR/$PKG" ]; then
   echo -e "${RED}[错误] 下载失败${NC}"
   exit 1
 fi
-echo -e "${GREEN}       下载完成 ($(du -h "$TMP_DIR/${PKG}.tar.gz" | cut -f1))${NC}"
+echo -e "${GREEN}       下载完成 ($(du -h "$TMP_DIR/$PKG" | cut -f1))${NC}"
 
-# ---- 解压 ----
-echo -e "${CYAN}[4/7] 解压...${NC}"
-tar xzf "$TMP_DIR/${PKG}.tar.gz" -C "$TMP_DIR"
-echo -e "${GREEN}       解压完成${NC}"
+# ---- 校验 SHA256 ----
+echo -e "${CYAN}[4/7] 校验 SHA256...${NC}"
+if [ -s "$TMP_DIR/$PKG.sha256" ] && command -v sha256sum &>/dev/null; then
+  ( cd "$TMP_DIR" && sha256sum -c "$PKG.sha256" ) || {
+    echo -e "${RED}[错误] SHA256 校验失败，终止安装${NC}"
+    exit 1
+  }
+  echo -e "${GREEN}       校验通过${NC}"
+else
+  echo -e "${YELLOW}       ⚠️ 未找到校验文件或 sha256sum 不可用，跳过校验${NC}"
+fi
 
 # ---- 安装 ----
 echo -e "${CYAN}[5/7] 安装到 ${INSTALL_DIR}...${NC}"
 mkdir -p "$INSTALL_DIR/data"
-cp "$TMP_DIR/openmodelpool" "$INSTALL_DIR/openmodelpool"
+# 前端资源已编译进二进制，无需单独复制 HTML/JS；仅安装二进制。
+cp "$TMP_DIR/$PKG" "$INSTALL_DIR/openmodelpool"
 chmod +x "$INSTALL_DIR/openmodelpool"
-
-# 复制所有 HTML 文件
-for html in admin.html setup.html login.html; do
-  if [ -f "$TMP_DIR/$html" ]; then
-    cp "$TMP_DIR/$html" "$INSTALL_DIR/$html"
-  fi
-done
-
-cp -r "$TMP_DIR/docs" "$INSTALL_DIR/docs" 2>/dev/null
 echo -e "${GREEN}       安装完成${NC}"
 
 # ---- 安装 Xray (VMess 代理支持) ----

@@ -707,7 +707,7 @@ function editProvider(pid) {
     const preset = presets.find(x => x.id === pid);
     const apiKeyUrl = preset?.api_key_url || '';
     if (apiKeyUrl) {
-      regLinkEl.innerHTML = `<a href="${apiKeyUrl}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+      regLinkEl.innerHTML = `<a href="${escapeAttr(apiKeyUrl)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
       regLinkEl.style.display = '';
     } else {
       regLinkEl.style.display = 'none';
@@ -729,7 +729,7 @@ function selectPreset(pid) {
   const regLinkEl = document.getElementById('presetRegLink');
   if (regLinkEl) {
     if (p.api_key_url) {
-      regLinkEl.innerHTML = `<a href="${p.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
+      regLinkEl.innerHTML = `<a href="${escapeAttr(p.api_key_url)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
       regLinkEl.style.display = '';
     } else {
       regLinkEl.style.display = 'none';
@@ -922,9 +922,9 @@ function renderPresets() {
   });
   const discoveredHtml = discovered.map(p => {
     const badge = '<span style="position:absolute;top:4px;right:6px;font-size:9px;background:var(--success);color:#fff;padding:1px 5px;border-radius:8px">🆕 新发现</span>';
-    return `<div class="preset-card" onclick="selectDiscoveredPreset('${p.id}')" style="position:relative;border-color:var(--success)">${badge}<div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${(p.description||'').substring(0,40)}</div></div>`;
+    return `<div class="preset-card" onclick="selectDiscoveredPreset('${escapeJS(p.id)}')" style="position:relative;border-color:var(--success)">${badge}<div class="preset-icon">${escapeHtml(getIcon(p.id))}</div><div class="preset-name">${escapeHtml(p.name)}</div><div class="preset-desc">${escapeHtml((p.description||'').substring(0,40))}</div></div>`;
   }).join('');
-  grid.innerHTML = filtered.map(p => `<div class="preset-card" onclick="selectPreset('${p.id}')"><div class="preset-icon">${getIcon(p.id)}</div><div class="preset-name">${p.name}</div><div class="preset-desc">${p.description||''}</div></div>`).join('') + discoveredHtml + `<div class="preset-card" onclick="selectCustomPreset()" style="border-style:dashed"><div class="preset-icon">🔌</div><div class="preset-name">自定义平台</div><div class="preset-desc">手动填写地址</div></div>`;
+  grid.innerHTML = filtered.map(p => `<div class="preset-card" onclick="selectPreset('${escapeJS(p.id)}')"><div class="preset-icon">${escapeHtml(getIcon(p.id))}</div><div class="preset-name">${escapeHtml(p.name)}</div><div class="preset-desc">${escapeHtml(p.description||'')}</div></div>`).join('') + discoveredHtml + `<div class="preset-card" onclick="selectCustomPreset()" style="border-style:dashed"><div class="preset-icon">🔌</div><div class="preset-name">自定义平台</div><div class="preset-desc">手动填写地址</div></div>`;
 }
 
 function filterPresets() { renderPresets(); }

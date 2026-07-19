@@ -89,7 +89,7 @@ function copyText(text) {
         }
         if (keys.length === 0) {
           const filterText = _shareFilter === 'consumer' ? '使用者' : _shareFilter === 'collaborator' ? '协作者' : '';
-          el.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:16px">' + (filterText ? '暂无' + filterText + '类型的 Key' : '暂无 Guest Key') + '，点击上方按钮创建<br><span style="font-size:10px;margin-top:4px;display:block">💡 公共池额度全网均分，本地额度可逐 Key 设定</span></div>';
+          el.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:16px">' + (filterText ? '暂无' + escapeHtml(filterText) + '类型的 Key' : '暂无 Guest Key') + '，点击上方按钮创建<br><span style="font-size:10px;margin-top:4px;display:block">💡 公共池额度全网均分，本地额度可逐 Key 设定</span></div>';
           return;
         }
         el.innerHTML = keys.map(k => {
@@ -114,14 +114,14 @@ function copyText(text) {
           const statusBadge = revoked
             ? '<span style="font-size:10px;padding:1px 6px;background:rgba(239,68,68,.12);color:#ef4444;border-radius:4px">❌ 已撤销</span>'
             : '<span style="font-size:10px;padding:1px 6px;background:rgba(34,197,94,.12);color:#22c55e;border-radius:4px">✅ 有效</span>';
-          const safeKey = keyVal.replace(/'/g, "\\'");
+          const safeKey = escapeJS(keyVal);
           const escapedKey = keyVal.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
           const dateInfo = issuedAt ? '创建于 ' + issuedAt + (expires !== '永久' ? ' · 到期 ' + expires : ' · 永久有效') : (expires !== '永久' ? '到期 ' + expires : '永久有效');
           return `
           <div data-gk-key="${escapedKey}" style="padding:12px 16px;margin-bottom:8px;background:var(--bg-secondary);border-radius:10px;border:1px solid ${revoked ? 'rgba(239,68,68,.2)' : 'var(--border-color, rgba(255,255,255,.1))'};box-shadow:0 2px 8px rgba(0,0,0,.1);transition:all .2s ease;cursor:default;${revoked ? 'opacity:0.55;' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
               <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;min-width:0;flex:1">
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏷️ ${displayName}</span>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏷️ ${escapeHtml(displayName)}</span>
                 ${typeBadge}
               </div>
               <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px">
@@ -129,7 +129,7 @@ function copyText(text) {
               </div>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <div style="color:var(--text-muted);font-size:10px">${dateInfo} · ${quota}</div>
+              <div style="color:var(--text-muted);font-size:10px">${escapeHtml(dateInfo)} · ${escapeHtml(quota)}</div>
               <div style="display:flex;gap:4px;flex-shrink:0">
                 <button class="btn btn-secondary btn-sm" onclick="copyText('${safeKey}')" title="复制 Key" style="font-size:10px;padding:3px 8px">📋</button>
                 ${!revoked ? `<button class="btn btn-primary btn-sm" onclick="shareExistingKey('${safeKey}')" title="分享" style="font-size:10px;padding:3px 8px">📤 分享</button>` : ''}
@@ -142,7 +142,7 @@ function copyText(text) {
           </div>`;
         }).join('');
       } catch(e) {
-        el.innerHTML = '<span style="color:var(--error)">加载失败: ' + e.message + ' <button class="btn btn-secondary btn-sm" onclick="loadGuestKeys()" style="font-size:10px;padding:2px 8px">重试</button></span>';
+        el.innerHTML = '<span style="color:var(--error)">加载失败: ' + escapeHtml(e.message) + ' <button class="btn btn-secondary btn-sm" onclick="loadGuestKeys()" style="font-size:10px;padding:2px 8px">重试</button></span>';
       }
     }
 
@@ -161,7 +161,7 @@ function copyText(text) {
       panel.id = panelId;
       panel.style.cssText = 'margin:4px 0 8px 0;padding:14px;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.2);border-radius:8px';
       panel.innerHTML = `
-        <div style="font-size:12px;font-weight:600;margin-bottom:10px">✏️ 编辑额度: ${note}</div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:10px">✏️ 编辑额度: ${escapeHtml(note)}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
           <div>
             <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">每日上限 (tokens)</label>
@@ -376,20 +376,20 @@ function copyText(text) {
       let panelHtml = `
         <div style="padding:20px;background:linear-gradient(135deg,rgba(34,197,94,.06),rgba(34,197,94,.02));border:1px solid rgba(34,197,94,.25);border-radius:12px;box-shadow:0 4px 20px rgba(34,197,94,.08)">
           <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
-            <span>🎉 Key 已创建: ${guestKey.substring(0, 24)}...</span>
+            <span>🎉 Key 已创建: ${escapeHtml(guestKey.substring(0, 24))}...</span>
             <span style="font-size:10px;padding:2px 8px;background:rgba(108,99,255,.12);color:var(--accent-start);border-radius:4px">${purposeLabel}</span>
           </div>
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">📡 API 地址</label>
             <div style="display:flex;gap:6px">
-              <input class="form-input" value="${apiUrl}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
-              <button class="btn btn-secondary btn-sm" onclick="copyText('${apiUrl.replace(/'/g, "\\'")}')" style="flex-shrink:0">📋</button>
+              <input class="form-input" value="${escapeAttr(apiUrl)}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${escapeJS(apiUrl)}')" style="flex-shrink:0">📋</button>
             </div>
           </div>
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">🔑 Guest Key</label>
             <div style="display:flex;gap:6px">
-              <input class="form-input" value="${guestKey}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <input class="form-input" value="${escapeAttr(guestKey)}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
               <button class="btn btn-secondary btn-sm" onclick="copyText('${escapedKey}')" style="flex-shrink:0">📋</button>
             </div>
           </div>`;
@@ -398,7 +398,7 @@ function copyText(text) {
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">🔗 邀请链接</label>
             <div style="display:flex;gap:6px">
-              <input class="form-input" value="${inviteLink}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <input class="form-input" value="${escapeAttr(inviteLink)}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
               <button class="btn btn-secondary btn-sm" onclick="copyText('${escapedInviteLink}')" style="flex-shrink:0">📋</button>
             </div>
           </div>`;
@@ -415,7 +415,7 @@ function copyText(text) {
           </div>
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">💬 预设文案</label>
-            <textarea class="form-input" rows="3" readonly style="font-size:11px;resize:none;background:var(--bg-secondary);width:100%;box-sizing:border-box">${shareText}</textarea>
+            <textarea class="form-input" rows="3" readonly style="font-size:11px;resize:none;background:var(--bg-secondary);width:100%;box-sizing:border-box">${escapeHtml(shareText)}</textarea>
           </div>
           <div style="display:flex;gap:16px;align-items:flex-start">
             <div style="text-align:center">
@@ -520,20 +520,20 @@ function copyText(text) {
       let panelHtml = `
         <div style="padding:20px;background:linear-gradient(135deg,rgba(34,197,94,.06),rgba(34,197,94,.02));border:1px solid rgba(34,197,94,.25);border-radius:12px;box-shadow:0 4px 20px rgba(34,197,94,.08)">
           <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
-            <span>📤 分享 Key: ${guestKey.substring(0, 24)}...</span>
+            <span>📤 分享 Key: ${escapeHtml(guestKey.substring(0, 24))}...</span>
             <span style="font-size:10px;padding:2px 8px;background:rgba(108,99,255,.12);color:var(--accent-start);border-radius:4px">${purposeLabel}</span>
           </div>
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">📡 API 地址</label>
             <div style="display:flex;gap:6px">
-              <input class="form-input" value="${apiUrl}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
-              <button class="btn btn-secondary btn-sm" onclick="copyText('${apiUrl.replace(/'/g, "\\'")}')" style="flex-shrink:0">📋</button>
+              <input class="form-input" value="${escapeAttr(apiUrl)}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <button class="btn btn-secondary btn-sm" onclick="copyText('${escapeJS(apiUrl)}')" style="flex-shrink:0">📋</button>
             </div>
           </div>
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">🔑 Guest Key</label>
             <div style="display:flex;gap:6px">
-              <input class="form-input" value="${guestKey}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <input class="form-input" value="${escapeAttr(guestKey)}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
               <button class="btn btn-secondary btn-sm" onclick="copyText('${escapedKey}')" style="flex-shrink:0">📋</button>
             </div>
           </div>`;
@@ -542,7 +542,7 @@ function copyText(text) {
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">🔗 邀请链接</label>
             <div style="display:flex;gap:6px">
-              <input class="form-input" value="${inviteLink}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
+              <input class="form-input" value="${escapeAttr(inviteLink)}" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);height:32px">
               <button class="btn btn-secondary btn-sm" onclick="copyText('${escapedInviteLink}')" style="flex-shrink:0">📋</button>
             </div>
           </div>`;
@@ -560,7 +560,7 @@ function copyText(text) {
           </div>
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:500;display:block;margin-bottom:4px">💬 预设文案</label>
-            <textarea class="form-input" rows="3" readonly style="font-size:11px;resize:none;background:var(--bg-secondary);width:100%;box-sizing:border-box">${shareText}</textarea>
+            <textarea class="form-input" rows="3" readonly style="font-size:11px;resize:none;background:var(--bg-secondary);width:100%;box-sizing:border-box">${escapeHtml(shareText)}</textarea>
           </div>
           <div style="display:flex;gap:16px;align-items:flex-start">
             <div style="text-align:center">

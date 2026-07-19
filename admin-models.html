@@ -398,7 +398,7 @@ function renderModelMatrix(pid) {
   var body = document.getElementById('v8ModelModalBody');
   var footer = document.getElementById('v8ModelModalFooter');
 
-  document.getElementById('pageTitle').innerHTML = '<span style="font-size:20px">🔗</span> ' + p.name + ' — 模型管理';
+  document.getElementById('pageTitle').innerHTML = '<span style="font-size:20px">🔗</span> ' + escapeHtml(p.name) + ' — 模型管理';
 
   var keyCols = keys.length > 0 ? keys : [{id:'default', alias:'默认Key', key: p.api_key || 'sk-***', access_control:'private'}];
   var colCount = keyCols.length + 1;
@@ -429,14 +429,14 @@ function renderModelMatrix(pid) {
       }
     }
     var acBadge = k.access_control === 'shared' ? '<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(16,185,129,.12);color:#059669;margin-left:4px">🔗共享</span>' : '<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(59,130,246,.12);color:#3b82f6;margin-left:4px">🔒私有</span>';
-    thead += '<th><div class="v8-key-label"><span class="v8-key-name">🔑 ' + alias + '</span>' + acBadge + '<span class="v8-key-mask">' + mask + '</span><span class="v8-key-count">已选 ' + enabledCount + '/' + availCount + '</span></div></th>';
+    thead += '<th><div class="v8-key-label"><span class="v8-key-name">🔑 ' + escapeHtml(alias) + '</span>' + acBadge + '<span class="v8-key-mask">' + escapeHtml(mask) + '</span><span class="v8-key-count">已选 ' + enabledCount + '/' + availCount + '</span></div></th>';
   }
   thead += '</tr>';
 
   // Render a model row with per-key toggles
   function renderModelRow(m, tagHtml) {
     var html = '<tr>';
-    html += '<td><div class="v8-model-name">' + (m.name || m.id) + (tagHtml || '') + '</div></td>';
+    html += '<td><div class="v8-model-name">' + escapeHtml(m.name || m.id) + (tagHtml || '') + '</div></td>';
     for (var ki = 0; ki < keyCols.length; ki++) {
       var kid = keyCols[ki].id;
       if (isModelAvailForKey(m, kid)) {
@@ -484,7 +484,7 @@ function renderModelMatrix(pid) {
       }
     }
   }
-  footer.innerHTML = '<div class="v8-footer-stats">共 <b>' + models.length + '</b> 个模型 · 已启用 <b>' + enabledToggles + '</b> / ' + totalToggles + ' 项配置</div><button class="v8-save-btn" onclick="v8SaveModelMatrix(\'' + pid + '\')">保存更改</button>';
+  footer.innerHTML = '<div class="v8-footer-stats">共 <b>' + models.length + '</b> 个模型 · 已启用 <b>' + enabledToggles + '</b> / ' + totalToggles + ' 项配置</div><button class="v8-save-btn" onclick="v8SaveModelMatrix(\'' + escapeJS(pid) + '\')">保存更改</button>';
 }
 
 function v8ToggleModel(el) {
@@ -518,7 +518,7 @@ function v8ToggleModel(el) {
     if (countEl) countEl.textContent = '已选 ' + colEnabled + '/' + colAvail;
   }
   var footer = document.getElementById('v8ModelModalFooter');
-  footer.innerHTML = '<div class="v8-footer-stats">共 <b>' + models.length + '</b> 个模型 · 已启用 <b>' + enabledToggles + '</b> / ' + totalToggles + ' 项配置</div><button class="v8-save-btn" onclick="v8SaveModelMatrix(\'' + pid + '\')">保存更改</button>';
+  footer.innerHTML = '<div class="v8-footer-stats">共 <b>' + models.length + '</b> 个模型 · 已启用 <b>' + enabledToggles + '</b> / ' + totalToggles + ' 项配置</div><button class="v8-save-btn" onclick="v8SaveModelMatrix(\'' + escapeJS(pid) + '\')">保存更改</button>';
 }
 
 async function v8SaveModelMatrix(pid) {

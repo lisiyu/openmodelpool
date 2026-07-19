@@ -10,7 +10,7 @@ import (
 var htmlFS embed.FS
 
 // serveEmbeddedHTML serves an HTML file from the embedded filesystem.
-// This eliminates all file path dependency â HTML files are baked into the binary.
+// This eliminates all file path dependency — HTML files are baked into the binary.
 func serveEmbeddedHTML(w http.ResponseWriter, r *http.Request, name string) {
 	data, err := fs.ReadFile(htmlFS, name)
 	if err != nil {

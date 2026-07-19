@@ -978,7 +978,7 @@ function renderUsageTable(stats) {
   for (const s of entries) {
     const latencyClass = s.avg_latency_ms < 1000 ? 'fast' : s.avg_latency_ms < 3000 ? 'medium' : 'slow';
     html += `<tr>
-      <td><strong>${esc(s.provider_name)}</strong></td>
+      <td><strong>${escapeHtml(s.provider_name)}</strong></td>
       <td>${s.request_count}</td>
       <td>${s.success_rate}%</td>
       <td>${formatTokens(s.total_tokens)}</td>
@@ -1550,9 +1550,9 @@ async function refreshHealth() {
       var preset2 = (typeof presets !== 'undefined') ? presets.find(function(x){return x.id===pid}) : null;
       var officialUrl = preset2 ? preset2.api_key_url : '';
       if (officialUrl) {
-        row1 += '<a href="' + officialUrl + '" target="_blank" class="v5-provider-name v5-provider-name-link">' + pname + '</a>';
+        row1 += '<a href="' + escapeAttr(officialUrl) + '" target="_blank" class="v5-provider-name v5-provider-name-link">' + escapeHtml(pname) + '</a>';
       } else {
-        row1 += '<span class="v5-provider-name">' + pname + '</span>';
+        row1 += '<span class="v5-provider-name">' + escapeHtml(pname) + '</span>';
       }
       row1 += inlineStats;
       row1 += '</div>';
@@ -1563,11 +1563,11 @@ async function refreshHealth() {
       // Website link merged into platform name (clickable)
       // 🔑 Keys button removed - no standalone function
       // syncProviderUrl button removed per user request
-      actionBtns += '<button class="v7-card-btn" onclick="syncModels(\'' + pid + '\')">同步</button>';
-      actionBtns += '<button class="v7-card-btn" onclick="editProvider(\'' + pid + '\')">编辑</button>';
-      actionBtns += '<button class="v7-card-btn btn-success" onclick="testProvider(\'' + pid + '\')">测试</button>';
-      actionBtns += '<button class="v7-card-btn btn-danger" onclick="toggleProvider(\'' + pid + '\',' + (!enabled) + ')">' + (enabled ? '禁用' : '启用') + '</button>';
-      actionBtns += '<button class="v7-card-btn btn-danger" onclick="deleteProvider(\'' + pid + '\')">删除</button>';
+      actionBtns += '<button class="v7-card-btn" onclick="syncModels(\'' + escapeJS(pid) + '\')">同步</button>';
+      actionBtns += '<button class="v7-card-btn" onclick="editProvider(\'' + escapeJS(pid) + '\')">编辑</button>';
+      actionBtns += '<button class="v7-card-btn btn-success" onclick="testProvider(\'' + escapeJS(pid) + '\')">测试</button>';
+      actionBtns += '<button class="v7-card-btn btn-danger" onclick="toggleProvider(\'' + escapeJS(pid) + '\',' + (!enabled) + ')">' + (enabled ? '禁用' : '启用') + '</button>';
+      actionBtns += '<button class="v7-card-btn btn-danger" onclick="deleteProvider(\'' + escapeJS(pid) + '\')">删除</button>';
       // URL row removed - too prominent, 官网 button provides the link
 
       // Row 3: Quota bar (3 columns: private / public / guest)
@@ -1667,9 +1667,9 @@ let row3 = '<div class="v5-quota-bar">';
   } catch(e) {
     console.error('refreshHealth error:', e.message, e.stack);
     var sc = document.getElementById('nodeStatsContainer');
-    if (sc) sc.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + e.message + '</div>';
+    if (sc) sc.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + escapeHtml(e.message) + '</div>';
     var vl = document.getElementById('providerV5List');
-    if (vl) vl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">Provider加载失败: ' + e.message + '</div>';
+    if (vl) vl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">Provider加载失败: ' + escapeHtml(e.message) + '</div>';
   }
 }
 
@@ -1709,8 +1709,8 @@ async function loadApiKeys(pid) {
         const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
         const expiresText = k.expires_at ? '<br><small style="color:var(--text-muted)">过期: ' + new Date(k.expires_at).toLocaleDateString('zh-CN') + '</small>' : '';
         html += '<tr>';
-        html += '<td style="font-family:monospace">' + (k.alias || k.key.substring(0, 8) + '...') + '</td>';
-        html += '<td>' + quotaText + '<br><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:1px 6px;margin-top:2px" onclick="resetKeyQuota(\'' + pid + '\',\'' + k.id + '\')">重置</button></td>';
+        html += '<td style="font-family:monospace">' + escapeHtml(k.alias || k.key.substring(0, 8) + '...') + '</td>';
+        html += '<td>' + quotaText + '<br><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:1px 6px;margin-top:2px" onclick="resetKeyQuota(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">重置</button></td>';
         html += '<td>' + accessLabel + '</td>';
         html += '<td>' + (k.priority || 1) + '</td>';
         html += '<td>' + statusBadge + expiresText + '</td>';
@@ -1718,20 +1718,20 @@ async function loadApiKeys(pid) {
         const tableKeyStatusId = 'table-keystatus-' + k.id;
         html += '<td><span id="' + tableKeyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试按钮检测">⏳</span></td>';
         html += '<td>';
-        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="editKeyAccessControl(\'' + pid + '\',\'' + k.id + '\',\'' + k.access_control + '\')">编辑权限</button> ';
-        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
-        html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteApiKey(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="editKeyAccessControl(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\',\'' + escapeJS(k.access_control) + '\')">编辑权限</button> ';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteApiKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">删除</button>';
         html += '</td>';
-        html += '<td><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testSingleKey(\'' + pid + '\',\'' + k.id + '\')">测试</button></td>';
+        html += '<td><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testSingleKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">测试</button></td>';
         html += '</tr>';
       }
       html += '</tbody></table>';
       container.innerHTML = html;
     }
     // Add key button
-    container.innerHTML += '<div style="margin-top:8px;display:flex;justify-content:space-between"><button class="btn btn-secondary btn-sm" onclick="testAllKeys(\'' + pid + '\')">🧪 测试全部 Key</button><button class="btn btn-primary btn-sm" onclick="showAddApiKey(\'' + pid + '\')">+ 添加 API Key</button></div>';
+    container.innerHTML += '<div style="margin-top:8px;display:flex;justify-content:space-between"><button class="btn btn-secondary btn-sm" onclick="testAllKeys(\'' + escapeJS(pid) + '\')">🧪 测试全部 Key</button><button class="btn btn-primary btn-sm" onclick="showAddApiKey(\'' + escapeJS(pid) + '\')">+ 添加 API Key</button></div>';
   } catch(e) {
-    container.innerHTML = '<div style="color:var(--error)">加载失败: ' + e.message + '</div>';
+    container.innerHTML = '<div style="color:var(--error)">加载失败: ' + escapeHtml(e.message) + '</div>';
   }
 }
 async function showAddApiKey(pid) {
@@ -1955,12 +1955,12 @@ async function loadEditKeys(pid) {
         const quotaText = quotaParts.length > 0 ? (k.used.toLocaleString() + ' 已用 | ' + quotaParts.join(' · ')) : '无限制';
         const statusBadge = k.enabled ? '<span class="badge badge-green" style="font-size:11px;padding:2px 8px">启用</span>' : '<span class="badge badge-red" style="font-size:11px;padding:2px 8px">禁用</span>';
         const accessLabel = k.access_control === 'shared' ? '🔗 共享' : '🔒 私有';
-        const maskedKey = k.key ? (k.key.includes('...') ? k.key.replace('...', '••••') : (k.key.length > 8 ? k.key.substring(0, 4) + '••••••••' + k.key.substring(k.key.length - 4) : '••••••••')) : '<span style="color:var(--text-muted)">未设置</span>';
-        const aliasDisplay = k.alias ? k.alias : '<span style="color:var(--text-muted)">未命名</span>';
-        html += '<div id="keycard-' + k.id + '" style="padding:14px 16px;margin-bottom:10px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">';
+        const maskedKey = k.key ? (k.key.includes('...') ? k.key.replace('...', '••••') : (k.key.length > 8 ? k.key.substring(0, 4) + '••••••••' + k.key.substring(k.key.length - 4) : '••••••••')) : '未设置';
+        const aliasDisplay = k.alias ? k.alias : '未命名';
+        html += '<div id="keycard-' + escapeHtml(k.id) + '" style="padding:14px 16px;margin-bottom:10px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">';
         html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
         html += '<div style="display:flex;align-items:center;gap:8px">';
-        html += '<span style="font-size:13px;font-weight:600">' + aliasDisplay + '</span>';
+        html += '<span style="font-size:13px;font-weight:600">' + escapeHtml(aliasDisplay) + '</span>';
         html += statusBadge;
         html += '<span style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(108,99,255,.1);color:var(--accent-start)">' + accessLabel + '</span>';
         // Key availability status indicator
@@ -1968,14 +1968,14 @@ async function loadEditKeys(pid) {
         html += '<span id="' + keyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试此Key">⏳ 未测试</span>';
         html += '</div>';
         html += '<div style="display:flex;gap:6px">';
-        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="editInlineKey(\'' + pid + '\',\'' + k.id + '\')">✏️ 编辑</button>';
-        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="toggleEditKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '⏸ 禁用' : '▶ 启用') + '</button>';
-        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="testEditKey(\'' + pid + '\',\'' + k.id + '\')">🧪 测试</button>';
-        html += '<button class="btn btn-sm btn-danger" style="font-size:11px;padding:3px 10px" onclick="deleteKeyInEdit(\'' + pid + '\',\'' + k.id + '\')">🗑 删除</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="editInlineKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">✏️ 编辑</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="toggleEditKeyEnabled(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\',' + !k.enabled + ')">' + (k.enabled ? '⏸ 禁用' : '▶ 启用') + '</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="testEditKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">🧪 测试</button>';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:11px;padding:3px 10px" onclick="deleteKeyInEdit(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">🗑 删除</button>';
         html += '</div>';
         html += '</div>';
         html += '<div style="display:flex;gap:20px;font-size:12px;color:var(--text-secondary)">';
-        html += '<span>Key: <code style="font-family:monospace;font-size:11px">' + maskedKey + '</code></span>';
+        html += '<span>Key: <code style="font-family:monospace;font-size:11px">' + escapeHtml(maskedKey) + '</code></span>';
         html += '<span>额度: ' + quotaText + '</span>';
         html += '<span>优先级: ' + k.priority + '</span>';
         html += '</div>';
@@ -1985,7 +1985,7 @@ async function loadEditKeys(pid) {
     html += '<div id="addKeyRow" style="margin-top:12px;text-align:center"><button class="btn btn-primary btn-sm" onclick="showInlineKeyForm()" style="font-size:12px;padding:6px 18px;border:1px dashed var(--border-color)">+ 添加新 Key</button></div>';
     container.innerHTML = html;
   } catch(e) {
-    container.innerHTML = '<div style="color:var(--error);font-size:12px">加载失败: ' + e.message + '</div>';
+    container.innerHTML = '<div style="color:var(--error);font-size:12px">加载失败: ' + escapeHtml(e.message) + '</div>';
   }
 }
 async function editInlineKey(pid, keyId) {
@@ -2017,7 +2017,7 @@ function buildKeyEditForm(pid, keyId, k) {
   // Header
   h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
   h += '<span style="font-size:14px;font-weight:600">编辑 Key</span>';
-  h += '<span style="font-size:11px;font-family:monospace;color:var(--text-muted)">' + maskedKey + '</span>';
+  h += '<span style="font-size:11px;font-family:monospace;color:var(--text-muted)">' + escapeHtml(maskedKey) + '</span>';
   h += '</div>';
   
   // Read-only info row
@@ -2077,7 +2077,7 @@ function buildKeyEditForm(pid, keyId, k) {
   
   // Buttons
   h += '<div style="display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color)">';
-  h += '<span style="font-size:11px;color:var(--text-muted);flex:1">ID: ' + k.id + '</span>';
+  h += '<span style="font-size:11px;color:var(--text-muted);flex:1">ID: ' + escapeHtml(k.id) + '</span>';
   h += '<button class="btn btn-sm btn-secondary" onclick="cancelEditKey(\'' + pid + '\')" style="font-size:12px;padding:5px 14px">取消</button>';
   h += '<button class="btn btn-sm btn-primary" onclick="saveEditKeyForm(\'' + pid + '\',\'' + keyId + '\')" style="font-size:12px;padding:5px 14px">💾 保存</button>';
   h += '</div>';
@@ -2302,7 +2302,7 @@ async function loadDiscoveredPlatforms() {
     discoveredPlatforms = d.platforms || [];
     renderDiscoveredPlatforms();
   } catch(e) {
-    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + e.message + '</div>';
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + escapeHtml(e.message) + '</div>';
   }
 }
 function renderDiscoveredPlatforms() {
@@ -2326,18 +2326,18 @@ function renderDiscoveredPlatforms() {
     const modelsExtra = (p.models || []).length > 4 ? ` +${p.models.length - 4}个` : '';
     return `<div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:10px;display:grid;gap:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <div style="font-size:14px;font-weight:600">${p.name}</div>
+        <div style="font-size:14px;font-weight:600">${escapeHtml(p.name)}</div>
         <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${st.bg};color:${st.color}">${st.label}</span>
       </div>
-      <div style="font-size:12px;color:var(--text-secondary)">${p.description || ''}</div>
-      <div style="font-size:12px;color:var(--text-muted);font-family:monospace;word-break:break-all">${p.base_url}</div>
+      <div style="font-size:12px;color:var(--text-secondary)">${escapeHtml(p.description || '')}</div>
+      <div style="font-size:12px;color:var(--text-muted);font-family:monospace;word-break:break-all">${escapeHtml(p.base_url)}</div>
       ${models ? `<div style="font-size:11px;color:var(--text-muted)">模型: ${models}${modelsExtra}</div>` : ''}
-      <div style="font-size:11px;color:var(--text-muted)">来源: ${p.source} · 发现时间: ${new Date(p.discovered_at).toLocaleString()}</div>
+      <div style="font-size:11px;color:var(--text-muted)">来源: ${escapeHtml(p.source)} · 发现时间: ${new Date(p.discovered_at).toLocaleString()}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-        ${p.api_key_url ? `<a href="${p.api_key_url}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;font-size:11px">🔗 官网注册</a>` : ''}
-        ${p.status === 'new' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px" onclick="updateDiscoveredStatus('${p.id}','reviewed')">✅ 标记已审核</button>` : ''}
-        ${p.status !== 'dismissed' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px;border-color:rgba(239,68,68,.3);color:#ef4444" onclick="updateDiscoveredStatus('${p.id}','dismissed')">❌ 忽略</button>` : ''}
-        <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="addDiscoveredAsPreset('${p.id}')">+ 添加为预设</button>
+        ${p.api_key_url ? `<a href="${escapeAttr(p.api_key_url)}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;font-size:11px">🔗 官网注册</a>` : ''}
+        ${p.status === 'new' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px" onclick="updateDiscoveredStatus('${escapeJS(p.id)}','reviewed')">✅ 标记已审核</button>` : ''}
+        ${p.status !== 'dismissed' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px;border-color:rgba(239,68,68,.3);color:#ef4444" onclick="updateDiscoveredStatus('${escapeJS(p.id)}','dismissed')">❌ 忽略</button>` : ''}
+        <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="addDiscoveredAsPreset('${escapeJS(p.id)}')">+ 添加为预设</button>
       </div>
     </div>`;
   }).join('');

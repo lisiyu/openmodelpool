@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -75,6 +76,16 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		status["network"] = map[string]any{"mode": "personal"}
 	}
 	writeJSON(w, 200, status)
+}
+
+// handleVersion returns the running binary version and Go runtime version.
+// It is intentionally PUBLIC (no withAuth wrapper) so monitoring/auto-update
+// scripts can probe it the same way as /health.
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]any{
+		"version":    AppVersion,
+		"go_version": runtime.Version(),
+	})
 }
 
 func handleListModels(w http.ResponseWriter, r *http.Request) {

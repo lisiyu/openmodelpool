@@ -18,7 +18,7 @@ async function refreshLogs() {
     for (const l of logs) {
       const statusBadge = l.success ? '<span class="badge badge-green">成功</span>' : '<span class="badge badge-red">失败</span>';
       const time = l.timestamp ? new Date(l.timestamp).toLocaleString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
-      html += `<tr><td>${time}</td><td>${l.model||'-'}</td><td>${l.provider_name||'-'}</td><td>${l.tokens||0}</td><td>${l.latency_ms||0}ms</td><td>${statusBadge}</td></tr>`;
+      html += `<tr><td>${time}</td><td>${escapeHtml(l.model||'-')}</td><td>${escapeHtml(l.provider_name||'-')}</td><td>${escapeHtml(l.tokens||0)}</td><td>${escapeHtml(l.latency_ms||0)}ms</td><td>${statusBadge}</td></tr>`;
     }
     html += '</tbody></table>';
     container.innerHTML = html;

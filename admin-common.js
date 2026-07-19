@@ -1,4 +1,27 @@
 // admin-common.js - Shared utilities for all admin pages
+
+// ============================================================
+// XSS escaping helpers (security baseline)
+// ============================================================
+// escapeHtml escapes a value for safe insertion as HTML text or inside an
+// element. All API-returned / user-controlled strings rendered via innerHTML
+// MUST go through this function.
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+// escapeAttr escapes a value for use inside a double-quoted HTML attribute
+// (e.g. href="..." or src="...").
+function escapeAttr(s) { return escapeHtml(s); }
+// escapeJS escapes a value for safe embedding inside a single-quoted
+// JavaScript string literal (e.g. onclick="someFunc('...')").
+function escapeJS(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[\\'"`\n\r\t]/g, function(c){ return '\\' + c; });
+}
+
 let authToken = localStorage.getItem('admin_token') || '';
 
 async function authFetch(url, opts = {}) {

@@ -63,6 +63,8 @@ func setupRoutes() *http.ServeMux {
 
 	// Health
 	mux.HandleFunc("GET /health", handleHealth)
+	// Version (public, no auth) — used by monitoring & auto-update scripts
+	mux.HandleFunc("GET /api/version", handleVersion)
 
 	// OpenAI-compatible endpoints — Gateway mode
 	mux.HandleFunc("GET /v1/models", withProxyAuth(rateLimitMiddleware(handleGatewayModels)))

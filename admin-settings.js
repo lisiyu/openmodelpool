@@ -123,7 +123,7 @@ async function importConfig(input) {
         if (!el) return;
         el.style.display = 'block';
         if (d.bound) {
-          el.innerHTML = '✅ 已绑定: <strong>' + d.domain + '</strong> | 公网地址: <a href="' + d.public_url + '" target="_blank">' + d.public_url + '</a> | Tunnel ID: ' + d.tunnel_id;
+          el.innerHTML = '✅ 已绑定: <strong>' + escapeHtml(d.domain) + '</strong> | 公网地址: <a href="' + escapeAttr(d.public_url) + '" target="_blank">' + escapeHtml(d.public_url) + '</a> | Tunnel ID: ' + escapeHtml(d.tunnel_id);
           el.style.background = 'rgba(16,185,129,0.1)';
           document.getElementById('unbindDomainBtn').style.display = '';
           document.getElementById('cfDomain').value = d.domain;
@@ -144,14 +144,14 @@ async function importConfig(input) {
         const r = await authFetch('/api/domain/verify', {method:'POST', body:JSON.stringify({api_token:token})});
         const d = await r.json();
         if (d.valid) {
-          el.innerHTML = '✅ Token 有效，Account ID: ' + d.account_id;
+          el.innerHTML = '✅ Token 有效，Account ID: ' + escapeHtml(d.account_id);
           el.style.color = 'var(--success-color, #10b981)';
         } else {
-          el.innerHTML = '❌ Token 无效: ' + extractError(d) || '未知错误';
+          el.innerHTML = '❌ Token 无效: ' + (extractError(d) || '未知错误');
           el.style.color = 'var(--danger-color, #ef4444)';
         }
       } catch(e) {
-        el.innerHTML = '❌ 验证失败: ' + e.message;
+        el.innerHTML = '❌ 验证失败: ' + escapeHtml(e.message);
         el.style.color = 'var(--danger-color, #ef4444)';
       }
     }
@@ -322,15 +322,15 @@ async function quickBindDomain() {
     });
     const d = await r.json();
     if (d.error) {
-      result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + d.error + '</span>';
+      result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + escapeHtml(d.error) + '</span>';
       toast('绑定失败', 'error');
     } else {
-      result.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定成功！</span><br><span style="font-size:11px;color:var(--text-muted)">公网地址: ' + (d.public_url || d.tunnel_url || '') + '</span>';
+      result.innerHTML = '<span style="color:var(--accent-green)">✅ 域名绑定成功！</span><br><span style="font-size:11px;color:var(--text-muted)">公网地址: ' + escapeHtml(d.public_url || d.tunnel_url || '') + '</span>';
       toast('域名绑定成功', 'success');
       setTimeout(() => initApiUrls(), 2000);
     }
   } catch(e) {
-    result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + e.message + '</span>';
+    result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + escapeHtml(e.message) + '</span>';
     toast('绑定失败', 'error');
   }
 }
@@ -347,15 +347,15 @@ async function quickBindIp() {
     });
     const d = await r.json();
     if (d.error) {
-      result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + d.error + '</span>';
+      result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + escapeHtml(d.error) + '</span>';
       toast('绑定失败', 'error');
     } else {
-      result.innerHTML = '<span style="color:var(--accent-green)">✅ IP 绑定成功！公网地址: ' + d.url + '</span>';
+      result.innerHTML = '<span style="color:var(--accent-green)">✅ IP 绑定成功！公网地址: ' + escapeHtml(d.url) + '</span>';
       toast('IP绑定成功', 'success');
       setTimeout(() => initApiUrls(), 1000);
     }
   } catch(e) {
-    result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + e.message + '</span>';
+    result.innerHTML = '<span style="color:var(--accent-red)">❌ ' + escapeHtml(e.message) + '</span>';
     toast('绑定失败', 'error');
   }
 }
