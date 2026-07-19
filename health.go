@@ -139,7 +139,7 @@ func (h *HealthChecker) checkProvider(p Provider) {
 		for _, ke := range keysToTry {
 			keysTested++
 			reqStart := time.Now()
-			req, _ := http.NewRequestWithContext(ctx, "GET", baseURL+"/v1/bots?page_index=0&page_size=1", nil)
+			req, _ := http.NewRequestWithContext(ctx, "GET", baseURL+"/v1/workspaces", nil)
 			req.Header.Set("Authorization", "Bearer "+ke.token)
 			resp, err := client.Do(req)
 			if err != nil {
