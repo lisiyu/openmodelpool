@@ -32,16 +32,16 @@ jobs:
           targets=(
             "linux/amd64"
             "linux/arm64"
-            "linux/arm/armv7"
+            "linux/arm/7"
             "darwin/amd64"
             "darwin/arm64"
             "windows/amd64"
           )
           for t in "${targets[@]}"; do
-            goos=${t%/*}
+            goos=${t%%/*}
             rest=${t#*/}
             if [[ "$rest" == */* ]]; then
-              goarch=${rest%/*}
+              goarch=${rest%%/*}
               goarm=${rest#*/}
             else
               goarch=$rest
@@ -49,8 +49,9 @@ jobs:
             fi
             ext=""
             [ "$goos" = "windows" ] && ext=".exe"
-            name="openmodelpool-${goos}-${goarch}"
-            [ -n "$goarm" ] && name="${name}-${goarm}"
+            display="${goarch}"
+            [ -n "$goarm" ] && display="${goarch}v${goarm}"
+            name="openmodelpool-${goos}-${display}"
             echo "Building ${name}${ext}"
             env GOOS="$goos" GOARCH="$goarch" ${goarm:+GOARM="$goarm"} \
               go build -ldflags="-s -w -X main.AppVersion=${VERSION}" -trimpath -o "dist/${name}${ext}" .
