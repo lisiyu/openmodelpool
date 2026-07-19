@@ -33,10 +33,6 @@ fi
 OMP_PID=$!
 
 # 3) 兜底：若 8000 未被 openmodelpool 占用，起一个静态服务（保证端口可见、可探活）
-# 先等 openmodelpool 尝试绑定 :8000，避免 fallback 抢端口
-echo "$(date) [run-omp] waiting 10s before fallback patrol ..." >> "$LOG"
-sleep 10
-
 mkdir -p "$FALLBACK_DIR"
 echo "<html><body><h1>openmodelpool codespace</h1><p>fallback health page</p></body></html>" > "$FALLBACK_DIR/index.html"
 while true; do
