@@ -780,7 +780,13 @@ function backToStep1() {
   document.getElementById('modalStep2').style.display = 'none';
 }
 
-function closeModal() { location.href = '/admin'; }
+function closeModal() {
+  if (window.parent && window.parent.closeSubPage) {
+    window.parent.closeSubPage();
+  } else {
+    location.href = '/admin';
+  }
+}
 
 async function saveProvider() {
   const id = document.getElementById('pId').value.trim();
@@ -899,7 +905,11 @@ async function saveProvider() {
         renderPresets();
       }
     }
-    location.href = '/admin';
+    if (window.parent && window.parent.closeSubPage) {
+      window.parent.closeSubPage();
+    } else {
+      location.href = '/admin';
+    }
     return;
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -993,7 +1003,7 @@ function selectDiscoveredPreset(id) {
   setAccessControl('private');
   const regLinkEl = document.getElementById('presetRegLink');
   if (regLinkEl && dp.api_key_url) {
-    regLinkEl.innerHTML = `<a href="${escapeAttr(dp.api_key_url)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 前往官网注册获取 API Key →</a>`;
+    regLinkEl.innerHTML = `<a href="${dp.api_key_url}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 前往官网注册获取 API Key →</a>`;
     regLinkEl.style.display = '';
   } else if (regLinkEl) { regLinkEl.style.display = 'none'; }
   if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = '0';
