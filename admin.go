@@ -1153,6 +1153,8 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		// Get today's usage from stats
 		todayReqs := 0
 		todayTokens := 0
+		todayPrivReqs, todayPubReqs, todayGuestReqs := 0, 0, 0
+		todayPrivTokens, todayPubTokens, todayGuestTokens := 0, 0, 0
 		if stats, ok := todayStats[p.ID]; ok {
 			if count, ok := stats["request_count"].(int); ok {
 				todayReqs = count
@@ -1160,6 +1162,12 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			if tokens, ok := stats["total_tokens"].(int); ok {
 				todayTokens = tokens
 			}
+			if v, ok := stats["private_reqs"].(int); ok { todayPrivReqs = v }
+			if v, ok := stats["public_reqs"].(int); ok { todayPubReqs = v }
+			if v, ok := stats["guest_reqs"].(int); ok { todayGuestReqs = v }
+			if v, ok := stats["private_tokens"].(int); ok { todayPrivTokens = v }
+			if v, ok := stats["public_tokens"].(int); ok { todayPubTokens = v }
+			if v, ok := stats["guest_tokens"].(int); ok { todayGuestTokens = v }
 		}
 
 		// Get total usage
@@ -1418,6 +1426,12 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			TokenUsed:        totalUsed,
 			TodayRequests:    todayReqs,
 			TodayTokens:      todayTokens,
+			TodayReqsPrivate:   todayPrivReqs,
+			TodayTokensPrivate: todayPrivTokens,
+			TodayReqsPublic:    todayPubReqs,
+			TodayTokensPublic:  todayPubTokens,
+			TodayReqsGuest:     todayGuestReqs,
+			TodayTokensGuest:   todayGuestTokens,
 			KeyCount:         keyCount,
 			PrivateKeyCount:  privateKeyCount,
 			SharedKeyCount:   sharedKeyCount,

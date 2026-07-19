@@ -553,6 +553,14 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// Determine key type
 	keyType := RequestKeyType(r)
+	// Map keyType to access type for stats
+	accessType := "private"
+	switch keyType {
+	case "public":
+		accessType = "public"
+	case "guest":
+		accessType = "guest"
+	}
 
 	// D-4: Per-Key local quota check for Guest Keys
 	if keyType == "guest" && guestKeyUsage != nil && guestKeyStore != nil {
@@ -633,7 +641,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 		if stream {
 			IncrProviderConn(p.ID)
-			dataSent, err := handleStreamProxy(w, p, actualModel, req.Messages, extra, model, startTime)
+			dataSent, err := handleStreamProxy(w, p, actualModel, req.Messages, extra, model, startTime, accessType)
 			DecrProviderConn(p.ID)
 			if err == nil {
 				if consumerID != "" {
@@ -655,7 +663,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			DecrProviderConn(p.ID)
 			if err != nil {
 				lastErr = err
-				tracker.Record(p.ID, p.Name, model, 0, 0, float64(time.Since(startTime).Milliseconds()), false, err.Error())
+				tracker.RecordWithAccessType(p.ID, p.Name, model, 0, 0, float64(time.Since(startTime).Milliseconds()), false, err.Error(), false, 0, accessType)
 				continue
 			}
 			resp.Model = model
@@ -665,7 +673,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				promptTok = resp.Usage.PromptTokens
 				compTok = resp.Usage.CompletionTokens
 			}
-			tracker.Record(p.ID, p.Name, model, promptTok, compTok, latencyMS, true, "")
+			tracker.RecordWithAccessType(p.ID, p.Name, model, promptTok, compTok, latencyMS, true, "", false, 0, accessType)
 			if consumerID != "" {
 				multiUser.RecordConsumerUsage(consumerID, promptTok+compTok)
 			}
@@ -679,7 +687,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 // handleStreamProxy handles streaming requests. Returns (dataSent bool, err error).
 // If dataSent is true, the response headers have been written and retry is not possible.
-func handleStreamProxy(w http.ResponseWriter, p Provider, model string, messages []ChatMessage, extra map[string]any, origModel string, startTime time.Time) (bool, error) {
+func handleStreamProxy(w http.ResponseWriter, p Provider, model string, messages []ChatMessage, extra map[string]any, origModel string, startTime time.Time, accessType string) (bool, error) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -694,10 +702,10 @@ func handleStreamProxy(w http.ResponseWriter, p Provider, model string, messages
 
 	latencyMS := float64(time.Since(startTime).Milliseconds())
 	if err != nil {
-		tracker.Record(p.ID, p.Name, origModel, 0, 0, latencyMS, false, err.Error())
+		tracker.RecordWithAccessType(p.ID, p.Name, origModel, 0, 0, latencyMS, false, err.Error(), true, 0, accessType)
 		return sw.bytesWritten > 0, err
 	}
-	tracker.Record(p.ID, p.Name, origModel, 0, 0, latencyMS, true, "")
+	tracker.RecordWithAccessType(p.ID, p.Name, origModel, 0, 0, latencyMS, true, "", true, 0, accessType)
 	return sw.bytesWritten > 0, nil
 }
 

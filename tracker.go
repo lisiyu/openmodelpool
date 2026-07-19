@@ -115,11 +115,16 @@ func (t *Tracker) periodicFlush() {
 
 // Record logs one API call.
 func (t *Tracker) Record(providerID, providerName, model string, promptTokens, completionTokens int, latencyMS float64, success bool, errMsg string) {
-	t.RecordWithRetry(providerID, providerName, model, promptTokens, completionTokens, latencyMS, success, errMsg, false, 0)
+	t.RecordWithRetry(providerID, providerName, model, promptTokens, completionTokens, latencyMS, success, errMsg, false, 0, "")
+}
+
+// RecordWithAccessType logs one API call with access type (private/public/guest/relay).
+func (t *Tracker) RecordWithAccessType(providerID, providerName, model string, promptTokens, completionTokens int, latencyMS float64, success bool, errMsg string, isStream bool, retryCount int, accessType string) {
+	t.RecordWithRetry(providerID, providerName, model, promptTokens, completionTokens, latencyMS, success, errMsg, isStream, retryCount, accessType)
 }
 
 // RecordWithRetry logs one API call with retry and stream info.
-func (t *Tracker) RecordWithRetry(providerID, providerName, model string, promptTokens, completionTokens int, latencyMS float64, success bool, errMsg string, isStream bool, retryCount int) {
+func (t *Tracker) RecordWithRetry(providerID, providerName, model string, promptTokens, completionTokens int, latencyMS float64, success bool, errMsg string, isStream bool, retryCount int, accessType string) {
 	cost := 0.0
 	if success {
 		cost = estimateCost(model, promptTokens, completionTokens, providerID)
@@ -140,6 +145,7 @@ func (t *Tracker) RecordWithRetry(providerID, providerName, model string, prompt
 		LatencyMS:        round1(latencyMS),
 		Success:          success,
 		Error:            errMsg,
+		AccessType:        accessType,
 	}
 
 	t.mu.Lock()
@@ -374,6 +380,9 @@ func (t *Tracker) ProviderStats(days int) map[string]map[string]any {
 		maxLat                                       float64
 		lastReq                                      string
 		providerName                                 string
+		// Per access type
+		privReqs, pubReqs, guestReqs                int
+		privTokens, pubTokens, guestTokens           int
 	}
 	stats := make(map[string]*agg)
 
@@ -403,6 +412,18 @@ func (t *Tracker) ProviderStats(days int) map[string]map[string]any {
 			if r.LatencyMS > s.maxLat { s.maxLat = r.LatencyMS }
 		}
 		s.lastReq = r.Timestamp
+		// Per access type
+		switch r.AccessType {
+		case "private":
+			s.privReqs++
+			s.privTokens += r.TotalTokens
+		case "public":
+			s.pubReqs++
+			s.pubTokens += r.TotalTokens
+		case "guest":
+			s.guestReqs++
+			s.guestTokens += r.TotalTokens
+		}
 	}
 
 	out := make(map[string]map[string]any)
@@ -426,6 +447,12 @@ func (t *Tracker) ProviderStats(days int) map[string]map[string]any {
 			"min_latency_ms":  round1(minLat),
 			"max_latency_ms":  round1(s.maxLat),
 			"last_request_at": s.lastReq,
+			"private_reqs":    s.privReqs,
+			"public_reqs":     s.pubReqs,
+			"guest_reqs":      s.guestReqs,
+			"private_tokens":  s.privTokens,
+			"public_tokens":   s.pubTokens,
+			"guest_tokens":    s.guestTokens,
 		}
 	}
 	return out

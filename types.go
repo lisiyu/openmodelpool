@@ -283,6 +283,7 @@ type UsageRecord struct {
 	LatencyMS        float64 `json:"latency_ms"`
 	Success          bool    `json:"success"`
 	Error            string  `json:"error,omitempty"`
+	AccessType        string  `json:"access_type,omitempty"`
 }
 
 // ============================================================

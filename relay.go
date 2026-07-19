@@ -171,7 +171,7 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 			err := doStream(p, actualModel, relayReq.Messages, extra, sw)
 			latencyMS := float64(time.Since(startTime).Milliseconds())
 			if err != nil {
-				tracker.Record(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, false, err.Error())
+				tracker.RecordWithAccessType(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, false, err.Error(), false, 0, "relay")
 				if sw.bytesWritten > 0 {
 					// Data already sent, cannot retry
 					slog.Error("relay stream failed after data sent", "provider", p.Name, "from", nodeID, "error", err)
@@ -180,7 +180,7 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 				lastErr = err
 				continue
 			}
-			tracker.Record(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, true, "")
+			tracker.RecordWithAccessType(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, true, "", false, 0, "relay")
 			slog.Info("relay stream completed", "provider", p.Name, "from", nodeID, "latency_ms", latencyMS)
 			return
 		}
@@ -209,7 +209,7 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		resp, err := doNonStream(p, actualModel, relayReq.Messages, extra)
 		latencyMS := float64(time.Since(startTime).Milliseconds())
 		if err != nil {
-			tracker.Record(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, false, err.Error())
+			tracker.RecordWithAccessType(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, false, err.Error(), false, 0, "relay")
 			lastErr = err
 			continue
 		}
@@ -220,7 +220,7 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 			promptTok = resp.Usage.PromptTokens
 			compTok = resp.Usage.CompletionTokens
 		}
-		tracker.Record(p.ID, p.Name, relayReq.Model, promptTok, compTok, latencyMS, true, "")
+		tracker.RecordWithAccessType(p.ID, p.Name, relayReq.Model, promptTok, compTok, latencyMS, true, "", false, 0, "relay")
 
 		totalTokens := promptTok + compTok
 		slog.Info("relay request completed", "provider", p.Name, "from", nodeID, "tokens", totalTokens, "latency_ms", latencyMS)
@@ -366,7 +366,7 @@ func (f *FederationManager) RelayStreamToRemote(nodeInfo NodeInfo, req ChatReque
 
 	latencyMS := float64(time.Since(startTime).Milliseconds())
 	slog.Info("relay stream from remote completed", "remote_node", nodeInfo.NodeID, "latency_ms", latencyMS)
-	tracker.Record("relay:"+nodeInfo.NodeID, "relay:"+nodeInfo.NodeID, origModel, 0, 0, latencyMS, true, "")
+	tracker.RecordWithAccessType("relay:"+nodeInfo.NodeID, "relay:"+nodeInfo.NodeID, origModel, 0, 0, latencyMS, true, "", false, 0, "relay")
 
 	return dataSent, nil
 }
