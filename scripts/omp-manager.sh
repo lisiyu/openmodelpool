@@ -685,8 +685,8 @@ setup_cloudflare() {
     echo -e "    - Cloudflare 账号（免费注册）"
     echo ""
 
-    # Install cloudflared
-    if ! command -v cloudflared >/dev/null 2>&1; then
+    # Install cloudflared (verify it actually works, not just exists)
+    if ! cloudflared --version > /dev/null 2>&1; then
         write_step 1 5 "安装 cloudflared..."
         ARCH=$(uname -m)
         case "$ARCH" in
@@ -695,9 +695,12 @@ setup_cloudflare() {
             armv7l)        CFARCH="arm" ;;
             *) write_err "不支持的架构: $ARCH"; return 1 ;;
         esac
-        if command -v apt-get >/dev/null 2>&1; then
-            curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null 2>&1
-            echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs 2>/dev/null || echo stable) main" | tee /etc/apt/sources.list.d/cloudflared.list >/dev/null 2>&1
+        # Remove broken npm wrapper if present
+        npm uninstall -g cloudflared 2>/dev/null || true
+        rm -f /usr/bin/cloudflared 2>/dev/null
+        if command -v apt-get > /dev/null 2>&1; then
+            curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg > /dev/null 2>&1
+            echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs 2>/dev/null || echo stable) main" | tee /etc/apt/sources.list.d/cloudflared.list > /dev/null 2>&1
             apt-get update -qq && apt-get install -y cloudflared 2>/dev/null || {
                 curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CFARCH}" -o /usr/local/bin/cloudflared
                 chmod +x /usr/local/bin/cloudflared
@@ -706,17 +709,90 @@ setup_cloudflare() {
             curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CFARCH}" -o /usr/local/bin/cloudflared
             chmod +x /usr/local/bin/cloudflared
         fi
+        if ! cloudflared --version > /dev/null 2>&1; then
+            write_err "cloudflared 安装失败，请手动安装"
+            return 1
+        fi
         write_ok "cloudflared 安装完成"
     else
-        write_step 1 5 "cloudflared 已安装"
+        write_step 1 5 "cloudflared 已安装 ($(cloudflared --version 2>&1 | head -1))"
     fi
 
-    # Login
+    # 自动检测图形界面
+    HAS_GUI=false
+    if [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; then
+        HAS_GUI=true
+    elif command -v xdg-open > /dev/null 2>&1 && [ -n "$(ls /tmp/.X11-unix/ 2>/dev/null)" ]; then
+        HAS_GUI=true
+    fi
+
+    CONFIG_DIR="/root/.cloudflared"
+    [ ! -d "$CONFIG_DIR" ] && CONFIG_DIR="$HOME/.cloudflared"
+    mkdir -p "$CONFIG_DIR" 2>/dev/null
+
+    # ===== Token 模式（无图形界面时自动选择）=====
+    if [ "$HAS_GUI" = false ]; then
+        echo ""
+        write_step 2 5 "认证方式: Token 模式（无图形界面自动选择）"
+        echo -e "  ${CYAN}获取 Token 步骤：${NC}"
+        echo -e "    1. 登录 https://one.dash.cloudflare.com"
+        echo -e "    2. Networks → Tunnels → Create a tunnel"
+        echo -e "    3. 选择 Cloudflared，命名隧道"
+        echo -e "    4. 在安装步骤页面复制 Token（以 eyJ 开头的长字符串）"
+        echo -e "    5. 在 Public Hostname 页面绑定域名 → Service: http://localhost:$PORT"
+        echo ""
+        read -p "  请粘贴 Tunnel Token: " CF_TOKEN < /dev/tty
+        if [ -z "$CF_TOKEN" ]; then
+            write_err "Token 不能为空"
+            return 1
+        fi
+
+        echo ""
+        read -p "  请输入绑定的域名（例如: omp.yourdomain.com）: " SUBDOMAIN < /dev/tty
+
+        # 停止已有服务
+        systemctl stop cloudflared 2>/dev/null || true
+        systemctl disable cloudflared 2>/dev/null || true
+
+        # 创建 systemd 服务
+        cat > /etc/systemd/system/cloudflared.service << EOF
+[Unit]
+Description=Cloudflare Tunnel
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cloudflared tunnel run --token $CF_TOKEN
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        systemctl enable cloudflared
+        systemctl start cloudflared
+        sleep 3
+
+        if systemctl is-active --quiet cloudflared 2>/dev/null; then
+            echo ""
+            write_ok "Cloudflare Tunnel 配置完成！"
+            echo -e "  外网地址: ${CYAN}https://$SUBDOMAIN${NC}"
+            echo -e "  管理面板: ${CYAN}https://$SUBDOMAIN/admin${NC}"
+            echo -e "  已设置开机自启"
+        else
+            write_err "服务启动失败，查看日志: journalctl -u cloudflared -f"
+            return 1
+        fi
+        return 0
+    fi
+
+    # ===== 证书模式（有图形界面时自动选择）=====
     echo ""
-    write_step 2 5 "登录 Cloudflare..."
+    write_step 2 5 "认证方式: 证书模式（检测到图形界面）"
     echo -e "  即将打开浏览器授权，请在浏览器中选择你的域名并授权"
     cloudflared tunnel login || {
-        write_err "登录失败，请稍后手动执行: cloudflared tunnel login"
+        write_err "浏览器登录失败，可手动执行: cloudflared tunnel login"
         return 1
     }
 
@@ -726,7 +802,6 @@ setup_cloudflare() {
     TUNNEL_NAME="openmodelpool"
     TUNNEL_ID=$(cloudflared tunnel create "$TUNNEL_NAME" 2>&1 | grep -oP '[a-f0-9-]{36}' | head -1)
     if [ -z "$TUNNEL_ID" ]; then
-        # 可能已存在，尝试获取
         TUNNEL_ID=$(cloudflared tunnel list 2>/dev/null | grep "$TUNNEL_NAME" | grep -oP '[a-f0-9-]{36}' | head -1)
         if [ -n "$TUNNEL_ID" ]; then
             write_ok "隧道已存在: $TUNNEL_ID"
@@ -741,8 +816,6 @@ setup_cloudflare() {
     # Get domain
     echo ""
     write_step 4 5 "绑定域名..."
-    CONFIG_DIR="/root/.cloudflared"
-    [ ! -d "$CONFIG_DIR" ] && CONFIG_DIR="$HOME/.cloudflared"
     EXISTING_HOST=""
     if [ -f "$CONFIG_DIR/config.yml" ]; then
         EXISTING_HOST=$(grep -m1 "hostname:" "$CONFIG_DIR/config.yml" | sed 's/hostname:[[:space:]]*//' | tr -d '[:space:]')
