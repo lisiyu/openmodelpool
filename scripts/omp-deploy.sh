@@ -42,9 +42,9 @@ fi
 # ---- 检测架构 ----
 ARCH=$(uname -m)
 case "$ARCH" in
-  x86_64|amd64)  PKG="openmodelpool-linux-amd64";  ARCH_LABEL="x86_64 (Intel/AMD)";;
-  aarch64|arm64) PKG="openmodelpool-linux-arm64";  ARCH_LABEL="ARM64 (AArch64)";;
-  armv7l|arm)    PKG="openmodelpool-linux-armv7";  ARCH_LABEL="ARMv7";;
+  x86_64|amd64)  OS_PATTERN="linux"; ARCH_PATTERN="amd64";  ARCH_LABEL="x86_64 (Intel/AMD)";;
+  aarch64|arm64) OS_PATTERN="linux"; ARCH_PATTERN="arm64";  ARCH_LABEL="ARM64 (AArch64)";;
+  armv7l|arm)    OS_PATTERN="linux"; ARCH_PATTERN="armv7";  ARCH_LABEL="ARMv7";;
   *)
     echo -e "${RED}[错误] 不支持的架构: ${ARCH}${NC}"
     exit 1
@@ -78,6 +78,92 @@ if [ -z "$RELEASE_TAG" ]; then
   exit 1
 fi
 echo -e "${GREEN}[2.5/7] 目标版本: ${RELEASE_TAG}${NC}"
+
+
+# 动态下载 OMP Release 资产（兼容裸二进制和压缩包）
+# 成功时设置 OMP_BINARY_PATH
+download_omp_release() {
+    local tag="$1"
+    local tmp_dir="$2"
+    local os_p="${3:-linux}"
+    local arch_p="${4:-}"
+
+    [ -z "$arch_p" ] && arch_p="$ARCH_PATTERN"
+
+    # 查询 Release API
+    local api_resp
+    api_resp=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${tag}" 2>/dev/null)
+
+    local asset_info=""
+    if [ -n "$api_resp" ]; then
+        asset_info=$(echo "$api_resp" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    os_p, arch_p = '${os_p}', '${arch_p}'
+    best_bin, best_arc = None, None
+    for a in data.get('assets', []):
+        n = a['name'].lower()
+        if 'sha256' in n or 'checksum' in n or '.txt' in n:
+            continue
+        if os_p in n and arch_p in n:
+            if n.endswith('.tar.gz') or n.endswith('.zip'):
+                if best_arc is None: best_arc = (a['name'], a['browser_download_url'])
+            else:
+                if best_bin is None: best_bin = (a['name'], a['browser_download_url'])
+    result = best_bin or best_arc
+    if result:
+        print(result[0])
+        print(result[1])
+except: pass
+" 2>/dev/null)
+    fi
+
+    local asset_name="" asset_url=""
+    if [ -n "$asset_info" ]; then
+        asset_name=$(echo "$asset_info" | sed -n '1p')
+        asset_url=$(echo "$asset_info" | sed -n '2p')
+    fi
+
+    # Fallback
+    if [ -z "$asset_url" ]; then
+        asset_name="openmodelpool-${os_p}-${arch_p}"
+        asset_url="https://github.com/${GITHUB_REPO}/releases/download/${tag}/${asset_name}"
+    fi
+
+    echo "  下载: ${asset_name}"
+    curl -fsSL "$asset_url" -o "${tmp_dir}/${asset_name}" || {
+        echo "  [错误] 下载失败"; return 1; }
+
+    # SHA256 校验
+    curl -fsSL "${asset_url}.sha256" -o "${tmp_dir}/${asset_name}.sha256" 2>/dev/null || true
+    if [ -s "${tmp_dir}/${asset_name}.sha256" ] && command -v sha256sum >/dev/null 2>&1; then
+        (cd "$tmp_dir" && sha256sum -c "${asset_name}.sha256") || {
+            echo "  [错误] SHA256 校验失败"; return 1; }
+        echo "  SHA256 校验通过"
+    else
+        echo "  ⚠️ 跳过 SHA256 校验"
+    fi
+
+    # 压缩包则解压
+    case "$asset_name" in
+        *.tar.gz|*.zip)
+            local extract_dir="${tmp_dir}/extracted"
+            mkdir -p "$extract_dir"
+            case "$asset_name" in
+                *.tar.gz) tar xzf "${tmp_dir}/${asset_name}" -C "$extract_dir" 2>/dev/null || { echo "  [错误] tar 解压失败"; return 1; } ;;
+                *.zip)    unzip -o "${tmp_dir}/${asset_name}" -d "$extract_dir" 2>/dev/null || python3 -c "import zipfile; zipfile.ZipFile('${tmp_dir}/${asset_name}').extractall('${extract_dir}')" 2>/dev/null || { echo "  [错误] zip 解压失败"; return 1; } ;;
+            esac
+            OMP_BINARY_PATH=$(find "$extract_dir" -name "openmodelpool*" -type f ! -name "*.sha256" ! -name "*.txt" 2>/dev/null | head -1)
+            [ -z "$OMP_BINARY_PATH" ] && { echo "  [错误] 解压后未找到二进制"; return 1; }
+            echo "  已从压缩包提取二进制"
+            ;;
+        *)
+            OMP_BINARY_PATH="${tmp_dir}/${asset_name}"
+            ;;
+    esac
+    return 0
+}
 
 # ---- 下载 (裸二进制 + SHA256 校验，无 tar 打包) ----
 DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${PKG}"
