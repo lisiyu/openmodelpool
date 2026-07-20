@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync"
 	"bufio"
 	"bytes"
 	"context"
@@ -34,6 +35,10 @@ var sharedHTTPClient = &http.Client{
 	Transport: sharedTransport,
 }
 
+// proxiedTransportCache caches HTTP transports per proxy address for connection reuse.
+// Key: proxy address (e.g. "socks5://127.0.0.1:20801"), Value: *http.Transport
+var proxiedTransportCache sync.Map
+
 const siderChatURL = "https://sider.ai/api/v3/completion/text"
 
 var siderHeadersBase = map[string]string{
@@ -64,8 +69,12 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 		return &http.Client{Transport: sharedTransport, Timeout: timeout}
 	}
 
-	// For socks5:// proxies, use golang.org/x/net/proxy
+	// For socks5:// proxies, use golang.org/x/net/proxy with cached transport
 	if strings.HasPrefix(proxy, "socks5://") || strings.HasPrefix(proxy, "socks5h://") {
+		// Check cache first
+		if cached, ok := proxiedTransportCache.Load(proxy); ok {
+			return &http.Client{Timeout: timeout, Transport: cached.(*http.Transport)}
+		}
 		proxyURL, err := url.Parse(proxy)
 		if err == nil {
 			socksDialer, err := socksproxy.SOCKS5("tcp", proxyURL.Host, nil, socksproxy.Direct)
@@ -74,7 +83,13 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 					DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 						return socksDialer.Dial(network, addr)
 					},
+					MaxIdleConns:        20,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     120 * time.Second,
+					TLSHandshakeTimeout: 15 * time.Second,
+					ForceAttemptHTTP2:   true,
 				}
+				proxiedTransportCache.Store(proxy, transport)
 				return &http.Client{Timeout: timeout, Transport: transport}
 			}
 		}
