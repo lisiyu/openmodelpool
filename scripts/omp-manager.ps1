@@ -17,7 +17,6 @@ $C = "Cyan"; $Y = "Yellow"; $G = "Green"; $R = "Red"; $W = "White"
 
 # 常量 - OMP
 $GITHUB_REPO = "lisiyu/openmodelpool"
-$PKG = "openmodelpool-windows-amd64.exe"
 # 动态获取最新 Release tag（可通过环境变量 OMP_RELEASE_TAG 覆盖）
 $RELEASE_TAG = $env:OMP_RELEASE_TAG
 if (-not $RELEASE_TAG) {
@@ -28,7 +27,6 @@ if (-not $RELEASE_TAG) {
         $RELEASE_TAG = "v4.0.5"  # fallback
     }
 }
-$DOWNLOAD_URL = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/$PKG"
 $exeName = "openmodelpool.exe"
 $exePath = Join-Path $InstallDir $exeName
 $dataDir = Join-Path $InstallDir "data"
@@ -137,6 +135,86 @@ function Stop-All-Tunnels {
 }
 
 # ============================================================
+
+# 动态下载 OMP Release 资产（兼容裸二进制 .exe 和压缩包 .zip）
+# 返回可执行文件路径，失败返回 $null
+function Download-OMPRelease {
+    param([string]$Tag, [string]$TmpDir)
+    
+    $assetName = ""
+    $assetUrl = ""
+    
+    # 查询 Release API
+    try {
+        $apiUrl = "https://api.github.com/repos/$GITHUB_REPO/releases/tags/$Tag"
+        $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing
+        $bestBin = $null
+        $bestArc = $null
+        foreach ($asset in $release.assets) {
+            $n = $asset.name.ToLower()
+            if ($n -match "sha256|checksum|\.txt") { continue }
+            if ($n -match "windows" -and $n -match "amd64") {
+                if ($n -match "\.zip$") {
+                    if (-not $bestArc) { $bestArc = $asset }
+                } else {
+                    if (-not $bestBin) { $bestBin = $asset }
+                }
+            }
+        }
+        $selected = if ($bestBin) { $bestBin } else { $bestArc }
+        if ($selected) {
+            $assetName = $selected.name
+            $assetUrl = $selected.browser_download_url
+        }
+    } catch {}
+    
+    # Fallback
+    if (-not $assetUrl) {
+        $assetName = "openmodelpool-windows-amd64.exe"
+        $assetUrl = "https://github.com/$GITHUB_REPO/releases/download/$Tag/$assetName"
+    }
+    
+    Write-Info "下载: $assetName"
+    $tmpFile = Join-Path $TmpDir $assetName
+    try {
+        Invoke-WebRequest -Uri $assetUrl -OutFile $tmpFile -UseBasicParsing
+    } catch {
+        Write-Err "下载失败: $_"
+        return $null
+    }
+    
+    # SHA256 校验
+    $shaUrl = "$assetUrl.sha256"
+    $tmpSha = Join-Path $TmpDir "$assetName.sha256"
+    try { Invoke-WebRequest -Uri $shaUrl -OutFile $tmpSha -UseBasicParsing } catch {}
+    if (Test-Path $tmpSha) {
+        $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
+        $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
+        if ($expectedHash.ToLower() -ne $actualHash) {
+            Write-Err "SHA256 校验失败"
+            return $null
+        }
+        Write-OK "SHA256 校验通过"
+    }
+    
+    # 压缩包则解压
+    if ($assetName -match "\.zip$") {
+        $extractDir = Join-Path $TmpDir "extracted"
+        if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+        Expand-Archive -Path $tmpFile -DestinationPath $extractDir -Force
+        $exeFile = Get-ChildItem -Path $extractDir -Filter "openmodelpool*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($exeFile) {
+            Write-OK "已从压缩包提取"
+            return $exeFile.FullName
+        } else {
+            Write-Err "解压后未找到 openmodelpool.exe"
+            return $null
+        }
+    }
+    
+    return $tmpFile
+}
+
 # 1. 安装
 # ============================================================
 function Install-OMP {
@@ -154,21 +232,20 @@ function Install-OMP {
     Stop-All-Tunnels
     Write-OK "清理完成"
 
-    Write-Step 1 3 "下载 $PKG ..."
-    $tmpExe = Join-Path $env:TEMP $PKG
-    try {
-        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $tmpExe -UseBasicParsing
-        Write-OK "下载完成"
-    } catch {
-        Write-Err "下载失败: $_"
+    Write-Step 1 3 "下载 Release 资产..."
+    $tmpDir = Join-Path $env:TEMP "omp-install-$(Get-Random)"
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    $downloadedExe = Download-OMPRelease -Tag $RELEASE_TAG -TmpDir $tmpDir
+    if (-not $downloadedExe) {
+        Write-Err "下载失败"
         return
     }
 
     Write-Step 2 3 "安装到 $InstallDir ..."
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
-    Copy-Item $tmpExe -Destination $exePath -Force
-    Remove-Item $tmpExe -Force -ErrorAction SilentlyContinue
+    Copy-Item $downloadedExe -Destination $exePath -Force
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
     Write-OK "文件安装完成"
 
     # 安装 Xray (VMess 代理支持)
@@ -255,19 +332,18 @@ function Upgrade-OMP {
     Write-Info "目标版本: $RELEASE_TAG"
 
     Write-Step 1 3 "下载最新版本..."
-    $tmpExe = Join-Path $env:TEMP $PKG
-    try {
-        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $tmpExe -UseBasicParsing
-        Write-OK "下载完成"
-    } catch {
-        Write-Err "下载失败: $_"
+    $tmpDir = Join-Path $env:TEMP "omp-upgrade-$(Get-Random)"
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    $downloadedExe = Download-OMPRelease -Tag $RELEASE_TAG -TmpDir $tmpDir
+    if (-not $downloadedExe) {
+        Write-Err "下载失败"
         return
     }
 
     Write-Step 2 3 "停止服务并替换二进制文件..."
     Stop-OMP
-    Copy-Item $tmpExe -Destination $exePath -Force
-    Remove-Item $tmpExe -Force -ErrorAction SilentlyContinue
+    Copy-Item $downloadedExe -Destination $exePath -Force
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
     Write-OK "替换完成"
 
     Write-Step 3 3 "重启服务..."
