@@ -89,11 +89,36 @@ setup_cloudflare() {
     # Get domain
     echo ""
     echo -e "${YELLOW}[4/5] 绑定域名...${NC}"
-    echo -e "  请输入要绑定的子域名（例如: omp.yourdomain.com）:"
-    read -p "  > " SUBDOMAIN
     
-    cloudflared tunnel route dns "$TUNNEL_NAME" "$SUBDOMAIN" 2>/dev/null || true
-    echo -e "  ${GREEN}✓ 域名已绑定: $SUBDOMAIN${NC}"
+    # Check existing config for hostname
+    CONFIG_DIR="/root/.cloudflared"
+    [ ! -d "$CONFIG_DIR" ] && CONFIG_DIR="$HOME/.cloudflared"
+    EXISTING_HOST=""
+    if [ -f "$CONFIG_DIR/config.yml" ]; then
+        EXISTING_HOST=$(grep -m1 "hostname:" "$CONFIG_DIR/config.yml" | sed 's/hostname:[[:space:]]*//' | tr -d '[:space:]')
+    fi
+    
+    SKIP_DNS=0
+    if [ -n "$EXISTING_HOST" ]; then
+        echo -e "  ${GREEN}检测到已绑定的域名: $EXISTING_HOST${NC}"
+        read -p "  是否复用此域名？[Y/n] " REUSE
+        if [ "$REUSE" != "n" ] && [ "$REUSE" != "N" ]; then
+            SUBDOMAIN="$EXISTING_HOST"
+            SKIP_DNS=1
+            echo -e "  ${GREEN}✓ 复用域名: $SUBDOMAIN（跳过DNS绑定）${NC}"
+        else
+            echo -e "  请输入要绑定的子域名（例如: omp.yourdomain.com）:"
+            read -p "  > " SUBDOMAIN
+        fi
+    else
+        echo -e "  请输入要绑定的子域名（例如: omp.yourdomain.com）:"
+        read -p "  > " SUBDOMAIN
+    fi
+    
+    if [ "$SKIP_DNS" -eq 0 ]; then
+        cloudflared tunnel route dns "$TUNNEL_NAME" "$SUBDOMAIN" 2>/dev/null || true
+        echo -e "  ${GREEN}✓ 域名已绑定: $SUBDOMAIN${NC}"
+    fi
 
     # Create config
     echo ""
@@ -111,50 +136,18 @@ ingress:
   - service: http_status:404
 EOF
 
-    # Install as service
-    cloudflared service install 2>/dev/null || {
-        echo -e "  ${YELLOW}systemd 服务安装失败，使用后台进程启动${NC}"
-        nohup cloudflared tunnel run "$TUNNEL_NAME" >> "$INSTALL_DIR/data/cloudflared.log" 2>&1 &
-    }
-
-    # Write domain to OMP config.json so admin panel knows it's bound
-    CONFIG_FILE="$INSTALL_DIR/data/config.json"
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c "
-import json, os
-cfg = {}
-path = '$CONFIG_FILE'
-if os.path.exists(path):
-    try:
-        with open(path) as f:
-            content = f.read().strip()
-            # Try to parse, skip HMAC prefix if present
-            try:
-                cfg = json.loads(content)
-            except:
-                # Try finding JSON start
-                idx = content.find('{')
-                if idx >= 0:
-                    cfg = json.loads(content[idx:])
-    except: pass
-cfg['bound_domain'] = '$SUBDOMAIN'
-cfg['tunnel_domain'] = '$SUBDOMAIN'
-cfg['tunnel_mode'] = 'manual'
-cfg['tunnel_url'] = 'https://$SUBDOMAIN'
-os.makedirs(os.path.dirname(path), exist_ok=True)
-with open(path, 'w') as f:
-    json.dump(cfg, f, indent=2)
-print('OK')
-        " 2>/dev/null && echo -e "  ${GREEN}✓ 域名已写入 OMP 配置${NC}"
-    fi
-
-    # Restart OMP to pick up the new domain config
-    if [ -f "$INSTALL_DIR/openmodelpool" ]; then
-        pkill -f "$INSTALL_DIR/openmodelpool" 2>/dev/null || true
-        sleep 1
-        cd "$INSTALL_DIR" && nohup ./openmodelpool >> "$INSTALL_DIR/data/app.log" 2>&1 &
-        sleep 2
-        echo -e "  ${GREEN}✓ OMP 服务已重启${NC}"
+    # Install as service (or restart if already exists)
+    if systemctl is-active --quiet cloudflared 2>/dev/null; then
+        echo -e "  ${GREEN}✓ cloudflared 服务已运行，重启中...${NC}"
+        systemctl restart cloudflared
+    elif systemctl list-unit-files 2>/dev/null | grep -q cloudflared; then
+        echo -e "  ${GREEN}✓ cloudflared 服务已存在，重启中...${NC}"
+        systemctl restart cloudflared
+    else
+        cloudflared service install 2>/dev/null || {
+            echo -e "  ${YELLOW}systemd 服务安装失败，使用后台进程启动${NC}"
+            nohup cloudflared tunnel run "$TUNNEL_NAME" >> "$INSTALL_DIR/data/cloudflared.log" 2>&1 &
+        }
     fi
 
     echo ""
