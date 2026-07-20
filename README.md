@@ -340,7 +340,7 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/o
 irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex
 ```
 
-Both Linux and Windows manager scripts provide an interactive menu: install / upgrade / uninstall / tunnel setup (Cloudflare / FRP) / port change / status check / restart — all in one.
+Both Linux and Windows manager scripts provide an interactive menu: install / upgrade / uninstall / tunnel setup (Cloudflare / FRP / ngrok) / port change / status check / restart — all in one.
 
 ### Build from Source
 
