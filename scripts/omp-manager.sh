@@ -1,18 +1,30 @@
 #!/bin/bash
 # ============================================================
 #  OpenModelPool 全功能管理脚本 (Linux / 群晖 NAS)
-#  集成：安装 / 升级 / 卸载 / 穿透配置(CF/FRP) / 修改端口 / 查看状态 / 重启
+#  集成：安装 / 升级 / 卸载 / 穿透配置(CF/FRP/ngrok) / 修改端口 / 查看状态 / 重启
+#  附加：--auto-update 无人值守自动更新（用于 cron 定时任务）
 #
 #  用法:
-#    curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh | sudo bash
-#    或:
-#    sudo bash omp-manager.sh [安装目录] [端口]
+#    交互菜单:  curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
+#    自动更新:  curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash -s -- --auto-update
 # ============================================================
 
 GITHUB_REPO="lisiyu/openmodelpool"
 XRAY_VERSION="v26.3.27"
-INSTALL_DIR="${1:-/opt/openmodelpool}"
-PORT="${2:-8000}"
+INSTALL_DIR="/opt/openmodelpool"
+PORT="8000"
+AUTO_UPDATE=false
+
+# 解析参数
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --auto-update) AUTO_UPDATE=true ;;
+        --install-dir) INSTALL_DIR="$2"; shift ;;
+        --port)        PORT="$2"; shift ;;
+        *) INSTALL_DIR="${1:-$INSTALL_DIR}"; PORT="${2:-$PORT}" ;;
+    esac
+    shift
+done
 
 # 群晖默认路径
 if [ -d /volume1 ]; then
@@ -1328,6 +1340,82 @@ restart_all() {
     write_ok "重启完成"
 }
 
+
+# ============================================================
+# 无人值守自动更新（用于 cron）
+# ============================================================
+auto_update() {
+    LOG_FILE="/tmp/omp-auto-update.log"
+
+    normalize_version() {
+        local v="$1"
+        v="${v#v}"
+        v="${v%-release}"
+        v="${v%%-*}"
+        v="${v%%+*}"
+        echo "$v"
+    }
+
+    # 获取当前版本
+    CURRENT_VERSION=$(curl -s http://localhost:${PORT}/api/version 2>/dev/null | \
+        python3 -c 'import sys,json;print(json.load(sys.stdin).get("version",""))' 2>/dev/null)
+
+    # 获取最新 Release tag
+    LATEST_TAG=$(get_release_tag 2>/dev/null) || {
+        echo "[$(date)] 无法获取最新 Release tag" >> "$LOG_FILE"
+        exit 1
+    }
+
+    echo "[$(date)] 当前版本: $CURRENT_VERSION | 最新: $LATEST_TAG" >> "$LOG_FILE"
+
+    CUR_N=$(normalize_version "$CURRENT_VERSION")
+    LAT_N=$(normalize_version "$LATEST_TAG")
+
+    if [ "$CUR_N" = "$LAT_N" ]; then
+        echo "[$(date)] 已是最新版本，跳过" >> "$LOG_FILE"
+        exit 0
+    fi
+
+    echo "[$(date)] 发现新版本，开始更新..." >> "$LOG_FILE"
+
+    detect_arch || exit 1
+
+    # 备份
+    cp "$INSTALL_DIR/openmodelpool" "$INSTALL_DIR/openmodelpool.bak" 2>/dev/null || true
+
+    # 停止服务
+    stop_omp 2>/dev/null || true
+    sleep 2
+
+    # 下载
+    TMP_DIR=$(mktemp -d)
+    if ! download_omp_release "$LATEST_TAG" "$TMP_DIR" >> "$LOG_FILE" 2>&1; then
+        echo "[$(date)] 下载失败" >> "$LOG_FILE"
+        rm -rf "$TMP_DIR"
+        exit 1
+    fi
+
+    # 替换
+    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/openmodelpool"
+    chmod +x "$INSTALL_DIR/openmodelpool"
+
+    # 启动
+    start_omp 2>/dev/null || true
+    sleep 3
+
+    if pgrep -f "$INSTALL_DIR/openmodelpool" >/dev/null 2>&1; then
+        echo "[$(date)] ✅ 自动更新成功: $LATEST_TAG" >> "$LOG_FILE"
+    else
+        echo "[$(date)] ❌ 启动失败，回滚..." >> "$LOG_FILE"
+        cp "$INSTALL_DIR/openmodelpool.bak" "$INSTALL_DIR/openmodelpool" 2>/dev/null || true
+        start_omp 2>/dev/null || true
+        echo "[$(date)] 已回滚" >> "$LOG_FILE"
+    fi
+
+    rm -rf "$TMP_DIR"
+    echo "[$(date)] 更新流程结束" >> "$LOG_FILE"
+}
+
 # ============================================================
 # 主菜单
 # ============================================================
@@ -1354,6 +1442,12 @@ while true; do
     echo -e "    0. 退出"
     echo -e "${CYAN}  ══════════════════════════════════════════${NC}"
     echo -e "  安装目录: $INSTALL_DIR  端口: $PORT"
+    # 无人值守模式
+    if [ "$AUTO_UPDATE" = true ]; then
+        auto_update
+        exit 0
+    fi
+
     read -p "  请选择 [0-8]: " choice
 
     case "$choice" in
