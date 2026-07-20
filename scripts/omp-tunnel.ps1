@@ -146,12 +146,14 @@ function Setup-Cloudflare {
         }
     }
     
+    $skipDnsBinding = $false
     if ($existingHostname) {
         Write-Host "  检测到已绑定的域名: $existingHostname" -ForegroundColor $G
         $reuseChoice = Read-Host "  是否复用此域名？[Y/n]"
         if ($reuseChoice -ne "n" -and $reuseChoice -ne "N") {
             $subdomain = $existingHostname
-            Write-Host "  复用域名: $subdomain" -ForegroundColor $G
+            $skipDnsBinding = $true
+            Write-Host "  复用域名: $subdomain（跳过DNS绑定）" -ForegroundColor $G
         } else {
             Write-Host "  请输入要绑定的子域名（例如: omp.yourdomain.com）:"
             $subdomain = Read-Host "  > "
@@ -161,18 +163,24 @@ function Setup-Cloudflare {
         $subdomain = Read-Host "  > "
     }
     
-    # Try to bind domain — "already configured" / "already exists" / "Added CNAME" are all success
-    $prevEAP = $ErrorActionPreference
-    $ErrorActionPreference = "SilentlyContinue"
-    $routeOutput = & $cfExe tunnel route dns openmodelpool $subdomain 2>&1 | Out-String
-    $ErrorActionPreference = $prevEAP
-    
-    if ($routeOutput -match "Added CNAME" -or $routeOutput -match "already exists" -or $routeOutput -match "already configured") {
-        Write-Host "  域名已绑定: $subdomain" -ForegroundColor $G
-    } else {
-        Write-Host "  域名绑定失败: $routeOutput" -ForegroundColor $R
-        Write-Host "  提示: 如果使用根域名已有DNS记录，请换用子域名（如 omp.yourdomain.com）" -ForegroundColor $Y
-        return
+    # Only run DNS binding for new domains (reuse skips — already bound)
+    if (-not $skipDnsBinding) {
+        # Use temp file to capture stderr (avoids PowerShell NativeCommandError with 2>&1)
+        $errTmp = Join-Path $env:TEMP "cf-route-err.txt"
+        $outTmp = Join-Path $env:TEMP "cf-route-out.txt"
+        $proc = Start-Process -FilePath $cfExe -ArgumentList "tunnel", "route", "dns", "openmodelpool", $subdomain `
+            -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $outTmp -RedirectStandardError $errTmp
+        $routeOutput = (Get-Content $outTmp -Raw -ErrorAction SilentlyContinue) + (Get-Content $errTmp -Raw -ErrorAction SilentlyContinue)
+        Remove-Item $outTmp, $errTmp -Force -ErrorAction SilentlyContinue
+        
+        if ($routeOutput -match "Added CNAME" -or $routeOutput -match "already exists" -or $routeOutput -match "already configured") {
+            Write-Host "  域名已绑定: $subdomain" -ForegroundColor $G
+        } else {
+            Write-Host "  域名绑定失败: $routeOutput" -ForegroundColor $R
+            Write-Host "  提示: 如果使用根域名已有DNS记录，请换用子域名（如 omp.yourdomain.com）" -ForegroundColor $Y
+            return
+        }
     }
 
     # 5. Config and service
