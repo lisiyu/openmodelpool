@@ -115,9 +115,11 @@ stop_all_tunnels() {
     if command -v systemctl >/dev/null 2>&1; then
         systemctl stop cloudflared 2>/dev/null || true
         systemctl stop frpc 2>/dev/null || true
+        systemctl stop ngrok 2>/dev/null || true
     fi
     pkill -f "cloudflared tunnel" 2>/dev/null || true
     pkill -f "frpc " 2>/dev/null || true
+    pkill -f "ngrok http" 2>/dev/null || true
 }
 
 # ============================================================
@@ -500,6 +502,9 @@ uninstall_omp() {
     rm -rf /root/.cloudflared 2>/dev/null || true
     rm -rf "$HOME/.cloudflared" 2>/dev/null || true
     rm -rf /etc/frp 2>/dev/null || true
+    rm -f /root/.config/ngrok/ngrok.yml 2>/dev/null || true
+    rm -f "$HOME/.config/ngrok/ngrok.yml" 2>/dev/null || true
+    rm -f /usr/local/bin/ngrok 2>/dev/null || true
     write_ok "已清理"
 
     echo ""
@@ -516,13 +521,15 @@ setup_tunnel_menu() {
     echo -e "  请选择穿透方案："
     echo -e "    ${GREEN}1${NC}) Cloudflare Tunnel — 免费，固定域名+HTTPS"
     echo -e "    ${GREEN}2${NC}) FRP              — 免费，固定IP+端口"
-    echo -e "    ${GREEN}3${NC}) 跳过"
-    read -p "  请选择 [1/2/3]: " tunnel_choice
+    echo -e "    ${GREEN}3${NC}) ngrok            — 注册即用，自动HTTPS"
+    echo -e "    ${GREEN}4${NC}) 跳过"
+    read -p "  请选择 [1/2/3/4]: " tunnel_choice
 
     case "$tunnel_choice" in
         1) setup_cloudflare ;;
         2) setup_frp ;;
-        3) write_info "跳过" ;;
+        3) setup_ngrok ;;
+        4) write_info "跳过" ;;
         *) write_err "无效选项" ;;
     esac
 }
@@ -769,6 +776,180 @@ EOF
 }
 
 # ============================================================
+
+# ============================================================
+# 4.3 ngrok
+# ============================================================
+setup_ngrok() {
+    echo ""
+    write_info "[ngrok 内网穿透]"
+    echo -e "  ngrok 通过云端服务中转，自动分配 HTTPS 域名。"
+    echo -e "  本机 → ngrok 云端 → 外网用户通过 xxx.ngrok.app 访问"
+    echo ""
+    echo -e "  ${GREEN}优点${NC}: 注册即用 | 自动 HTTPS | 无需服务器/域名 | 30秒搞定"
+    echo -e "  ${YELLOW}缺点${NC}: 免费版域名随机且每次重启变化 | 有流量和连接数限制"
+    echo ""
+    echo -e "  ${CYAN}── 获取 Authtoken ──${NC}"
+    echo -e "  1. 注册 ngrok 账号 (免费): https://dashboard.ngrok.com/signup"
+    echo -e "  2. 完成邮箱验证 (必须)"
+    echo -e "  3. 获取 Authtoken: https://dashboard.ngrok.com/get-started/your-authtoken"
+    echo ""
+    echo -e "  ${CYAN}── 域名说明 ──${NC}"
+    echo -e "  免费版: 留空即可，ngrok 每次启动分配随机域名 (如 a1b2c3.ngrok.app)"
+    echo -e "  付费版: 可绑定固定域名 (在 ngrok 控制台 → Domains → Claim)"
+    echo ""
+
+    # 检测已有配置
+    NGROK_CONFIG="$HOME/.config/ngrok/ngrok.yml"
+    [ -f /root/.config/ngrok/ngrok.yml ] && NGROK_CONFIG="/root/.config/ngrok/ngrok.yml"
+
+    NGROK_DOMAIN=""
+    SKIP_NGROK_CONFIG=false
+
+    if [ -f "$NGROK_CONFIG" ]; then
+        EXISTING_DOMAIN=$(grep -m1 "domain:" "$NGROK_CONFIG" 2>/dev/null | sed 's/domain:[[:space:]]*//' | tr -d '[:space:]')
+        write_info "检测到已有 ngrok 配置: $NGROK_CONFIG"
+        [ -n "$EXISTING_DOMAIN" ] && echo -e "  固定域名: $EXISTING_DOMAIN"
+        read -p "  是否复用此配置？[Y/n] " REUSE
+        if [ "$REUSE" != "n" ] && [ "$REUSE" != "N" ]; then
+            NGROK_DOMAIN="$EXISTING_DOMAIN"
+            SKIP_NGROK_CONFIG=true
+            write_ok "复用 ngrok 配置"
+        fi
+    fi
+
+    if [ "$SKIP_NGROK_CONFIG" = false ]; then
+        read -p "  请输入 ngrok Authtoken: " NGROK_TOKEN
+        [ -z "$NGROK_TOKEN" ] && { write_err "Authtoken 不能为空"; return 1; }
+
+        echo ""
+        read -p "  固定域名 (免费版留空): " NGROK_DOMAIN
+    fi
+
+    # 安装 ngrok
+    write_step 1 4 "安装 ngrok..."
+    NGROK_BIN="/usr/local/bin/ngrok"
+    if [ ! -f "$NGROK_BIN" ]; then
+        ARCH=$(uname -m)
+        case "$ARCH" in
+            x86_64|amd64)  NGROK_ARCH="amd64" ;;
+            aarch64|arm64) NGROK_ARCH="arm64" ;;
+            armv7l)        NGROK_ARCH="arm" ;;
+            *) write_err "不支持的架构: $ARCH"; return 1 ;;
+        esac
+        TMP_NGROK=$(mktemp -d)
+        NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-${NGROK_ARCH}.zip"
+        if curl -fsSL "$NGROK_URL" -o "$TMP_NGROK/ngrok.zip" 2>/dev/null; then
+            if unzip -o "$TMP_NGROK/ngrok.zip" -d "$TMP_NGROK" 2>/dev/null || \
+               python3 -c "import zipfile; zipfile.ZipFile('$TMP_NGROK/ngrok.zip').extractall('$TMP_NGROK')" 2>/dev/null; then
+                cp "$TMP_NGROK/ngrok" "$NGROK_BIN" && chmod +x "$NGROK_BIN"
+                write_ok "ngrok 安装完成"
+            else
+                write_err "ngrok 解压失败"
+                rm -rf "$TMP_NGROK"
+                return 1
+            fi
+        else
+            write_err "ngrok 下载失败"
+            rm -rf "$TMP_NGROK"
+            return 1
+        fi
+        rm -rf "$TMP_NGROK"
+    else
+        write_ok "ngrok 已安装"
+    fi
+
+    if [ "$SKIP_NGROK_CONFIG" = false ]; then
+        write_step 2 4 "配置 Authtoken..."
+        "$NGROK_BIN" config add-authtoken "$NGROK_TOKEN" 2>/dev/null
+        write_ok "Authtoken 已配置"
+
+        # 如果有固定域名，写入配置
+        if [ -n "$NGROK_DOMAIN" ]; then
+            NGROK_CONFIG_DIR=$(dirname "$NGROK_CONFIG")
+            mkdir -p "$NGROK_CONFIG_DIR"
+            # 追加 domain 配置（如果不存在）
+            if ! grep -q "domain:" "$NGROK_CONFIG" 2>/dev/null; then
+                echo "domain: $NGROK_DOMAIN" >> "$NGROK_CONFIG"
+            fi
+        fi
+    else
+        write_step 2 4 "复用已有配置，跳过..."
+    fi
+
+    write_step 3 4 "测试连接..."
+    # 停掉已有 ngrok
+    pkill -f "ngrok http" 2>/dev/null || true
+    sleep 1
+
+    NGROK_ARGS="http $PORT"
+    [ -n "$NGROK_DOMAIN" ] && NGROK_ARGS="http --domain=$NGROK_DOMAIN $PORT"
+    nohup "$NGROK_BIN" $NGROK_ARGS >/dev/null 2>&1 &
+    sleep 5
+
+    # 获取 ngrok 分配的公网 URL
+    NGROK_URL=""
+    if command -v curl >/dev/null 2>&1; then
+        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | \
+            python3 -c 'import sys,json;data=json.load(sys.stdin);print(data["tunnels"][0]["public_url"] if data.get("tunnels") else "")' 2>/dev/null)
+    fi
+
+    pkill -f "ngrok http" 2>/dev/null || true
+    sleep 1
+    write_ok "测试完成"
+
+    write_step 4 4 "设置开机自启..."
+    pkill -f "ngrok http" 2>/dev/null || true
+
+    if command -v systemctl >/dev/null 2>&1; then
+        NGROK_ARGS_ESCAPED="http $PORT"
+        [ -n "$NGROK_DOMAIN" ] && NGROK_ARGS_ESCAPED="http --domain=$NGROK_DOMAIN $PORT"
+        cat > /etc/systemd/system/ngrok.service << EOF
+[Unit]
+Description=ngrok tunnel
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$NGROK_BIN $NGROK_ARGS_ESCAPED
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        systemctl enable ngrok
+        systemctl start ngrok
+        sleep 3
+        if systemctl is-active --quiet ngrok 2>/dev/null; then
+            write_ok "ngrok 已启动 (systemd)"
+        else
+            write_err "ngrok 启动失败，请检查 Authtoken"
+        fi
+    else
+        nohup "$NGROK_BIN" $NGROK_ARGS >> "$INSTALL_DIR/data/ngrok.log" 2>&1 &
+        write_ok "ngrok 已后台启动"
+    fi
+
+    # 再次获取 URL
+    if [ -z "$NGROK_URL" ]; then
+        sleep 2
+        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | \
+            python3 -c 'import sys,json;data=json.load(sys.stdin);print(data["tunnels"][0]["public_url"] if data.get("tunnels") else "")' 2>/dev/null)
+    fi
+
+    echo ""
+    write_ok "ngrok 穿透配置完成！"
+    if [ -n "$NGROK_URL" ]; then
+        echo -e "  外网地址: ${CYAN}$NGROK_URL${NC}"
+        echo -e "  管理面板: ${CYAN}${NGROK_URL}/admin${NC}"
+    else
+        echo -e "  ${YELLOW}外网地址: 请访问 http://localhost:4040 查看${NC}"
+    fi
+    [ -n "$NGROK_DOMAIN" ] && echo -e "  固定域名: ${CYAN}$NGROK_DOMAIN${NC}"
+}
+
 # 5. 重置穿透
 # ============================================================
 reset_tunnel_menu() {
@@ -776,17 +957,33 @@ reset_tunnel_menu() {
     echo -e "  请选择要重置的方案："
     echo -e "    ${GREEN}1${NC}) 重置 Cloudflare Tunnel"
     echo -e "    ${GREEN}2${NC}) 重置 FRP"
-    echo -e "    ${GREEN}3${NC}) 重置全部"
-    echo -e "    ${GREEN}4${NC}) 返回"
-    read -p "  请选择 [1/2/3/4]: " choice
+    echo -e "    ${GREEN}3${NC}) 重置 ngrok"
+    echo -e "    ${GREEN}4${NC}) 重置全部"
+    echo -e "    ${GREEN}5${NC}) 返回"
+    read -p "  请选择 [1/2/3/4/5]: " choice
 
     case "$choice" in
         1) reset_cloudflare ;;
         2) reset_frp ;;
-        3) reset_cloudflare; reset_frp ;;
-        4) return ;;
+        3) reset_ngrok ;;
+        4) reset_cloudflare; reset_frp; reset_ngrok ;;
+        5) return ;;
         *) write_err "无效选项" ;;
     esac
+}
+
+reset_ngrok() {
+    write_title "重置 ngrok"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl stop ngrok 2>/dev/null || true
+        systemctl disable ngrok 2>/dev/null || true
+        rm -f /etc/systemd/system/ngrok.service 2>/dev/null || true
+        systemctl daemon-reload 2>/dev/null || true
+    fi
+    pkill -f "ngrok http" 2>/dev/null || true
+    rm -f /root/.config/ngrok/ngrok.yml 2>/dev/null || true
+    rm -f "$HOME/.config/ngrok/ngrok.yml" 2>/dev/null || true
+    write_ok "ngrok 已重置"
 }
 
 reset_cloudflare() {
@@ -856,6 +1053,16 @@ EOF
             systemctl restart frpc
         fi
         write_ok "FRP 配置已更新"
+    fi
+
+    # 更新 ngrok systemd service
+    if command -v systemctl >/dev/null 2>&1 && [ -f /etc/systemd/system/ngrok.service ]; then
+        sed -i "s|ExecStart=/usr/local/bin/ngrok http.*|ExecStart=/usr/local/bin/ngrok http $NEW_PORT|" /etc/systemd/system/ngrok.service
+        systemctl daemon-reload
+        if systemctl is-active --quiet ngrok 2>/dev/null; then
+            systemctl restart ngrok
+        fi
+        write_ok "ngrok 配置已更新"
     fi
 
     # 更新 systemd
@@ -943,6 +1150,27 @@ show_status() {
         echo -e "  服务器: ${CYAN}$FRP_SERVER:$REMOTE${NC}"
     fi
 
+    # ngrok
+    echo ""
+    echo -e "  ${CYAN}── ngrok ──${NC}"
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet ngrok 2>/dev/null; then
+        write_ok "ngrok 运行中"
+    elif pgrep -f "ngrok http" >/dev/null 2>&1; then
+        write_ok "ngrok 运行中 (后台进程)"
+    else
+        echo -e "  ${YELLOW}○ ngrok 未运行${NC}"
+    fi
+    NGROK_CONFIG="/root/.config/ngrok/ngrok.yml"
+    [ ! -f "$NGROK_CONFIG" ] && NGROK_CONFIG="$HOME/.config/ngrok/ngrok.yml"
+    if [ -f "$NGROK_CONFIG" ]; then
+        NGROK_DOM=$(grep -m1 "domain:" "$NGROK_CONFIG" 2>/dev/null | sed 's/domain:[[:space:]]*//' | tr -d '[:space:]')
+        [ -n "$NGROK_DOM" ] && echo -e "  固定域名: ${CYAN}$NGROK_DOM${NC}"
+    fi
+    # 尝试获取当前 URL
+    NGROK_CURRENT_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | \
+        python3 -c 'import sys,json;data=json.load(sys.stdin);print(data["tunnels"][0]["public_url"] if data.get("tunnels") else "")' 2>/dev/null)
+    [ -n "$NGROK_CURRENT_URL" ] && echo -e "  当前地址: ${CYAN}$NGROK_CURRENT_URL${NC}"
+
     # 日志
     echo ""
     echo -e "  ${CYAN}── 日志 ──${NC}"
@@ -961,7 +1189,7 @@ show_status() {
 restart_all() {
     write_title "重启所有服务"
 
-    write_step 1 4 "重启 OMP..."
+    write_step 1 5 "重启 OMP..."
     stop_omp
     sleep 2
     start_omp
@@ -972,7 +1200,7 @@ restart_all() {
         write_err "OMP 启动失败"
     fi
 
-    write_step 2 4 "重启 Cloudflare..."
+    write_step 2 5 "重启 Cloudflare..."
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet cloudflared 2>/dev/null; then
         systemctl restart cloudflared
         sleep 2
@@ -987,7 +1215,7 @@ restart_all() {
         echo -e "  ${YELLOW}○ Cloudflare 未配置，跳过${NC}"
     fi
 
-    write_step 3 4 "重启 FRP..."
+    write_step 3 5 "重启 FRP..."
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet frpc 2>/dev/null; then
         systemctl restart frpc
         sleep 2
@@ -1001,7 +1229,27 @@ restart_all() {
         echo -e "  ${YELLOW}○ FRP 未配置，跳过${NC}"
     fi
 
-    write_step 4 4 "完成"
+    write_step 4 5 "重启 ngrok..."
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet ngrok 2>/dev/null; then
+        systemctl restart ngrok
+        sleep 3
+        write_ok "ngrok 已重启"
+    elif pgrep -f "ngrok http" >/dev/null 2>&1; then
+        pkill -f "ngrok http"
+        sleep 1
+        NGROK_BIN="/usr/local/bin/ngrok"
+        NGROK_CONFIG="/root/.config/ngrok/ngrok.yml"
+        [ ! -f "$NGROK_CONFIG" ] && NGROK_CONFIG="$HOME/.config/ngrok/ngrok.yml"
+        NGROK_DOM=$(grep -m1 "domain:" "$NGROK_CONFIG" 2>/dev/null | sed 's/domain:[[:space:]]*//' | tr -d '[:space:]')
+        NGROK_ARGS="http $PORT"
+        [ -n "$NGROK_DOM" ] && NGROK_ARGS="http --domain=$NGROK_DOM $PORT"
+        nohup "$NGROK_BIN" $NGROK_ARGS >> "$INSTALL_DIR/data/ngrok.log" 2>&1 &
+        write_ok "ngrok 已重启 (后台进程)"
+    else
+        echo -e "  ${YELLOW}○ ngrok 未配置，跳过${NC}"
+    fi
+
+    write_step 5 5 "完成"
     echo ""
     write_ok "重启完成"
 }
@@ -1024,7 +1272,7 @@ while true; do
     echo -e "    1. 安装          全新安装 OMP"
     echo -e "    2. 升级          增量更新 (保留配置)"
     echo -e "    3. 卸载          彻底删除所有组件"
-    echo -e "    4. 配置穿透      Cloudflare / FRP"
+    echo -e "    4. 配置穿透      Cloudflare / FRP / ngrok"
     echo -e "    5. 重置穿透      选择重置任一/全部隧道"
     echo -e "    6. 修改端口      更换 OMP 服务端口"
     echo -e "    7. 查看状态      检查所有组件运行情况"
