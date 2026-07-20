@@ -70,14 +70,121 @@ get_release_tag() {
 detect_arch() {
     ARCH=$(uname -m)
     case "$ARCH" in
-        x86_64|amd64)  PKG="openmodelpool-linux-amd64";  XRAY_PKG="Xray-linux-64.zip" ;;
-        aarch64|arm64) PKG="openmodelpool-linux-arm64";  XRAY_PKG="Xray-linux-arm64-v8a.zip" ;;
-        armv7l|arm)    PKG="openmodelpool-linux-armv7";  XRAY_PKG="Xray-linux-arm32-v7a.zip" ;;
+        x86_64|amd64)  OS_PATTERN="linux"; ARCH_PATTERN="amd64" ;;
+        aarch64|arm64) OS_PATTERN="linux"; ARCH_PATTERN="arm64" ;;
+        armv7l|arm)    OS_PATTERN="linux"; ARCH_PATTERN="armv7" ;;
         *)
             write_err "不支持的架构: $ARCH"
             return 1
             ;;
     esac
+    # Xray 包名
+    case "$ARCH" in
+        x86_64|amd64)  XRAY_PKG="Xray-linux-64.zip" ;;
+        aarch64|arm64) XRAY_PKG="Xray-linux-arm64-v8a.zip" ;;
+        armv7l|arm)    XRAY_PKG="Xray-linux-arm32-v7a.zip" ;;
+    esac
+}
+
+
+
+# 动态下载 OMP Release 资产（兼容裸二进制和压缩包）
+# 成功时设置 OMP_BINARY_PATH 为可执行文件路径
+download_omp_release() {
+    local tag="$1"
+    local tmp_dir="$2"
+    local sha_label="${3:-校验 SHA256}"
+
+    # 查询 Release API 获取资产列表
+    local api_resp
+    api_resp=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${tag}" 2>/dev/null)
+
+    local asset_info=""
+    if [ -n "$api_resp" ]; then
+        asset_info=$(echo "$api_resp" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    os_p, arch_p = '${OS_PATTERN}', '${ARCH_PATTERN}'
+    best_bin, best_arc = None, None
+    for a in data.get('assets', []):
+        n = a['name'].lower()
+        if 'sha256' in n or 'checksum' in n or '.txt' in n:
+            continue
+        if os_p in n and arch_p in n:
+            if n.endswith('.tar.gz') or n.endswith('.zip'):
+                if best_arc is None: best_arc = (a['name'], a['browser_download_url'])
+            else:
+                if best_bin is None: best_bin = (a['name'], a['browser_download_url'])
+    result = best_bin or best_arc
+    if result:
+        print(result[0])
+        print(result[1])
+except: pass
+" 2>/dev/null)
+    fi
+
+    # 解析 API 结果
+    local asset_name="" asset_url=""
+    if [ -n "$asset_info" ]; then
+        asset_name=$(echo "$asset_info" | sed -n '1p')
+        asset_url=$(echo "$asset_info" | sed -n '2p')
+    fi
+
+    # Fallback: API 失败或无匹配资产，尝试硬编码名称
+    if [ -z "$asset_url" ]; then
+        asset_name="openmodelpool-${OS_PATTERN}-${ARCH_PATTERN}"
+        asset_url="https://github.com/${GITHUB_REPO}/releases/download/${tag}/${asset_name}"
+        write_info "API 未匹配到资产，使用默认: ${asset_name}"
+    else
+        write_info "匹配到资产: ${asset_name}"
+    fi
+
+    # 下载
+    curl -fsSL "$asset_url" -o "${tmp_dir}/${asset_name}" || {
+        write_err "下载失败: $asset_url"
+        return 1
+    }
+
+    # SHA256 校验
+    curl -fsSL "${asset_url}.sha256" -o "${tmp_dir}/${asset_name}.sha256" 2>/dev/null || true
+    if [ -s "${tmp_dir}/${asset_name}.sha256" ] && command -v sha256sum >/dev/null 2>&1; then
+        (cd "$tmp_dir" && sha256sum -c "${asset_name}.sha256") || {
+            write_err "SHA256 校验失败"
+            return 1
+        }
+        write_ok "SHA256 校验通过"
+    else
+        echo -e "  ${YELLOW}⚠️ 跳过 SHA256 校验（无校验文件）${NC}"
+    fi
+
+    # 如果是压缩包，解压提取二进制
+    case "$asset_name" in
+        *.tar.gz|*.zip)
+            local extract_dir="${tmp_dir}/extracted"
+            mkdir -p "$extract_dir"
+            write_info "解压: ${asset_name}"
+            case "$asset_name" in
+                *.tar.gz)
+                    tar xzf "${tmp_dir}/${asset_name}" -C "$extract_dir" 2>/dev/null || {
+                        write_err "tar 解压失败"; return 1; } ;;
+                *.zip)
+                    unzip -o "${tmp_dir}/${asset_name}" -d "$extract_dir" 2>/dev/null ||                     python3 -c "import zipfile; zipfile.ZipFile('${tmp_dir}/${asset_name}').extractall('${extract_dir}')" 2>/dev/null || {
+                        write_err "unzip 解压失败"; return 1; } ;;
+            esac
+            # 查找可执行文件
+            OMP_BINARY_PATH=$(find "$extract_dir" -name "openmodelpool*" -type f ! -name "*.sha256" ! -name "*.txt" 2>/dev/null | head -1)
+            if [ -z "$OMP_BINARY_PATH" ] || [ ! -f "$OMP_BINARY_PATH" ]; then
+                write_err "解压后未找到 openmodelpool 可执行文件"
+                return 1
+            fi
+            write_ok "已从压缩包提取二进制"
+            ;;
+        *)
+            OMP_BINARY_PATH="${tmp_dir}/${asset_name}"
+            ;;
+    esac
+    return 0
 }
 
 # 检测系统类型
@@ -149,35 +256,19 @@ install_omp() {
     stop_all_tunnels
     write_ok "清理完成"
 
-    # 下载
-    write_step 2 7 "下载 $PKG ..."
-    DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${PKG}"
-    CHECK_URL="${DOWNLOAD_URL}.sha256"
+    # 下载（动态匹配资产，兼容裸二进制和压缩包）
+    write_step 2 7 "下载 Release 资产..."
     TMP_DIR=$(mktemp -d)
-
-    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$PKG" || {
-        write_err "下载失败"
+    download_omp_release "$RELEASE_TAG" "$TMP_DIR" || {
         rm -rf "$TMP_DIR"
         return 1
     }
-    curl -fsSL "$CHECK_URL" -o "$TMP_DIR/$PKG.sha256" 2>/dev/null || true
-
-    if [ -s "$TMP_DIR/$PKG.sha256" ] && command -v sha256sum >/dev/null 2>&1; then
-        write_step 3 7 "校验 SHA256..."
-        ( cd "$TMP_DIR" && sha256sum -c "$PKG.sha256" ) || {
-            write_err "SHA256 校验失败"
-            rm -rf "$TMP_DIR"
-            return 1
-        }
-        write_ok "校验通过"
-    else
-        write_step 3 7 "跳过 SHA256 校验（无校验文件或 sha256sum 不可用）"
-    fi
+    write_step 3 7 "资产就绪"
 
     # 安装
     write_step 4 7 "安装到 $INSTALL_DIR ..."
     mkdir -p "$INSTALL_DIR/data"
-    cp "$TMP_DIR/$PKG" "$INSTALL_DIR/openmodelpool"
+    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/openmodelpool"
     chmod +x "$INSTALL_DIR/openmodelpool"
     write_ok "安装完成"
 
@@ -389,33 +480,16 @@ upgrade_omp() {
     sleep 2
     write_ok "已停止"
 
-    write_step 2 5 "下载新版本: $PKG ..."
-    DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${PKG}"
-    CHECK_URL="${DOWNLOAD_URL}.sha256"
+    write_step 2 5 "下载新版本..."
     TMP_DIR=$(mktemp -d)
-
-    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$PKG" || {
-        write_err "下载失败"
+    download_omp_release "$RELEASE_TAG" "$TMP_DIR" || {
         rm -rf "$TMP_DIR"
         return 1
     }
-    curl -fsSL "$CHECK_URL" -o "$TMP_DIR/$PKG.sha256" 2>/dev/null || true
-    write_ok "下载完成"
-
-    write_step 3 5 "校验 SHA256..."
-    if [ -s "$TMP_DIR/$PKG.sha256" ] && command -v sha256sum >/dev/null 2>&1; then
-        ( cd "$TMP_DIR" && sha256sum -c "$PKG.sha256" ) || {
-            write_err "SHA256 校验失败，终止更新"
-            rm -rf "$TMP_DIR"
-            return 1
-        }
-        write_ok "校验通过"
-    else
-        echo -e "  ${YELLOW}⚠️ 跳过校验${NC}"
-    fi
+    write_step 3 5 "资产就绪"
 
     write_step 4 5 "替换二进制..."
-    cp "$TMP_DIR/$PKG" "$INSTALL_DIR/openmodelpool"
+    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/openmodelpool"
     chmod +x "$INSTALL_DIR/openmodelpool"
     write_ok "替换完成"
 
