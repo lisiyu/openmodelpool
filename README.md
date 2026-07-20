@@ -337,10 +337,10 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.s
 **Windows (PowerShell as Admin):**
 
 ```powershell
-irm https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.ps1 | iex
+irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex
 ```
 
-The install script auto-detects platform → downloads binary → SHA256 verification → installs → registers system service → starts automatically.
+The manager script provides an interactive menu: install / upgrade / uninstall / tunnel setup (Cloudflare / FRP / ngrok) / port change / status check / restart — all in one.
 
 ### Build from Source
 
