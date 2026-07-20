@@ -4,9 +4,9 @@
 
 > Network has no borders; AI capabilities shouldn't either.
 
-[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://go.dev/)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v4.0.1-blue)](#)
+[![Version](https://img.shields.io/badge/version-v4.0.5-blue)](#)
 
 ---
 
@@ -44,7 +44,7 @@ We believe a developer in New York with a Claude API and a programmer in Beijing
 
 This is not a commercial product. This is the continuation of internet spirit: **sharing, openness, no borders.**
 
-> **v4.0.1 Note**: In the BT network, seeders could be anonymous and still participate. In OpenModelPool, joining the sharing network requires an identity (mnemonic → Ed25519 key pair → Node ID), and Contribution Credits are bound to identity. This is not for censorship, but for Sybil defense — ensuring contributions are traceable and preventing one person from impersonating a thousand nodes to farm credits.
+> **Note**: In the BT network, seeders could be anonymous and still participate. In OpenModelPool, joining the sharing network requires an identity (mnemonic → Ed25519 key pair → Node ID), and Contribution Credits are bound to identity. This is not for censorship, but for Sybil defense — ensuring contributions are traceable and preventing one person from impersonating a thousand nodes to farm credits.
 >
 > We also provide a **Public Global Key** — anyone can use it to experience model capabilities in the network with zero barrier. It's a low-quota experience entry with quadruple rate limiting, not guaranteed always-available, but lets you feel the network's value at zero cost.
 
@@ -58,7 +58,7 @@ This is not a commercial product. This is the continuation of internet spirit: *
 
 | Area | State |
 |------|-------|
-| OpenAI-compatible unified gateway (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, `/v1/completions`) | ✅ Real, working |
+| OpenAI-compatible unified gateway (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, `/v1/completions`, `/v1/messages`) | ✅ Real, working |
 | Personal-mode **4-dimension** routing weights (priority / cost / latency / tokens), editable via admin sliders | ✅ Real |
 | Automatic failover, multi-user, token budget, provider health check | ✅ Real |
 | **Real AES-256-GCM encryption** (`encryptor.go`; prefix `omp:e:`) for API keys / config fields | ✅ Real |
@@ -88,10 +88,11 @@ Personal Mode is a pure-local proxy — no network participation, no identity ge
 
 #### 🔌 Unified API Gateway
 
-- **OpenAI-compatible interface** — Unified `/v1/chat/completions`, supporting streaming (SSE) and non-streaming, zero-copy forwarding
-- **36 preset platforms** — Coze, Sider.ai, OpenAI, Anthropic Claude, DeepSeek, Gemini, Qwen, Zhipu, Moonshot, MiniMax, SiliconFlow, Groq, xAI, Together, Mistral, Doubao, iFlytek, NVIDIA NIM, TokenHub (Coding/Plan/Enterprise), Baidu Qianfan, Stepfun, Baichuan, Novita AI, Fireworks AI, Cohere, Cerebras, OpenRouter, Poe, SID.ai, Agnes AI, AIHubMix, Ollama, LM Studio, and more
+- **OpenAI-compatible interface** — Unified `/v1/chat/completions` + `/v1/messages` (Anthropic compatibility), supporting streaming (SSE) and non-streaming, zero-copy forwarding
+- **37 preset platforms** — Coze, Sider.ai, OpenAI, Anthropic Claude, DeepSeek, Gemini, Qwen, Zhipu, Moonshot, MiniMax, SiliconFlow, Groq, xAI, Together, Mistral, Doubao, iFlytek, NVIDIA NIM, TokenHub (Coding/Plan/Enterprise), Baidu Qianfan, Stepfun, Baichuan, Novita AI, Fireworks AI, Cohere, Cerebras, OpenRouter, Poe, SID.ai, Agnes AI, AIHubMix, Ollama, LM Studio, iFlytek MaaS, and more
 - **`provider/model` syntax** — Route to specific platforms via `deepseek/deepseek-chat` format, also supports OpenRouter-style routing
 - **Auto platform discovery** — Automatically scans and discovers free AI platforms on the internet
+- **Web session template** — Generic `web_session` provider type for browser-login platforms (no API needed), Sider.ai as first template
 
 #### 🧠 4-Dimension Intelligent Routing
 
@@ -304,12 +305,12 @@ OpenModelPool Agent evolves from a lightweight personal AI proxy into a **decent
 │ Personal MVP │  →→  │ Min Viable Share │  →→  │ P2P Enhancement  │  →→  │ Autonomous Network│
 │ Local proxy  │      │ Dual-mode arch   │      │ Multi-hop relay  │      │ Reputation system│
 │ Quota mgmt   │      │ Mnemonic identity│      │ Path encryption  │      │ Decentralized    │
-│ 36 platforms │      │ Single-hop relay │      │ P2P discovery    │      │ governance       │
+│ 37 platforms │      │ Single-hop relay │      │ P2P discovery    │      │ governance       │
 │ 5-dim router │      │ Contribution     │      │ Capability verify│      │ Full self-govern │
 └──────────────┘      └──────────────────┘      └──────────────────┘      └──────────────────┘
 ```
 
-- **Phase 0** ✅ Personal MVP (current) — 36 platforms, 5-dimension routing, multi-user, local quota management, WAF, Token estimation
+- **Phase 0** ✅ Personal MVP (current) — 37 platforms, 4-dimension routing (priority/cost/latency/tokens), multi-user, local quota management, multi-key health check, web session template, auto platform discovery
 - **Phase 1** 🔜 Min Viable Sharing — Dual-mode architecture, mnemonic identity, single-hop relay, Contribution Credits, two-level switch
 - **Phase 2** 🌐 P2P Enhancement — Multi-hop relay, transport path encryption, P2P capability discovery, capability verification protocol
 - **Phase 3** 🧠 Autonomous Network — Reputation system, notary decentralization evolution, fully self-governing
@@ -409,6 +410,22 @@ curl http://localhost:8000/v1/chat/completions \
 ```bash
 # provider/model format forces routing to a specific platform
 curl ... -d '{"model": "deepseek/deepseek-chat", ...}'
+```
+
+#### `POST /v1/messages`
+
+Anthropic Messages API compatibility layer — accepts Anthropic-format requests (`x-api-key` header, `anthropic-version` header), auto-converts to OpenAI format internally, routes through the same provider pool.
+
+```bash
+curl http://localhost:8000/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_PROXY_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
 ```
 
 #### `POST /v1/completions`
@@ -679,11 +696,11 @@ Embeddings endpoint (same handler, supports embedding models).
 │              OpenModelPool Agent Gateway                 │
 │                                                         │
 │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  │
-│  │   Auth   │→│  5-Dim   │→│  Failover Fallback    │  │
+│  │   Auth   │→│  4-Dim   │→│  Failover Fallback    │  │
 │  │ Proxy/   │  │ Routing  │  │  Auto-try next       │  │
 │  │ Consumer │  │ Trust    │  │  available Provider   │  │
 │  │ Guest/PK │  │ Reputa-  │  │                       │  │
-│  │          │  │ tion..   │  └──────────────────────┘  │
+│  │          │  │ Latency  │  └──────────────────────┘  │
 │  └──────────┘  └──────────┘                             │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │              Provider Unified Pool                │   │
@@ -734,7 +751,7 @@ Embeddings endpoint (same handler, supports embedding models).
 
 | Component | Technology | Description |
 |-----------|-----------|-------------|
-| HTTP Server | Go stdlib `net/http` | No third-party web framework, Go 1.22+ route patterns |
+| HTTP Server | Go stdlib `net/http` | No third-party web framework, Go 1.26+ route patterns |
 | Auth | `golang-jwt/jwt/v5` | JWT token issuance and verification |
 | Password | `golang.org/x/crypto/bcrypt` | Password hashing |
 | Encryption | Go stdlib `crypto/aes` + `crypto/cipher` | AES-256-GCM encryption |
@@ -758,8 +775,9 @@ openmodelpool/
 │
 ├──── Provider Layer ──────────────────────────────────────────────
 ├── provider.go                      # Provider CRUD + smart routing engine
-├── providers.go                     # 36 preset platform definitions
+├── providers.go                     # 37 preset platform definitions
 ├── client.go                        # Upstream request forwarding (OpenAI / Sider / Coze)
+├── anthropic_api.go                # Anthropic Messages API compatibility layer (/v1/messages)
 ├── sider.go                         # Sider web version adapter + Token status monitoring
 ├── pricing.go                       # Platform × model dual-dimension pricing table
 ├── health.go                        # Provider health check (concurrent probing)
@@ -813,7 +831,15 @@ openmodelpool/
 ├── server.go                        # HTTP server setup, route registration, graceful shutdown
 │
 ├──── Frontend ────────────────────────────────────────────────────
-├── admin.html                       # Web admin panel (dark theme SPA)
+├── admin.html                       # Web admin panel (modular, iframe sub-pages)
+├── admin-provider.html              # Provider management sub-page
+├── admin-models.html                # Model management sub-page
+├── admin-browser-login.html         # Browser login sub-page (web_session platforms)
+├── admin-common.js                  # Shared admin JS (auth, API, UI helpers)
+├── admin-settings.js                # Settings module JS
+├── admin-network.js                 # Network module JS
+├── admin-share.js                   # Share module JS
+├── admin-logs.js                    # Logs module JS
 ├── login.html                       # Login page
 ├── setup.html                       # Initial setup wizard
 ├── forgot_password.html             # Forgot password page
@@ -822,11 +848,9 @@ openmodelpool/
 ├── go.mod / go.sum                  # Go module dependencies
 ├── Makefile                         # Build shortcuts
 ├── Dockerfile                       # Multi-stage Docker build
-├── install.sh                       # One-click install script
-├── deploy.sh                        # Deployment script
-├── build-all.sh                     # Cross-platform build script
-├── restart.sh                       # Restart script
-├── setup-named-tunnel.sh            # Named tunnel setup helper
+├── scripts/
+│   ├── omp-manager.sh               # Linux all-in-one manager (install/upgrade/tunnel/status)
+│   └── omp-manager.ps1              # Windows all-in-one manager (install/upgrade/tunnel/status)
 │
 ├──── Tests ───────────────────────────────────────────────────────
 ├── client_test.go                   # Client tests
@@ -859,7 +883,7 @@ openmodelpool/
 
 ---
 
-## 📦 Preset Platforms (36)
+## 📦 Preset Platforms (37)
 
 | # | Platform | Priority | Type | Highlights |
 |---|----------|----------|------|------------|
@@ -899,6 +923,7 @@ openmodelpool/
 | 34 | Cohere | 5 | OpenAI Compatible | Enterprise NLP, Command R+ |
 | 35 | Agnes AI | 5 | OpenAI Compatible | Text/Image/Video multi-modal |
 | 36 | AIHubMix | 5 | OpenAI Compatible | Multi-provider aggregation |
+| 37 | iFlytek MaaS | 5 | OpenAI Compatible | iFlytek model-as-a-service, Spark X1 models |
 
 ---
 
@@ -932,6 +957,8 @@ curl -d '{"model": "coze-7xxxxxxxxxx0", "messages": [...]}'
 2. F12 → **Application** → **Cookies** → `sider.ai` → copy `token` field value
 
 **Note:** Token expires periodically, needs regular updates; built-in health check auto-detects expiration
+
+**Web Session Template:** Sider.ai uses the `web_session` provider type — a generic template for browser-login platforms. Other browser-based AI platforms can be added using the same template without writing custom code.
 
 ### 🟠 Anthropic Claude
 
@@ -985,14 +1012,22 @@ go build -ldflags="-s -w" -trimpath
 - `-s -w`: Strip debug info and symbol tables, reduce binary size
 - `-trimpath`: Strip local path info, improve portability and security
 
-### Install Script Parameters
+### Manager Script Usage
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `--port` | Service port | `8000` |
-| `--dir` | Install directory | `/usr/local/bin` |
-| `--data` | Data directory | `/var/lib/openmodelpool` |
-| `--version` | Specify version | `latest` |
+The all-in-one manager scripts (`omp-manager.sh` / `omp-manager.ps1`) provide an interactive menu with these options:
+
+| Option | Description |
+|--------|-------------|
+| 1. Install | Fresh install OMP |
+| 2. Upgrade | Incremental update (preserves config) |
+| 3. Uninstall | Remove all components |
+| 4. Tunnel | Configure Cloudflare / FRP / ngrok |
+| 5. Reset Tunnel | Reset any or all tunnels |
+| 6. Change Port | Switch OMP service port |
+| 7. Status | Check all components |
+| 8. Restart | Restart OMP + all tunnels |
+
+**Smart features:** Auto-detects CPU architecture (amd64 / arm64 / armv7) · Auto-matches Release assets (binary or archive) · SHA256 verification · Auto-extract archives
 
 ---
 
@@ -1006,13 +1041,16 @@ All data stored in `data/` directory, JSON format:
 |------|---------|
 | `data/config.json` | Global config (routing mode, weights, Proxy API Key, etc.) |
 | `data/providers.json` | Provider config (API Keys encrypted) |
-| `data/admin.json` | Admin account, JWT Secret, SMTP config |
+| `data/admin.json` | Admin account, JWT Secret, SMTP config, invite codes, consumers |
 | `data/usage.json` | Usage records |
-| `data/consumers.json` | Multi-user data (invite codes, consumers) |
-| `data/.key` | AES-256 encryption key (auto-generated) |
+| `data/network.json` | Network mode config (peers, federation, trust pool) |
+| `data/global_pool.json` | Global resource pool data |
+| `data/node.key` | Node identity key (Ed25519, generated on network join) |
+| `data/.enc_key` | AES-256-GCM encryption key (auto-generated, 32 bytes) |
 | `data/sider_token_status.json` | Sider Token status |
 | `data/guest_keys.json` | Guest Key store |
 | `data/discovered_platforms.json` | Auto-discovered platforms |
+| `data/access.log` | Request access log |
 
 ### Sensitive Data Encryption
 
@@ -1024,9 +1062,9 @@ All sensitive fields encrypted with **AES-256-GCM**:
 - SMTP passwords
 - VMess proxy links
 
-Key file `data/.key` is auto-generated on first startup (32-byte random key, Base64 encoded).
+Key file `data/.enc_key` is auto-generated on first startup (32-byte random key). All encrypted fields use `omp:e:` prefix.
 
-> ⚠️ **Keep `data/.key` safe** — lost means unable to decrypt stored sensitive data.
+> ⚠️ **Keep `data/.enc_key` safe** — lost means unable to decrypt stored sensitive data.
 
 ### Config Export / Import
 
@@ -1051,11 +1089,11 @@ curl -X POST http://localhost:8000/api/routing/mode \
   -H "Content-Type: application/json" \
   -d '{"mode": "auto"}'
 
-# Custom 5-dimension weights
+# Custom 4-dimension weights (Personal Mode: priority / cost / latency / tokens)
 curl -X POST http://localhost:8000/api/routing/weights \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"trust": 0.25, "reputation": 0.25, "latency": 0.20, "availability": 0.15, "contribution": 0.15}'
+  -d '{"priority": 0.30, "cost": 0.25, "latency": 0.25, "tokens": 0.20}'
 ```
 
 ---
@@ -1091,6 +1129,65 @@ Inspired by these open-source API management projects:
 
 ## 📋 Changelog
 
+### v4.0.5 (2026-07)
+
+**🔵 Script Consolidation**
+- **All-in-one manager scripts** — Consolidated 11 separate scripts into 2: `omp-manager.sh` (Linux) + `omp-manager.ps1` (Windows)
+- **`--auto-update` mode** — Both scripts support unattended auto-update for cron / Task Scheduler
+- **Dynamic Release asset detection** — Auto-matches GitHub Release assets (binary or archive), auto-extracts compressed packages
+- **CPU arch auto-detection** — amd64 / arm64 / armv7, same command works on all platforms
+- **SHA256 verification** — All downloads verified
+- **Cache-busting timestamps** — All one-click commands include cache bypass for CDN
+
+### v4.0.4 (2026-07)
+
+**🟠 API & Performance**
+- **Anthropic Messages API compatibility** — New `/v1/messages` endpoint, accepts Anthropic-format requests with `x-api-key` + `anthropic-version` headers
+- **ChatMessage array content fix** — `UnmarshalJSON` now accepts both string and array content blocks (Anthropic-style)
+- **SOCKS5 connection pool** — Caches HTTP transports per proxy address, latency reduced from 5-7s to 0.3s
+- **FindCandidates fix** — Uses `GetAllRaw()` instead of `GetAll()` to preserve real proxy/API key (was masked by `Safe()`)
+
+### v4.0.3 (2026-07)
+
+**🟢 Multi-Key & Quota System**
+- **Multi-key health check** — Test button iterates all keys per provider, health check passes if any key succeeds, model list merges all keys' models
+- **Quota aggregation** — Shared key quota split between Public pool and Guest pool by `guest_pool_percent`
+- **Multi-period quota** — Key-level (daily/monthly/total) + Provider-level (private/shared × daily/monthly) dual quota control, effective quota = min(non-zero periods)
+- **Platform cap** — Platform quota = min(configured value, sum of all keys)
+
+### v4.0.2 (2026-07)
+
+**🔵 Tunnel & Deployment**
+- **ngrok tunnel support** — Added to both Linux and Windows manager scripts, with fixed domain reuse detection
+- **Cloudflare tunnel domain reuse** — Detects and reuses existing domain binding instead of creating new tunnel
+- **FRP tunnel reuse** — Checks existing config before prompting
+- **All tunnel types** — Cloudflare / FRP / ngrok, unified setup/reset/status/restart/uninstall
+
+### v3.4.1 (2026-07)
+
+**🔴 Admin UI Modularization**
+- **admin.html refactored** — From 5063 lines down to 2457 lines
+- **JS modular split** — 4 independent JS files: `admin-settings.js`, `admin-network.js`, `admin-share.js`, `admin-logs.js` + shared `admin-common.js`
+- **Sub-page architecture** — Provider/Models/Browser-Login moved to separate HTML pages, opened via iframe modal
+- **Dead code cleanup** — Removed 30 unused functions
+- **Cross-platform builds** — 4-platform cross-compilation verified, GitHub Release v3.4.1-release published
+
+### v3.3.0 (2026-07)
+
+**🔴 Web Session Template System**
+- **`web_session` provider type** — Generic abstraction for browser-login platforms (no API needed)
+- **`WebSessionConfig`** — 7 generic functions for cookie management, request building, response parsing
+- **Sider.ai migration** — Migrated to `web_session` template as first implementation (20 models)
+- **`AllModels()` fix** — Providers without keys no longer counted in model list
+
+**🔴 Security Fixes (from v3.3.0 security release)**
+- API Key masking — `/api/share/info` and `/api/config/export` no longer expose Proxy API Key in plaintext
+- Consumer Key encryption — AES-256-GCM at rest
+- CORS tightening — Removed wildcard `*`, localhost + tunnel URL only
+- File permissions — All data files 0644 → 0600
+- JWT security — admin.html removed localStorage token, switched to HttpOnly Cookie
+- Endpoint auth — `/metrics` and `/events` now require authentication
+
 ### v4.0.1 (2026-07)
 
 **🔴 Architecture Upgrade**
@@ -1121,33 +1218,6 @@ Inspired by these open-source API management projects:
 - `GET /api/peers` — Peer discovery (no auth)
 - `POST /api/register` — Node self-registration (no auth)
 - `GET /api/seed/health` — Seed health check (no auth)
-
-### v3.3.0 (2026-07)
-
-**🔴 Critical Security Fixes**
-- **API Key masking** — `/api/share/info` and `/api/config/export` no longer expose Proxy API Key in plaintext
-- **Consumer Key encryption** — Consumer API Keys encrypted with AES-256-GCM at rest
-
-**🟠 Security Hardening**
-- **CORS tightening** — Removed wildcard `*`, default allows only localhost + tunnel URL
-- **File permissions** — All data files from 0644 to 0600
-- **Error masking** — Proxy error messages no longer leak internal IP addresses
-- **JWT security** — admin.html removed localStorage token, switched to HttpOnly Cookie
-- **Cookie enhancement** — Secure + SameSite=Lax flags
-- **Endpoint auth** — `/metrics` and `/events` endpoints now require authentication (401)
-- **Federation auth** — Federation endpoints restricted to known nodes/admin
-
-**🟢 Other Improvements**
-- **Password strength** — Minimum length from 6 to 8
-- **Reset Token** — Reuse unexpired tokens, prevent concurrent race
-- **Anonymous fallback** — Disabled when consumers are registered
-- **Consumer permissions** — handleTestProvider adds Consumer permission check
-
-**⚡ Performance**
-- **Config write debounce** — 3-second aggregate writes, reduce disk I/O
-- **HTTP connection pool** — Global MaxIdleConns=100, TCP connection reuse
-- **Async writes** — Config.save() made async, non-blocking
-- **Tracker optimization** — Record() releases lock before flushing to disk
 
 ### v3.2.0 (2026-07)
 
