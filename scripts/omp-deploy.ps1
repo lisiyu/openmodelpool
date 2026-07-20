@@ -15,7 +15,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $GITHUB_REPO = "lisiyu/openmodelpool"
-$PKG = "openmodelpool-windows-amd64.exe"
 
 Write-Host ""
 Write-Host "  ============================================" -ForegroundColor Cyan
@@ -80,44 +79,71 @@ if (-not $RELEASE_TAG) {
 }
 Write-Host "      目标版本: $RELEASE_TAG" -ForegroundColor Green
 
-$DOWNLOAD_URL = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/$PKG"
-$CHECK_URL = "${DOWNLOAD_URL}.sha256"
-Write-Host "      下载: $DOWNLOAD_URL"
-
+# 动态匹配 Release 资产（兼容裸二进制 .exe 和压缩包 .zip）
 $tmpDir = Join-Path $env:TEMP "omp-deploy-$(Get-Random)"
 New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-$tmpExe = Join-Path $tmpDir $PKG
-$tmpSha = Join-Path $tmpDir "$PKG.sha256"
 
+$assetName = ""
+$assetUrl = ""
 try {
-    Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $tmpExe -UseBasicParsing
+    $apiUrl = "https://api.github.com/repos/$GITHUB_REPO/releases/tags/$RELEASE_TAG"
+    $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing
+    $bestBin = $null; $bestArc = $null
+    foreach ($asset in $release.assets) {
+        $n = $asset.name.ToLower()
+        if ($n -match "sha256|checksum|\.txt") { continue }
+        if ($n -match "windows" -and $n -match "amd64") {
+            if ($n -match "\.zip$") { if (-not $bestArc) { $bestArc = $asset } }
+            else { if (-not $bestBin) { $bestBin = $asset } }
+        }
+    }
+    $selected = if ($bestBin) { $bestBin } else { $bestArc }
+    if ($selected) { $assetName = $selected.name; $assetUrl = $selected.browser_download_url }
+} catch {}
+if (-not $assetUrl) {
+    $assetName = "openmodelpool-windows-amd64.exe"
+    $assetUrl = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/$assetName"
+}
+
+Write-Host "      下载: $assetName" -ForegroundColor Cyan
+$tmpFile = Join-Path $tmpDir $assetName
+try {
+    Invoke-WebRequest -Uri $assetUrl -OutFile $tmpFile -UseBasicParsing
 } catch {
     Write-Host "[错误] 下载失败: $_" -ForegroundColor Red
     exit 1
 }
 
-# 下载 SHA256 校验文件
-try {
-    Invoke-WebRequest -Uri $CHECK_URL -OutFile $tmpSha -UseBasicParsing
-} catch {
-    Write-Host "      ⚠️ 未找到校验文件，跳过校验" -ForegroundColor Yellow
-}
-
 # SHA256 校验
+$tmpSha = Join-Path $tmpDir "$assetName.sha256"
+try { Invoke-WebRequest -Uri "$assetUrl.sha256" -OutFile $tmpSha -UseBasicParsing } catch {}
 if (Test-Path $tmpSha) {
     $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
-    $actualHash = (Get-FileHash $tmpExe -Algorithm SHA256).Hash.ToLower()
+    $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
     if ($expectedHash.ToLower() -ne $actualHash) {
         Write-Host "[错误] SHA256 校验失败，终止部署" -ForegroundColor Red
-        Write-Host "  期望: $expectedHash" -ForegroundColor Yellow
-        Write-Host "  实际: $actualHash" -ForegroundColor Yellow
         Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
         exit 1
     }
     Write-Host "      ✅ SHA256 校验通过" -ForegroundColor Green
 }
 
-$size = [math]::Round((Get-Item $tmpExe).Length / 1MB, 1)
+# 解压（如果是 .zip）
+$ompExe = $tmpFile
+if ($assetName -match "\.zip$") {
+    $extractDir = Join-Path $tmpDir "extracted"
+    Expand-Archive -Path $tmpFile -DestinationPath $extractDir -Force
+    $exeFile = Get-ChildItem -Path $extractDir -Filter "openmodelpool*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($exeFile) {
+        $ompExe = $exeFile.FullName
+        Write-Host "      ✅ 已从压缩包提取" -ForegroundColor Green
+    } else {
+        Write-Host "[错误] 解压后未找到 openmodelpool.exe" -ForegroundColor Red
+        exit 1
+    }
+}
+
+$size = [math]::Round((Get-Item $ompExe).Length / 1MB, 1)
 Write-Host "      下载完成 (${size} MB)" -ForegroundColor Green
 
 # [2/5] 安装
@@ -127,7 +153,7 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 # 复制二进制文件（HTML 已嵌入，无需额外文件）
-Copy-Item $tmpExe -Destination (Join-Path $InstallDir "openmodelpool.exe") -Force
+Copy-Item $ompExe -Destination (Join-Path $InstallDir "openmodelpool.exe") -Force
 Write-Host "      安装完成" -ForegroundColor Green
 
 # [3/5] 配置服务
