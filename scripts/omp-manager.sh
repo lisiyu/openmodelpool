@@ -7,6 +7,7 @@
 #  用法:
 #    交互菜单:  curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
 #    自动更新:  curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash -s -- --auto-update
+#    备选方式:  curl -fsSL -o /tmp/omp-manager.sh "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" && sudo bash /tmp/omp-manager.sh
 # ============================================================
 
 GITHUB_REPO="lisiyu/openmodelpool"
@@ -249,7 +250,7 @@ install_omp() {
 
     if [ -f "$INSTALL_DIR/openmodelpool" ]; then
         write_info "检测到已有安装: $INSTALL_DIR"
-        read -p "  是否覆盖安装？[y/N] " confirm
+        read -p "  是否覆盖安装？[y/N] " confirm < /dev/tty
         if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
             write_info "已取消"
             return
@@ -553,7 +554,7 @@ uninstall_omp() {
     echo ""
     write_info "${RED}数据目录 $INSTALL_DIR/data/ 默认保留${NC}（可手动删除）"
     echo ""
-    read -p "  确认卸载？输入 yes 继续: " confirm
+    read -p "  确认卸载？输入 yes 继续: " confirm < /dev/tty
     if [ "$confirm" != "yes" ]; then
         write_info "已取消"
         return
@@ -609,7 +610,7 @@ setup_tunnel_menu() {
     echo -e "    ${GREEN}2${NC}) FRP              — 免费，固定IP+端口"
     echo -e "    ${GREEN}3${NC}) ngrok            — 注册即用，自动HTTPS"
     echo -e "    ${GREEN}4${NC}) 跳过"
-    read -p "  请选择 [1/2/3/4]: " tunnel_choice
+    read -p "  请选择 [1/2/3/4]: " tunnel_choice < /dev/tty
 
     case "$tunnel_choice" in
         1) setup_cloudflare ;;
@@ -694,18 +695,18 @@ setup_cloudflare() {
     SKIP_DNS=0
     if [ -n "$EXISTING_HOST" ]; then
         write_info "检测到已绑定的域名: $EXISTING_HOST"
-        read -p "  是否复用此域名？[Y/n] " REUSE
+        read -p "  是否复用此域名？[Y/n] " REUSE < /dev/tty
         if [ "$REUSE" != "n" ] && [ "$REUSE" != "N" ]; then
             SUBDOMAIN="$EXISTING_HOST"
             SKIP_DNS=1
             write_ok "复用域名: $SUBDOMAIN（跳过DNS绑定）"
         else
             echo -e "  请输入要绑定的子域名（例如: omp.yourdomain.com）:"
-            read -p "  > " SUBDOMAIN
+            read -p "  > " SUBDOMAIN < /dev/tty
         fi
     else
         echo -e "  请输入要绑定的子域名（例如: omp.yourdomain.com）:"
-        read -p "  > " SUBDOMAIN
+        read -p "  > " SUBDOMAIN < /dev/tty
     fi
 
     if [ "$SKIP_DNS" -eq 0 ]; then
@@ -757,7 +758,7 @@ setup_frp() {
     # 检测已有配置，复用
     if [ -f /etc/frp/frpc.toml ]; then
         write_info "检测到已有 FRP 配置: /etc/frp/frpc.toml"
-        read -p "  是否复用已有配置？[Y/n] " REUSE
+        read -p "  是否复用已有配置？[Y/n] " REUSE < /dev/tty
         if [ "$REUSE" != "n" ] && [ "$REUSE" != "N" ]; then
             write_ok "复用已有配置，跳过配置创建"
             if command -v systemctl >/dev/null 2>&1 && [ -f /etc/systemd/system/frpc.service ]; then
@@ -778,13 +779,13 @@ setup_frp() {
         fi
     fi
 
-    read -p "  FRP 服务器公网 IP: " FRP_SERVER
+    read -p "  FRP 服务器公网 IP: " FRP_SERVER < /dev/tty
     [ -z "$FRP_SERVER" ] && { write_err "服务器地址不能为空"; return 1; }
 
-    read -p "  FRP 认证 Token: " FRP_TOKEN
+    read -p "  FRP 认证 Token: " FRP_TOKEN < /dev/tty
     [ -z "$FRP_TOKEN" ] && { write_err "Token 不能为空"; return 1; }
 
-    read -p "  远程映射端口（默认 8001）: " REMOTE_PORT
+    read -p "  远程映射端口（默认 8001）: " REMOTE_PORT < /dev/tty
     REMOTE_PORT="${REMOTE_PORT:-8001}"
 
     # Install frpc
@@ -896,7 +897,7 @@ setup_ngrok() {
         EXISTING_DOMAIN=$(grep -m1 "domain:" "$NGROK_CONFIG" 2>/dev/null | sed 's/domain:[[:space:]]*//' | tr -d '[:space:]')
         write_info "检测到已有 ngrok 配置: $NGROK_CONFIG"
         [ -n "$EXISTING_DOMAIN" ] && echo -e "  固定域名: $EXISTING_DOMAIN"
-        read -p "  是否复用此配置？[Y/n] " REUSE
+        read -p "  是否复用此配置？[Y/n] " REUSE < /dev/tty
         if [ "$REUSE" != "n" ] && [ "$REUSE" != "N" ]; then
             NGROK_DOMAIN="$EXISTING_DOMAIN"
             SKIP_NGROK_CONFIG=true
@@ -905,11 +906,11 @@ setup_ngrok() {
     fi
 
     if [ "$SKIP_NGROK_CONFIG" = false ]; then
-        read -p "  请输入 ngrok Authtoken: " NGROK_TOKEN
+        read -p "  请输入 ngrok Authtoken: " NGROK_TOKEN < /dev/tty
         [ -z "$NGROK_TOKEN" ] && { write_err "Authtoken 不能为空"; return 1; }
 
         echo ""
-        read -p "  固定域名 (免费版留空): " NGROK_DOMAIN
+        read -p "  固定域名 (免费版留空): " NGROK_DOMAIN < /dev/tty
     fi
 
     # 安装 ngrok
@@ -1046,7 +1047,7 @@ reset_tunnel_menu() {
     echo -e "    ${GREEN}3${NC}) 重置 ngrok"
     echo -e "    ${GREEN}4${NC}) 重置全部"
     echo -e "    ${GREEN}5${NC}) 返回"
-    read -p "  请选择 [1/2/3/4/5]: " choice
+    read -p "  请选择 [1/2/3/4/5]: " choice < /dev/tty
 
     case "$choice" in
         1) reset_cloudflare ;;
@@ -1106,7 +1107,7 @@ reset_frp() {
 change_port() {
     write_title "修改端口"
     write_info "当前端口: $PORT"
-    read -p "  请输入新端口: " NEW_PORT
+    read -p "  请输入新端口: " NEW_PORT < /dev/tty
     if [ -z "$NEW_PORT" ]; then
         write_err "端口不能为空"
         return
@@ -1448,7 +1449,7 @@ while true; do
         exit 0
     fi
 
-    read -p "  请选择 [0-8]: " choice
+    read -p "  请选择 [0-8]: " choice < /dev/tty
 
     case "$choice" in
         1) install_omp ;;
