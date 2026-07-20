@@ -17,8 +17,8 @@ $C = "Cyan"; $Y = "Yellow"; $G = "Green"; $R = "Red"; $W = "White"
 
 # 常量 - OMP
 $GITHUB_REPO = "lisiyu/openmodelpool"
-$RELEASE_TAG = "v3.2.1-release"
-$PKG = "openmodelpool-windows-amd64.zip"
+$RELEASE_TAG = "v4.0.5"
+$PKG = "openmodelpool-windows-amd64.exe"
 $DOWNLOAD_URL = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/$PKG"
 $exeName = "openmodelpool.exe"
 $exePath = Join-Path $InstallDir $exeName
@@ -43,6 +43,9 @@ $frpTaskName = "OpenModelPoolFRP"
 $ngrokDir = "$env:ProgramFiles\ngrok"
 $ngrokExe = "$ngrokDir\ngrok.exe"
 $ngrokTaskName = "OpenModelPoolNgrok"
+
+# 常量 - Xray (VMess proxy)
+$XRAY_VERSION = "v25.7.16"
 
 # ============================================================
 # 工具函数
@@ -136,34 +139,26 @@ function Install-OMP {
         if ($confirm -ne "y") { Write-Host "  已取消" -ForegroundColor $Y; return }
     }
 
-    Write-Step 0 5 "清理旧版本..."
+    Write-Step 0 3 "清理旧版本..."
     Stop-OMP
     Stop-All-Tunnels
     Write-OK "清理完成"
 
-    Write-Step 1 5 "下载 $PKG ..."
-    $tmpZip = Join-Path $env:TEMP "omp-install.zip"
+    Write-Step 1 3 "下载 $PKG ..."
+    $tmpExe = Join-Path $env:TEMP $PKG
     try {
-        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $tmpZip -UseBasicParsing
+        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $tmpExe -UseBasicParsing
         Write-OK "下载完成"
     } catch {
         Write-Err "下载失败: $_"
         return
     }
 
-    Write-Step 2 5 "解压..."
-    $tmpDir = Join-Path $env:TEMP "omp-extract"
-    if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
-    Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
-    Write-OK "解压完成"
-
-    Write-Step 3 5 "安装到 $InstallDir ..."
+    Write-Step 2 3 "安装到 $InstallDir ..."
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
-    Copy-Item (Join-Path $tmpDir $exeName) -Destination $exePath -Force
-    if (Test-Path (Join-Path $tmpDir "docs")) {
-        Copy-Item (Join-Path $tmpDir "docs") -Destination $InstallDir -Force -Recurse
-    }
+    Copy-Item $tmpExe -Destination $exePath -Force
+    Remove-Item $tmpExe -Force -ErrorAction SilentlyContinue
     Write-OK "文件安装完成"
 
     # 安装 Xray (VMess 代理支持)
@@ -201,14 +196,13 @@ taskkill /f /im $exeName 2>nul
 echo stopped
 "@ | Set-Content $stopBat -Encoding ASCII
 
-    Write-Step 4 5 "配置服务 (端口 $Port)..."
+    Write-Step 3 3 "配置服务 (端口 $Port)..."
     $action = New-ScheduledTaskAction -Execute $exePath -WorkingDirectory $InstallDir
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
     Register-ScheduledTask -TaskName $ompTaskName -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
     Write-OK "计划任务已创建"
 
-    Write-Step 5 5 "启动..."
     Start-OMP
 
     $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
@@ -249,31 +243,23 @@ function Upgrade-OMP {
     $oldVersion = (Get-Item $exePath).LastWriteTime.ToString("yyyy-MM-dd HH:mm")
     Write-Info "当前版本时间: $oldVersion"
 
-    Write-Step 1 4 "下载最新版本..."
-    $tmpZip = Join-Path $env:TEMP "omp-upgrade.zip"
+    Write-Step 1 3 "下载最新版本..."
+    $tmpExe = Join-Path $env:TEMP $PKG
     try {
-        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $tmpZip -UseBasicParsing
+        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $tmpExe -UseBasicParsing
         Write-OK "下载完成"
     } catch {
         Write-Err "下载失败: $_"
         return
     }
 
-    Write-Step 2 4 "停止服务..."
+    Write-Step 2 3 "停止服务并替换二进制文件..."
     Stop-OMP
-    Write-OK "已停止"
-
-    Write-Step 3 4 "替换二进制文件..."
-    $tmpDir = Join-Path $env:TEMP "omp-upgrade-extract"
-    if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
-    Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
-    Copy-Item (Join-Path $tmpDir $exeName) -Destination $exePath -Force
+    Copy-Item $tmpExe -Destination $exePath -Force
+    Remove-Item $tmpExe -Force -ErrorAction SilentlyContinue
     Write-OK "替换完成"
 
-    Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
-    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-
-    Write-Step 4 4 "重启服务..."
+    Write-Step 3 3 "重启服务..."
     Start-OMP
     $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
     if ($proc) {
@@ -566,24 +552,50 @@ function Setup-FRP {
     Write-Host "  安全提示: auth.token 请使用随机强密码，避免被他人蹭用！" -ForegroundColor $R
     Write-Host ""
 
-    $hasServer = Read-Host "  FRP 服务器已搭建好？(y/n)"
-    if ($hasServer -ne "y") {
-        Write-Host "  请先搭建 FRP 服务器，再来配置客户端。" -ForegroundColor $Y
-        return
+    # Check existing FRP config
+    $frpServer = ""
+    $frpToken = ""
+    $remotePort = 8001
+    $skipFrpConfig = $false
+    
+    if (Test-Path $frpConfig) {
+        $frpExisting = Get-Content $frpConfig -Raw -ErrorAction SilentlyContinue
+        $existingServer = ""
+        $existingRemotePort = ""
+        if ($frpExisting -match 'serverAddr = "([^"]+)"') { $existingServer = $Matches[1] }
+        if ($frpExisting -match "remotePort = (\d+)") { $existingRemotePort = $Matches[1] }
+        if ($existingServer) {
+            Write-Host "  检测到已有 FRP 配置: $existingServer:$existingRemotePort" -ForegroundColor $G
+            $reuseChoice = Read-Host "  是否复用此配置？[Y/n]"
+            if ($reuseChoice -ne "n" -and $reuseChoice -ne "N") {
+                $frpServer = $existingServer
+                $remotePort = [int]$existingRemotePort
+                $skipFrpConfig = $true
+                Write-OK "复用 FRP 配置"
+            }
+        }
     }
+    
+    if (-not $skipFrpConfig) {
+        $hasServer = Read-Host "  FRP 服务器已搭建好？(y/n)"
+        if ($hasServer -ne "y") {
+            Write-Host "  请先搭建 FRP 服务器，再来配置客户端。" -ForegroundColor $Y
+            return
+        }
 
-    $frpServer = Read-Host "  FRP 服务器公网 IP"
-    if (-not $frpServer) { Write-Err "不能为空"; return }
+        $frpServer = Read-Host "  FRP 服务器公网 IP"
+        if (-not $frpServer) { Write-Err "不能为空"; return }
 
-    $frpToken = Read-Host "  FRP 认证 Token"
-    if (-not $frpToken) { Write-Err "不能为空"; return }
+        $frpToken = Read-Host "  FRP 认证 Token"
+        if (-not $frpToken) { Write-Err "不能为空"; return }
 
-    Write-Host ""
-    Write-Host "  远程映射端口：外网用户通过此端口访问你的 OMP" -ForegroundColor $C
-    Write-Host "  例如填 8001，则外网访问地址为 http://服务器IP:8001" -ForegroundColor DarkGray
-    Write-Host "  确保该端口已在服务器安全组中放行！" -ForegroundColor $Y
-    $remotePortStr = Read-Host "  远程映射端口 [默认: 8001]"
-    if (-not $remotePortStr) { $remotePort = 8001 } else { $remotePort = [int]$remotePortStr }
+        Write-Host ""
+        Write-Host "  远程映射端口：外网用户通过此端口访问你的 OMP" -ForegroundColor $C
+        Write-Host "  例如填 8001，则外网访问地址为 http://服务器IP:8001" -ForegroundColor DarkGray
+        Write-Host "  确保该端口已在服务器安全组中放行！" -ForegroundColor $Y
+        $remotePortStr = Read-Host "  远程映射端口 [默认: 8001]"
+        if (-not $remotePortStr) { $remotePort = 8001 } else { $remotePort = [int]$remotePortStr }
+    }
 
     $nodeName = ($env:COMPUTERNAME).ToLower() -replace '[^a-z0-9-]', ''
 
@@ -605,8 +617,9 @@ function Setup-FRP {
         Write-OK "已安装"
     }
 
-    Write-Step 2 4 "创建配置..."
-    @"
+    if (-not $skipFrpConfig) {
+        Write-Step 2 3 "创建配置..."
+        @"
 serverAddr = "$frpServer"
 serverPort = 7000
 auth.token = "$frpToken"
@@ -618,15 +631,19 @@ localIP = "127.0.0.1"
 localPort = $Port
 remotePort = $remotePort
 "@ | Set-Content $frpConfig -Encoding UTF8
-    Write-OK "配置已写入 $frpConfig"
+        Write-OK "配置已写入 $frpConfig"
 
-    Write-Step 3 4 "测试连接..."
-    $testProc = Start-Process -FilePath $frpExe -ArgumentList "-c", $frpConfig -PassThru -NoNewWindow
-    Start-Sleep -Seconds 3
-    Stop-Process -Id $testProc.Id -Force -ErrorAction SilentlyContinue
-    Write-OK "测试完成"
+        Write-Step 3 3 "测试连接..."
+        $testProc = Start-Process -FilePath $frpExe -ArgumentList "-c", $frpConfig -PassThru -NoNewWindow
+        Start-Sleep -Seconds 3
+        Stop-Process -Id $testProc.Id -Force -ErrorAction SilentlyContinue
+        Write-OK "测试完成"
+    } else {
+        Write-Step 2 3 "复用已有配置，跳过..."
+        Write-OK "跳过"
+    }
 
-    Write-Step 4 4 "设置开机自启..."
+    Write-Step 3 3 "设置开机自启..."
     Stop-FRP
     $action = New-ScheduledTaskAction -Execute $frpExe -Argument "-c `"$frpConfig`"" -WorkingDirectory $frpDir
     $trigger = New-ScheduledTaskTrigger -AtStartup
@@ -682,11 +699,35 @@ function Setup-Ngrok {
     Write-Host "    2. 将 claim 到的域名填入下方 (如 myapp.ngrok.app)" -ForegroundColor DarkGray
     Write-Host ""
 
-    $ngrokToken = Read-Host "  请输入 ngrok Authtoken"
-    if (-not $ngrokToken) { Write-Err "不能为空"; return }
+    # Check existing ngrok config
+    $ngrokToken = ""
+    $ngrokDomain = ""
+    $skipNgrokConfig = $false
+    
+    $ngrokConfigFile = "$env:USERPROFILE\AppData\Local\ngrok\ngrok.yml"
+    $ngrokStartBat = Join-Path $ngrokDir "start-ngrok.bat"
+    
+    if (Test-Path $ngrokConfigFile) {
+        $ngrokExisting = Get-Content $ngrokConfigFile -Raw -ErrorAction SilentlyContinue
+        $existingDomain = ""
+        if ($ngrokExisting -match "domain:\s*(.+)") { $existingDomain = $Matches[1].Trim() }
+        Write-Host "  检测到已有 ngrok 配置" -ForegroundColor $G
+        if ($existingDomain) { Write-Host "  固定域名: $existingDomain" -ForegroundColor DarkGray }
+        $reuseChoice = Read-Host "  是否复用此配置？[Y/n]"
+        if ($reuseChoice -ne "n" -and $reuseChoice -ne "N") {
+            $ngrokDomain = $existingDomain
+            $skipNgrokConfig = $true
+            Write-OK "复用 ngrok 配置"
+        }
+    }
+    
+    if (-not $skipNgrokConfig) {
+        $ngrokToken = Read-Host "  请输入 ngrok Authtoken"
+        if (-not $ngrokToken) { Write-Err "不能为空"; return }
 
-    Write-Host ""
-    $ngrokDomain = Read-Host "  固定域名 (免费版留空)"
+        Write-Host ""
+        $ngrokDomain = Read-Host "  固定域名 (免费版留空)"
+    }
 
     Write-Step 1 4 "安装 ngrok..."
     if (-not (Test-Path $ngrokExe)) {
@@ -715,15 +756,21 @@ function Setup-Ngrok {
         Write-OK "已安装"
     }
 
-    Write-Step 2 4 "配置 Authtoken..."
-    & $ngrokExe config add-authtoken $ngrokToken 2>&1 | Out-Null
-    Write-OK "Authtoken 已配置"
+    if (-not $skipNgrokConfig) {
+        Write-Step 2 4 "配置 Authtoken..."
+        $authErr = Join-Path $env:TEMP "ngrok-auth-err.txt"
+        $authOut = Join-Path $env:TEMP "ngrok-auth-out.txt"
+        Start-Process -FilePath $ngrokExe -ArgumentList "config", "add-authtoken", $ngrokToken `
+            -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $authOut -RedirectStandardError $authErr | Out-Null
+        Remove-Item $authOut, $authErr -Force -ErrorAction SilentlyContinue
+        Write-OK "Authtoken 已配置"
 
-    Write-Step 3 4 "测试连接..."
-    $testArgs = @("http", "$Port")
-    if ($ngrokDomain) { $testArgs = @("http", "--domain=$ngrokDomain", "$Port") }
-    $testProc = Start-Process -FilePath $ngrokExe -ArgumentList $testArgs -PassThru -NoNewWindow
-    Start-Sleep -Seconds 5
+        Write-Step 3 4 "测试连接..."
+        $testArgs = @("http", "$Port")
+        if ($ngrokDomain) { $testArgs = @("http", "--domain=$ngrokDomain", "$Port") }
+        $testProc = Start-Process -FilePath $ngrokExe -ArgumentList $testArgs -PassThru -NoNewWindow
+        Start-Sleep -Seconds 5
 
     # 尝试获取 ngrok 分配的公网 URL
     $ngrokUrl = ""
@@ -735,15 +782,19 @@ function Setup-Ngrok {
         }
     } catch {}
 
-    Stop-Process -Id $testProc.Id -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-    Write-OK "测试完成"
+        Stop-Process -Id $testProc.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+        Write-OK "测试完成"
+    } else {
+        Write-Step 2 4 "复用已有配置，跳过..."
+        Write-Step 3 4 "复用已有配置，跳过..."
+        Write-OK "跳过"
+    }
 
     Write-Step 4 4 "设置开机自启..."
     Stop-Ngrok
 
-    # 创建启动脚本
-    $ngrokStartBat = Join-Path $ngrokDir "start-ngrok.bat"
+    # 创建/更新启动脚本
     $batContent = @"
 @echo off
 "$ngrokExe" http $Port$(if ($ngrokDomain) { " --domain=$ngrokDomain" })
