@@ -441,12 +441,45 @@ function Setup-Cloudflare {
     }
 
     Write-Step 4 5 "绑定域名..."
-    $subdomain = Read-Host "  请输入子域名 (如 omp.yourdomain.com)"
-    $routeOutput = & $cfExe tunnel route dns openmodelpool $subdomain 2>&1 | Out-String
-    if ($routeOutput -match "Added CNAME" -or $routeOutput -match "already exists") {
-        Write-OK "域名已绑定: $subdomain"
+    
+    # Check if existing config.yml already has a hostname
+    $cfConfigFile = "$cfConfigDir\config.yml"
+    $existingHostname = ""
+    if (Test-Path $cfConfigFile) {
+        $cfgContent = Get-Content $cfConfigFile -Raw -ErrorAction SilentlyContinue
+        if ($cfgContent -match "hostname:\s*(.+)") {
+            $existingHostname = $Matches[1].Trim()
+        }
+    }
+    
+    $skipDnsBinding = $false
+    if ($existingHostname) {
+        Write-Host "  检测到已绑定的域名: $existingHostname" -ForegroundColor $G
+        $reuseChoice = Read-Host "  是否复用此域名？[Y/n]"
+        if ($reuseChoice -ne "n" -and $reuseChoice -ne "N") {
+            $subdomain = $existingHostname
+            $skipDnsBinding = $true
+            Write-OK "复用域名: $subdomain（跳过DNS绑定）"
+        } else {
+            $subdomain = Read-Host "  请输入子域名 (如 omp.yourdomain.com)"
+        }
     } else {
-        Write-Info $routeOutput
+        $subdomain = Read-Host "  请输入子域名 (如 omp.yourdomain.com)"
+    }
+    
+    if (-not $skipDnsBinding) {
+        $errTmp = Join-Path $env:TEMP "cf-route-err.txt"
+        $outTmp = Join-Path $env:TEMP "cf-route-out.txt"
+        Start-Process -FilePath $cfExe -ArgumentList "tunnel", "route", "dns", "openmodelpool", $subdomain `
+            -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $outTmp -RedirectStandardError $errTmp | Out-Null
+        $routeOutput = (Get-Content $outTmp -Raw -ErrorAction SilentlyContinue) + (Get-Content $errTmp -Raw -ErrorAction SilentlyContinue)
+        Remove-Item $outTmp, $errTmp -Force -ErrorAction SilentlyContinue
+        if ($routeOutput -match "Added CNAME" -or $routeOutput -match "already exists" -or $routeOutput -match "already configured") {
+            Write-OK "域名已绑定: $subdomain"
+        } else {
+            Write-Info $routeOutput
+        }
     }
 
     Write-Step 5 5 "配置并启动..."
