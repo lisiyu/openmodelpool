@@ -23,8 +23,6 @@ if (-not $RELEASE_TAG) {
         $RELEASE_TAG = "v4.0.5"
     }
 }
-$URL = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/openmodelpool-windows-amd64.exe"
-
 Write-Host "  OpenModelPool 增量更新 (目标版本: $RELEASE_TAG)" -ForegroundColor Cyan
 
 # 1. 停止进程
@@ -32,15 +30,48 @@ Write-Host "[1/3] 停止服务..." -ForegroundColor Yellow
 Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 
-# 2. 下载
+# 2. 下载（动态匹配资产，兼容 .exe 和 .zip）
 Write-Host "[2/3] 下载新版本..." -ForegroundColor Yellow
-$tmpExe = Join-Path $env:TEMP "openmodelpool-windows-amd64.exe"
-Invoke-WebRequest -Uri $URL -OutFile $tmpExe -UseBasicParsing
+$tmpDir = Join-Path $env:TEMP "omp-update-$(Get-Random)"
+New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+
+$assetName = ""; $assetUrl = ""
+try {
+    $apiUrl = "https://api.github.com/repos/$GITHUB_REPO/releases/tags/$RELEASE_TAG"
+    $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing
+    $bestBin = $null; $bestArc = $null
+    foreach ($asset in $release.assets) {
+        $n = $asset.name.ToLower()
+        if ($n -match "sha256|checksum|\.txt") { continue }
+        if ($n -match "windows" -and $n -match "amd64") {
+            if ($n -match "\.zip$") { if (-not $bestArc) { $bestArc = $asset } }
+            else { if (-not $bestBin) { $bestBin = $asset } }
+        }
+    }
+    $selected = if ($bestBin) { $bestBin } else { $bestArc }
+    if ($selected) { $assetName = $selected.name; $assetUrl = $selected.browser_download_url }
+} catch {}
+if (-not $assetUrl) {
+    $assetName = "openmodelpool-windows-amd64.exe"
+    $assetUrl = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/$assetName"
+}
+
+$tmpFile = Join-Path $tmpDir $assetName
+Invoke-WebRequest -Uri $assetUrl -OutFile $tmpFile -UseBasicParsing
+
+# 解压（如果是 .zip）
+$ompExe = $tmpFile
+if ($assetName -match "\.zip$") {
+    $extractDir = Join-Path $tmpDir "extracted"
+    Expand-Archive -Path $tmpFile -DestinationPath $extractDir -Force
+    $exeFile = Get-ChildItem -Path $extractDir -Filter "openmodelpool*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($exeFile) { $ompExe = $exeFile.FullName } else { Write-Host "  [错误] 解压后未找到 exe" -ForegroundColor Red; exit 1 }
+}
 
 # 3. 替换二进制
 Write-Host "[3/3] 替换二进制..." -ForegroundColor Yellow
-Copy-Item $tmpExe -Destination (Join-Path $InstallDir "openmodelpool.exe") -Force
-Remove-Item $tmpExe -Force -ErrorAction SilentlyContinue
+Copy-Item $ompExe -Destination (Join-Path $InstallDir "openmodelpool.exe") -Force
+Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # 4. 安装/更新 Xray (VMess 代理支持)
 Write-Host "  检查 Xray..." -ForegroundColor DarkGray
