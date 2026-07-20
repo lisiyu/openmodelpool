@@ -190,6 +190,7 @@ function Setup-Cloudflare {
     
     $credFile = "$configDir\$tunnelId.json"
     
+    # Always (re)write config.yml — idempotent
     @"
 tunnel: $tunnelId
 credentials-file: $credFile
@@ -199,19 +200,52 @@ ingress:
     service: http://localhost:$LocalPort
   - service: http_status:404
 "@ | Set-Content "$configDir\config.yml" -Encoding UTF8
+    Write-Host "  配置已写入: $configDir\config.yml" -ForegroundColor $G
 
-    # Install as Windows service
-    $svcOutput = & $cfExe service install 2>&1 | Out-String
-    if (Get-Service cloudflared -ErrorAction SilentlyContinue) {
-        Write-Host "  已安装为 Windows 服务并启动" -ForegroundColor $G
+    # Check if cloudflared service already exists
+    $cfSvc = Get-Service cloudflared -ErrorAction SilentlyContinue
+    if ($cfSvc) {
+        Write-Host "  检测到已有 cloudflared 服务，重启中..." -ForegroundColor $Y
+        try { Restart-Service cloudflared -Force } catch {}
+        Start-Sleep -Seconds 3
+        if ((Get-Service cloudflared).Status -eq "Running") {
+            Write-Host "  cloudflared 服务已重启" -ForegroundColor $G
+        } else {
+            Write-Host "  服务重启失败，尝试启动..." -ForegroundColor $Y
+            try { Start-Service cloudflared } catch {}
+        }
     } else {
-        Write-Host "  服务安装失败，使用计划任务替代..." -ForegroundColor $Y
-        $action = New-ScheduledTaskAction -Execute $cfExe -Argument "tunnel run openmodelpool"
-        $trigger = New-ScheduledTaskTrigger -AtStartup
-        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-        Register-ScheduledTask -TaskName "CloudflaredTunnel" -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
-        Start-ScheduledTask -TaskName "CloudflaredTunnel"
-        Write-Host "  已设置计划任务并启动" -ForegroundColor $G
+        # Check if scheduled task already exists
+        $cfTask = Get-ScheduledTask -TaskName "CloudflaredTunnel" -ErrorAction SilentlyContinue
+        if ($cfTask) {
+            Write-Host "  检测到已有 CloudflaredTunnel 计划任务，重启中..." -ForegroundColor $Y
+            Stop-ScheduledTask -TaskName "CloudflaredTunnel" -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+            Start-ScheduledTask -TaskName "CloudflaredTunnel"
+            Write-Host "  计划任务已重启" -ForegroundColor $G
+        } else {
+            # First time: try service install, fall back to scheduled task
+            Write-Host "  首次安装，尝试注册为 Windows 服务..." -ForegroundColor $Y
+            $errTmp = Join-Path $env:TEMP "cf-svc-err.txt"
+            $outTmp = Join-Path $env:TEMP "cf-svc-out.txt"
+            Start-Process -FilePath $cfExe -ArgumentList "service", "install" `
+                -NoNewWindow -Wait -PassThru `
+                -RedirectStandardOutput $outTmp -RedirectStandardError $errTmp | Out-Null
+            $svcOutput = (Get-Content $outTmp -Raw -ErrorAction SilentlyContinue) + (Get-Content $errTmp -Raw -ErrorAction SilentlyContinue)
+            Remove-Item $outTmp, $errTmp -Force -ErrorAction SilentlyContinue
+            
+            if (Get-Service cloudflared -ErrorAction SilentlyContinue) {
+                Write-Host "  已安装为 Windows 服务并启动" -ForegroundColor $G
+            } else {
+                Write-Host "  服务安装失败，使用计划任务替代..." -ForegroundColor $Y
+                $action = New-ScheduledTaskAction -Execute $cfExe -Argument "tunnel run openmodelpool"
+                $trigger = New-ScheduledTaskTrigger -AtStartup
+                $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
+                Register-ScheduledTask -TaskName "CloudflaredTunnel" -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
+                Start-ScheduledTask -TaskName "CloudflaredTunnel"
+                Write-Host "  已设置计划任务并启动" -ForegroundColor $G
+            }
+        }
     }
 
     Write-Host ""
