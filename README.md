@@ -325,13 +325,13 @@ OpenModelPool Agent evolves from a lightweight personal AI proxy into a **decent
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.sh | sudo bash
 ```
 
 Custom parameters:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.sh | bash -s -- --port 9090 --dir /opt/openmodelpool
+curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.sh | sudo bash -s -- /opt/openmodelpool 9090
 ```
 
 **Windows (PowerShell as Admin):**
