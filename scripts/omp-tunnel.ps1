@@ -132,14 +132,42 @@ function Setup-Cloudflare {
         }
     }
 
-    # 4. Bind domain
+    # 4. Bind domain (with existing config detection)
     Write-Host ""
     Write-Host "[4/5] 绑定域名..." -ForegroundColor $Y
-    Write-Host "  请输入要绑定的子域名（例如: omp.yourdomain.com）:"
-    $subdomain = Read-Host "  > "
     
+    # Check if existing config.yml already has a hostname
+    $configFile = "$configDir\config.yml"
+    $existingHostname = ""
+    if (Test-Path $configFile) {
+        $configContent = Get-Content $configFile -Raw -ErrorAction SilentlyContinue
+        if ($configContent -match "hostname:\s*(.+)") {
+            $existingHostname = $Matches[1].Trim()
+        }
+    }
+    
+    if ($existingHostname) {
+        Write-Host "  检测到已绑定的域名: $existingHostname" -ForegroundColor $G
+        $reuseChoice = Read-Host "  是否复用此域名？[Y/n]"
+        if ($reuseChoice -ne "n" -and $reuseChoice -ne "N") {
+            $subdomain = $existingHostname
+            Write-Host "  复用域名: $subdomain" -ForegroundColor $G
+        } else {
+            Write-Host "  请输入要绑定的子域名（例如: omp.yourdomain.com）:"
+            $subdomain = Read-Host "  > "
+        }
+    } else {
+        Write-Host "  请输入要绑定的子域名（例如: omp.yourdomain.com）:"
+        $subdomain = Read-Host "  > "
+    }
+    
+    # Try to bind domain — "already configured" / "already exists" / "Added CNAME" are all success
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
     $routeOutput = & $cfExe tunnel route dns openmodelpool $subdomain 2>&1 | Out-String
-    if ($routeOutput -match "Added CNAME" -or $routeOutput -match "already exists") {
+    $ErrorActionPreference = $prevEAP
+    
+    if ($routeOutput -match "Added CNAME" -or $routeOutput -match "already exists" -or $routeOutput -match "already configured") {
         Write-Host "  域名已绑定: $subdomain" -ForegroundColor $G
     } else {
         Write-Host "  域名绑定失败: $routeOutput" -ForegroundColor $R
@@ -176,45 +204,6 @@ ingress:
         Register-ScheduledTask -TaskName "CloudflaredTunnel" -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
         Start-ScheduledTask -TaskName "CloudflaredTunnel"
         Write-Host "  已设置计划任务并启动" -ForegroundColor $G
-    }
-
-    # Write domain to OMP config.json so admin panel knows it's bound
-    $configFile = "$InstallDir\data\config.json"
-    $configDir = Split-Path $configFile -Parent
-    if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
-    
-    $cfg = @{}
-    if (Test-Path $configFile) {
-        try {
-            $raw = Get-Content $configFile -Raw
-            $cfg = $raw | ConvertFrom-Json -AsHashtable -ErrorAction Stop
-            if (-not $cfg) { $cfg = @{} }
-        } catch {
-            # Try parsing without HMAC prefix
-            try {
-                $idx = $raw.IndexOf('{')
-                if ($idx -gt 0) { $raw = $raw.Substring($idx) }
-                $cfg = $raw | ConvertFrom-Json -AsHashtable -ErrorAction Stop
-            } catch { $cfg = @{} }
-        }
-    }
-    $cfg['bound_domain'] = $subdomain
-    $cfg['tunnel_domain'] = $subdomain
-    $cfg['tunnel_mode'] = 'manual'
-    $cfg['tunnel_url'] = "https://$subdomain"
-    $cfg | ConvertTo-Json -Depth 10 | Set-Content $configFile -Encoding UTF8
-    Write-Host "  域名已写入 OMP 配置" -ForegroundColor $G
-
-    # Restart OMP to pick up the new domain config
-    $ompProc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
-    if ($ompProc) {
-        Stop-Process -Name "openmodelpool" -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 2
-    }
-    if (Test-Path "$InstallDir\openmodelpool.exe") {
-        Start-Process -FilePath "$InstallDir\openmodelpool.exe" -WorkingDirectory $InstallDir -WindowStyle Hidden
-        Start-Sleep -Seconds 2
-        Write-Host "  OMP 服务已重启" -ForegroundColor $G
     }
 
     Write-Host ""
