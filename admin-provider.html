@@ -539,18 +539,58 @@ async function loadProviders() {}
 async function loadStatus() {}
 function renderDiscoveredPlatforms() {}
 
-// Page load
+// Page load — optimized with sessionStorage caching
 window.addEventListener('load', async function() {
   var pid = getQueryParam('id');
   var isEdit = !!pid;
 
-  // Parallel: fetch presets + providers (lite for add mode, full for edit) + discovery
-  var promises = [
-    fetch('/api/providers/presets').then(r => r.json()).catch(() => ({})),
-    authFetch('/api/providers' + (isEdit ? '' : '?lite=true')).then(r => r.json()).catch(e => { toast('加载失败: ' + e.message, 'error'); return {}; }),
-    authFetch('/api/discovery/platforms').then(r => r.json()).catch(() => ({})),
-  ];
-  var [presetData, providerData, discoveryData] = await Promise.all(promises);
+  // 1. Presets: use sessionStorage cache (static, compiled into binary)
+  var presetPromise;
+  try {
+    var cachedPresets = sessionStorage.getItem('omp_presets_cache');
+    if (cachedPresets) {
+      presetPromise = Promise.resolve(JSON.parse(cachedPresets));
+    }
+  } catch(e) {}
+  if (!presetPromise) {
+    presetPromise = fetch('/api/providers/presets').then(r => r.json()).then(d => {
+      try { sessionStorage.setItem('omp_presets_cache', JSON.stringify(d)); } catch(e) {}
+      return d;
+    }).catch(() => ({}));
+  }
+
+  // 2. Providers: edit mode → fetch single provider; add mode → cached lite list or fetch
+  var providerPromise;
+  if (isEdit) {
+    // Edit: fetch only the one provider being edited (68KB → ~1-3KB)
+    providerPromise = authFetch('/api/providers/' + encodeURIComponent(pid))
+      .then(r => r.json())
+      .then(p => ({ providers: [p] }))
+      .catch(e => { toast('加载失败: ' + e.message, 'error'); return {}; });
+  } else {
+    // Add: try cached lite list (5-min TTL), else fetch fresh
+    var liteCache = null;
+    try {
+      var raw = sessionStorage.getItem('omp_lite_cache');
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed.ts && Date.now() - parsed.ts < 300000) liteCache = parsed.data;
+      }
+    } catch(e) {}
+    if (liteCache) {
+      providerPromise = Promise.resolve(liteCache);
+    } else {
+      providerPromise = authFetch('/api/providers?lite=true').then(r => r.json()).then(d => {
+        try { sessionStorage.setItem('omp_lite_cache', JSON.stringify({ ts: Date.now(), data: d })); } catch(e) {}
+        return d;
+      }).catch(e => { toast('加载失败: ' + e.message, 'error'); return {}; });
+    }
+  }
+
+  // 3. Discovery: always fetch (small payload, may change)
+  var discoveryPromise = authFetch('/api/discovery/platforms').then(r => r.json()).catch(() => ({}));
+
+  var [presetData, providerData, discoveryData] = await Promise.all([presetPromise, providerPromise, discoveryPromise]);
   presets = presetData.presets || [];
   allProviders = providerData.providers || [];
   discoveredPlatforms = discoveryData.platforms || [];
@@ -890,6 +930,8 @@ async function saveProvider() {
     const method = editingId ? 'PUT' : 'POST';
     const r = await authFetch(url, { method, body: JSON.stringify(data) });
     if (!r.ok) { const e = await r.json(); throw new Error(extractError(e) || '保存失败'); }
+    // Invalidate lite cache (provider list changed)
+    try { sessionStorage.removeItem('omp_lite_cache'); } catch(e) {}
     toast(editingId ? '已更新' : '已添加');
     // Mark as added in discovery if it was a discovered platform
     if (!editingId) {
