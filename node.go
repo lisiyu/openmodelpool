@@ -306,6 +306,30 @@ func (n *NodeIdentity) NeedsMigration() bool {
 	return n.needsMigration
 }
 
+// Migrate rewrites a legacy mm- formatted identity into the canonical
+// mmx- form (REQ-S2-5). It recomputes nodeID from the existing public key,
+// clears the needsMigration flag and persists the change. It does not
+// regenerate keys — the keypair is preserved, only the NodeID string prefix
+// and on-disk representation are updated. This is a non-blocking safeguard:
+// callers should detect NeedsMigration() and migrate before enabling the
+// network, but the migration never blocks normal operation.
+func (n *NodeIdentity) Migrate() error {
+	n.mu.Lock()
+	if n.pubKey == nil {
+		n.mu.Unlock()
+		return fmt.Errorf("cannot migrate: public key unavailable")
+	}
+	// Recompute the canonical NodeID from the existing public key.
+	n.nodeID = p2pNodeIDPrefix + hex.EncodeToString(n.pubKey)
+	n.needsMigration = false
+	// Preserve existing mnemonic/backup state; just re-persist with new NodeID.
+	n.mu.Unlock()
+
+	n.save()
+	slog.Info("node identity migrated to canonical mmx- format", "node_id", n.nodeID)
+	return nil
+}
+
 // HasMnemonic returns whether this identity is mnemonic-based.
 func (n *NodeIdentity) HasMnemonic() bool {
 	n.mu.RLock()

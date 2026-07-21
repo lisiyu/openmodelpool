@@ -836,24 +836,87 @@ select.form-input{appearance:none;cursor:pointer}
       OpenModelPool v4.1 · Made with ❤️ · 开源协议 MIT
     </div>
   </div>
-  <!-- 共享网络免责声明模态框 -->
+  <!-- 共享网络 · 身份备份向导（切片② 四步状态机 S1→S2→S3→S4） -->
   <div class="modal-overlay" id="networkDisclaimerModal">
-    <div class="modal" style="max-width:640px">
+    <div class="modal" style="max-width:680px">
       <div class="modal-title">
-        <span>🌐 共享网络使用须知</span>
-        <button class="modal-close" onclick="closeNetworkDisclaimer()">✕</button>
+        <span>🌐 加入共享网络 · 身份备份向导</span>
+        <button class="modal-close" onclick="closeNetworkWizard()">✕</button>
       </div>
-      <div id="disclaimerContent"></div>
-      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border-color)">
-        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
-          <input type="checkbox" id="networkConsentCheck" onchange="toggleNetworkConsentBtn()" style="margin-top:3px;width:16px;height:16px;flex-shrink:0">
-          <span id="networkConsentText">我已阅读并理解以上说明，自愿承担相关风险</span>
+
+      <!-- S1 须知 -->
+      <div id="wizardStepDisclaimer">
+        <div id="disclaimerContent"></div>
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border-color)">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="networkConsentCheck" onchange="toggleNetworkConsentBtn()" style="margin-top:3px;width:16px;height:16px;flex-shrink:0">
+            <span id="networkConsentText">我已阅读并理解以上说明，自愿承担相关风险</span>
+          </label>
+        </div>
+        <div style="margin-top:16px;text-align:right">
+          <button class="btn btn-secondary" onclick="closeNetworkWizard()" style="margin-right:8px">取消</button>
+          <button class="btn btn-primary" id="networkConsentBtn" onclick="wizardGoMnemonic()" disabled style="opacity:0.5">下一步</button>
+        </div>
+        <div style="margin-top:14px;text-align:right">
+          <button style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:12px;padding:4px 6px" onclick="startRestoreFlow()">🔑 使用已有助记词恢复</button>
+        </div>
+      </div>
+
+      <!-- S2 助记词 -->
+      <div id="wizardStepMnemonic" style="display:none">
+        <div style="font-weight:600;font-size:14px;margin-bottom:6px">① 备份您的节点助记词</div>
+        <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;line-height:1.6">这是恢复节点身份与贡献积分的唯一方式。请离线抄写并妥善保存，<b style="color:var(--warning)">此助记词仅显示一次</b>。</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <span style="font-size:12px">词数</span>
+          <select id="mnemonicWordCount" class="form-input" style="width:auto;padding:4px 8px;font-size:12px" onchange="generateIdentity()">
+            <option value="12">12 词</option>
+            <option value="24">24 词</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="generateIdentity()">生成助记词</button>
+          <button class="btn btn-secondary btn-sm" id="mnemonicExportBtn" style="display:none" onclick="exportMnemonic()">加密导出</button>
+        </div>
+        <div id="mnemonicGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
+        <div id="restorePanel" style="display:none;margin-top:14px;padding-top:12px;border-top:1px dashed var(--border-color)">
+          <div style="font-size:12px;font-weight:600;margin-bottom:6px">输入已有助记词（空格分隔）</div>
+          <textarea id="restoreMnemonicInput" class="form-input" rows="3" placeholder="paste your mnemonic here" style="width:100%;font-family:monospace;font-size:12px"></textarea>
+          <div style="margin-top:8px;text-align:right">
+            <button class="btn btn-primary btn-sm" onclick="restoreIdentity()">恢复身份</button>
+          </div>
+        </div>
+        <div style="margin-top:16px;text-align:right">
+          <button class="btn btn-secondary" onclick="wizardBackToConsent()" style="margin-right:8px">上一步</button>
+          <button class="btn btn-primary" id="mnemonicNextBtn" onclick="wizardGoBackup()" disabled style="opacity:0.5">我已抄写，下一步</button>
+        </div>
+      </div>
+
+      <!-- S3 备份确认 -->
+      <div id="wizardStepBackup" style="display:none">
+        <div style="font-weight:600;font-size:14px;margin-bottom:8px">② 确认助记词备份</div>
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;margin:14px 0;line-height:1.6">
+          <input type="checkbox" id="backupConfirmCheck" onchange="toggleBackupConfirmBtn()" style="margin-top:3px;width:16px;height:16px;flex-shrink:0">
+          <span>我已安全抄写并妥善保管好助记词，理解<b>丢失助记词将导致节点身份与贡献积分无法恢复</b>。</span>
         </label>
+        <div style="margin-top:6px;text-align:right">
+          <button class="btn btn-secondary" onclick="wizardBackToMnemonic()" style="margin-right:8px">上一步</button>
+          <button class="btn btn-primary" id="backupConfirmBtn" onclick="completeJoin(false)" disabled style="opacity:0.5">完成加入</button>
+        </div>
       </div>
-      <div style="margin-top:16px;text-align:right">
-        <button class="btn btn-secondary" onclick="closeNetworkDisclaimer()" style="margin-right:8px">取消</button>
-        <button class="btn btn-primary" id="networkConsentBtn" onclick="confirmNetworkJoin()" disabled style="opacity:0.5">确认加入</button>
+
+      <!-- S4 完成 -->
+      <div id="wizardStepDone" style="display:none">
+        <div style="text-align:center;padding:12px 0">
+          <div style="font-size:40px">🎉</div>
+          <div style="font-weight:600;font-size:15px;margin-top:6px">已加入共享网络</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:6px">请妥善保管您的助记词，它是恢复节点身份的唯一凭证。</div>
+          <div id="doneNodeId" style="margin-top:10px;font-family:monospace;font-size:11px;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:8px"></div>
+        </div>
+        <div style="margin-top:16px;text-align:right">
+          <button class="btn btn-primary" onclick="closeNetworkWizard()">完成</button>
+        </div>
       </div>
+
+      <!-- 迁移提示（REQ-S2-5） -->
+      <div id="migrationHint" style="display:none;margin-top:14px;padding:10px 12px;border-radius:8px;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);font-size:12px;color:#eab308"></div>
     </div>
   </div>
 <!-- 添加/编辑平台模态框 -->

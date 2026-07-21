@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -318,12 +316,11 @@ func (rt *RouteTable) SelectBestNode(model string) *RouteEntry {
 // ============================================================
 
 type NetworkManager struct {
-	mu              sync.RWMutex
-	config          NetworkConfig
-	dataPath        string
-	startTime       time.Time
-	stopRefresh     chan struct{}
-	pendingMnemonic string // mnemonic from auto-generation, shown to user once
+	mu          sync.RWMutex
+	config      NetworkConfig
+	dataPath    string
+	startTime   time.Time
+	stopRefresh chan struct{}
 }
 
 var netMgr *NetworkManager
@@ -442,14 +439,47 @@ func (nm *NetworkManager) Init() error {
 	return nil
 }
 
-// DeriveP2PNodeID creates deterministic P2P NodeID from Ed25519 public key.
-// Format: mmx- + hex(sha256(pubkey)[:16]) = mmx- + 32 hex chars = 36 total
+// DeriveP2PNodeID returns this node's canonical P2P NodeID.
+//
+// REQ-S2-1 (D1 fix): it must be byte-for-byte identical to node.NodeID(),
+// i.e. the 68-character form "mmx-" + hex(Ed25519 public key). The previous
+// implementation used hex(sha256(pubkey)[:16]) which produced a 36-character
+// value that diverged from the identity object. Unifying on node.NodeID()
+// makes config.NodeID, the broadcast value and the identity object all share
+// the same 68-character "mmx-" string (REQ-S2-3 three-way invariant).
 func DeriveP2PNodeID() string {
-	if node == nil || node.pubKey == nil {
+	if node == nil {
 		return ""
 	}
-	hash := sha256.Sum256(node.pubKey)
-	return p2pNodeIDPrefix + hex.EncodeToString(hash[:16])
+	return node.NodeID()
+}
+
+// canonicalNodeID returns the authoritative Node ID from the identity object.
+// This is the single source of truth (68-char mmx- form). The persisted
+// config.NodeID is only a cache that must always equal this value
+// (REQ-S2-3 invariant: config.NodeID == node.NodeID() == GetInfo().NodeID()).
+func canonicalNodeID() string {
+	if node == nil {
+		return ""
+	}
+	return node.NodeID()
+}
+
+// assertNodeIDInvariant verifies that config.NodeID matches the canonical
+// identity Node ID. If they diverge (e.g. a stale cached value), it logs a
+// warning and returns the canonical value so callers always broadcast/serve
+// the truth rather than a corrupted value. It never panics.
+func (nm *NetworkManager) assertNodeIDInvariant() string {
+	canonical := canonicalNodeID()
+	if canonical == "" {
+		// Personal mode (no identity): nothing to assert.
+		return ""
+	}
+	if nm.config.NodeID != canonical {
+		slog.Warn("node id invariant violated: config.NodeID diverges from canonical identity NodeID; using canonical for broadcast",
+			"cached", nm.config.NodeID, "canonical", canonical)
+	}
+	return canonical
 }
 
 // registerSelf registers this node's addresses in the route table
@@ -541,35 +571,51 @@ func (nm *NetworkManager) stopRefreshLoop() {
 }
 
 // EnableSharedNetwork activates the shared network. Requires prior consent
-// (recorded via /api/network/consent). After preparing identity it funnels
-// through activateNetwork() so the refresh loop and federation manager stay
-// in sync with the single source of truth (REQ-2 / T3).
+// (recorded via /api/network/consent) AND a fully prepared identity: the node
+// must have been initialized (generated or restored from a mnemonic) and the
+// user must have confirmed backup. After preparing identity it funnels through
+// activateNetwork() so the refresh loop and federation manager stay in sync
+// with the single source of truth (REQ-2 / T3).
+//
+// REQ-S2-2/3: the strict guard below enforces the backup-confirmation gate.
+// The old behavior of auto-generating a mnemonic inside this call has been
+// removed — identity generation/confirmation is now driven explicitly by the
+// frontend wizard via /api/network/identity/* endpoints before enable.
 func (nm *NetworkManager) EnableSharedNetwork() error {
 	nm.mu.Lock()
 
 	if !nm.config.ConsentAccepted {
 		nm.mu.Unlock()
-		return fmt.Errorf("consent not accepted")
+		return fmt.Errorf("请先阅读并同意共享网络须知")
 	}
-	if nm.config.NodeID == "" {
-		if node != nil && !node.IsInitialized() {
-			// Auto-generate node identity on first join
-			mnemonic, err := node.GenerateWithMnemonic(12)
-			if err != nil {
-				nm.mu.Unlock()
-				return fmt.Errorf("failed to generate node identity: %w", err)
-			}
-			nm.pendingMnemonic = mnemonic
-			slog.Info("auto-generated node identity on network join", "node_id", node.NodeID())
-		}
-		if node != nil && node.IsInitialized() {
-			nm.config.NodeID = DeriveP2PNodeID()
-		}
-		if nm.config.NodeID == "" {
+
+	// REQ-S2-2/3: strict identity guard. Network capability is granted only when
+	// a mnemonic-based identity exists AND the user has confirmed backup.
+	if node == nil || !node.IsInitialized() {
+		nm.mu.Unlock()
+		return fmt.Errorf("请先生成或恢复助记词以创建节点身份")
+	}
+	if !node.IsBackupConfirmed() {
+		nm.mu.Unlock()
+		return fmt.Errorf("请先在备份向导中确认助记词已安全备份，再启用共享网络")
+	}
+
+	// REQ-S2-5: legacy mm- format migration (non-blocking safeguard). If the
+	// loaded identity still uses the old mm- prefix, rewrite it to the canonical
+	// mmx- form and persist before we derive the NodeID.
+	if node.NeedsMigration() {
+		slog.Warn("legacy mm- node identity detected; migrating to mmx- format", "node_id", node.NodeID())
+		if err := node.Migrate(); err != nil {
 			nm.mu.Unlock()
-			return fmt.Errorf("node identity not initialized")
+			return fmt.Errorf("旧格式身份迁移失败: %w", err)
 		}
 	}
+
+	// Write the canonical NodeID (68-char mmx- form) from the identity object.
+	if nm.config.NodeID == "" {
+		nm.config.NodeID = DeriveP2PNodeID()
+	}
+
 	if nm.config.NodeName == "" {
 		suffix := nm.config.NodeID
 		if len(suffix) > 8 {
@@ -638,18 +684,36 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		uptime = int64(time.Since(nm.startTime).Seconds())
 	}
 
+	// REQ-S2-3: node_id uses the canonical identity value (68-char mmx- form).
+	// When an identity is initialized we prefer the canonical NodeID over the
+	// cached config.NodeID so callers/广播 always see the single source of truth.
+	nodeID := nm.config.NodeID
+	backupConfirmed := false
+	needsMigration := false
+	identityInitialized := false
+	hasMnemonic := false
+	if node != nil {
+		if node.IsInitialized() {
+			nodeID = canonicalNodeID()
+			identityInitialized = true
+		}
+		backupConfirmed = node.IsBackupConfirmed()
+		needsMigration = node.NeedsMigration()
+		hasMnemonic = node.HasMnemonic()
+	}
+
 	// Build relay consumer URL hint
 	relayURL := ""
-	if nm.config.NodeID != "" && len(nm.config.Addresses) > 0 {
+	if nodeID != "" && len(nm.config.Addresses) > 0 {
 		// Pick the first public address as relay hint
 		for _, a := range nm.config.Addresses {
 			if strings.HasPrefix(a, "https://") {
-				relayURL = fmt.Sprintf("%s/network/%s/v1", a, nm.config.NodeID)
+				relayURL = fmt.Sprintf("%s/network/%s/v1", a, nodeID)
 				break
 			}
 		}
 		if relayURL == "" && len(nm.config.Addresses) > 0 {
-			relayURL = fmt.Sprintf("%s/network/%s/v1", nm.config.Addresses[0], nm.config.NodeID)
+			relayURL = fmt.Sprintf("%s/network/%s/v1", nm.config.Addresses[0], nodeID)
 		}
 	}
 
@@ -658,7 +722,7 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		"consent_accepted":   nm.config.ConsentAccepted,
 		"consent_time":       nm.config.ConsentTime,
 		"node_name":          nm.config.NodeName,
-		"node_id":            nm.config.NodeID,
+		"node_id":            nodeID,
 		"shared_models":      nm.config.SharedModels,
 		"max_daily_requests": nm.config.MaxDailyRequests,
 		"contrib_points":     nm.config.ContribPoints,
@@ -683,6 +747,12 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 
 		// v3.2: REQ-12 foundation — contribution boundary (persisted, not yet enforced)
 		"share_boundary": nm.config.ShareBoundary,
+
+		// REQ-S2-3/5/6: identity-state fields exposed to the admin UI
+		"identity_initialized": identityInitialized,
+		"has_mnemonic":         hasMnemonic,
+		"backup_confirmed":     backupConfirmed,
+		"needs_migration":      needsMigration,
 	}
 }
 
@@ -903,6 +973,11 @@ func (nm *NetworkManager) activateNetwork() {
 		nm.config.NodeID = DeriveP2PNodeID()
 		nm.mu.Unlock()
 	}
+
+	// REQ-S2-3: enforce the three-way NodeID invariant at activation time.
+	// assertNodeIDInvariant logs a warning (and would surface a diverged value)
+	// but never blocks activation, keeping the network resilient.
+	nm.assertNodeIDInvariant()
 
 	nm.startTime = time.Now()
 	go nm.registerSelf()
@@ -1151,23 +1226,23 @@ func handleNetworkDisclaimer(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleNetworkEnable(w http.ResponseWriter, r *http.Request) {
+	if netMgr == nil {
+		writeError(w, 500, "网络管理器未初始化")
+		return
+	}
 	if err := netMgr.EnableSharedNetwork(); err != nil {
+		// REQ-S2-7: surface a clear, actionable message (Chinese) instead of a raw error.
 		writeError(w, 400, err.Error())
 		return
 	}
 	resp := map[string]any{
-		"status":          "enabled",
-		"mode":            "shared",
-		"network_enabled": netMgr.config.NetworkEnabled,
-		"node_id":         netMgr.config.NodeID,
-		"share_to_pool":   netMgr.config.ShareToPool,
-		"capabilities":    netMgr.config.Capabilities,
-	}
-	// Return mnemonic if auto-generated (first-time join)
-	if netMgr.pendingMnemonic != "" {
-		resp["mnemonic"] = netMgr.pendingMnemonic
-		resp["mnemonic_warning"] = "请安全保存以下助记词，用于恢复节点身份和贡献积分。此提示仅显示一次。"
-		netMgr.pendingMnemonic = ""
+		"status":           "enabled",
+		"mode":             "shared",
+		"network_enabled":  netMgr.config.NetworkEnabled,
+		"node_id":          canonicalNodeID(),
+		"backup_confirmed": node != nil && node.IsBackupConfirmed(),
+		"share_to_pool":    netMgr.config.ShareToPool,
+		"capabilities":     netMgr.config.Capabilities,
 	}
 	writeJSON(w, 200, resp)
 }

@@ -245,6 +245,10 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/network/disclaimer", handleNetworkDisclaimer)
 	mux.HandleFunc("POST /api/network/enable", withAuth(handleNetworkEnable))
 	mux.HandleFunc("POST /api/network/disable", withAuth(handleNetworkDisable))
+	// Phase 2 切片② — explicit identity lifecycle endpoints (generate → confirm-backup → restore).
+	mux.HandleFunc("POST /api/network/identity/generate", withAuth(handleNetworkIdentityGenerate))
+	mux.HandleFunc("POST /api/network/identity/confirm-backup", withAuth(handleNetworkIdentityConfirmBackup))
+	mux.HandleFunc("POST /api/network/identity/restore", withAuth(handleNetworkIdentityRestore))
 	mux.HandleFunc("POST /api/network/toggle", withAuth(handleNetworkToggle))
 	mux.HandleFunc("PUT /api/network/config", withAuth(handleNetworkConfigUpdate))
 	mux.HandleFunc("GET /api/network/peers", withAuth(handleNetworkPeers))

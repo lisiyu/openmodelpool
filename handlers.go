@@ -788,3 +788,92 @@ func filterPlaceholder(s string) string {
 	}
 	return s
 }
+
+// ============================================================
+// Handlers - Network Identity (Phase 2 切片②)
+// 显式编排的身份生命周期：generate → confirm-backup → enable / restore
+// ============================================================
+
+// handleNetworkIdentityGenerate generates a new mnemonic-based identity.
+// POST /api/network/identity/generate  body: {"word_count": 12|24}
+// Returns the plaintext mnemonic (held in memory only on the client side).
+// REQ-S2-2: the frontend shows the mnemonic exactly once; the server never
+// persists or re-sends it after backup is confirmed.
+func handleNetworkIdentityGenerate(w http.ResponseWriter, r *http.Request) {
+	if node == nil {
+		writeError(w, 500, "节点身份模块未初始化")
+		return
+	}
+	// REQ-S2-6: once backup is confirmed the identity is locked — refuse to
+	// regenerate (would overwrite the user's only recovery seed).
+	if node.IsBackupConfirmed() {
+		writeError(w, 409, "已完成助记词备份确认，无法重新生成身份；如需更换身份请退出共享网络后重试")
+		return
+	}
+	var body struct {
+		WordCount int `json:"word_count"`
+	}
+	_ = readJSON(r, &body)
+	if body.WordCount != 24 {
+		body.WordCount = 12 // default 12
+	}
+	mnemonic, err := node.GenerateWithMnemonic(body.WordCount)
+	if err != nil {
+		writeError(w, 400, "生成助记词失败："+err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"mnemonic":         mnemonic,
+		"word_count":       body.WordCount,
+		"backup_confirmed": false,
+		"node_id":          node.NodeID(),
+		"identity_initialized": true,
+	})
+}
+
+// handleNetworkIdentityConfirmBackup marks the mnemonic backup as confirmed.
+// POST /api/network/identity/confirm-backup  body: {}
+// REQ-S2-2/6: clears the in-memory mnemonic and persists backup_confirmed=true.
+func handleNetworkIdentityConfirmBackup(w http.ResponseWriter, r *http.Request) {
+	if node == nil {
+		writeError(w, 500, "节点身份模块未初始化")
+		return
+	}
+	if !node.IsInitialized() {
+		writeError(w, 400, "请先生成或恢复助记词以创建节点身份")
+		return
+	}
+	// ConfirmBackup is idempotent and safe to call repeatedly.
+	node.ConfirmBackup()
+	writeJSON(w, 200, map[string]any{
+		"backup_confirmed": true,
+		"node_id":          node.NodeID(),
+	})
+}
+
+// handleNetworkIdentityRestore restores an identity from an existing mnemonic.
+// POST /api/network/identity/restore  body: {"mnemonic": "..."}
+// REQ-S2-4: same mnemonic always derives the same Node ID (deterministic).
+func handleNetworkIdentityRestore(w http.ResponseWriter, r *http.Request) {
+	if node == nil {
+		writeError(w, 500, "节点身份模块未初始化")
+		return
+	}
+	var body struct {
+		Mnemonic string `json:"mnemonic"`
+	}
+	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.Mnemonic) == "" {
+		writeError(w, 400, "请提供有效的助记词")
+		return
+	}
+	if err := node.RestoreFromMnemonic(body.Mnemonic); err != nil {
+		// REQ-S2-7: clear, actionable message for the recovery failure path.
+		writeError(w, 400, "助记词无效，请检查每个单词拼写后重试")
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"node_id":          node.NodeID(),
+		"backup_confirmed": true,
+		"restored":         true,
+	})
+}
