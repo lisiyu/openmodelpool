@@ -380,7 +380,21 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 
 func handleListProviders(w http.ResponseWriter, r *http.Request) {
 	owner := getRequestOwner(r)
-	writeJSON(w, 200, map[string]any{"providers": pm.GetVisible(owner)})
+	providers := pm.GetVisible(owner)
+	// Lite mode: exclude models to reduce payload (used by add-platform page)
+	if r.URL.Query().Get("lite") == "true" {
+		lite := make([]map[string]any, 0, len(providers))
+		for _, p := range providers {
+			lite = append(lite, map[string]any{
+				"id":      p.ID,
+				"name":    p.Name,
+				"enabled": p.Enabled,
+			})
+		}
+		writeJSON(w, 200, map[string]any{"providers": lite})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"providers": providers})
 }
 
 func handleGetPresets(w http.ResponseWriter, r *http.Request) {
