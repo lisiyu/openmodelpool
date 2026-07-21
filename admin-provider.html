@@ -541,24 +541,21 @@ function renderDiscoveredPlatforms() {}
 
 // Page load
 window.addEventListener('load', async function() {
-  // Load presets
-  try {
-    const r = await fetch('/api/providers/presets');
-    const d = await r.json();
-    presets = d.presets || [];
-  } catch(e) {}
-
-  // Load providers
-  try {
-    var r = await authFetch('/api/providers');
-    var data = await r.json();
-    allProviders = data.providers || [];
-  } catch(e) {
-    toast('加载失败: ' + e.message, 'error');
-  }
-
   var pid = getQueryParam('id');
-  if (pid) {
+  var isEdit = !!pid;
+
+  // Parallel: fetch presets + providers (lite for add mode, full for edit) + discovery
+  var promises = [
+    fetch('/api/providers/presets').then(r => r.json()).catch(() => ({})),
+    authFetch('/api/providers' + (isEdit ? '' : '?lite=true')).then(r => r.json()).catch(e => { toast('加载失败: ' + e.message, 'error'); return {}; }),
+    authFetch('/api/discovery/platforms').then(r => r.json()).catch(() => ({})),
+  ];
+  var [presetData, providerData, discoveryData] = await Promise.all(promises);
+  presets = presetData.presets || [];
+  allProviders = providerData.providers || [];
+  discoveredPlatforms = discoveryData.platforms || [];
+
+  if (isEdit) {
     editProvider(pid);
   } else {
     showAddProvider();
@@ -591,14 +588,6 @@ async function showAddProvider() {
   document.getElementById('modalStep1').style.display = '';
   document.getElementById('modalStep2').style.display = 'none';
   document.getElementById('presetSearch').value = '';
-  // Load discovered platforms if not yet loaded (for 🆕 badges in preset grid)
-  if (discoveredPlatforms.length === 0) {
-    try {
-      const r = await authFetch('/api/discovery/platforms');
-      const d = await r.json();
-      discoveredPlatforms = d.platforms || [];
-    } catch(e) {}
-  }
   renderPresets();
 }
 
@@ -1077,9 +1066,9 @@ function initApiUrls() {
       if (domainHintEl) domainHintEl.textContent = '在下方绑定域名获得固定地址';
       if (domainBadgeEl) domainBadgeEl.textContent = '';
     }
-    // 4. 绑定引导卡片 - 只有 IP 与域名都未绑定时才显示
+    // 4. 绑定引导卡片 - 只要有一个未绑定就显示
     if (domainQuickCard) {
-      if (!boundIP && !tunnelDomain) {
+      if (!boundIP || !tunnelDomain) {
         domainQuickCard.style.display = 'block';
         if (boundIP && !tunnelDomain) switchBindMode('domain');
         if (!boundIP && tunnelDomain) switchBindMode('ip');
