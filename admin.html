@@ -961,7 +961,11 @@ function openSubPage(url, title) {
   var frame = document.getElementById('subPageFrame');
   var titleEl = document.getElementById('subPageModalTitle');
   if (title) titleEl.textContent = title;
-  frame.src = url;
+  // Reuse the iframe if the same page is already loaded — avoids a full reload on every open
+  if (frame.getAttribute('data-src') !== url) {
+    frame.src = url;
+    frame.setAttribute('data-src', url);
+  }
   modal.classList.add('open');
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
@@ -969,7 +973,7 @@ function openSubPage(url, title) {
 function closeSubPage() {
   var modal = document.getElementById('subPageModal');
   var frame = document.getElementById('subPageFrame');
-  frame.src = 'about:blank';
+  // Keep the loaded sub-page in the iframe (do NOT reset to about:blank) so reopening is instant
   modal.classList.remove('open');
   modal.style.display = 'none';
   document.body.style.overflow = '';
@@ -994,6 +998,16 @@ async function init() {
   } catch(e) { console.error(e); }
   // Load presets in background (non-blocking)
   fetch('/api/providers/presets').then(r => r.json()).then(d => { presets = d.presets || []; }).catch(() => {});
+  // Preload the most-used sub-page (add/edit platform) into the hidden iframe so the first open is instant
+  setTimeout(function() {
+    try {
+      var pf = document.getElementById('subPageFrame');
+      if (pf && pf.getAttribute('data-src') !== '/admin/provider') {
+        pf.src = '/admin/provider';
+        pf.setAttribute('data-src', '/admin/provider');
+      }
+    } catch (e) {}
+  }, 800);
 }
 async function loadStatus() {
   const r = await authFetch('/api/status');
