@@ -241,7 +241,7 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	// On Windows, explicitly specify Chrome path if available
 	if isWindows() {
 		if chromePath := findChromePath(); chromePath != "" {
-			opts = append(opts, chromedp.Flag("chrome-executable-path", chromePath))
+			opts = append(opts, chromedp.ExecPath(chromePath))
 			slog.Info("browser login using Chrome", "path", chromePath)
 		}
 	}
