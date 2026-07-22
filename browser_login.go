@@ -240,6 +240,9 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	}
 	// On Windows, explicitly specify Chrome path if available
 	if isWindows() {
+		// Launch Chrome off-screen so no visible window pops up to confuse
+		// the user. The embedded screenshot workflow still works via CDP.
+		opts = append(opts, chromedp.Flag("window-position", "-32000,-32000"))
 		if chromePath := findChromePath(); chromePath != "" {
 			opts = append(opts, chromedp.ExecPath(chromePath))
 			slog.Info("browser login using Chrome", "path", chromePath)
@@ -527,12 +530,12 @@ func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 	case "navigate":
 		// Use setTimeout for async navigation (doesn't block CDP connection)
 		sess.update("navigating", "正在导航到 "+req.Value+" ...", nil)
-		navErr := chromedp.Run(sess.ctx, chromedp.Evaluate(`setTimeout(function(){window.location.href="`+req.Value+`"},0)`, nil))
+		navErr := chromedp.Run(sess.ctx, chromedp.Navigate(req.Value))
 		if navErr != nil {
 			errMsg = "导航失败: " + navErr.Error()
 		}
-		// Wait for page to load regardless
-		time.Sleep(10 * time.Second)
+		// Give the page a moment to settle before the next screenshot
+		time.Sleep(2 * time.Second)
 
 	case "screenshot":
 		// Just refresh screenshot
