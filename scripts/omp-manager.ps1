@@ -176,7 +176,9 @@ function Download-OMPRelease {
         $assetUrl = "https://github.com/$GITHUB_REPO/releases/download/$Tag/$assetName"
     }
     
-    Write-Info "下载: $assetName"
+    Write-Host "  正在下载 OMP $Tag" -ForegroundColor $Y
+    Write-Host "    文件: $assetName" -ForegroundColor $C
+    Write-Host "    地址: $assetUrl" -ForegroundColor DarkGray
     $tmpFile = Join-Path $TmpDir $assetName
     try {
         Invoke-WebRequest -Uri $assetUrl -OutFile $tmpFile -UseBasicParsing
@@ -184,6 +186,7 @@ function Download-OMPRelease {
         Write-Err "下载失败: $_"
         return $null
     }
+    Write-OK "已下载: $assetName ($Tag)"
     
     # SHA256 校验
     $shaUrl = "$assetUrl.sha256"
@@ -234,7 +237,7 @@ function Install-OMP {
     Stop-All-Tunnels
     Write-OK "清理完成"
 
-    Write-Step 1 3 "下载 Release 资产..."
+    Write-Step 1 3 "下载 OMP $RELEASE_TAG 资产..."
     $tmpDir = Join-Path $env:TEMP "omp-install-$(Get-Random)"
     New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
     $downloadedExe = Download-OMPRelease -Tag $RELEASE_TAG -TmpDir $tmpDir
@@ -1306,7 +1309,7 @@ function Auto-Update {
         exit 0
     }
 
-    Write-AULog "发现新版本，开始更新..."
+    Write-AULog "发现新版本 $curVer → $latestTag，开始更新..."
 
     # 下载
     $tmpDir = Join-Path $env:TEMP "omp-auto-$(Get-Random)"
