@@ -141,11 +141,23 @@ function Get-LocalVersion {
         $resp = Invoke-RestMethod -Uri "http://localhost:$Port/api/version" -UseBasicParsing -TimeoutSec 3
         if ($resp.version) { return $resp.version }
     } catch {}
-    # 2) Read PE file-version metadata (works even when OMP is stopped)
+    # 2) Extract version from the binary's embedded strings (works even when OMP is stopped).
+    #    Go binaries embed AppVersion as a UTF-8 constant; PE ProductVersion is empty for Go
+    #    builds, so we scan the raw bytes for the most frequent semver-looking string instead.
     if (Test-Path $exePath) {
         try {
-            $peVer = (Get-Item $exePath).VersionInfo.ProductVersion
-            if ($peVer -and $peVer -notmatch "^0\.0\.0\.0") { return $peVer }
+            $bytes = [System.IO.File]::ReadAllBytes($exePath)
+            $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+            $m = [regex]::Matches($text, '(?<!go)(v\d+\.\d+\.\d+|\d+\.\d+\.\d+)')
+            $counts = @{}
+            foreach ($x in $m) {
+                $v = $x.Value -replace '^v', ''
+                if ($v -eq '0.0.0') { continue }
+                if ($counts.ContainsKey($v)) { $counts[$v]++ } else { $counts[$v] = 1 }
+            }
+            if ($counts.Count -gt 0) {
+                return (($counts.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 1).Key)
+            }
         } catch {}
     }
     # 3) Fallback: file last-write time (clearly labelled)
