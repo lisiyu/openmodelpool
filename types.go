@@ -161,6 +161,7 @@ type ModelListResponse struct {
 type ModelDef struct {
 	ID            string          `json:"id"`
 	Name          string          `json:"name"`
+	Tier          string          `json:"tier,omitempty"` // basic / advanced / super
 	Enabled       bool            `json:"enabled"`
 	EnabledByKeys map[string]bool `json:"enabled_by_keys,omitempty"` // per-key enabled state: keyID -> enabled
 	AvailableKeys []string        `json:"available_keys,omitempty"`  // keyIDs that have this model available
