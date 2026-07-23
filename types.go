@@ -221,6 +221,9 @@ type Provider struct {
 	// Web session template (for web_session type providers)
 	WebSession *WebSessionConfig `json:"web_session,omitempty"`
 
+	// Model-to-bot mapping for Coze (model ID -> Coze bot_id)
+	ModelBotMap map[string]string `json:"model_bot_map,omitempty"`
+
 	CreatedAt   string     `json:"created_at,omitempty"`
 	UpdatedAt   string     `json:"updated_at,omitempty"`
 }
