@@ -227,10 +227,10 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
 		chromedp.NoDefaultBrowserCheck,
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("disable-features", "AutomationControlled"),
-		chromedp.Flag("disable-infobars", true),
-		chromedp.Flag("enable-automation", false),
+		// NOTE: removed disable-blink-features/disable-features/AutomationControlled
+		// flags — they are rejected by Chrome 130+ (2025+) causing "chrome failed
+		// to start" and about:blank fallback. Modern headless Chrome doesn't need
+		// them; use Headless mode instead for stealth.
 		chromedp.WindowSize(1280, 800),
 	}
 	// no-sandbox is Linux-only; on Windows it can cause issues
