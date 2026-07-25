@@ -4,7 +4,7 @@
 set -u
 
 REPO="/workspaces/openmodelpool"
-BIN="/usr/local/bin/openmodelpool"
+BIN="$REPO/openmodelpool"
 LOG="/tmp/openmodelpool.log"
 FALLBACK_DIR="/tmp/omp-fallback"
 
