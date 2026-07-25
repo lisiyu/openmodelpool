@@ -17,6 +17,7 @@ type Config struct {
 	dirty    bool
 	dirtyCh  chan struct{}
 	stopCh   chan struct{}
+	done     chan struct{} // closed when debounceWriter exits
 }
 
 var cfg *Config
@@ -34,12 +35,14 @@ func initConfig(path string) {
 		data:    make(map[string]any),
 		dirtyCh: make(chan struct{}, 1),
 		stopCh:  make(chan struct{}),
+		done:    make(chan struct{}),
 	}
 	cfg.load()
 	go cfg.debounceWriter()
 }
 
 func (c *Config) debounceWriter() {
+	defer close(c.done)
 	for {
 		select {
 		case <-c.dirtyCh:
