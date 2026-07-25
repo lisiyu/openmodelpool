@@ -95,23 +95,44 @@ func (rm *RegionManager) DetectRegion(nodeID, ip string) Region {
 		return RegionUnknown
 	}
 	if v4 := parsed.To4(); v4 != nil {
+		// Check private/special ranges first — these are never geographic
+		if v4[0] == 10 { // 10.0.0.0/8 private
+			return RegionUnknown
+		}
+		if v4[0] == 172 && v4[1] >= 16 && v4[1] <= 31 { // 172.16.0.0/12 private
+			return RegionUnknown
+		}
+		if v4[0] == 192 && v4[1] == 168 { // 192.168.0.0/16 private
+			return RegionUnknown
+		}
+		if v4[0] == 127 { // 127.0.0.0/8 loopback
+			return RegionUnknown
+		}
+		if v4[0] == 169 && v4[1] == 254 { // 169.254.0.0/16 link-local
+			return RegionUnknown
+		}
+
 		first := int(v4[0])
 		switch {
-		case first >= 1 && first <= 9,
-			first == 15, first == 32, first >= 35 && first <= 44,
+		// Americas — precise ranges (no overlap with EU/AP)
+		case first >= 1 && first <= 4, first >= 6 && first <= 9,
+			first == 15, first == 32, first == 35, first == 44,
 			first >= 50 && first <= 57, first >= 63 && first <= 76,
 			first >= 96 && first <= 100, first == 104,
 			first >= 140 && first <= 149, first >= 154 && first <= 174,
 			first == 184, first == 198, first >= 204 && first <= 209:
 			return RegionAmericas
+		// Europe
 		case first == 5, first == 31, first == 37, first == 46, first == 62,
 			first == 77, first >= 80 && first <= 95, first == 109,
 			first == 176, first == 185, first == 188, first == 193,
 			first == 212, first == 217:
 			return RegionEurope
-		case first >= 36 && first <= 49, first >= 101 && first <= 106,
+		// Asia-Pacific — excludes 44 (Americas) and 204-209 (Americas)
+		case first >= 36 && first <= 43, first >= 45 && first <= 49,
+			first >= 101 && first <= 106,
 			first >= 110 && first <= 126, first == 180, first == 182,
-			first == 126, first >= 202 && first <= 220:
+			first >= 202 && first <= 203, first >= 210 && first <= 220:
 			return RegionAsiaPacific
 		default:
 			return RegionUnknown

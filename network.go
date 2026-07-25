@@ -544,7 +544,8 @@ func (nm *NetworkManager) collectAddresses() []string {
 
 // startRefreshLoop periodically refreshes addresses and purges stale routes
 func (nm *NetworkManager) startRefreshLoop() {
-	nm.stopRefresh = make(chan struct{})
+	stopCh := make(chan struct{})
+	nm.stopRefresh = stopCh
 	go func() {
 		ticker := time.NewTicker(refreshInterval)
 		defer ticker.Stop()
@@ -556,7 +557,7 @@ func (nm *NetworkManager) startRefreshLoop() {
 				if purged > 0 {
 					slog.Debug("purged expired route entries", "count", purged)
 				}
-			case <-nm.stopRefresh:
+			case <-stopCh:
 				return
 			}
 		}

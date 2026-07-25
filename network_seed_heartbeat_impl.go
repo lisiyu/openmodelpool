@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"time"
 )
 
@@ -65,6 +66,18 @@ func recordMissedHeartbeat(nodeID string) {
 }
 
 // verifyHeartbeatAuth reports whether a heartbeat signature is valid.
+// Minimal validation: must be non-empty, valid base64, and decode to 64 bytes (Ed25519 signature).
 func verifyHeartbeatAuth(nodeID, sig string) bool {
-	return sig != ""
+	if sig == "" {
+		return false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(sig)
+	if err != nil {
+		return false
+	}
+	// Ed25519 signatures are 64 bytes
+	if len(decoded) != 64 {
+		return false
+	}
+	return true
 }

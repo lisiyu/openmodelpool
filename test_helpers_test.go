@@ -70,6 +70,14 @@ func setupTestEnv(t *testing.T) *testEnv {
 				close(tkInst.stopCh)
 			}
 		}
+		// Stop config debounce writer goroutine to prevent data race
+		if cfgInst != nil {
+			select {
+			case <-cfgInst.stopCh:
+			default:
+				close(cfgInst.stopCh)
+			}
+		}
 		// Restore globals
 		enc = origEnc
 		cfg = origCfg

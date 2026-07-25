@@ -181,21 +181,32 @@ func GenerateGuestKey(nodeID string, opts ...GuestKeyOptions) (string, error) {
 	return fullKey, nil
 }
 
-// ValidateGuestKey extracts the node_id from a guest key and checks validity.
-// Returns the issuer node_id and whether the key is valid.
-// Security fix (S-1, S-11): Key MUST exist in store, and ExpiresAt is checked.
-func ValidateGuestKey(key string) (nodeID string, valid bool) {
+// ParseGuestKeyFormat extracts the node_id from a guest key by format only (no store lookup).
+// Returns the issuer node_id and whether the format is valid.
+// Node IDs contain "-" (e.g. "mmx-abc123"), so we split on the LAST "-" to separate
+// nodeID from the random hex suffix.
+func ParseGuestKeyFormat(key string) (nodeID string, valid bool) {
 	if !strings.HasPrefix(key, "sk-guest-") {
 		return "", false
 	}
 
 	rest := strings.TrimPrefix(key, "sk-guest-")
-	parts := strings.SplitN(rest, "-", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+	idx := strings.LastIndex(rest, "-")
+	if idx <= 0 || idx == len(rest)-1 {
 		return "", false
 	}
 
-	candidateNodeID := parts[0]
+	return rest[:idx], true
+}
+
+// ValidateGuestKey extracts the node_id from a guest key and checks validity.
+// Returns the issuer node_id and whether the key is valid.
+// Security fix (S-1, S-11): Key MUST exist in store, and ExpiresAt is checked.
+func ValidateGuestKey(key string) (nodeID string, valid bool) {
+	candidateNodeID, formatOK := ParseGuestKeyFormat(key)
+	if !formatOK {
+		return "", false
+	}
 
 	// Key MUST be found in store — unknown keys are rejected
 	if guestKeyStore != nil {

@@ -20,8 +20,17 @@ type RateLimiter struct {
 }
 
 // NewRateLimiter creates a new rate limiter with the given QPS limit.
+// QPS <= 0 means block all requests (zero tokens, zero refill).
 // Burst (maxTokens) is set to max(qps, 1.0) to ensure at least 1 request can pass.
 func NewRateLimiter(qps float64) *RateLimiter {
+	if qps <= 0 {
+		return &RateLimiter{
+			tokens:     0,
+			maxTokens:  0,
+			refillRate: 0,
+			lastRefill: time.Now(),
+		}
+	}
 	maxTok := qps
 	if maxTok < 1.0 {
 		maxTok = 1.0

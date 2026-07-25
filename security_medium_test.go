@@ -40,8 +40,9 @@ func TestSA09_ValidateKeyGenericErrors(t *testing.T) {
 		}
 	}
 
-	// Test that guest key validation doesn't leak internal details
-	nodeID, valid := ValidateGuestKey("sk-guest-mmx-abc.def")
+	// Test that guest key format parsing doesn't leak internal details
+	// ParseGuestKeyFormat checks format only (no store lookup required)
+	nodeID, valid := ParseGuestKeyFormat("sk-guest-mmx-abc-def")
 	if !valid {
 		t.Error("valid format guest key should pass")
 	}
@@ -50,7 +51,7 @@ func TestSA09_ValidateKeyGenericErrors(t *testing.T) {
 	}
 
 	// Invalid guest key format
-	_, valid = ValidateGuestKey("sk-guest-")
+	_, valid = ParseGuestKeyFormat("sk-guest-")
 	if valid {
 		t.Error("invalid guest key format should fail")
 	}
