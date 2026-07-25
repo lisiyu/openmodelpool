@@ -6,7 +6,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v4.0.5-blue)](#)
+[![Version](https://img.shields.io/badge/version-v4.1.0-blue)](#)
 
 ---
 
@@ -92,6 +92,7 @@ Personal Mode is a pure-local proxy — no network participation, no identity ge
 - **37 preset platforms** — Coze, Sider.ai, OpenAI, Anthropic Claude, DeepSeek, Gemini, Qwen, Zhipu, Moonshot, MiniMax, SiliconFlow, Groq, xAI, Together, Mistral, Doubao, iFlytek, NVIDIA NIM, TokenHub (Coding/Plan/Enterprise), Baidu Qianfan, Stepfun, Baichuan, Novita AI, Fireworks AI, Cohere, Cerebras, OpenRouter, Poe, SID.ai, Agnes AI, AIHubMix, Ollama, LM Studio, iFlytek MaaS, and more
 - **`provider/model` syntax** — Route to specific platforms via `deepseek/deepseek-chat` format, also supports OpenRouter-style routing
 - **Auto platform discovery** — Automatically scans and discovers free AI platforms on the internet
+- **🎁 Free Model Pool** — Auto-syncs 16+ permanently free LLM API providers from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis), configured as low-priority public pool resources. Anonymous providers (OVHcloud) work zero-config; key-based providers can be enabled with a single paste in the admin UI
 - **Web session template** — Generic `web_session` provider type for browser-login platforms (no API needed), Sider.ai as first template
 
 #### 🧠 4-Dimension Intelligent Routing
@@ -1114,6 +1115,10 @@ OpenModelPool Agent is built upon these excellent open-source projects:
 - [**golang.org/x/net**](https://pkg.go.dev/golang.org/x/net) — SOCKS5 proxy support
 - [**go-bip39**](https://github.com/tyler-smith/go-bip39) — BIP39 mnemonic implementation
 
+**Free LLM Provider Directory:**
+
+- [**awesome-free-llm-apis**](https://github.com/mnfst/awesome-free-llm-apis) by [mnfst](https://github.com/mnfst) — Curated list of permanently free LLM API providers. OpenModelPool's Free Pool feature auto-syncs from this project's `data.json` to discover and configure free LLM providers, making AI capabilities accessible to everyone at zero cost. 🙏
+
 Inspired by these open-source API management projects:
 
 - [**one-api**](https://github.com/songquanpeng/one-api) — OpenAI management tool
@@ -1128,6 +1133,17 @@ Inspired by these open-source API management projects:
 ---
 
 ## 📋 Changelog
+
+### v4.1.0 (2026-07)
+
+**🎁 Free Model Pool**
+- **Auto-sync free LLM providers** — Automatically syncs 16+ free LLM API providers from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis) `data.json`, configured as low-priority public pool resources
+- **Anonymous provider support** — OVHcloud AI Endpoints works out-of-the-box with no API key required (anonymous access, 2 RPM/IP rate limit)
+- **Real model list sync** — After syncing from data.json, anonymous providers' actual `/v1/models` endpoints are queried to get up-to-date model lists (data.json model entries are often outdated)
+- **In-page API key management** — Non-anonymous providers (Groq, OpenRouter, Google Gemini, etc.) can be enabled directly from the Free Pool admin page by pasting an API key, with automatic model sync on key save
+- **24-hour auto-sync** — Periodic background sync keeps the free provider list fresh; manual sync button also available
+- **Smart provider filtering** — Skips non-OpenAI-compatible providers (Cohere v2 API, Ollama Cloud, Cloudflare Workers AI); adjusts Google Gemini to OpenAI-compatible endpoint
+- **Free Pool admin page** — Apple-style dark theme UI with sync status, provider list, key input, and auto-sync toggle
 
 ### v4.0.5 (2026-07)
 
