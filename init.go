@@ -51,6 +51,9 @@ func initCore() {
 	// §3.2.3: Public key four-layer quota
 	initPublicKeyQuota()
 
+	// Free pool auto-sync (awesome-free-llm-apis)
+	initFreePool()
+
 	// Migrate: re-save to encrypt any plaintext sensitive data
 	cfg.save()
 	pm.save()

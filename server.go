@@ -137,6 +137,11 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/providers/sider/status", withConsumerOrAdminAuth(handleSiderStatus))
 	mux.HandleFunc("POST /api/providers/sider/test", withConsumerOrAdminAuth(handleSiderTest))
 
+	// Free pool management (awesome-free-llm-apis sync)
+	mux.HandleFunc("GET /api/admin/free-pool/status", withAuth(handleFreePoolStatus))
+	mux.HandleFunc("POST /api/admin/free-pool/sync", withAuth(handleFreePoolSync))
+	mux.HandleFunc("PUT /api/admin/free-pool/config", withAuth(handleFreePoolConfig))
+
 	// Platform discovery (admin + consumer)
 	mux.HandleFunc("GET /api/discovery/platforms", withConsumerOrAdminAuth(handleGetDiscoveredPlatforms))
 	mux.HandleFunc("PUT /api/discovery/platforms/{id}", withConsumerOrAdminAuth(handleUpdateDiscoveredPlatform))
@@ -203,6 +208,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /admin/provider", handleProviderPage)
 	mux.HandleFunc("GET /admin/models", handleModelsPage)
 	mux.HandleFunc("GET /admin/browser-login", handleBrowserLoginPage)
+	mux.HandleFunc("GET /admin/free-pool", handleFreePoolPage)
 	mux.HandleFunc("GET /admin-common.js", handleAdminCommonJS)
 	mux.HandleFunc("GET /admin-settings.js", handleAdminSettingsJS)
 	mux.HandleFunc("GET /admin-network.js", handleAdminNetworkJS)

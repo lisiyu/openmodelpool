@@ -1707,6 +1707,14 @@ func handleBrowserLoginPage(w http.ResponseWriter, r *http.Request) {
 	serveEmbeddedHTML(w, r, "admin-browser-login.html")
 }
 
+func handleFreePoolPage(w http.ResponseWriter, r *http.Request) {
+	if !auth.Initialized() {
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
+	serveEmbeddedHTML(w, r, "admin-free-pool.html")
+}
+
 func handleAdminCommonJS(w http.ResponseWriter, r *http.Request) {
 	serveEmbeddedJS(w, r, "admin-common.js")
 }

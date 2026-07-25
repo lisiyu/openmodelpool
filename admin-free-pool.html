@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>免费模型池 - OpenModelPool</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg-primary:#0f0f23;--bg-secondary:#1a1a2e;--bg-card:#16213e;--bg-input:#1a1a3e;--border-color:#2a2a4a;--border-focus:#6c63ff;--text-primary:#e8e8f0;--text-secondary:#a0a0b8;--text-muted:#6a6a8a;--accent-start:#6c63ff;--accent-end:#b24bf3;--success:#22c55e;--error:#ef4444;--warning:#f59e0b;--info:#3b82f6;--radius:12px;--shadow:0 4px 24px rgba(0,0,0,.3)}
+body{scrollbar-width:none;-ms-overflow-style:none;overflow-y:auto;-webkit-overflow-scrolling:touch;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;min-height:100vh}
+html,body{scrollbar-width:none;-ms-overflow-style:none}html::-webkit-scrollbar,body::-webkit-scrollbar{display:none}
+.container{max-width:960px;margin:0 auto;padding:24px 20px 60px}
+.header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+h2{margin:0;font-size:20px;font-weight:700}
+.back-link{color:var(--text-secondary);font-size:13px;text-decoration:none;cursor:pointer}
+.back-link:hover{color:var(--text-primary)}
+.card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:24px;margin-bottom:20px;box-shadow:var(--shadow)}
+.card-title{font-size:16px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+.stat-item{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:14px 16px;text-align:center}
+.stat-value{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+.stat-value.green{color:var(--success)}
+.stat-value.blue{color:var(--info)}
+.stat-value.purple{color:var(--accent-end)}
+.stat-value.yellow{color:var(--warning)}
+.sync-info{font-size:13px;color:var(--text-secondary);margin-bottom:16px;line-height:1.8}
+.sync-info code{background:var(--bg-input);padding:2px 8px;border-radius:4px;font-size:12px;color:var(--accent-end)}
+.btn{padding:10px 24px;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:all .3s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:#fff}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+.btn-secondary{background:rgba(51,65,85,.08);border:1px solid rgba(148,163,184,.25);color:var(--text-primary)}
+.btn-secondary:hover{border-color:var(--border-focus)}
+.btn-sm{padding:6px 14px;font-size:12px;border-radius:6px}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid var(--border-color)}
+.toggle-label{font-size:14px;font-weight:500}
+.toggle-desc{font-size:12px;color:var(--text-muted);margin-top:2px}
+.toggle{position:relative;width:44px;height:24px;background:var(--border-color);border-radius:12px;cursor:pointer;transition:background .3s;flex-shrink:0}
+.toggle.active{background:var(--success)}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .3s}
+.toggle.active::after{transform:translateX(20px)}
+.provider-list{display:flex;flex-direction:column;gap:10px}
+.provider-row{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;transition:all .3s}
+.provider-row:hover{border-color:rgba(108,99,255,.3)}
+.provider-info{flex:1;min-width:0}
+.provider-name{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.provider-url{font-size:12px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.provider-meta{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+.badge-green{background:rgba(34,197,94,.15);color:var(--success);border:1px solid rgba(34,197,94,.3)}
+.badge-red{background:rgba(239,68,68,.15);color:var(--error);border:1px solid rgba(239,68,68,.3)}
+.badge-blue{background:rgba(59,130,246,.15);color:var(--info);border:1px solid rgba(59,130,246,.3)}
+.badge-yellow{background:rgba(245,158,11,.15);color:var(--warning);border:1px solid rgba(245,158,11,.3)}
+.model-count{font-size:12px;color:var(--text-muted);margin-left:4px}
+.empty-state{text-align:center;padding:40px 20px;color:var(--text-muted)}
+.loading{display:inline-block;width:16px;height:16px;border:2px solid var(--border-color);border-top-color:var(--accent-start);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.section-note{font-size:12px;color:var(--text-muted);padding:10px 14px;background:rgba(108,99,255,.08);border-radius:8px;margin-bottom:16px;border-left:3px solid var(--accent-start);line-height:1.6}
+a.ext-link{color:var(--info);text-decoration:none;font-size:12px}
+a.ext-link:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header-row">
+    <h2>🎁 免费模型池</h2>
+    <a class="back-link" onclick="if(window.parent&&window.parent.closeSubPage){window.parent.closeSubPage();return false;}window.location.href='/admin'">← 返回管理面板</a>
+  </div>
+
+  <div class="section-note">
+    自动从 <code>github.com/mnfst/awesome-free-llm-apis</code> 同步永久免费的 LLM API 提供商，配置为公共池资源。匿名免 Key 的提供商自动启用；需 Key 的提供商需手动添加 API Key 后启用。
+  </div>
+
+  <!-- Sync Status Card -->
+  <div class="card">
+    <div class="card-title">📊 同步状态</div>
+    <div id="syncStatus">
+      <div style="text-align:center;padding:20px"><span class="loading"></span> 加载中...</div>
+    </div>
+  </div>
+
+  <!-- Provider List Card -->
+  <div class="card">
+    <div class="card-title">🔌 提供商列表</div>
+    <div id="providerList">
+      <div class="empty-state">点击「立即同步」获取免费提供商列表</div>
+    </div>
+  </div>
+</div>
+
+<script src="/admin-common.js"></script>
+<script>
+var autoSyncEnabled = false;
+
+async function loadStatus() {
+  try {
+    var resp = await fetch('/api/admin/free-pool/status', {headers: getAuthHeaders()});
+    var data = await resp.json();
+    renderStatus(data);
+    renderProviders(data.providers || []);
+    autoSyncEnabled = data.auto_sync || false;
+  } catch(e) {
+    document.getElementById('syncStatus').innerHTML = '<div style="color:var(--error);font-size:13px">加载失败: '+e.message+'</div>';
+  }
+}
+
+function renderStatus(data) {
+  var lastSync = data.last_sync ? new Date(data.last_sync).toLocaleString('zh-CN') : '从未同步';
+  var sourceUpdated = data.source_updated || '未知';
+  var html = '';
+  html += '<div class="stats-grid">';
+  html += '<div class="stat-item"><div class="stat-value blue">'+(data.total_providers||0)+'</div><div class="stat-label">提供商</div></div>';
+  html += '<div class="stat-item"><div class="stat-value purple">'+(data.total_models||0)+'</div><div class="stat-label">模型</div></div>';
+  html += '<div class="stat-item"><div class="stat-value green">'+(data.active_providers||0)+'</div><div class="stat-label">已启用</div></div>';
+  html += '</div>';
+  html += '<div class="sync-info">';
+  html += '📅 上次同步: <code>'+lastSync+'</code><br>';
+  html += '📡 数据源更新: <code>'+sourceUpdated+'</code><br>';
+  html += '🔗 来源: <a class="ext-link" href="'+(data.source_url||'')+'" target="_blank">data.json</a>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">';
+  html += '<button class="btn btn-primary btn-sm" onclick="triggerSync()" id="syncBtn">🔄 立即同步</button>';
+  html += '</div>';
+  html += '<div class="toggle-row">';
+  html += '<div><div class="toggle-label">自动同步</div><div class="toggle-desc">每 24 小时自动从数据源更新提供商和模型列表</div></div>';
+  html += '<div class="toggle '+(data.auto_sync?'active':'')+'" onclick="toggleAutoSync()"></div>';
+  html += '</div>';
+  document.getElementById('syncStatus').innerHTML = html;
+}
+
+function renderProviders(providers) {
+  if (!providers || providers.length === 0) {
+    document.getElementById('providerList').innerHTML = '<div class="empty-state">暂无提供商数据，请点击「立即同步」</div>';
+    return;
+  }
+  var html = '<div class="provider-list">';
+  providers.forEach(function(p) {
+    var statusBadge = p.enabled
+      ? '<span class="badge badge-green">已启用</span>'
+      : '<span class="badge badge-red">未启用</span>';
+    var keyBadge = p.anonymous
+      ? '<span class="badge badge-blue">免Key</span>'
+      : '<span class="badge badge-yellow">需Key</span>';
+    var keyLink = p.api_key_url ? '<a class="ext-link" href="'+p.api_key_url+'" target="_blank">获取Key →</a>' : '';
+    html += '<div class="provider-row">';
+    html += '<div class="provider-info">';
+    html += '<div class="provider-name">'+p.name+' '+statusBadge+' '+keyBadge+' <span class="model-count">'+p.model_count+' 个模型</span></div>';
+    html += '<div class="provider-url">'+p.base_url+'</div>';
+    html += '</div>';
+    html += '<div class="provider-meta">'+keyLink+'</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  document.getElementById('providerList').innerHTML = html;
+}
+
+async function triggerSync() {
+  var btn = document.getElementById('syncBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span> 同步中...'; }
+  try {
+    var resp = await fetch('/api/admin/free-pool/sync', {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    var data = await resp.json();
+    if (resp.ok) {
+      showToast('同步已启动，请稍后刷新查看结果', 'success');
+      setTimeout(loadStatus, 5000);
+    } else {
+      showToast('同步失败: '+(data.error||'未知错误'), 'error');
+    }
+  } catch(e) {
+    showToast('请求失败: '+e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '🔄 立即同步'; }
+}
+
+async function toggleAutoSync() {
+  autoSyncEnabled = !autoSyncEnabled;
+  try {
+    await fetch('/api/admin/free-pool/config', {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({auto_sync: autoSyncEnabled})
+    });
+    showToast(autoSyncEnabled ? '自动同步已开启' : '自动同步已关闭', 'success');
+    loadStatus();
+  } catch(e) {
+    showToast('操作失败: '+e.message, 'error');
+    autoSyncEnabled = !autoSyncEnabled;
+  }
+}
+
+function getAuthHeaders() {
+  var token = localStorage.getItem('admin_token') || localStorage.getItem('omp_token') || '';
+  return {
+    'Authorization': 'Bearer ' + token,
+    'Content-Type': 'application/json'
+  };
+}
+
+function showToast(msg, type) {
+  var t = document.createElement('div');
+  t.className = 'toast ' + (type||'info');
+  t.style.cssText = 'position:fixed;top:20px;right:20px;padding:14px 24px;border-radius:10px;font-size:14px;z-index:10000;max-width:400px;' +
+    (type==='success'?'background:rgba(34,197,94,.9);color:#fff':type==='error'?'background:rgba(239,68,68,.9);color:#fff':'background:rgba(59,130,246,.9);color:#fff');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function(){ t.remove(); }, 3000);
+}
+
+window.addEventListener('load', loadStatus);
+</script>
+</body>
+</html>
