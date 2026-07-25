@@ -589,7 +589,10 @@ func buildOpenAIBody(model string, messages []ChatMessage, stream bool, extra ma
 }
 
 func setOpenAIHeaders(req *http.Request, apiKey string) {
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	// Skip Authorization header for anonymous providers (free pool)
+	if apiKey != "" && apiKey != "free-anonymous" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 	req.Header.Set("Content-Type", "application/json")
 }
 
