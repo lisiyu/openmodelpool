@@ -1595,7 +1595,9 @@ func fetchRemoteModels(p Provider) []map[string]string {
 		return nil
 	}
 	req, _ := http.NewRequest("GET", strings.TrimRight(p.BaseURL, "/")+"/models", nil)
-	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	if p.APIKey != "free-anonymous" {
+		req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	}
 	client := proxyHTTPClient(p, 15 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {

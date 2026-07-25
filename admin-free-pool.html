@@ -143,16 +143,75 @@ function renderProviders(providers) {
       ? '<span class="badge badge-blue">免Key</span>'
       : '<span class="badge badge-yellow">需Key</span>';
     var keyLink = p.api_key_url ? '<a class="ext-link" href="'+p.api_key_url+'" target="_blank">获取Key →</a>' : '';
-    html += '<div class="provider-row">';
+    var keyInput = '';
+    if (!p.anonymous) {
+      if (p.enabled) {
+        keyInput = '<button class="btn btn-secondary btn-sm" onclick="removeKey(\''+p.id+'\',\''+p.name.replace(/'/g,'')+'\')">移除Key</button>';
+      } else {
+        keyInput = '<div class="key-input-row" style="display:flex;gap:6px;align-items:center;margin-top:8px;width:100%">';
+        keyInput += '<input type="password" class="key-input" id="key_'+p.id+'" placeholder="粘贴 API Key..." style="flex:1;min-width:200px;padding:8px 12px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-size:13px;outline:none" onfocus="this.style.borderColor=\'var(--border-focus)\'" onblur="this.style.borderColor=\'var(--border-color)\'">';
+        keyInput += '<button class="btn btn-primary btn-sm" onclick="saveKey(\''+p.id+'\')">保存</button>';
+        keyInput += '</div>';
+      }
+    }
+    html += '<div class="provider-row" style="flex-direction:column;align-items:stretch">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;width:100%">';
     html += '<div class="provider-info">';
     html += '<div class="provider-name">'+p.name+' '+statusBadge+' '+keyBadge+' <span class="model-count">'+p.model_count+' 个模型</span></div>';
     html += '<div class="provider-url">'+p.base_url+'</div>';
     html += '</div>';
     html += '<div class="provider-meta">'+keyLink+'</div>';
     html += '</div>';
+    if (keyInput) html += keyInput;
+    html += '</div>';
   });
   html += '</div>';
   document.getElementById('providerList').innerHTML = html;
+}
+
+async function saveKey(providerId) {
+  var input = document.getElementById('key_'+providerId);
+  if (!input) return;
+  var key = input.value.trim();
+  if (!key) { showToast('请输入 API Key', 'error'); return; }
+  var btn = input.nextElementSibling;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span> 保存中...'; }
+  try {
+    var resp = await fetch('/api/admin/free-pool/'+providerId+'/key', {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({api_key: key})
+    });
+    var data = await resp.json();
+    if (resp.ok) {
+      showToast('Key 已保存，提供商已启用，正在同步模型...', 'success');
+      setTimeout(loadStatus, 3000);
+    } else {
+      showToast('保存失败: '+(data.error||'未知错误'), 'error');
+    }
+  } catch(e) {
+    showToast('请求失败: '+e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '保存'; }
+}
+
+async function removeKey(providerId, providerName) {
+  if (!confirm('确定要移除 '+providerName+' 的 API Key 并禁用该提供商吗？')) return;
+  try {
+    var resp = await fetch('/api/admin/free-pool/'+providerId+'/key', {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    if (resp.ok) {
+      showToast('Key 已移除，提供商已禁用', 'success');
+      loadStatus();
+    } else {
+      var data = await resp.json();
+      showToast('移除失败: '+(data.error||'未知错误'), 'error');
+    }
+  } catch(e) {
+    showToast('请求失败: '+e.message, 'error');
+  }
 }
 
 async function triggerSync() {

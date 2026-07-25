@@ -141,6 +141,8 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/free-pool/status", withAuth(handleFreePoolStatus))
 	mux.HandleFunc("POST /api/admin/free-pool/sync", withAuth(handleFreePoolSync))
 	mux.HandleFunc("PUT /api/admin/free-pool/config", withAuth(handleFreePoolConfig))
+	mux.HandleFunc("PUT /api/admin/free-pool/{providerId}/key", withAuth(handleFreePoolSetKey))
+	mux.HandleFunc("DELETE /api/admin/free-pool/{providerId}/key", withAuth(handleFreePoolRemoveKey))
 
 	// Platform discovery (admin + consumer)
 	mux.HandleFunc("GET /api/discovery/platforms", withConsumerOrAdminAuth(handleGetDiscoveredPlatforms))

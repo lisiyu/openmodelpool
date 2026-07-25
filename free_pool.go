@@ -165,8 +165,9 @@ func (f *FreePoolManager) Sync() error {
 		totalModels += len(models)
 
 		// Check if provider already has API keys configured
+		// (free-anonymous is not a real key)
 		existing, exists := pm.GetRaw(providerID)
-		hasKeys := exists && (existing.APIKey != "" || len(existing.APIKeys) > 0)
+		hasKeys := exists && (existing.APIKey != "" && existing.APIKey != "free-anonymous" || len(existing.APIKeys) > 0)
 
 		// Enabled state: anonymous providers always enabled,
 		// key-based providers enabled only if they have keys
@@ -246,6 +247,9 @@ func (f *FreePoolManager) Sync() error {
 	}
 	f.mu.Unlock()
 
+	// Sync real models from anonymous providers (data.json may be outdated)
+	go f.syncRealModels()
+
 	slog.Info("free pool sync completed",
 		"providers", len(providerInfos),
 		"models", totalModels,
@@ -275,8 +279,6 @@ func mapAwesomeProvider(ap awesomeProvider) (string, []ModelDef, bool, string, b
 	anonymous := false
 	switch ap.Name {
 	case "OVHcloud AI Endpoints":
-		anonymous = true
-	case "LLM7.io":
 		anonymous = true
 	}
 
@@ -354,4 +356,43 @@ func (f *FreePoolManager) SetAutoSync(enabled bool) {
 	f.stats.AutoSync = enabled
 	f.mu.Unlock()
 	cfg.Set("free_pool_auto_sync", fmt.Sprintf("%v", enabled))
+}
+
+// syncRealModels fetches actual available models from anonymous providers'
+// /v1/models endpoints, replacing potentially outdated data.json model lists.
+func (f *FreePoolManager) syncRealModels() {
+	f.mu.RLock()
+	providerInfos := f.stats.Providers
+	f.mu.RUnlock()
+
+	for _, pi := range providerInfos {
+		if !pi.Anonymous || !pi.Enabled {
+			continue
+		}
+		// Use SyncModels which calls fetchRemoteModels (already fixed to
+		// skip Authorization header for free-anonymous keys)
+		count, err := pm.SyncModels(pi.ID)
+		if err != nil {
+			slog.Warn("free pool: real model sync failed",
+				"provider", pi.ID, "error", err)
+			continue
+		}
+		slog.Info("free pool: real models synced",
+			"provider", pi.ID, "models", count)
+
+		// Update stats model count
+		f.mu.Lock()
+		for i := range f.stats.Providers {
+			if f.stats.Providers[i].ID == pi.ID {
+				f.stats.Providers[i].ModelCount = count
+			}
+		}
+		// Recalculate total models
+		total := 0
+		for _, p := range f.stats.Providers {
+			total += p.ModelCount
+		}
+		f.stats.TotalModels = total
+		f.mu.Unlock()
+	}
 }
