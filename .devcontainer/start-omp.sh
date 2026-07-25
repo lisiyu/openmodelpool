@@ -10,7 +10,12 @@ LOG="/tmp/openmodelpool-start.log"
 
 echo "$(date) [start-omp] === postStartCommand start ===" >> "$LOG"
 
-# 1) 启动 cron（keepalive 自保活依赖它；cron 不随容器重启自启，必须在此显式拉起）
+# 1) 启动 cron（端口 watchdog 依赖它；devcontainer 镜像常未预装 cron，缺失时自动安装）
+if ! command -v cron >/dev/null 2>&1; then
+  echo "$(date) [start-omp] cron not found, installing ..." >> "$LOG"
+  ( sudo apt-get update -qq && sudo apt-get install -y -qq cron ) >>"$LOG" 2>&1 || \
+    echo "$(date) [start-omp] cron install FAILED" >> "$LOG"
+fi
 if command -v cron >/dev/null 2>&1; then
   if pgrep -x cron >/dev/null 2>&1; then
     echo "$(date) [start-omp] cron already running" >> "$LOG"
@@ -19,8 +24,20 @@ if command -v cron >/dev/null 2>&1; then
       echo "$(date) [start-omp] cron started" >> "$LOG" || \
       echo "$(date) [start-omp] cron start FAILED" >> "$LOG"
   fi
+  # 端口 watchdog：每 5 分钟探活 :8000，挂了则通过 run-omp.sh supervisor 重启
+  WATCHDOG='/workspaces/openmodelpool/.devcontainer/watchdog.sh'
+  cat > "$WATCHDOG" <<'EOF'
+#!/bin/bash
+if ! (ss -ltn 2>/dev/null | grep -q ':8000 '); then
+  setsid bash /workspaces/openmodelpool/.devcontainer/run-omp.sh >>/tmp/openmodelpool.log 2>&1 </dev/null &
+fi
+EOF
+  chmod +x "$WATCHDOG"
+  ( crontab -l 2>/dev/null | grep -v 'watchdog.sh'; echo "*/5 * * * * $WATCHDOG" ) | crontab - 2>>"$LOG" \
+    && echo "$(date) [start-omp] watchdog crontab installed" >> "$LOG" \
+    || echo "$(date) [start-omp] watchdog crontab FAILED" >> "$LOG"
 else
-  echo "$(date) [start-omp] cron binary not found, skip" >> "$LOG"
+  echo "$(date) [start-omp] cron unavailable, skip watchdog" >> "$LOG"
 fi
 
 # 2) 确保 openmodelpool 主进程在跑（带崩溃自愈 supervisor）。
