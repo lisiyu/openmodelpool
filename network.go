@@ -1123,15 +1123,18 @@ func GetDisclaimer() DisclaimerResponse {
 
 // JoinConditionResult describes whether the node meets the conditions to join the shared network.
 type JoinConditionResult struct {
-	HasProvider     bool   `json:"has_provider"`      // condition 1: has at least one enabled Provider
+	HasProvider     bool   `json:"has_provider"`       // condition 1: has at least one enabled Provider
 	HasQuotaManager bool   `json:"has_quota_manager"`  // condition 2: quota management is enabled
-	HasRemaining    bool   `json:"has_remaining"`      // condition 3: remaining quota > 0 this month
-	AllMet          bool   `json:"all_met"`            // all three conditions satisfied
+	HasSharedKey    bool   `json:"has_shared_key"`     // condition 3 (hard): at least one enabled shared (access_control=="shared") key exists
+	HasRemaining    bool   `json:"has_remaining"`      // NON-MANDATORY: remaining quota > 0 this month — used only for the idle-capacity reminder, never blocks joining
+	AllMet          bool   `json:"all_met"`            // all hard conditions satisfied
 	Message         string `json:"message,omitempty"`  // gentle prompt message when all conditions met
 }
 
-// CheckJoinConditions checks whether the node satisfies the three conditions for joining the shared network.
-// §1.5.2: All three must be true to show a gentle prompt.
+// CheckJoinConditions checks whether the node satisfies the conditions for joining the shared network.
+// §1.5.2 (updated): Joining now only requires HasProvider && HasQuotaManager && HasSharedKey.
+// HasRemaining is intentionally NOT part of AllMet — it is merely an idle-capacity signal that
+// the front-end surface as a non-blocking reminder.
 func (nm *NetworkManager) CheckJoinConditions() (bool, JoinConditionResult) {
 	result := JoinConditionResult{}
 
@@ -1153,7 +1156,24 @@ func (nm *NetworkManager) CheckJoinConditions() (bool, JoinConditionResult) {
 	// Condition 2: quota management (allocation manager) is enabled
 	result.HasQuotaManager = allocMgr != nil
 
-	// Condition 3: remaining quota > 0 this month
+	// Condition 3 (hard): at least one enabled Provider Key with access_control == "shared".
+	if pm != nil {
+		for _, p := range pm.Enabled() {
+			for _, k := range p.APIKeys {
+				if k.Enabled && k.AccessControl == "shared" {
+					result.HasSharedKey = true
+					break
+				}
+			}
+			if result.HasSharedKey {
+				break
+			}
+		}
+	}
+
+	// Idle-capacity signal: remaining quota > 0 this month.
+	// NOTE: This is NON-MANDATORY. It is reported only so the front-end can show a gentle
+	// "you have idle capacity" reminder. It does NOT affect AllMet.
 	if pm != nil {
 		var totalQuota int64
 		var usedQuota int64
@@ -1174,10 +1194,12 @@ func (nm *NetworkManager) CheckJoinConditions() (bool, JoinConditionResult) {
 		result.HasRemaining = totalQuota > usedQuota
 	}
 
-	result.AllMet = result.HasProvider && result.HasQuotaManager && result.HasRemaining
+	// All hard conditions: provider + quota manager + at least one shared key.
+	// HasRemaining is deliberately excluded from AllMet.
+	result.AllMet = result.HasProvider && result.HasQuotaManager && result.HasSharedKey
 
 	if result.AllMet {
-		result.Message = "您的节点已具备加入共享网络的条件。加入后，您可以消费网络中其他节点的资源，也可以选择将自己的闲置额度共享给他人。"
+		result.Message = "您的节点已具备加入共享网络的条件（已配置至少一个「共享」类型的 Key）。加入后，您可以消费网络中其他节点的资源，也可以选择将自己的闲置额度共享给他人。"
 	}
 
 	return result.AllMet, result

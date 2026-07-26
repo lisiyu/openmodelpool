@@ -153,6 +153,7 @@ let _shareFilter = 'all';
         const r = await authFetch('/api/network/status');
         networkStatus = await r.json();
         renderNetworkUI();
+        maybeShowIdleCapacityHint();
       } catch(e) {
         console.warn('network status load failed', e);
       }
@@ -774,14 +775,37 @@ NodeID: ${nodeId}
       }
     }
 
-    // REQ-4：缺任一入网条件时给出明确、非阻塞指引。
+    // REQ-4：缺任一入网硬条件时给出明确、非阻塞指引。
+    // 注意：remaining_quota > 0 已不再是硬条件，仅作为闲置提醒信号（见 maybeShowIdleCapacityHint）。
+    // 入网主硬条件 = 已配置至少一个「共享(shared)」类型的 Key。
     function showJoinConditionGuidance(d) {
       const missing = [];
       if (!d.has_provider) missing.push('配置至少一个 Provider Token');
       if (!d.has_quota_manager) missing.push('在额度管理中开启额度管理');
-      if (!d.has_remaining) missing.push('本月仍有剩余额度（remaining_quota > 0）');
+      if (!d.has_shared_key) missing.push('请先在 Provider 中至少设置一个「共享(shared)」类型的 Key');
       const msg = '尚不满足加入共享网络的条件，请先：\n• ' + missing.join('\n• ');
       toast(msg, 'warning');
+    }
+
+    // 闲置额度提醒（非阻塞）：尚未加入网络、但本月仍有剩余额度时，温和提示一次。
+    // 通过会话级标志位避免每次刷新都弹窗骚扰（对应 PRD REQ-13「dismiss 后不骚扰」）。
+    function maybeShowIdleCapacityHint() {
+      if (window.__idleQuotaHinted) return;
+      const s = networkStatus;
+      if (!s || s.network_enabled) return; // 仅当节点尚未加入共享网络时
+      try {
+        authFetch('/api/network/join-conditions')
+          .then((r) => r.json())
+          .then((d) => {
+            if (d && d.has_remaining && !s.network_enabled) {
+              window.__idleQuotaHinted = true;
+              toast('💡 你本月还有闲置额度，可以考虑加入共享网络，将闲置额度贡献给他人。', 'info');
+            }
+          })
+          .catch(() => {});
+      } catch (e) {
+        // 非阻塞：提醒失败不影响主流程
+      }
     }
 
 async function saveQuotaAllocation() {

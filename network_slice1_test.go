@@ -180,6 +180,9 @@ func TestSlice1_CheckJoinConditions_AllMissing(t *testing.T) {
 	if res.HasRemaining {
 		t.Error("HasRemaining 应为 false（无额度）")
 	}
+	if res.HasSharedKey {
+		t.Error("HasSharedKey 应为 false（无共享 Key）")
+	}
 }
 
 // REQ-4 前置校验：有 Provider + 剩余额度，但缺额度管理（allocMgr 为 nil）→ 仍不可入网。
@@ -203,18 +206,25 @@ func TestSlice1_CheckJoinConditions_ProviderButNoQuotaManager(t *testing.T) {
 	if res.HasQuotaManager {
 		t.Error("HasQuotaManager 应为 false（allocMgr 为 nil）")
 	}
+	if res.HasSharedKey {
+		t.Error("HasSharedKey 应为 false（无共享 Key）")
+	}
 	if allMet {
 		t.Error("缺少额度管理时 all_met 必须为 false")
 	}
 }
 
-// REQ-4 前置校验：三项全部满足时 AllMet=true，且 Message 被填充。
+// REQ-4 前置校验：三项全部满足（Provider + 额度管理 + 共享 Key）时 AllMet=true，且 Message 被填充。
+// 注意：HasRemaining（剩余额度）不再参与 AllMet 计算，此处仅作信息字段校验。
 func TestSlice1_CheckJoinConditions_AllMet(t *testing.T) {
 	env := setupTestEnv(t)
 	_ = env
 
 	p := makeProvider("p-jc2", "Provider JC2", makeModelDef("gpt-4o"), 5, true)
 	p.TokenLimit = 100000
+	p.APIKeys = []APIKeyConfig{
+		{ID: "k-shared", Alias: "Shared Key", Key: "sk-shared", AccessControl: "shared", Enabled: true, Quota: 100000},
+	}
 	pm.Add(p)
 
 	// 注入额度管理（全局 allocMgr 非 nil）
@@ -228,10 +238,85 @@ func TestSlice1_CheckJoinConditions_AllMet(t *testing.T) {
 	if !allMet {
 		t.Errorf("三项条件均满足时 all_met 应为 true, 实际 res=%+v", res)
 	}
-	if !res.HasProvider || !res.HasQuotaManager || !res.HasRemaining {
-		t.Errorf("三项条件应全部为 true, 实际 %+v", res)
+	if !res.HasProvider || !res.HasQuotaManager || !res.HasSharedKey {
+		t.Errorf("Provider / QuotaManager / SharedKey 三项应为 true, 实际 %+v", res)
 	}
 	if res.Message == "" {
 		t.Error("满足条件时 Message 应被填充（用于前端温和提示）")
+	}
+}
+
+// 业务规则变更：有 Provider + 额度管理 + 有剩余额度，但【没有共享 Key】→ AllMet 必须为 false。
+// 验证 remaining_quota > 0 不再作为硬条件拦截入网。
+func TestSlice1_CheckJoinConditions_HasRemainingButNoSharedKey(t *testing.T) {
+	env := setupTestEnv(t)
+	_ = env
+
+	p := makeProvider("p-jc3", "Provider JC3", makeModelDef("gpt-4o"), 5, true)
+	p.TokenLimit = 100000 // 有剩余额度
+	// 仅配置了私有 Key，没有共享 Key
+	p.APIKeys = []APIKeyConfig{
+		{ID: "k-private", Alias: "Private Key", Key: "sk-private", AccessControl: "private", Enabled: true, Quota: 100000},
+	}
+	pm.Add(p)
+
+	origAlloc := allocMgr
+	allocMgr = &AllocationManager{config: DefaultQuotaAllocation()}
+	t.Cleanup(func() { allocMgr = origAlloc })
+
+	nm := &NetworkManager{config: NetworkConfig{}}
+	allMet, res := nm.CheckJoinConditions()
+
+	if !res.HasProvider {
+		t.Error("HasProvider 应为 true")
+	}
+	if !res.HasQuotaManager {
+		t.Error("HasQuotaManager 应为 true")
+	}
+	if !res.HasRemaining {
+		t.Error("HasRemaining 应为 true（有剩余额度）")
+	}
+	if res.HasSharedKey {
+		t.Error("HasSharedKey 应为 false（无共享 Key）")
+	}
+	if allMet {
+		t.Error("有剩余额度但无共享 Key 时，allMet 必须为 false（remaining 不再硬拦截）")
+	}
+}
+
+// 业务规则变更：有 Provider + 额度管理 + 共享 Key（即使没有剩余额度）→ AllMet 必须为 true。
+// 验证「已配置共享 Key」才是入网唯一主硬条件。
+func TestSlice1_CheckJoinConditions_HasSharedKey_AllMet(t *testing.T) {
+	env := setupTestEnv(t)
+	_ = env
+
+	p := makeProvider("p-jc4", "Provider JC4", makeModelDef("gpt-4o"), 5, true)
+	// 不设置 TokenLimit，且 Key 额度已用尽（remaining=false），但配置了共享 Key
+	p.APIKeys = []APIKeyConfig{
+		{ID: "k-shared", Alias: "Shared Key", Key: "sk-shared", AccessControl: "shared", Enabled: true, Quota: 1000, Used: 1000},
+	}
+	pm.Add(p)
+
+	origAlloc := allocMgr
+	allocMgr = &AllocationManager{config: DefaultQuotaAllocation()}
+	t.Cleanup(func() { allocMgr = origAlloc })
+
+	nm := &NetworkManager{config: NetworkConfig{}}
+	allMet, res := nm.CheckJoinConditions()
+
+	if !res.HasProvider {
+		t.Error("HasProvider 应为 true")
+	}
+	if !res.HasQuotaManager {
+		t.Error("HasQuotaManager 应为 true")
+	}
+	if res.HasRemaining {
+		t.Error("HasRemaining 应为 false（额度已用尽）")
+	}
+	if !res.HasSharedKey {
+		t.Error("HasSharedKey 应为 true")
+	}
+	if !allMet {
+		t.Errorf("有共享 Key 时（即使无剩余额度）allMet 必须为 true, 实际 res=%+v", res)
 	}
 }
