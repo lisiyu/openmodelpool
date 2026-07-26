@@ -32,9 +32,11 @@ type TunnelManager struct {
 	cancel   context.CancelFunc
 	url      string
 	running  bool
-	mode     string // "quick" or "named"
+	mode     string // "quick", "named", or "manual"
 	domain   string // custom domain for named mode
 	port     int
+	token    string // connector token for named tunnel mode
+	tunnelID string // Cloudflare tunnel ID for named mode
 }
 
 var tunnel *TunnelManager
@@ -51,7 +53,7 @@ func getListenPort() int {
 	return p
 }
 
-func newTunnelManager(domain, tunnelID, apiToken string) *TunnelManager {
+func newTunnelManager(domain, tunnelID, token string) *TunnelManager {
 	t := &TunnelManager{
 		port:   getListenPort(),
 		domain: domain,
@@ -59,6 +61,8 @@ func newTunnelManager(domain, tunnelID, apiToken string) *TunnelManager {
 	}
 	if domain != "" && tunnelID != "" {
 		t.mode = "named"
+		t.tunnelID = tunnelID
+		t.token = token
 	}
 	return t
 }
@@ -74,6 +78,12 @@ func initTunnel(port int) {
 	
 	tunnel.mode = mode
 	tunnel.domain = domain
+	
+	// Restore named tunnel token for restart
+	if mode == "named" {
+		tunnel.token = cfg.Get("cf_tunnel_token", "")
+		tunnel.tunnelID = cfg.Get("cf_tunnel_id", "")
+	}
 	
 	if enabled {
 		go tunnel.start()
@@ -96,10 +106,22 @@ func (t *TunnelManager) start() {
 		return
 	}
 	
-	// Quick tunnel mode (default) - no account required
-	// For named tunnels with custom domains, users need to set up cloudflared manually
-	args := []string{"tunnel", "--url", fmt.Sprintf("http://localhost:%d", t.port)}
-	slog.Info("starting quick tunnel", "port", t.port)
+	var args []string
+	if t.mode == "named" && t.token != "" {
+		// Named tunnel mode: use connector token to connect to existing tunnel
+		args = []string{"tunnel", "run", "--token", t.token}
+		slog.Info("starting named tunnel", "domain", t.domain, "tunnel_id", t.tunnelID)
+	} else if t.mode == "manual" {
+		// Manual mode: domain is set up externally, no cloudflared process needed
+		slog.Info("manual domain binding, no tunnel process needed", "domain", t.domain)
+		t.url = "https://" + t.domain
+		t.running = true
+		return
+	} else {
+		// Quick tunnel mode (default) - no account required
+		args = []string{"tunnel", "--url", fmt.Sprintf("http://localhost:%d", t.port)}
+		slog.Info("starting quick tunnel", "port", t.port)
+	}
 	
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "cloudflared", args...)
@@ -315,6 +337,7 @@ type TunnelInfo struct {
 	Name       string `json:"name"`
 	Status     string `json:"status"`
 	RemoteAddr string `json:"remote_addr"`
+	Token      string `json:"token"` // connector token for cloudflared run
 }
 
 // createTunnelViaAPI creates a named tunnel using Cloudflare API
@@ -354,6 +377,7 @@ func (b *DomainBinder) createTunnelViaAPI(ctx context.Context, tunnelName string
 			ID     string `json:"id"`
 			Name   string `json:"name"`
 			Status string `json:"status"`
+			Token  string `json:"token"`
 		} `json:"result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -371,6 +395,7 @@ func (b *DomainBinder) createTunnelViaAPI(ctx context.Context, tunnelName string
 		ID:     result.Result.ID,
 		Name:   result.Result.Name,
 		Status: result.Result.Status,
+		Token:  result.Result.Token,
 	}, nil
 }
 
@@ -636,6 +661,7 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	// use global cfg
 	cfg.Set("cf_api_token", body.APIToken)
 	cfg.Set("cf_tunnel_id", tunnelInfo.ID)
+	cfg.Set("cf_tunnel_token", tunnelInfo.Token)
 	cfg.Set("cf_zone_id", zoneID)
 	cfg.Set("bound_domain", body.Domain)
 	cfg.Set("tunnel_domain", body.Domain)
@@ -647,7 +673,7 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	if tunnel != nil {
 		tunnel.stop()
 	}
-	tunnel = newTunnelManager(body.Domain, tunnelInfo.ID, body.APIToken)
+	tunnel = newTunnelManager(body.Domain, tunnelInfo.ID, tunnelInfo.Token)
 	tunnel.start()
 
 	publicURL := "https://" + body.Domain
@@ -684,6 +710,7 @@ func handleUnbindDomain(w http.ResponseWriter, r *http.Request) {
 	// use global cfg
 	cfg.Set("bound_domain", "")
 	cfg.Set("cf_tunnel_id", "")
+	cfg.Set("cf_tunnel_token", "")
 	cfg.Set("cf_zone_id", "")
 	cfg.Set("tunnel_mode", "quick")
 	cfg.Set("tunnel_url", "")
