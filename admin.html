@@ -808,6 +808,26 @@ select.form-input{appearance:none;cursor:pointer}
         <div style="font-size:14px;font-weight:600;margin-bottom:12px">👥 已连接节点</div>
         <div id="netPeersList" style="font-size:12px;color:var(--text-muted)">暂无连接节点</div>
       </div>
+      <!-- ➕ 添加节点（手动互连） -->
+      <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">➕ 添加节点（手动互连）</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <input id="peerAddr" class="form-input" placeholder="https://openmodelpool.com" />
+          <input id="peerNodeId" class="form-input" placeholder="节点 ID（可留空，由对端返回）" />
+          <button id="addPeerBtn" class="btn btn-primary" onclick="addNetworkPeer()">添加</button>
+        </div>
+      </div>
+      <!-- 🔑 邀请码（互连对端） -->
+      <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🔑 邀请码（互连对端）</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button id="genInviteBtn" class="btn btn-secondary" onclick="generateFedInvite()">生成邀请码</button>
+          <input id="fedInviteCode" class="form-input" readonly placeholder="生成的邀请码将显示在此" />
+          <input id="redeemCode" class="form-input" placeholder="粘贴对方邀请码" />
+          <button id="redeemBtn" class="btn btn-primary" onclick="redeemInvite()">加入网络</button>
+          <div id="inviteList"></div>
+        </div>
+      </div>
       <!-- 退出按钮 -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;text-align:center">
         <button class="btn btn-danger" onclick="disableNetwork()" style="padding:10px 24px">🚪 退出共享网络</button>

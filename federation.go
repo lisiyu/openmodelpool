@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"sync"
 )
-
 
 // withFederationAuth restricts access to known federation nodes or authenticated requests.
 // SA-12 (strict): NO localhost bypass. All requests MUST present valid credentials:
@@ -18,6 +18,18 @@ import (
 // or shared-hosting environments where localhost is not a security boundary.
 func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// P1-1 (narrow allow-list): a trusted bootstrap seed node performing a
+		// read-only GET against its own /federation/pool may fetch the trust pool
+		// without presenting credentials. This unblocks bootstrap-node discovery
+		// (fetchFromSeedNodes) which issues unauthenticated GETs. No other path or
+		// method is affected, preserving SA-12 strictness for everything else.
+		if r.Method == http.MethodGet &&
+			strings.HasSuffix(r.URL.Path, "/federation/pool") &&
+			isTrustedSeed(r) {
+			handler(w, r)
+			return
+		}
+
 		// Auth path 1: Known node identity (X-Node-ID + trust pool verification)
 		nodeID := r.Header.Get("X-Node-ID")
 		if nodeID != "" && fed != nil {
@@ -51,6 +63,31 @@ func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// isTrustedSeed reports whether the incoming request originates from a configured
+// bootstrap seed node. It compares the request Host (port stripped) against each
+// entry of netMgr.config.BootstrapNodes, tolerating http/https prefixes and a
+// trailing slash so operators can paste a bare domain or a full URL interchangeably.
+func isTrustedSeed(r *http.Request) bool {
+	if netMgr == nil {
+		return false
+	}
+	host := r.Host
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+	for _, seed := range netMgr.config.BootstrapNodes {
+		seedHost := strings.TrimPrefix(strings.TrimPrefix(seed, "https://"), "http://")
+		seedHost = strings.TrimRight(seedHost, "/")
+		if i := strings.IndexByte(seedHost, ':'); i >= 0 {
+			seedHost = seedHost[:i]
+		}
+		if seedHost != "" && seedHost == host {
+			return true
+		}
+	}
+	return false
+}
+
 // FederationManager manages this node's participation in the federation.
 type FederationManager struct {
 	mu           sync.RWMutex
@@ -58,7 +95,7 @@ type FederationManager struct {
 	localPeers   map[string]*NodeInfo // node_id -> latest info from gossip
 	enabled      bool
 	relayEnabled bool
-	loopRunning  bool                  // whether the refresh loop goroutine is active
+	loopRunning  bool // whether the refresh loop goroutine is active
 	dataDir      string
 	stopCh       chan struct{}
 	lastETag     string // ETag for conditional HTTP requests to registry

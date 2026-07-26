@@ -208,6 +208,7 @@ let _shareFilter = 'all';
         }
         loadNetworkPeers();
         loadNetworkDashboard();
+        loadInvites();
       } else {
         if (panel) panel.style.display = 'none';
       }
@@ -828,15 +829,114 @@ async function generateFedInvite() {
   try {
     const r = await authFetch('/api/federation/invites', {
       method: 'POST',
-      body: JSON.stringify({ invitee_name: '新节点', invite_type: 'federation', expires_in_hours: 72 })
+      body: JSON.stringify({ invitee_name: '', type: 'public', expires_hours: 72 })
     });
     const d = await r.json();
-    if (d.code) {
-      document.getElementById('fedInviteCode').value = d.code;
+    if (d.encoded) {
+      const el = document.getElementById('fedInviteCode');
+      if (el) el.value = d.encoded;
       toast('✅ 邀请码已生成');
+      copyToClipboard(d.encoded);
     } else {
-      toast('生成失败: ' + extractError(d) || '未知错误', 'error');
+      toast('生成失败: ' + (extractError(d) || '未知错误'), 'error');
     }
   } catch(e) { toast('生成失败: ' + e.message, 'error'); }
+}
+
+// addNetworkPeer implements P0-2 manual peer linking. It posts the operator-
+// supplied address (and optional node_id) to POST /api/network/peers. The
+// backend accepts an empty node_id and resolves it from the peer's public
+// heartbeat endpoint, so operators only need to paste the other node's URL.
+async function addNetworkPeer() {
+  const addrEl = document.getElementById('peerAddr');
+  const nodeIdEl = document.getElementById('peerNodeId');
+  const addr = addrEl ? addrEl.value.trim() : '';
+  const nodeId = nodeIdEl ? nodeIdEl.value.trim() : '';
+  if (!addr) {
+    toast('请填写对方地址', 'error');
+    return;
+  }
+  if (!validatePeerAddress(addr)) {
+    toast('地址必须以 http:// 或 https:// 开头', 'error');
+    return;
+  }
+  try {
+    const r = await authFetch('/api/network/peers', {
+      method: 'POST',
+      body: JSON.stringify({ addresses: [addr], node_id: nodeId, name: addr })
+    });
+    const d = await r.json();
+    if (r.ok) {
+      toast('✅ 节点已添加', 'success');
+      if (addrEl) addrEl.value = '';
+      if (nodeIdEl) nodeIdEl.value = '';
+      await loadNetworkStatus();
+    } else {
+      toast('添加失败: ' + (extractError(d) || '未知错误'), 'error');
+    }
+  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+
+// redeemInvite implements P1-2 invite redeeming. It verifies the pasted invite
+// code (GET-free, rate-limited /api/federation/invites/verify) and, if valid,
+// joins the inviter's network via the rate-limited /api/federation/join using
+// this node's own identity and the verified network id.
+async function redeemInvite() {
+  const codeEl = document.getElementById('redeemCode');
+  const code = codeEl ? codeEl.value.trim() : '';
+  if (!code) {
+    toast('请粘贴对方邀请码', 'error');
+    return;
+  }
+  try {
+    // Step 1: verify the invite code.
+    const vRes = await authFetch('/api/federation/invites/verify', {
+      method: 'POST',
+      body: JSON.stringify({ encoded: code })
+    });
+    const v = await vRes.json();
+    if (!vRes.ok || !v.valid) {
+      toast('邀请码无效: ' + (extractError(v) || v.reason || '未知错误'), 'error');
+      return;
+    }
+
+    // Step 2: gather this node's identity for the join request.
+    let nodeId = '';
+    let pubKey = '';
+    try {
+      const sRes = await authFetch('/api/network/status');
+      const s = await sRes.json();
+      nodeId = (s && s.node_id) || (s && s.node && s.node.id) || '';
+      pubKey = (s && s.node && s.node.pub_key) || '';
+    } catch(e) { /* fall back to cached networkStatus below */ }
+    if (!nodeId && typeof networkStatus !== 'undefined' && networkStatus) {
+      nodeId = networkStatus.node_id || (networkStatus.node && networkStatus.node.id) || '';
+      pubKey = pubKey || (networkStatus.node && networkStatus.node.pub_key) || '';
+    }
+    if (!nodeId) {
+      toast('未能获取本节点身份，请确认已加入共享网络', 'error');
+      return;
+    }
+
+    // Step 3: join the inviter's network.
+    const jRes = await authFetch('/api/federation/join', {
+      method: 'POST',
+      body: JSON.stringify({
+        network_id: v.network,
+        node_id: nodeId,
+        pub_key: pubKey,
+        endpoint: window.location.origin,
+        invite_sig: code
+      })
+    });
+    const j = await jRes.json();
+    if (jRes.ok && j.accepted) {
+      toast('✅ 已加入对方网络', 'success');
+      if (codeEl) codeEl.value = '';
+      await loadNetworkStatus();
+    } else {
+      toast('加入失败: ' + (extractError(j) || j.reason || '未知错误'), 'error');
+    }
+  } catch(e) { toast('加入失败: ' + e.message, 'error'); }
 }
 

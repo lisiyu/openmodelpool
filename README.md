@@ -215,6 +215,30 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 | **Gossip Protocol** | Real-time state propagation (node online/offline, capability changes) | Plumtree / Scuttlebutt variant |
 | **LAN Discovery** | Local network node auto-discovery | mDNS |
 
+#### 🔗 联邦组网配置（v4.1.6 新增）
+
+当两个自托管节点（如 `https://openmodelpool.io` 与 `https://openmodelpool.com`）需要互相发现、共享 provider 时，节点之间传播的公网可达地址由以下配置键决定。**优先级从高到低**：
+
+| 优先级 | 配置键 | 说明 |
+|---|---|---|
+| 1（最高） | `federation_endpoint` | 显式配置的公网基址，例如 `https://openmodelpool.io`。完全确定，不受请求上下文影响。 |
+| 2 | `public_domain` | **v4.1.6 新增**。建议设为节点的公网域名，例如 `https://openmodelpool.io`。当未显式配置 `federation_endpoint` 时使用，避免回落到内网主机名。 |
+| 3 | 请求 `Host` 头 | HTTP 请求到达时，若上述两项均未配置，则使用 `https://<Host>`（仅在有请求上下文时生效，如生成邀请码）。 |
+| 4（兜底，仅 LAN） | `http://<hostname>:<port>` | 以上均未命中时的最后兜底，使用本机主机名 + 端口（默认 8000）。**此地址通常不可达，会在日志打印 `[WARN] resolvePublicEndpoint fell back to LAN address`**，生产环境应配置前两项之一。 |
+
+> 配置方式：在管理面板「共享网络」中设置，或直接写入 `config.json`（键名同上）。两个私有节点互连推荐至少配置 `public_domain`（或 `federation_endpoint`）。
+
+**种子节点（`bootstrap_nodes`）**：用于「自动发现」的可信对端公网地址列表，元素形如 `https://openmodelpool.com`。互设后，节点会向这些地址的 `GET /federation/pool` 拉取对端节点信息（v4.1.6 已对该只读路径、仅对可信种子 Host 放行，修复原先的 403）。例如：
+
+```json
+{
+  "bootstrap_nodes": ["https://openmodelpool.com"],
+  "public_domain": "https://openmodelpool.io"
+}
+```
+
+> 注意：私有 mesh 互连**不依赖**零配置自动发现。最可靠的方式是在「网络」页用「添加节点」表单手动粘贴对端公网地址，或使用「邀请码」互连。
+
 #### 🏆 Reputation System (EWMA-Tracked, S/A/B/C/D Grades)
 
 | Grade | Score | Description |

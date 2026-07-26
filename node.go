@@ -46,9 +46,9 @@ var node *NodeIdentity
 // NodeKeyStore is the on-disk format for the node's keys.
 type NodeKeyStore struct {
 	NodeID          string `json:"node_id"`
-	PrivKeyB64      string `json:"priv_key"`                 // encrypted with AES-256-GCM
+	PrivKeyB64      string `json:"priv_key"` // encrypted with AES-256-GCM
 	PubKeyB64       string `json:"pub_key"`
-	Mnemonic        string `json:"mnemonic,omitempty"`       // encrypted mnemonic (AES-256-GCM)
+	Mnemonic        string `json:"mnemonic,omitempty"` // encrypted mnemonic (AES-256-GCM)
 	HasMnemonic     bool   `json:"has_mnemonic"`
 	BackupConfirmed bool   `json:"backup_confirmed"`
 	GitHubUser      string `json:"github_user,omitempty"`
@@ -622,12 +622,7 @@ func (n *NodeIdentity) GetInfo() NodeInfo {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	endpoint := cfg.Get("federation_endpoint", "")
-	if endpoint == "" {
-		port := cfg.Get("service_port", "8000")
-		hostname, _ := os.Hostname()
-		endpoint = fmt.Sprintf("http://%s:%s", hostname, port)
-	}
+	endpoint := resolvePublicEndpoint("")
 
 	var sharedModels []string
 	var sharedProviders []SharedProvider

@@ -40,6 +40,48 @@ function safeUrl(url) {
   return '#';
 }
 
+// validatePeerAddress validates a peer / seed address entered by the operator.
+// Only http:// and https:// schemes are accepted (matches the backend
+// resolvePeerNodeID scheme check), preventing SSRF-prone or malformed input.
+function validatePeerAddress(url) {
+  if (typeof url !== 'string') return false;
+  const s = url.trim();
+  if (s === '') return false;
+  const lower = s.toLowerCase();
+  return lower.startsWith('http://') || lower.startsWith('https://');
+}
+
+// copyToClipboard copies text to the clipboard and shows a toast on success.
+// Falls back gracefully if the Clipboard API is unavailable (e.g. non-secure
+// context) by selecting a temporary textarea.
+function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function() {
+        toast('已复制到剪贴板', 'success');
+      }, function() {
+        toast('复制失败，请手动复制', 'error');
+      });
+      return true;
+    }
+  } catch (e) { /* fall through to legacy path */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast(ok ? '已复制到剪贴板' : '复制失败，请手动复制', ok ? 'success' : 'error');
+    return ok;
+  } catch (e) {
+    toast('复制失败，请手动复制', 'error');
+    return false;
+  }
+}
+
 let authToken = localStorage.getItem('admin_token') || '';
 
 async function authFetch(url, opts = {}) {

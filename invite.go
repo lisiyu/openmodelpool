@@ -25,22 +25,22 @@ type FederationInviteType string
 
 const (
 	FederationInviteDirected FederationInviteType = "directed" // bound to specific invitee pubkey
-	FederationInvitePublic    FederationInviteType = "public"   // anyone can use (invitee_pub = "*")
-	FederationInviteChain     FederationInviteType = "chain"    // invitee can also issue invites
+	FederationInvitePublic   FederationInviteType = "public"   // anyone can use (invitee_pub = "*")
+	FederationInviteChain    FederationInviteType = "chain"    // invitee can also issue invites
 )
 
 // FederationInvite is the signed invitation payload.
 type FederationInvite struct {
-	NetworkID   string               `json:"network_id"`           // must match genesis hash
-	Inviter     string               `json:"inviter"`              // inviter's NodeID
-	InviterKey  string               `json:"inviter_key"`          // inviter's public key (base64)
-	InviteePub  string               `json:"invitee_pub"`          // invitee's public key, or "*" for public
+	NetworkID   string               `json:"network_id"`             // must match genesis hash
+	Inviter     string               `json:"inviter"`                // inviter's NodeID
+	InviterKey  string               `json:"inviter_key"`            // inviter's public key (base64)
+	InviteePub  string               `json:"invitee_pub"`            // invitee's public key, or "*" for public
 	InviteeName string               `json:"invitee_name,omitempty"` // optional human-readable name
-	Endpoint    string               `json:"endpoint"`             // inviter's endpoint for initial connection
-	ExpiresAt   string               `json:"expires_at"`           // RFC3339 expiration time
-	Type        FederationInviteType `json:"type"`                 // directed, public, chain
-	CreatedAt   string               `json:"created_at"`           // RFC3339 creation time
-	Signature   string               `json:"signature"`            // Ed25519 signature (base64)
+	Endpoint    string               `json:"endpoint"`               // inviter's endpoint for initial connection
+	ExpiresAt   string               `json:"expires_at"`             // RFC3339 expiration time
+	Type        FederationInviteType `json:"type"`                   // directed, public, chain
+	CreatedAt   string               `json:"created_at"`             // RFC3339 creation time
+	Signature   string               `json:"signature"`              // Ed25519 signature (base64)
 }
 
 // FederationInvitePayload is the unsigned data that gets signed.
@@ -57,9 +57,9 @@ type FederationInvitePayload struct {
 
 // inviteManager handles invite creation, verification, and tracking.
 type inviteManager struct {
-	issued   map[string]*FederationInvite // invite_id → code
-	used     map[string]bool        // invite_id → used
-	dataDir  string
+	issued  map[string]*FederationInvite // invite_id → code
+	used    map[string]bool              // invite_id → used
+	dataDir string
 }
 
 var invMgr *inviteManager
@@ -75,7 +75,7 @@ func initInviteManager(dataDir string) {
 }
 
 // CreateInvite creates a new signed invite code.
-func (m *inviteManager) CreateInvite(inviteePub string, inviteeName string, inviteType FederationInviteType, expiresInHours int) (*FederationInvite, error) {
+func (m *inviteManager) CreateInvite(inviteePub string, inviteeName string, inviteType FederationInviteType, expiresInHours int, host string) (*FederationInvite, error) {
 	if node == nil || !node.IsInitialized() {
 		return nil, fmt.Errorf("node not initialized")
 	}
@@ -88,7 +88,7 @@ func (m *inviteManager) CreateInvite(inviteePub string, inviteeName string, invi
 		Inviter:     node.NodeID(),
 		InviteePub:  inviteePub,
 		InviteeName: inviteeName,
-		Endpoint:    node.getEndpoint(),
+		Endpoint:    node.getEndpoint(host),
 		ExpiresAt:   expires.Format(time.RFC3339),
 		Type:        inviteType,
 		CreatedAt:   now.Format(time.RFC3339),
@@ -277,7 +277,7 @@ func (m *inviteManager) inviteIDFromCode(invite *FederationInvite) string {
 
 type inviteData struct {
 	Issued map[string]*FederationInvite `json:"issued"`
-	Used   map[string]bool        `json:"used"`
+	Used   map[string]bool              `json:"used"`
 }
 
 func (m *inviteManager) save() {
@@ -308,17 +308,6 @@ func (m *inviteManager) load() {
 
 // NodeIdentity helpers (used by invite signing)
 
-func (n *NodeIdentity) getEndpoint() string {
-	endpoint := cfg.Get("federation_endpoint", "")
-	if endpoint == "" {
-		// Check tunnel URL first
-		tunnelURL := cfg.Get("tunnel_url", "")
-		if tunnelURL != "" {
-			return tunnelURL
-		}
-		port := cfg.Get("service_port", "8000")
-		hostname, _ := os.Hostname()
-		endpoint = fmt.Sprintf("http://%s:%s", hostname, port)
-	}
-	return endpoint
+func (n *NodeIdentity) getEndpoint(host string) string {
+	return resolvePublicEndpoint(host)
 }

@@ -554,7 +554,7 @@ func handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 		inviteType = FederationInvitePublic
 	}
 
-	invite, err := invMgr.CreateInvite(body.InviteePub, body.InviteeName, inviteType, body.ExpiresIn)
+	invite, err := invMgr.CreateInvite(body.InviteePub, body.InviteeName, inviteType, body.ExpiresIn, r.Host)
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return

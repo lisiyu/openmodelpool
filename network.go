@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -68,23 +69,23 @@ type NetworkConfig struct {
 	// v3.2: Independent network_enabled toggle — separate from Mode.
 	// Controls whether this node participates in the shared network at all.
 	// Three-level model: Personal (network_enabled=false) → Network (network_enabled=true, share_to_pool=false) → Shared Peer (both true)
-	NetworkEnabled    bool            `json:"network_enabled"`
+	NetworkEnabled bool `json:"network_enabled"`
 
 	// v3.1: Unified Peer Model — share_to_pool toggle
 	// Controls whether this node contributes its providers to the shared pool.
 	// Default: false — nodes join the network by default but do NOT share resources
 	// unless explicitly opted in. This is independent of network participation.
-	ShareToPool       bool            `json:"share_to_pool"`
+	ShareToPool bool `json:"share_to_pool"`
 
 	// v3.1: Peer capabilities (replaces preset node types)
-	Capabilities      PeerCapabilities `json:"capabilities"`
+	Capabilities PeerCapabilities `json:"capabilities"`
 
 	// v2.0 Quota Allocation
-	QuotaAllocation   QuotaAllocation                 `json:"quota_allocation"`
+	QuotaAllocation QuotaAllocation `json:"quota_allocation"`
 
 	// v3.2: REQ-12 foundation — contribution boundary for the shared pool.
 	// Persisted in slice ①; enforcement arrives in a later slice.
-	ShareBoundary     ShareBoundaryConfig             `json:"share_boundary"`
+	ShareBoundary ShareBoundaryConfig `json:"share_boundary"`
 }
 
 // PeerInfo represents a connected peer in the shared network
@@ -143,10 +144,10 @@ type RouteEntry struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	// Gateway routing fields
-	Models    []string  `json:"models,omitempty"`    // models this node provides
-	LatencyMS float64  `json:"latency_ms,omitempty"` // average latency (ms)
-	LoadScore float64  `json:"load_score,omitempty"` // current load (0-1, 0=idle)
-	LastSeen  time.Time `json:"last_seen,omitempty"` // last heartbeat time
+	Models    []string  `json:"models,omitempty"`     // models this node provides
+	LatencyMS float64   `json:"latency_ms,omitempty"` // average latency (ms)
+	LoadScore float64   `json:"load_score,omitempty"` // current load (0-1, 0=idle)
+	LastSeen  time.Time `json:"last_seen,omitempty"`  // last heartbeat time
 }
 
 // RouteTable is a simplified DHT routing table (Phase 1)
@@ -737,14 +738,14 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		"route_table_size":   routeTable.Count(),
 
 		// v3.2: Three-level state model (§4.2)
-		"network_enabled":    nm.config.NetworkEnabled,
+		"network_enabled": nm.config.NetworkEnabled,
 
 		// v3.1: Unified Peer Model
-		"share_to_pool":      nm.config.ShareToPool,
-		"capabilities":       nm.config.Capabilities,
+		"share_to_pool": nm.config.ShareToPool,
+		"capabilities":  nm.config.Capabilities,
 
 		// v2.0 Quota Allocation
-		"quota_allocation":  nm.config.QuotaAllocation,
+		"quota_allocation": nm.config.QuotaAllocation,
 
 		// v3.2: REQ-12 foundation — contribution boundary (persisted, not yet enforced)
 		"share_boundary": nm.config.ShareBoundary,
@@ -803,15 +804,15 @@ func (nm *NetworkManager) GetNetworkStats() map[string]any {
 	}
 
 	return map[string]any{
-		"total_nodes":     len(nm.config.Peers) + 1, // peers + self
-		"online_nodes":    nm.countOnlinePeers(),
-		"active_users":    activeUsers,
-		"total_requests":  totalReqs,
-		"relay_requests":  st.RequestsRelayed,
-		"success_rate":    successRate,
-		"total_quota":     totalQuota,
-		"models_shared":   st.TotalModelsShared,
-		"uptime":          uptime,
+		"total_nodes":    len(nm.config.Peers) + 1, // peers + self
+		"online_nodes":   nm.countOnlinePeers(),
+		"active_users":   activeUsers,
+		"total_requests": totalReqs,
+		"relay_requests": st.RequestsRelayed,
+		"success_rate":   successRate,
+		"total_quota":    totalQuota,
+		"models_shared":  st.TotalModelsShared,
+		"uptime":         uptime,
 	}
 }
 
@@ -1116,19 +1117,18 @@ func GetDisclaimer() DisclaimerResponse {
 	}
 }
 
-
 // ============================================================
 // §1.5.2 Join Conditions — check if node is ready for shared network
 // ============================================================
 
 // JoinConditionResult describes whether the node meets the conditions to join the shared network.
 type JoinConditionResult struct {
-	HasProvider     bool   `json:"has_provider"`       // condition 1: has at least one enabled Provider
-	HasQuotaManager bool   `json:"has_quota_manager"`  // condition 2: quota management is enabled
-	HasSharedKey    bool   `json:"has_shared_key"`     // condition 3 (hard): at least one enabled shared (access_control=="shared") key exists
-	HasRemaining    bool   `json:"has_remaining"`      // NON-MANDATORY: remaining quota > 0 this month — used only for the idle-capacity reminder, never blocks joining
-	AllMet          bool   `json:"all_met"`            // all hard conditions satisfied
-	Message         string `json:"message,omitempty"`  // gentle prompt message when all conditions met
+	HasProvider     bool   `json:"has_provider"`      // condition 1: has at least one enabled Provider
+	HasQuotaManager bool   `json:"has_quota_manager"` // condition 2: quota management is enabled
+	HasSharedKey    bool   `json:"has_shared_key"`    // condition 3 (hard): at least one enabled shared (access_control=="shared") key exists
+	HasRemaining    bool   `json:"has_remaining"`     // NON-MANDATORY: remaining quota > 0 this month — used only for the idle-capacity reminder, never blocks joining
+	AllMet          bool   `json:"all_met"`           // all hard conditions satisfied
+	Message         string `json:"message,omitempty"` // gentle prompt message when all conditions met
 }
 
 // CheckJoinConditions checks whether the node satisfies the conditions for joining the shared network.
@@ -1354,15 +1354,84 @@ func handleNetworkPeers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"peers": netMgr.GetPeers()})
 }
 
+// resolvePublicEndpoint resolves the best publicly-reachable base endpoint for
+// this node. It is used when advertising this node to peers (invites, peer
+// registration, gossip). Resolution priority:
+//  1. federation_endpoint  (explicit public base, strongest)
+//  2. public_domain        (v4.1.6: explicit public domain, e.g. https://openmodelpool.io)
+//  3. Host header          (https://host, only when a request context is available)
+//  4. http://<hostname>:<port>  (LAN fallback — only valid on a local network)
+func resolvePublicEndpoint(host string) string {
+	if ep := cfg.Get("federation_endpoint", ""); ep != "" {
+		return ep
+	}
+	if pd := cfg.Get("public_domain", ""); pd != "" {
+		return pd
+	}
+	if host != "" {
+		return "https://" + host
+	}
+	hostname, _ := os.Hostname()
+	port := cfg.Get("service_port", "8000")
+	log.Println("[WARN] resolvePublicEndpoint fell back to LAN address")
+	return fmt.Sprintf("http://%s:%s", hostname, port)
+}
+
+// resolvePeerNodeID resolves the node ID of a peer by querying its public
+// heartbeat ping endpoint. Used by handleNetworkAddPeer when the operator adds a
+// peer by address only (node_id left empty). The browser cannot do this
+// directly due to CORS, so the OMP backend resolves it on the operator's behalf.
+func resolvePeerNodeID(addr string) (string, error) {
+	// Validate scheme to avoid SSRF / unexpected protocols.
+	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+		return "", fmt.Errorf("invalid peer address %q: must start with http:// or https://", addr)
+	}
+	pingURL := strings.TrimRight(addr, "/") + "/api/network/heartbeat/ping"
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(pingURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to reach peer %s: %w", addr, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("peer %s returned status %d", addr, resp.StatusCode)
+	}
+
+	var data struct {
+		Status string `json:"status"`
+		NodeID string `json:"node_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return "", fmt.Errorf("failed to decode ping response from %s: %w", addr, err)
+	}
+	if data.NodeID == "" {
+		return "", fmt.Errorf("peer %s did not return a node_id", addr)
+	}
+	return data.NodeID, nil
+}
+
 func handleNetworkAddPeer(w http.ResponseWriter, r *http.Request) {
 	var peer PeerInfo
 	if err := readJSON(r, &peer); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
+	// node_id may be omitted; when omitted we resolve it from the peer's public
+	// heartbeat endpoint using the supplied address (P0-2: manual peer linking
+	// without exchanging node IDs out of band).
 	if peer.NodeID == "" {
-		writeError(w, 400, "node_id is required")
-		return
+		if len(peer.Addresses) == 0 {
+			writeError(w, 400, "addresses or node_id required")
+			return
+		}
+		resolved, err := resolvePeerNodeID(peer.Addresses[0])
+		if err != nil {
+			writeError(w, 400, "failed to resolve node_id from address: "+err.Error())
+			return
+		}
+		peer.NodeID = resolved
 	}
 	if peer.Status == "" {
 		peer.Status = "online"
