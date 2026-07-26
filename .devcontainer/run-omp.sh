@@ -48,5 +48,28 @@ while true; do
 done &
 FB_PID=$!
 
-# 保持主进程存活
-wait $OMP_PID
+# 4) Cloudflare Tunnel 看守：codespace 重启后自动恢复 openmodelpool.io 域名绑定
+#    （自愈：二进制丢失则重下到持久化家目录；幂等：仅当未运行时拉起）
+CFD_BIN="$HOME/.local/bin/cloudflared"
+CFD_TOKEN="$HOME/.cloudflared/tunnel-token"
+CFD_LOG="/tmp/cloudflared.log"
+mkdir -p "$(dirname "$CFD_BIN")" "$HOME/.cloudflared"
+if [ ! -x "$CFD_BIN" ]; then
+  echo "$(date) [run-omp] cloudflared missing, self-installing" >> "$CFD_LOG"
+  curl -sL --retry 12 --retry-all-errors -o "$CFD_BIN" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 || echo "$(date) [run-omp] download FAILED" >> "$CFD_LOG"
+  chmod +x "$CFD_BIN" 2>/dev/null || true
+fi
+(
+  sleep 5
+  while true; do
+    if [ -x "$CFD_BIN" ] && [ -r "$CFD_TOKEN" ]; then
+      if ! pgrep -x cloudflared >/dev/null 2>&1; then
+        echo "$(date) [run-omp] starting cloudflared tunnel" >> "$CFD_LOG"
+        nohup "$CFD_BIN" tunnel --no-autoupdate run --token "$(cat "$CFD_TOKEN")" >> "$CFD_LOG" 2>&1 &
+      fi
+    fi
+    sleep 15
+  done
+) &
+CFD_WATCH_PID=$!
+wait $OMP_PID $CFD_WATCH_PID $FB_PID
