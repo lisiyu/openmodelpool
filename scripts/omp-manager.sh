@@ -40,6 +40,71 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# ============================================================
+# 网络下载封装（超时 / 重试 / GitHub 镜像回退）
+#   - 所有下载/请求都带超时与重试，避免在中国大陆网络下无限挂起
+#   - GitHub 直连（含重试）仍失败则自动回退到 ghproxy.net 公共镜像
+#   - 镜像仅作兜底：直连成功则不会使用镜像；非 GitHub URL 不加镜像
+# ============================================================
+CURL_CONNECT_TIMEOUT=15
+CURL_DL_MAX_TIME=300      # 二进制 / 大文件下载上限（秒）
+CURL_GET_MAX_TIME=120     # API / 本地查询上限（秒）
+CURL_RETRIES=3
+CURL_RETRY_DELAY=2
+GITHUB_MIRROR="https://ghproxy.net/"
+
+# 判断是否为 GitHub URL（仅对 GitHub 启用镜像回退）
+_is_github_url() {
+    case "$1" in
+        https://github.com/*|https://api.github.com/*|http://github.com/*|http://api.github.com/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# 为 GitHub URL 添加镜像前缀
+_mirror_url() {
+    echo "${GITHUB_MIRROR}${1}"
+}
+
+# 下载文件到指定路径；成功返回 0。GitHub 直连失败则回退镜像再试。
+curl_dl() {
+    local url="$1" outfile="$2" rc
+    curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+        --max-time "$CURL_DL_MAX_TIME" \
+        --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+        "$url" -o "$outfile" 2>/dev/null
+    rc=$?
+    if [ $rc -ne 0 ] && _is_github_url "$url"; then
+        echo -e "  ${CYAN}⚠ 直连失败，尝试镜像 ${GITHUB_MIRROR} ...${NC}" >&2
+        curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+            --max-time "$CURL_DL_MAX_TIME" \
+            --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+            "$(_mirror_url "$url")" -o "$outfile" 2>/dev/null
+        rc=$?
+    fi
+    return $rc
+}
+
+# 抓取内容到 stdout；成功返回 0。GitHub 直连失败则回退镜像。
+curl_get() {
+    local url="$1" out rc
+    out=$(curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+        --max-time "$CURL_GET_MAX_TIME" \
+        --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+        "$url" 2>/dev/null)
+    rc=$?
+    if [ $rc -ne 0 ] && _is_github_url "$url"; then
+        echo -e "  ${CYAN}⚠ 直连失败，尝试镜像 ${GITHUB_MIRROR} ...${NC}" >&2
+        out=$(curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+            --max-time "$CURL_GET_MAX_TIME" \
+            --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+            "$(_mirror_url "$url")" 2>/dev/null)
+        rc=$?
+    fi
+    printf '%s' "$out"
+    return $rc
+}
+
 
 # ============================================================
 # 自动检测已有部署
@@ -69,8 +134,8 @@ detect_deployment() {
         fi
     fi
 
-    # 2. 检查常见部署目录
-    for dir in /opt/openmodelpool /root/modelmux-deploy /root/openmodelpool /usr/local/openmodelpool; do
+    # 2. 检查常见部署目录（openmodelpool 优先于遗留的 modelmux-deploy）
+    for dir in /opt/openmodelpool /root/openmodelpool /usr/local/openmodelpool /root/modelmux-deploy; do
         if [ -d "$dir" ]; then
             for bin in openmodelpool modelmux; do
                 if [ -f "$dir/$bin" ]; then
@@ -91,6 +156,46 @@ detect_deployment() {
             BINARY_NAME=$(basename "$exe_path")
             return 0
         fi
+    fi
+}
+
+# ============================================================
+# 遗留部署规范化：modelmux-deploy -> openmodelpool
+#   - 若 INSTALL_DIR 仍是遗留的 modelmux-deploy 路径，重定向到同名 openmodelpool 目录
+#   - 强制二进制名为 openmodelpool（遗留 modelmux 名称只用于“检测”，不再安装/运行）
+# 调用时机：每次 detect_deployment 之后。
+# ============================================================
+remap_legacy_deployment() {
+    if echo "$INSTALL_DIR" | grep -q "modelmux-deploy"; then
+        local new_dir="${INSTALL_DIR/modelmux-deploy/openmodelpool}"
+        write_info "检测到遗留路径 $INSTALL_DIR，升级目标重定向到 $new_dir"
+        INSTALL_DIR="$new_dir"
+    fi
+    if [ "$BINARY_NAME" = "modelmux" ]; then
+        BINARY_NAME="openmodelpool"
+    fi
+    export INSTALL_DIR BINARY_NAME
+}
+
+# 最佳努力迁移：遗留 modelmux-deploy 存在且目标 openmodelpool 尚无配置时，
+# 将用户的 config.json 与 data/ 复制过去；不覆盖目标已有文件（cp -n）。
+migrate_legacy_if_needed() {
+    local legacy="${INSTALL_DIR/openmodelpool/modelmux-deploy}"
+    if [ ! -d "$legacy" ]; then
+        return 0
+    fi
+    # 目标已有配置则跳过，避免覆盖用户的新配置
+    if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/config.json" ]; then
+        return 0
+    fi
+    mkdir -p "$INSTALL_DIR/data"
+    if [ -f "$legacy/config.json" ] && [ ! -f "$INSTALL_DIR/config.json" ]; then
+        cp -n "$legacy/config.json" "$INSTALL_DIR/config.json" 2>/dev/null \
+            && write_ok "已迁移配置: $legacy/config.json -> $INSTALL_DIR/config.json"
+    fi
+    if [ -d "$legacy/data" ]; then
+        cp -rn "$legacy/data/." "$INSTALL_DIR/data/" 2>/dev/null \
+            && write_info "已迁移数据: $legacy/data -> $INSTALL_DIR/data"
     fi
 }
 
@@ -124,7 +229,7 @@ write_info() {
 get_release_tag() {
     local tag="${OMP_RELEASE_TAG:-}"
     if [ -z "$tag" ]; then
-        tag=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | \
+        tag=$(curl_get "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" | \
             python3 -c 'import sys,json;print(json.load(sys.stdin).get("tag_name",""))' 2>/dev/null)
     fi
     if [ -z "$tag" ]; then
@@ -165,7 +270,7 @@ download_omp_release() {
 
     # 查询 Release API 获取资产列表
     local api_resp
-    api_resp=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${tag}" 2>/dev/null)
+    api_resp=$(curl_get "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${tag}")
 
     local asset_info=""
     if [ -n "$api_resp" ]; then
@@ -208,14 +313,15 @@ except: pass
         write_info "匹配到资产: ${asset_name}"
     fi
 
-    # 下载
-    curl -fsSL "$asset_url" -o "${tmp_dir}/${asset_name}" || {
+    # 下载（带超时/重试，GitHub 直连失败回退镜像）
+    if ! curl_dl "$asset_url" "${tmp_dir}/${asset_name}"; then
         write_err "下载失败: $asset_url"
+        write_err "GitHub 直连与镜像代理均失败。若您在中国大陆，请配置代理或设置 GitHub 镜像后重试。"
         return 1
-    }
+    fi
 
-    # SHA256 校验
-    curl -fsSL "${asset_url}.sha256" -o "${tmp_dir}/${asset_name}.sha256" 2>/dev/null || true
+    # SHA256 校验（失败不致命，仅跳过）
+    curl_dl "${asset_url}.sha256" "${tmp_dir}/${asset_name}.sha256" 2>/dev/null || true
     if [ -s "${tmp_dir}/${asset_name}.sha256" ] && command -v sha256sum >/dev/null 2>&1; then
         (cd "$tmp_dir" && sha256sum -c "${asset_name}.sha256") || {
             write_err "SHA256 校验失败"
@@ -314,7 +420,9 @@ install_omp() {
 
     detect_arch || return 1
     detect_system
-detect_deployment
+    detect_deployment
+    remap_legacy_deployment
+    migrate_legacy_if_needed
 
     RELEASE_TAG=$(get_release_tag) || return 1
     write_info "目标版本: $RELEASE_TAG"
@@ -346,7 +454,7 @@ detect_deployment
     XRAY_DIR="$INSTALL_DIR/xray"
     mkdir -p "$XRAY_DIR"
     XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}"
-    if curl -fsSL "$XRAY_URL" -o "$TMP_DIR/xray.zip" 2>/dev/null; then
+    if curl_dl "$XRAY_URL" "$TMP_DIR/xray.zip" 2>/dev/null; then
         if unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || \
            python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null; then
             cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
@@ -428,7 +536,7 @@ check_browser_deps() {
             apt-get update -qq 2>/dev/null
             [ "$NEED_XVFB" = true ] && apt-get install -y -qq xvfb 2>/dev/null
             if [ "$NEED_CHROME" = true ]; then
-                wget -q -O /tmp/chrome-signing-key.pub https://dl.google.com/linux/linux_signing_key.pub 2>/dev/null
+                curl_dl "https://dl.google.com/linux/linux_signing_key.pub" "/tmp/chrome-signing-key.pub" 2>/dev/null || true
                 apt-key add /tmp/chrome-signing-key.pub 2>/dev/null || true
                 echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list 2>/dev/null
                 apt-get update -qq 2>/dev/null
@@ -535,7 +643,14 @@ EOF
 upgrade_omp() {
     write_title "OpenModelPool 增量升级"
 
-    if [ ! -f "$INSTALL_DIR/$BINARY_NAME" ]; then
+    # 先检测并规范化部署路径（含遗留 modelmux-deploy -> openmodelpool 重定向与配置迁移）
+    detect_deployment
+    remap_legacy_deployment
+    migrate_legacy_if_needed
+
+    # 判断是否存在可升级的安装：目标路径或遗留路径任一存在即可
+    local legacy_bin="${INSTALL_DIR/openmodelpool/modelmux-deploy}/modelmux"
+    if [ ! -f "$INSTALL_DIR/$BINARY_NAME" ] && [ ! -f "$legacy_bin" ]; then
         write_err "未检测到安装: $INSTALL_DIR/$BINARY_NAME"
         return
     fi
@@ -568,7 +683,7 @@ upgrade_omp() {
         write_info "安装 Xray (VMess 代理支持)..."
         mkdir -p "$XRAY_DIR"
         XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}"
-        if curl -fsSL "$XRAY_URL" -o "$TMP_DIR/xray.zip" 2>/dev/null; then
+        if curl_dl "$XRAY_URL" "$TMP_DIR/xray.zip" 2>/dev/null; then
             unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || \
                 python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null
             cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
@@ -581,6 +696,9 @@ upgrade_omp() {
     else
         write_ok "Xray 已存在，跳过"
     fi
+
+    # 重写服务单元，确保运行路径指向（重定向后的）openmodelpool 目录
+    setup_service
 
     rm -rf "$TMP_DIR"
 
@@ -699,14 +817,14 @@ setup_cloudflare() {
         npm uninstall -g cloudflared 2>/dev/null || true
         rm -f /usr/bin/cloudflared 2>/dev/null
         if command -v apt-get > /dev/null 2>&1; then
-            curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg > /dev/null 2>&1
+            curl -fsSL --connect-timeout 15 --max-time 120 --retry 3 --retry-delay 2 https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg > /dev/null 2>&1
             echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs 2>/dev/null || echo stable) main" | tee /etc/apt/sources.list.d/cloudflared.list > /dev/null 2>&1
             apt-get update -qq && apt-get install -y cloudflared 2>/dev/null || {
-                curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CFARCH}" -o /usr/local/bin/cloudflared
+                curl_dl "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CFARCH}" "/usr/local/bin/cloudflared" 2>/dev/null
                 chmod +x /usr/local/bin/cloudflared
             }
         else
-            curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CFARCH}" -o /usr/local/bin/cloudflared
+            curl_dl "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CFARCH}" "/usr/local/bin/cloudflared" 2>/dev/null
             chmod +x /usr/local/bin/cloudflared
         fi
         if ! cloudflared --version > /dev/null 2>&1; then
@@ -929,7 +1047,7 @@ setup_frp() {
         esac
         FRP_VER="0.61.1"
         TMP=$(mktemp -d)
-        curl -fsSL "https://github.com/fatedier/frp/releases/download/v${FRP_VER}/frp_${FRP_VER}_linux_${FRPARCH}.tar.gz" -o "$TMP/frp.tar.gz"
+        curl_dl "https://github.com/fatedier/frp/releases/download/v${FRP_VER}/frp_${FRP_VER}_linux_${FRPARCH}.tar.gz" "$TMP/frp.tar.gz"
         tar xzf "$TMP/frp.tar.gz" -C "$TMP"
         cp "$TMP/frp_${FRP_VER}_linux_${FRPARCH}/frpc" /usr/local/bin/frpc
         chmod +x /usr/local/bin/frpc
@@ -1055,7 +1173,7 @@ setup_ngrok() {
         esac
         TMP_NGROK=$(mktemp -d)
         NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-${NGROK_ARCH}.zip"
-        if curl -fsSL "$NGROK_URL" -o "$TMP_NGROK/ngrok.zip" 2>/dev/null; then
+        if curl_dl "$NGROK_URL" "$TMP_NGROK/ngrok.zip" 2>/dev/null; then
             if unzip -o "$TMP_NGROK/ngrok.zip" -d "$TMP_NGROK" 2>/dev/null || \
                python3 -c "import zipfile; zipfile.ZipFile('$TMP_NGROK/ngrok.zip').extractall('$TMP_NGROK')" 2>/dev/null; then
                 cp "$TMP_NGROK/ngrok" "$NGROK_BIN" && chmod +x "$NGROK_BIN"
@@ -1106,7 +1224,7 @@ setup_ngrok() {
     # 获取 ngrok 分配的公网 URL
     NGROK_URL=""
     if command -v curl >/dev/null 2>&1; then
-        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | \
+        NGROK_URL=$(curl_get "http://localhost:4040/api/tunnels" | \
             python3 -c 'import sys,json;data=json.load(sys.stdin);print(data["tunnels"][0]["public_url"] if data.get("tunnels") else "")' 2>/dev/null)
     fi
 
@@ -1151,7 +1269,7 @@ EOF
     # 再次获取 URL
     if [ -z "$NGROK_URL" ]; then
         sleep 2
-        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | \
+        NGROK_URL=$(curl_get "http://localhost:4040/api/tunnels" | \
             python3 -c 'import sys,json;data=json.load(sys.stdin);print(data["tunnels"][0]["public_url"] if data.get("tunnels") else "")' 2>/dev/null)
     fi
 
@@ -1383,7 +1501,7 @@ show_status() {
         [ -n "$NGROK_DOM" ] && echo -e "  固定域名: ${CYAN}$NGROK_DOM${NC}"
     fi
     # 尝试获取当前 URL
-    NGROK_CURRENT_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | \
+    NGROK_CURRENT_URL=$(curl_get "http://localhost:4040/api/tunnels" | \
         python3 -c 'import sys,json;data=json.load(sys.stdin);print(data["tunnels"][0]["public_url"] if data.get("tunnels") else "")' 2>/dev/null)
     [ -n "$NGROK_CURRENT_URL" ] && echo -e "  当前地址: ${CYAN}$NGROK_CURRENT_URL${NC}"
 
@@ -1487,7 +1605,7 @@ auto_update() {
     }
 
     # 获取当前版本
-    CURRENT_VERSION=$(curl -s http://localhost:${PORT}/api/version 2>/dev/null | \
+    CURRENT_VERSION=$(curl_get "http://localhost:${PORT}/api/version" | \
         python3 -c 'import sys,json;print(json.load(sys.stdin).get("version",""))' 2>/dev/null)
 
     # 获取最新 Release tag
@@ -1509,6 +1627,18 @@ auto_update() {
     echo "[$(date)] 发现新版本，开始更新..." >> "$LOG_FILE"
 
     detect_arch || exit 1
+
+    # 解析并规范化部署路径（含遗留 modelmux-deploy -> openmodelpool 重定向与配置迁移）
+    detect_deployment
+    remap_legacy_deployment
+    migrate_legacy_if_needed
+
+    # 若完全未安装则跳过自动更新
+    legacy_bin="${INSTALL_DIR/openmodelpool/modelmux-deploy}/modelmux"
+    if [ ! -f "$INSTALL_DIR/$BINARY_NAME" ] && [ ! -f "$legacy_bin" ]; then
+        echo "[$(date)] 未检测到安装，跳过自动更新" >> "$LOG_FILE"
+        exit 0
+    fi
 
     # 备份
     cp "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/${BINARY_NAME}.bak" 2>/dev/null || true
@@ -1556,6 +1686,7 @@ fi
 
 detect_system
 detect_deployment
+remap_legacy_deployment
 
 while true; do
     echo ""

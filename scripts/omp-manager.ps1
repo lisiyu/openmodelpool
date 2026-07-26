@@ -22,10 +22,10 @@ $GITHUB_REPO = "lisiyu/openmodelpool"
 # 动态获取最新 Release tag（可通过环境变量 OMP_RELEASE_TAG 覆盖）
 $RELEASE_TAG = $env:OMP_RELEASE_TAG
 if (-not $RELEASE_TAG) {
-    try {
-        $releaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/$GITHUB_REPO/releases/latest" -UseBasicParsing
+    $releaseInfo = Invoke-RestWithRetry "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+    if ($releaseInfo) {
         $RELEASE_TAG = $releaseInfo.tag_name
-    } catch {
+    } else {
         $RELEASE_TAG = "v4.1.6"  # fallback
     }
 }
@@ -41,6 +41,66 @@ $cfExe = "$cfDir\cloudflared.exe"
 $cfConfigDir = "$env:USERPROFILE\.cloudflared"
 $cfCertFile = "$cfConfigDir\cert.pem"
 $cfTaskName = "CloudflaredTunnel"
+
+# ============================================================
+# 网络请求封装（超时 / 重试 / GitHub 镜像回退）
+#   避免在中国大陆网络下无限挂起；GitHub 直连失败自动回退 ghproxy.net 镜像。
+# ============================================================
+$GITHUB_MIRROR = "https://ghproxy.net/"
+$NET_TIMEOUT_SEC = 300        # 文件下载超时（秒）
+$NET_API_TIMEOUT_SEC = 120    # API 查询超时（秒）
+$NET_RETRIES = 3
+$NET_RETRY_DELAY_MS = 2000
+
+function Test-IsGitHubUrl {
+    param([string]$Uri)
+    return ($Uri -like "https://github.com/*" -or $Uri -like "https://api.github.com/*" `
+        -or $Uri -like "http://github.com/*" -or $Uri -like "http://api.github.com/*")
+}
+
+function Get-GitHubMirrorUrl {
+    param([string]$Uri)
+    return "$GITHUB_MIRROR$Uri"
+}
+
+# 下载文件（带超时/重试/镜像回退）。成功返回 $true，失败返回 $false。
+function Invoke-DownloadWithRetry {
+    param([string]$Uri, [string]$OutFile)
+    $attempts = @($Uri)
+    if (Test-IsGitHubUrl $Uri) { $attempts += (Get-GitHubMirrorUrl $Uri) }
+    foreach ($u in $attempts) {
+        for ($i = 1; $i -le $NET_RETRIES; $i++) {
+            try {
+                Invoke-WebRequest -Uri $u -OutFile $OutFile -UseBasicParsing `
+                    -TimeoutSec $NET_TIMEOUT_SEC -ErrorAction Stop | Out-Null
+                return $true
+            } catch {
+                if ($i -lt $NET_RETRIES) { Start-Sleep -Milliseconds $NET_RETRY_DELAY_MS }
+            }
+        }
+        if ($u -ne $attempts[-1]) { Write-Host "  直连失败，尝试镜像 $GITHUB_MIRROR ..." -ForegroundColor $C }
+    }
+    return $false
+}
+
+# API 查询（带超时/重试/镜像回退）。成功返回响应对象，失败返回 $null。
+function Invoke-RestWithRetry {
+    param([string]$Uri)
+    $attempts = @($Uri)
+    if (Test-IsGitHubUrl $Uri) { $attempts += (Get-GitHubMirrorUrl $Uri) }
+    foreach ($u in $attempts) {
+        for ($i = 1; $i -le $NET_RETRIES; $i++) {
+            try {
+                return (Invoke-RestMethod -Uri $u -UseBasicParsing `
+                    -TimeoutSec $NET_API_TIMEOUT_SEC -ErrorAction Stop)
+            } catch {
+                if ($i -lt $NET_RETRIES) { Start-Sleep -Milliseconds $NET_RETRY_DELAY_MS }
+            }
+        }
+        if ($u -ne $attempts[-1]) { Write-Host "  直连失败，尝试镜像 $GITHUB_MIRROR ..." -ForegroundColor $C }
+    }
+    return $null
+}
 
 # 常量 - FRP
 $frpDir = Join-Path $InstallDir "frp"
@@ -217,7 +277,7 @@ function Download-OMPRelease {
     # 查询 Release API
     try {
         $apiUrl = "https://api.github.com/repos/$GITHUB_REPO/releases/tags/$Tag"
-        $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing
+        $release = Invoke-RestWithRetry $apiUrl
         $bestBin = $null
         $bestArc = $null
         foreach ($asset in $release.assets) {
@@ -248,10 +308,8 @@ function Download-OMPRelease {
     Write-Host "    文件: $assetName" -ForegroundColor $C
     Write-Host "    地址: $assetUrl" -ForegroundColor DarkGray
     $tmpFile = Join-Path $TmpDir $assetName
-    try {
-        Invoke-WebRequest -Uri $assetUrl -OutFile $tmpFile -UseBasicParsing
-    } catch {
-        Write-Err "下载失败: $_"
+    if (-not (Invoke-DownloadWithRetry $assetUrl $tmpFile)) {
+        Write-Err "下载失败: $assetUrl（直连与镜像均失败，请配置代理或镜像后重试）"
         return $null
     }
     Write-OK "已下载: $assetName ($Tag)"
@@ -259,7 +317,7 @@ function Download-OMPRelease {
     # SHA256 校验
     $shaUrl = "$assetUrl.sha256"
     $tmpSha = Join-Path $TmpDir "$assetName.sha256"
-    try { Invoke-WebRequest -Uri $shaUrl -OutFile $tmpSha -UseBasicParsing } catch {}
+    Invoke-DownloadWithRetry $shaUrl $tmpSha | Out-Null
     if (Test-Path $tmpSha) {
         $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
         $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
@@ -328,7 +386,7 @@ function Install-OMP {
     Write-Host "  下载 Xray (VMess 代理)..." -ForegroundColor $C
     try {
         $xrayTmp = Join-Path $env:TEMP "xray-install.zip"
-        Invoke-WebRequest -Uri $xrayUrl -OutFile $xrayTmp -UseBasicParsing
+        if (-not (Invoke-DownloadWithRetry $xrayUrl $xrayTmp)) { throw "Xray 下载失败" }
         $xrayExtract = Join-Path $env:TEMP "xray-install-extract"
         if (Test-Path $xrayExtract) { Remove-Item $xrayExtract -Recurse -Force }
         Expand-Archive -Path $xrayTmp -DestinationPath $xrayExtract -Force
@@ -536,7 +594,10 @@ function Setup-Cloudflare {
     if (-not (Test-Path $cfExe)) {
         New-Item -ItemType Directory -Path $cfDir -Force | Out-Null
         $cfUrl = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
-        Invoke-WebRequest -Uri $cfUrl -OutFile $cfExe -UseBasicParsing
+        if (-not (Invoke-DownloadWithRetry $cfUrl $cfExe)) {
+            Write-Err "cloudflared 下载失败，请手动安装"
+            return
+        }
         $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
         if ($currentPath -notlike "*$cfDir*") {
             [Environment]::SetEnvironmentVariable("Path", "$currentPath;$cfDir", "Machine")
@@ -766,7 +827,10 @@ function Setup-FRP {
         $frpVer = "0.61.1"
         $frpUrl = "https://github.com/fatedier/frp/releases/download/v$frpVer/frp_${frpVer}_windows_amd64.zip"
         $tmpZip = Join-Path $env:TEMP "frp-download.zip"
-        Invoke-WebRequest -Uri $frpUrl -OutFile $tmpZip -UseBasicParsing
+        if (-not (Invoke-DownloadWithRetry $frpUrl $tmpZip)) {
+            Write-Err "frp 下载失败，请手动安装"
+            return
+        }
         $tmpDir = Join-Path $env:TEMP "frp-extract"
         if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
         Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
@@ -896,7 +960,7 @@ function Setup-Ngrok {
         $ngrokUrl = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
         $tmpZip = Join-Path $env:TEMP "ngrok-download.zip"
         try {
-            Invoke-WebRequest -Uri $ngrokUrl -OutFile $tmpZip -UseBasicParsing
+            if (-not (Invoke-DownloadWithRetry $ngrokUrl $tmpZip)) { throw "ngrok 下载失败" }
             $tmpDir = Join-Path $env:TEMP "ngrok-extract"
             if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
             Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
@@ -936,7 +1000,7 @@ function Setup-Ngrok {
     # 尝试获取 ngrok 分配的公网 URL
     $ngrokUrl = ""
     try {
-        $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -ErrorAction Stop
+        $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
         $tunnels = $resp.Content | ConvertFrom-Json
         if ($tunnels.tunnels.Count -gt 0) {
             $ngrokUrl = $tunnels.tunnels[0].public_url
@@ -975,7 +1039,7 @@ function Setup-Ngrok {
         if (-not $ngrokUrl) {
             try {
                 Start-Sleep -Seconds 2
-                $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -ErrorAction Stop
+                $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
                 $tunnels = $resp.Content | ConvertFrom-Json
                 if ($tunnels.tunnels.Count -gt 0) { $ngrokUrl = $tunnels.tunnels[0].public_url }
             } catch {}
@@ -1248,7 +1312,7 @@ function Show-Status {
     # 尝试获取 ngrok URL
     if ($ngrokProc) {
         try {
-            $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -ErrorAction Stop
+            $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
             $tunnels = $resp.Content | ConvertFrom-Json
             if ($tunnels.tunnels.Count -gt 0) {
                 Write-Info "公网地址: $($tunnels.tunnels[0].public_url)"
@@ -1355,10 +1419,10 @@ function Auto-Update {
     # 最新版本
     $latestTag = $env:OMP_RELEASE_TAG
     if (-not $latestTag) {
-        try {
-            $ri = Invoke-RestMethod -Uri "https://api.github.com/repos/$GITHUB_REPO/releases/latest" -UseBasicParsing
+        $ri = Invoke-RestWithRetry "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+        if ($ri) {
             $latestTag = $ri.tag_name
-        } catch {
+        } else {
             Write-AULog "无法获取最新 Release tag"
             exit 1
         }
