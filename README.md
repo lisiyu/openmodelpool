@@ -1158,59 +1158,22 @@ Inspired by these open-source API management projects:
 
 ## 📋 Changelog
 
-### v4.1.0 (2026-07)
+### v3.2.0 (2026-07)
 
-**🎁 Free Model Pool**
-- **Auto-sync free LLM providers** — Automatically syncs 16+ free LLM API providers from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis) `data.json`, configured as low-priority public pool resources
-- **Anonymous provider support** — OVHcloud AI Endpoints works out-of-the-box with no API key required (anonymous access, 2 RPM/IP rate limit)
-- **Real model list sync** — After syncing from data.json, anonymous providers' actual `/v1/models` endpoints are queried to get up-to-date model lists (data.json model entries are often outdated)
-- **In-page API key management** — Non-anonymous providers (Groq, OpenRouter, Google Gemini, etc.) can be enabled directly from the Free Pool admin page by pasting an API key, with automatic model sync on key save
-- **24-hour auto-sync** — Periodic background sync keeps the free provider list fresh; manual sync button also available
-- **Smart provider filtering** — Skips non-OpenAI-compatible providers (Cohere v2 API, Ollama Cloud, Cloudflare Workers AI); adjusts Google Gemini to OpenAI-compatible endpoint
-- **Free Pool admin page** — Apple-style dark theme UI with sync status, provider list, key input, and auto-sync toggle
+**🔴 Security & Performance**
+- **Rate Limiting** — Token bucket algorithm, global QPS + per-Consumer independent limits, 429 on excess
+- **CORS whitelist** — Exact match + `*.example.com` wildcard subdomain support
+- **Sensitive field encryption unified** — `coze_api_token` added to AES-256-GCM scope
+- **JSON parse error handling** — All API endpoints return 400 + clear error messages on parse failure
 
-### v4.0.5 (2026-07)
-
-**🔵 Script Consolidation**
-- **All-in-one manager scripts** — Consolidated 11 separate scripts into 2: `omp-manager.sh` (Linux) + `omp-manager.ps1` (Windows)
-- **`--auto-update` mode** — Both scripts support unattended auto-update for cron / Task Scheduler
-- **Dynamic Release asset detection** — Auto-matches GitHub Release assets (binary or archive), auto-extracts compressed packages
-- **CPU arch auto-detection** — amd64 / arm64 / armv7, same command works on all platforms
-- **SHA256 verification** — All downloads verified
-- **Cache-busting timestamps** — All one-click commands include cache bypass for CDN
-
-### v4.0.4 (2026-07)
-
-**🟠 API & Performance**
-- **Anthropic Messages API compatibility** — New `/v1/messages` endpoint, accepts Anthropic-format requests with `x-api-key` + `anthropic-version` headers
-- **ChatMessage array content fix** — `UnmarshalJSON` now accepts both string and array content blocks (Anthropic-style)
-- **SOCKS5 connection pool** — Caches HTTP transports per proxy address, latency reduced from 5-7s to 0.3s
-- **FindCandidates fix** — Uses `GetAllRaw()` instead of `GetAll()` to preserve real proxy/API key (was masked by `Safe()`)
-
-### v4.0.3 (2026-07)
-
-**🟢 Multi-Key & Quota System**
-- **Multi-key health check** — Test button iterates all keys per provider, health check passes if any key succeeds, model list merges all keys' models
-- **Quota aggregation** — Shared key quota split between Public pool and Guest pool by `guest_pool_percent`
-- **Multi-period quota** — Key-level (daily/monthly/total) + Provider-level (private/shared × daily/monthly) dual quota control, effective quota = min(non-zero periods)
-- **Platform cap** — Platform quota = min(configured value, sum of all keys)
-
-### v4.0.2 (2026-07)
-
-**🔵 Tunnel & Deployment**
-- **ngrok tunnel support** — Added to both Linux and Windows manager scripts, with fixed domain reuse detection
-- **Cloudflare tunnel domain reuse** — Detects and reuses existing domain binding instead of creating new tunnel
-- **FRP tunnel reuse** — Checks existing config before prompting
-- **All tunnel types** — Cloudflare / FRP / ngrok, unified setup/reset/status/restart/uninstall
-
-### v3.4.1 (2026-07)
-
-**🔴 Admin UI Modularization**
-- **admin.html refactored** — From 5063 lines down to 2457 lines
-- **JS modular split** — 4 independent JS files: `admin-settings.js`, `admin-network.js`, `admin-share.js`, `admin-logs.js` + shared `admin-common.js`
-- **Sub-page architecture** — Provider/Models/Browser-Login moved to separate HTML pages, opened via iframe modal
-- **Dead code cleanup** — Removed 30 unused functions
-- **Cross-platform builds** — 4-platform cross-compilation verified, GitHub Release v3.4.1-release published
+**🟡 Feature Enhancements**
+- **Provider model list auto-sync** — `SyncModels()` + `/api/providers/{id}/sync-models` endpoint + panel sync button
+- **Federation Phase 3 Gossip-DHT hybrid discovery** — DHT hash ring routing table
+- **Structured logging** — `log_level` config, request log middleware, output to `data/access.log` + stdout
+- **SSE real-time push** — `/events` endpoint, Provider status changes, health updates, config changes
+- **Prometheus metrics** — `/metrics` endpoint, request counts, latency, error rates, Token usage
+- **Frontend modularization** — admin.html JS split into 10+ module comment areas
+- **Config hot reload** — `SIGHUP` signal triggers config reload without process restart
 
 ### v3.3.0 (2026-07)
 
@@ -1227,6 +1190,15 @@ Inspired by these open-source API management projects:
 - File permissions — All data files 0644 → 0600
 - JWT security — admin.html removed localStorage token, switched to HttpOnly Cookie
 - Endpoint auth — `/metrics` and `/events` now require authentication
+
+### v3.4.1 (2026-07)
+
+**🔴 Admin UI Modularization**
+- **admin.html refactored** — From 5063 lines down to 2457 lines
+- **JS modular split** — 4 independent JS files: `admin-settings.js`, `admin-network.js`, `admin-share.js`, `admin-logs.js` + shared `admin-common.js`
+- **Sub-page architecture** — Provider/Models/Browser-Login moved to separate HTML pages, opened via iframe modal
+- **Dead code cleanup** — Removed 30 unused functions
+- **Cross-platform builds** — 4-platform cross-compilation verified, GitHub Release v3.4.1-release published
 
 ### v4.0.1 (2026-07)
 
@@ -1259,19 +1231,47 @@ Inspired by these open-source API management projects:
 - `POST /api/register` — Node self-registration (no auth)
 - `GET /api/seed/health` — Seed health check (no auth)
 
-### v3.2.0 (2026-07)
+### v4.0.2 (2026-07)
 
-**🔴 Security & Performance**
-- **Rate Limiting** — Token bucket algorithm, global QPS + per-Consumer independent limits, 429 on excess
-- **CORS whitelist** — Exact match + `*.example.com` wildcard subdomain support
-- **Sensitive field encryption unified** — `coze_api_token` added to AES-256-GCM scope
-- **JSON parse error handling** — All API endpoints return 400 + clear error messages on parse failure
+**🔵 Tunnel & Deployment**
+- **ngrok tunnel support** — Added to both Linux and Windows manager scripts, with fixed domain reuse detection
+- **Cloudflare tunnel domain reuse** — Detects and reuses existing domain binding instead of creating new tunnel
+- **FRP tunnel reuse** — Checks existing config before prompting
+- **All tunnel types** — Cloudflare / FRP / ngrok, unified setup/reset/status/restart/uninstall
 
-**🟡 Feature Enhancements**
-- **Provider model list auto-sync** — `SyncModels()` + `/api/providers/{id}/sync-models` endpoint + panel sync button
-- **Federation Phase 3 Gossip-DHT hybrid discovery** — DHT hash ring routing table
-- **Structured logging** — `log_level` config, request log middleware, output to `data/access.log` + stdout
-- **SSE real-time push** — `/events` endpoint, Provider status changes, health updates, config changes
-- **Prometheus metrics** — `/metrics` endpoint, request counts, latency, error rates, Token usage
-- **Frontend modularization** — admin.html JS split into 10+ module comment areas
-- **Config hot reload** — `SIGHUP` signal triggers config reload without process restart
+### v4.0.3 (2026-07)
+
+**🟢 Multi-Key & Quota System**
+- **Multi-key health check** — Test button iterates all keys per provider, health check passes if any key succeeds, model list merges all keys' models
+- **Quota aggregation** — Shared key quota split between Public pool and Guest pool by `guest_pool_percent`
+- **Multi-period quota** — Key-level (daily/monthly/total) + Provider-level (private/shared × daily/monthly) dual quota control, effective quota = min(non-zero periods)
+- **Platform cap** — Platform quota = min(configured value, sum of all keys)
+
+### v4.0.4 (2026-07)
+
+**🟠 API & Performance**
+- **Anthropic Messages API compatibility** — New `/v1/messages` endpoint, accepts Anthropic-format requests with `x-api-key` + `anthropic-version` headers
+- **ChatMessage array content fix** — `UnmarshalJSON` now accepts both string and array content blocks (Anthropic-style)
+- **SOCKS5 connection pool** — Caches HTTP transports per proxy address, latency reduced from 5-7s to 0.3s
+- **FindCandidates fix** — Uses `GetAllRaw()` instead of `GetAll()` to preserve real proxy/API key (was masked by `Safe()`)
+
+### v4.0.5 (2026-07)
+
+**🔵 Script Consolidation**
+- **All-in-one manager scripts** — Consolidated 11 separate scripts into 2: `omp-manager.sh` (Linux) + `omp-manager.ps1` (Windows)
+- **`--auto-update` mode** — Both scripts support unattended auto-update for cron / Task Scheduler
+- **Dynamic Release asset detection** — Auto-matches GitHub Release assets (binary or archive), auto-extracts compressed packages
+- **CPU arch auto-detection** — amd64 / arm64 / armv7, same command works on all platforms
+- **SHA256 verification** — All downloads verified
+- **Cache-busting timestamps** — All one-click commands include cache bypass for CDN
+
+### v4.1.0 (2026-07)
+
+**🎁 Free Model Pool**
+- **Auto-sync free LLM providers** — Automatically syncs 16+ free LLM API providers from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis) `data.json`, configured as low-priority public pool resources
+- **Anonymous provider support** — OVHcloud AI Endpoints works out-of-the-box with no API key required (anonymous access, 2 RPM/IP rate limit)
+- **Real model list sync** — After syncing from data.json, anonymous providers' actual `/v1/models` endpoints are queried to get up-to-date model lists (data.json model entries are often outdated)
+- **In-page API key management** — Non-anonymous providers (Groq, OpenRouter, Google Gemini, etc.) can be enabled directly from the Free Pool admin page by pasting an API key, with automatic model sync on key save
+- **24-hour auto-sync** — Periodic background sync keeps the free provider list fresh; manual sync button also available
+- **Smart provider filtering** — Skips non-OpenAI-compatible providers (Cohere v2 API, Ollama Cloud, Cloudflare Workers AI); adjusts Google Gemini to OpenAI-compatible endpoint
+- **Free Pool admin page** — Apple-style dark theme UI with sync status, provider list, key input, and auto-sync toggle
