@@ -9,13 +9,15 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/input"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
@@ -26,67 +28,288 @@ func isWindows() bool {
 }
 
 // ensureDisplayEnvironment sets up the display environment for browser automation.
-// On Linux: starts Xvfb on display :99 if not already running.
-// On Windows: no-op (Chrome runs natively without virtual display).
+// We always launch Chrome in headless mode, so a virtual display is normally not
+// required. On Linux we still attempt to start Xvfb (best-effort, non-fatal) for
+// environments where a display server is expected, but we deliberately do NOT set
+// DISPLAY — headless Chrome ignores it and an incorrect DISPLAY can confuse Chrome.
 func ensureDisplayEnvironment() {
 	if isWindows() {
 		return // Windows doesn't need Xvfb
 	}
-	// Linux: start Xvfb on display :99
+	// Linux: start Xvfb on display :99 if not already running.
 	if err := exec.Command("xdpyinfo", "-display", ":99").Run(); err == nil {
 		return // Xvfb already running
 	}
-	// Clean up stale lock files
+	// Clean up stale lock files.
 	os.Remove("/tmp/.X99-lock")
 	os.Remove("/tmp/.X11-unix/X99")
-	// Start Xvfb
-	cmd := exec.Command("Xvfb", ":99", "-screen", "0", "1280x800x24", "-ac")
-	cmd.Start()
-	time.Sleep(2 * time.Second)
-	slog.Info("Xvfb started", "display", ":99", "pid", cmd.Process.Pid)
-	os.Setenv("DISPLAY", ":99")
+	// Start Xvfb (best-effort; headless Chrome works without it).
+	if cmd := exec.Command("Xvfb", ":99", "-screen", "0", "1280x800x24", "-ac"); cmd.Start() == nil {
+		slog.Info("Xvfb started", "display", ":99", "pid", cmd.Process.Pid)
+		time.Sleep(1 * time.Second)
+	}
 }
 
-// findChromePath searches for Chrome/Chromium executable on Windows.
-// Returns empty string if not found (chromedp will use its default search).
-func findChromePath() string {
-	if !isWindows() {
-		return ""
+// findBrowserExecutable resolves the Chrome/Chromium executable path in a
+// cross-platform, environment-overridable way.
+//
+// Resolution order:
+//  1. Explicit override via env vars: OMP_CHROME_PATH, CHROME_PATH, CHROMIUM_PATH
+//     (handy when Chrome is installed in a non-standard location, or the OS
+//     package manager puts it somewhere unexpected).
+//  2. OS-specific discovery (common install dirs + $PATH lookup).
+//  3. Empty string — chromedp then falls back to its own findExecPath(), which
+//     is fine on most systems. The caller logs a clear warning in that case.
+func findBrowserExecutable() string {
+	// 1. Environment override (highest priority).
+	for _, env := range []string{"OMP_CHROME_PATH", "CHROME_PATH", "CHROMIUM_PATH"} {
+		if p := strings.TrimSpace(os.Getenv(env)); p != "" {
+			if _, err := os.Stat(p); err == nil {
+				slog.Info("using Chrome from env override", "env", env, "path", p)
+				return p
+			}
+			slog.Warn("Chrome path from env does not exist; ignoring", "env", env, "path", p)
+		}
 	}
-	// Common Chrome installation paths on Windows
+
+	// 2. OS-specific discovery.
+	var candidate string
+	switch runtime.GOOS {
+	case "windows":
+		candidate = findChromeWindows()
+	case "darwin":
+		candidate = findChromeDarwin()
+	default:
+		candidate = findChromeLinux()
+	}
+
+	if candidate != "" {
+		slog.Info("browser executable resolved", "path", candidate, "os", runtime.GOOS)
+	} else {
+		slog.Warn("could not locate a Chrome/Chromium executable; chromedp will use its default search", "os", runtime.GOOS)
+	}
+	return candidate
+}
+
+// findChromeWindows resolves Chrome/Edge on Windows using common install
+// directories (which may contain spaces) and a $PATH lookup.
+func findChromeWindows() string {
+	programFiles := os.Getenv("ProgramFiles")
+	programFilesX86 := os.Getenv("ProgramFiles(x86)")
+	localAppData := os.Getenv("LOCALAPPDATA")
+	candidates := []string{}
+	add := func(p string) {
+		if p != "" {
+			candidates = append(candidates, p)
+		}
+	}
+	// %LOCALAPPDATA% is the most common Chrome location on Windows.
+	add(localAppData + `\Google\Chrome\Application\chrome.exe`)
+	add(programFilesX86 + `\Google\Chrome\Application\chrome.exe`)
+	add(programFiles + `\Google\Chrome\Application\chrome.exe`)
+	// Edge as fallback.
+	add(localAppData + `\Microsoft\Edge\Application\msedge.exe`)
+	add(programFilesX86 + `\Microsoft\Edge\Application\msedge.exe`)
+	add(programFiles + `\Microsoft\Edge\Application\msedge.exe`)
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	// Finally, try $PATH lookup.
+	if p, err := exec.LookPath("chrome.exe"); err == nil {
+		return p
+	}
+	if p, err := exec.LookPath("msedge.exe"); err == nil {
+		return p
+	}
+	return ""
+}
+
+// findChromeLinux resolves Chrome/Chromium on Linux via well-known package
+// paths and a $PATH lookup.
+func findChromeLinux() string {
 	candidates := []string{
-		os.Getenv("ProgramFiles") + "\\Google\\Chrome\\Application\\chrome.exe",
-		os.Getenv("ProgramFiles(x86)") + "\\Google\\Chrome\\Application\\chrome.exe",
-		os.Getenv("LOCALAPPDATA") + "\\Google\\Chrome\\Application\\chrome.exe",
-		// Edge as fallback
-		os.Getenv("ProgramFiles(x86)") + "\\Microsoft\\Edge\\Application\\msedge.exe",
-		os.Getenv("ProgramFiles") + "\\Microsoft\\Edge\\Application\\msedge.exe",
+		"/usr/bin/google-chrome",
+		"/usr/bin/google-chrome-stable",
+		"/usr/bin/chromium",
+		"/usr/bin/chromium-browser",
+		"/snap/bin/chromium",
+		"/usr/lib/chromium/chromium",
+		"/opt/google/chrome/chrome",
 	}
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return path
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	for _, name := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"} {
+		if p, err := exec.LookPath(name); err == nil {
+			return p
 		}
 	}
 	return ""
 }
 
+// findChromeDarwin resolves Chrome/Chromium on macOS via the standard
+// /Applications location and a $PATH lookup.
+func findChromeDarwin() string {
+	candidates := []string{
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		"/Applications/Chromium.app/Contents/MacOS/Chromium",
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	for _, name := range []string{"google-chrome", "chromium", "chrome"} {
+		if p, err := exec.LookPath(name); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// sanitizeProfileName removes characters that are unsafe for filesystem paths,
+// replacing anything that is not [a-zA-Z0-9_-] with an underscore.
+func sanitizeProfileName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "default"
+	}
+	return b.String()
+}
+
+// userDataDirFor returns a fresh, deterministic per-provider user-data dir for
+// Chrome. Using a dedicated, cleaned directory (instead of relying solely on
+// chromedp's random temp dir) avoids stale-lock and "chrome failed to start"
+// issues on Windows when a previous session did not fully release its profile.
+// The caller is responsible for removing the directory when the session ends.
+func userDataDirFor(providerID string) (string, error) {
+	base := filepath.Join(os.TempDir(), "omp-browser")
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		return "", err
+	}
+	// Unique suffix (pid + monotonic sequence) avoids lock contention between
+	// launches of the same provider, even within a single process. A sequence
+	// is used instead of a timestamp because timer resolution can be too coarse
+	// (e.g. Windows) for two rapid calls to differ.
+	seq := atomic.AddInt64(&browserProfileSeq, 1)
+	suffix := fmt.Sprintf("%s-%d-%d", sanitizeProfileName(providerID), os.Getpid(), seq)
+	dir := filepath.Join(base, suffix)
+	// Start from a clean slate.
+	_ = os.RemoveAll(dir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// browserLaunchFlags returns the Chrome launch flags as a name→value map.
+// A bool true renders as "--name"; a string renders as "--name=value". This map
+// is the single source of truth for launch flags and is exercised directly by
+// tests; buildBrowserAllocatorOptions converts it to chromedp options.
+//
+// It includes the flags required for modern headless Chrome:
+//   - Chrome/Chromium 132+ removed the legacy headless mode, so we use the
+//     explicit "--headless=new" form.
+//   - Chromium 139+ no longer falls back to SwiftShader for software rendering
+//     unless "--enable-unsafe-swiftshader" is passed; without it the GPU process
+//     fails and the browser exits immediately with "chrome failed to start".
+//     This was the root cause of the Windows launch failure.
+//   - "--no-sandbox" and "--disable-dev-shm-usage" are required on Linux
+//     (containers / running as root), otherwise Chrome refuses to start.
+func browserLaunchFlags(userDataDir, proxyURL, chromePath string) map[string]any {
+	flags := map[string]any{
+		// New headless mode (Chrome 128+).
+		"headless": "new",
+		// Required for software rendering on headless Chrome 139+.
+		"disable-gpu":                   true,
+		"enable-unsafe-swiftshader":     true,
+		"disable-extensions":            true,
+		"disable-background-networking": true,
+		"disable-default-apps":          true,
+		"disable-sync":                  true,
+		"no-first-run":                  true,
+		"no-default-browser-check":      true,
+		"user-data-dir":                 userDataDir,
+	}
+
+	if runtime.GOOS == "linux" {
+		// Required in containers / when running as root.
+		flags["no-sandbox"] = true
+		flags["disable-dev-shm-usage"] = true
+	}
+
+	if proxyURL != "" {
+		flags["proxy-server"] = proxyURL
+		// Force DNS through proxy to prevent leaks; only when proxy is active.
+		flags["host-resolver-rules"] = "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+	}
+
+	return flags
+}
+
+// buildBrowserAllocatorOptions builds chromedp allocator options that work
+// reliably across Windows / Linux / macOS.
+//
+// Note: chromedp's NewExecAllocator does NOT merge DefaultExecAllocatorOptions,
+// so every needed flag must be set explicitly here. chromedp still auto-adds
+// "--remote-debugging-port=0" and a fallback "--no-sandbox" when running as
+// root; we set no-sandbox ourselves on Linux for clarity.
+func buildBrowserAllocatorOptions(userDataDir, proxyURL, chromePath string) []chromedp.ExecAllocatorOption {
+	opts := []chromedp.ExecAllocatorOption{
+		chromedp.WindowSize(1280, 800),
+	}
+	for name, value := range browserLaunchFlags(userDataDir, proxyURL, chromePath) {
+		name, value := name, value
+		switch v := value.(type) {
+		case bool:
+			if v {
+				opts = append(opts, chromedp.Flag(name, true))
+			}
+		case string:
+			opts = append(opts, chromedp.Flag(name, v))
+		}
+	}
+
+	if chromePath != "" {
+		opts = append(opts, chromedp.ExecPath(chromePath))
+	}
+
+	return opts
+}
+
 // BrowserLoginSession manages a Chrome session for provider login
 type BrowserLoginSession struct {
-	mu         sync.Mutex
-	ctx        context.Context
-	cancel     context.CancelFunc
-	providerID string
-	status     string
-	screenshot string
-	message    string
-	currentURL string
-	proxyURL   string
-	createdAt  time.Time
+	mu          sync.Mutex
+	ctx         context.Context
+	cancel      context.CancelFunc
+	providerID  string
+	status      string
+	screenshot  string
+	message     string
+	currentURL  string
+	proxyURL    string
+	userDataDir string
+	createdAt   time.Time
 }
 
 var (
 	browserSessions   = make(map[string]*BrowserLoginSession)
 	browserSessionsMu sync.RWMutex
+	// browserProfileSeq generates a unique suffix per launched profile dir so
+	// that rapid successive launches never collide on the same user-data dir.
+	browserProfileSeq int64
 )
 
 func takeScreenshot(ctx context.Context) ([]byte, error) {
@@ -167,11 +390,33 @@ func cleanupSession(providerID string) {
 		delete(browserSessions, providerID)
 	}
 	browserSessionsMu.Unlock()
+	// Best-effort cleanup of the Chrome user-data dir created for this session.
+	if ok && sess.userDataDir != "" {
+		_ = os.RemoveAll(sess.userDataDir)
+	}
 }
 
 // ============ HTTP Handlers ============
 
+// recoverHandler recovers from panics in a browser HTTP handler and writes a
+// valid JSON error response if the handler had not yet written anything.
+//
+// Without this guard, a panic would let Go's default handler return an empty
+// (non-JSON) 500 body, which the frontend surfaces as
+// "Failed to execute 'json' on 'Response': Unexpected end of JSON input".
+func recoverHandler(w http.ResponseWriter, label string) {
+	if rec := recover(); rec != nil {
+		slog.Error("panic recovered in browser handler", "handler", label, "error", rec)
+		// Only write if nothing has been written yet (Content-Type is set by
+		// writeJSON/writeError before any body is emitted).
+		if w.Header().Get("Content-Type") == "" {
+			writeError(w, 500, "服务器内部错误（浏览器处理异常）")
+		}
+	}
+}
+
 func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
+	defer recoverHandler(w, "start")
 	id := r.PathValue("id")
 	if _, ok := checkProviderAccess(r, id); !ok {
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
@@ -223,40 +468,24 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	// Set up display environment (Xvfb on Linux, no-op on Windows)
 	ensureDisplayEnvironment()
 
-	// Chrome options — platform-aware configuration
-	opts := []chromedp.ExecAllocatorOption{
-		chromedp.NoFirstRun,
-		chromedp.NoDefaultBrowserCheck,
-		// NOTE: removed disable-blink-features/disable-features/AutomationControlled
-		// flags — they are rejected by Chrome 130+ (2025+) causing "chrome failed
-		// to start" and about:blank fallback. Modern headless Chrome doesn't need
-		// them; use Headless mode instead for stealth.
-		chromedp.WindowSize(1280, 800),
+	// Prepare a dedicated, cleaned user-data dir for Chrome (avoids stale
+	// profile locks that cause "chrome failed to start" on Windows).
+	userDataDir, err := userDataDirFor(id)
+	if err != nil {
+		writeError(w, 500, "浏览器启动失败（无法准备用户目录）: "+err.Error())
+		return
 	}
-	// no-sandbox is Linux-only; on Windows it can cause issues
-	if !isWindows() {
-		opts = append(opts, chromedp.Flag("no-sandbox", true))
-		opts = append(opts, chromedp.Flag("disable-dev-shm-usage", true))
-		// Headless mode: no display server needed (works on CloudStudio,
-		// Docker, bare Linux without X11/Xvfb). Screenshots, navigation,
-		// keyboard/mouse all work via CDP.
-		opts = append(opts, chromedp.Headless)
+
+	// Resolve the Chrome/Chromium executable (cross-platform + env override).
+	chromePath := findBrowserExecutable()
+	if chromePath == "" {
+		slog.Warn("Chrome executable not found via discovery; relying on chromedp default search", "provider", id)
 	}
-	// On Windows, explicitly specify Chrome path if available
-	if isWindows() {
-			// Use Headless mode: no visible window, full CDP support,
-		// and screenshots work correctly (off-screen windows are not
-		// rendered by Windows GPU/DirectX so CDP capture returns blank).
-		opts = append(opts, chromedp.Headless)
-		if chromePath := findChromePath(); chromePath != "" {
-			opts = append(opts, chromedp.ExecPath(chromePath))
-			slog.Info("browser login using Chrome", "path", chromePath)
-		}
-	}
+
+	// Chrome options — platform-aware, headless, with the flags required for
+	// modern Chrome (see buildBrowserAllocatorOptions for rationale).
+	opts := buildBrowserAllocatorOptions(userDataDir, proxyURL, chromePath)
 	if proxyURL != "" {
-		opts = append(opts, chromedp.ProxyServer(proxyURL))
-		// Force DNS through proxy to prevent leaks; only when proxy is active
-		opts = append(opts, chromedp.Flag("host-resolver-rules", "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"))
 		slog.Info("browser login starting", "provider", id, "proxy", proxyURL)
 	} else {
 		slog.Info("browser login starting", "provider", id, "proxy", "none")
@@ -266,13 +495,14 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
 
 	sess := &BrowserLoginSession{
-		ctx:        ctx,
-		cancel:     func() { ctxCancel(); allocCancel() },
-		providerID: id,
-		status:     "navigating",
-		message:    "正在启动浏览器...",
-		proxyURL:   proxyURL,
-		createdAt:  time.Now(),
+		ctx:         ctx,
+		cancel:      func() { ctxCancel(); allocCancel() },
+		providerID:  id,
+		status:      "navigating",
+		message:     "正在启动浏览器...",
+		proxyURL:    proxyURL,
+		userDataDir: userDataDir,
+		createdAt:   time.Now(),
 	}
 
 	browserSessionsMu.Lock()
@@ -333,6 +563,7 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleBrowserLoginStatus(w http.ResponseWriter, r *http.Request) {
+	defer recoverHandler(w, "status")
 	id := r.PathValue("id")
 	sess, ok := getSession(id)
 	if !ok {
@@ -353,6 +584,7 @@ func handleBrowserLoginStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleBrowserLoginLogin(w http.ResponseWriter, r *http.Request) {
+	defer recoverHandler(w, "login")
 	id := r.PathValue("id")
 	sess, ok := getSession(id)
 	if !ok {
@@ -477,6 +709,7 @@ func handleBrowserLoginLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
+	defer recoverHandler(w, "action")
 	id := r.PathValue("id")
 	sess, ok := getSession(id)
 	if !ok {
@@ -609,7 +842,6 @@ func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 		}
 		// No error message for mouse events - they should be silent
 
-
 	case "keyboard":
 		// Keyboard event via CDP: type=text for printable chars, type=special for special keys
 		// Value format: "text,<char>" or "special,<keyname>"
@@ -720,6 +952,7 @@ func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleBrowserLoginFinish(w http.ResponseWriter, r *http.Request) {
+	defer recoverHandler(w, "finish")
 	id := r.PathValue("id")
 	sess, ok := getSession(id)
 	if !ok {
@@ -853,6 +1086,7 @@ func handleBrowserLoginFinish(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleBrowserLoginCancel(w http.ResponseWriter, r *http.Request) {
+	defer recoverHandler(w, "cancel")
 	id := r.PathValue("id")
 	cleanupSession(id)
 	writeJSON(w, 200, map[string]any{
