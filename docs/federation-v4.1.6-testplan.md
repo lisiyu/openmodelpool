@@ -95,6 +95,21 @@
 | `network_peer_test.go` | P0-2 空 node_id 经 ping 解析 / 地址缺失 400 / Mode 非 shared 报错 |
 | 既有回归 | `go build ./...` 通过；`getEndpoint` 不再回落内网 |
 
+**精确运行命令（注意正则需匹配实际测试名）**：
+
+```bash
+# 种子只读 GET 放行 + SA-12 不破坏（4 个用例）
+go test ./... -run 'Federation' -v
+
+# 空 node_id 经 ping 解析 / 地址缺失 400 / Mode 非 shared 报错（3 个用例）
+go test ./... -run 'NetworkAddPeer' -v
+
+# ⚠️ 不要用 'NetworkPeer' 作为子串：实际测试名为 TestNetworkAddPeer_*，
+#    'NetworkPeer' 子串无法匹配，会漏跑这 3 个用例。
+#    等价合并写法（推荐，覆盖全部 7 个新用例）：
+go test ./... -run 'Federation|NetworkAddPeer|ResolvePeer' -v
+```
+
 > 注：本仓库在 Windows 沙箱中 `go test ./...` 会有 3 个与文件权限/日志锁相关的预存失败（`TestP0_4_*`、`TestP0_6_LoggerConcurrentRotation`），属环境限制，与本次改动无关。
 
 ---
