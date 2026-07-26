@@ -156,20 +156,124 @@ func handleFederationStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, status)
 }
 
-// getLocalIP returns the first non-loopback IPv4 address.
+// isPrivateIPv4 reports whether the IPv4 address belongs to an RFC1918 private
+// LAN range: 10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16. These are the
+// addresses typically used by home/office routers for LAN access.
+func isPrivateIPv4(ip net.IP) bool {
+	v4 := ip.To4()
+	if v4 == nil {
+		return false
+	}
+	if v4[0] == 10 {
+		return true
+	}
+	if v4[0] == 172 && v4[1] >= 16 && v4[1] <= 31 {
+		return true
+	}
+	if v4[0] == 192 && v4[1] == 168 {
+		return true
+	}
+	return false
+}
+
+// isUsableLANIP reports whether the address is a usable, displayable LAN
+// address. It rejects loopback (127.0.0.0/8), link-local/APIPA
+// (169.254.0.0/16 for IPv4 and fe80::/10 for IPv6), multicast, unspecified
+// (0.0.0.0) and any non-IPv4 address.
+func isUsableLANIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsUnspecified() || ip.IsLoopback() {
+		return false
+	}
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return false
+	}
+	if ip.IsMulticast() {
+		return false
+	}
+	if ip.Equal(net.IPv4bcast) {
+		return false // 255.255.255.255 limited broadcast
+	}
+	// The LAN access URL only supports IPv4.
+	return ip.To4() != nil
+}
+
+// pickLANIP selects the best LAN IPv4 address from a list of candidate IPs. It
+// prefers RFC1918 private ranges and falls back to any other usable
+// global-unicast IPv4 address. This is the deterministic, dependency-free core
+// of LAN IP detection and is covered by unit tests with injected candidates.
+func pickLANIP(ips []net.IP) string {
+	var fallback net.IP
+	for _, ip := range ips {
+		if !isUsableLANIP(ip) {
+			continue
+		}
+		if isPrivateIPv4(ip) {
+			return ip.String()
+		}
+		if fallback == nil {
+			fallback = ip
+		}
+	}
+	if fallback != nil {
+		return fallback.String()
+	}
+	return ""
+}
+
+// getLocalIP returns the best local LAN IPv4 address for display. It enumerates
+// all up, non-loopback network interfaces, collects their IPv4 addresses and
+// delegates selection to pickLANIP (which prefers RFC1918 private ranges and
+// filters out loopback, APIPA/link-local 169.254.0.0/16, multicast and
+// unspecified addresses). The behaviour is identical across Windows, Linux and
+// macOS.
 func getLocalIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil || len(ifaces) == 0 {
+		return legacyLocalIP()
+	}
+	ips := make([]net.IP, 0, len(ifaces))
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			default:
+				continue
+			}
+			ips = append(ips, ip)
+		}
+	}
+	return pickLANIP(ips)
+}
+
+// legacyLocalIP is a minimal fallback used when interface enumeration fails. It
+// mirrors the previous first-non-loopback behaviour but still routes candidates
+// through pickLANIP so APIPA/link-local addresses are filtered out.
+func legacyLocalIP() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return ""
 	}
+	ips := make([]net.IP, 0, len(addrs))
 	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
-			}
+		if ipnet, ok := addr.(*net.IPNet); ok {
+			ips = append(ips, ipnet.IP)
 		}
 	}
-	return ""
+	return pickLANIP(ips)
 }
 
 // handleGetFederationConfig returns the current federation configuration.

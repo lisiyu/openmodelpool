@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"net"
 	"net/http"
 	"context"
 	"fmt"
@@ -874,18 +873,8 @@ func handleGetAddresses(w http.ResponseWriter, r *http.Request) {
 	// 3. 局域网地址
 	lanIP := cfg.Get("lan_ip", "")
 	if lanIP == "" {
-		// 尝试自动检测
-		addrs, err := net.InterfaceAddrs()
-		if err == nil {
-			for _, addr := range addrs {
-				if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && !ipnet.IP.IsLinkLocalUnicast() {
-					if ipnet.IP.To4() != nil {
-						lanIP = ipnet.IP.String()
-						break
-					}
-				}
-			}
-		}
+		// 尝试自动检测：优先私有网段，过滤掉 APIPA/链路本地（169.254.0.0/16）地址
+		lanIP = getLocalIP()
 	}
 	if lanIP != "" {
 		result["lan_url"] = fmt.Sprintf("http://%s:%s/v1", lanIP, port)
