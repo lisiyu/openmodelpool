@@ -443,6 +443,13 @@ Get-Content C:\openmodelpool\data\app.log -Tail 50 -Wait
 2. SSH 登录后执行 `ps aux | grep openmodelpool` 确认进程正在运行
 3. 使用管理脚本菜单 **7. 查看状态** 检查各组件运行情况
 
+### Q: 使用内置浏览器登录网页平台失败（chrome failed to start / Unexpected end of JSON input）？
+
+**A:** 内置浏览器依赖本机已安装的 Chrome / Chromium 来抓取登录态，需满足：
+1. 已在目标机上安装 Chrome 或 Chromium（桌面环境通常自带；Linux 服务器/容器需 `apt install chromium` 或设 `OMP_CHROME_PATH` 环境变量指向可执行文件）。
+2. v4.1.5 起已修复 Chromium 139+ 的 SwiftShader 渲染问题并补充 `--no-sandbox`（Linux）、统一临时用户目录、`--enable-unsafe-swiftshader`，以及后端 panic 兜底返回合法 JSON。
+3. 找不到 Chrome 时前端会显示明确错误提示，而非空白/JSON 解析失败。
+
 ### Q: CI/CD 自动编译和发布？
 
 **A:** 项目使用 GitHub Actions 自动化发布：
