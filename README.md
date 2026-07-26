@@ -6,7 +6,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v4.1.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-v4.1.6-blue)](#)
 
 ---
 
@@ -1158,47 +1158,110 @@ Inspired by these open-source API management projects:
 
 ## 📋 Changelog
 
-### v3.2.0 (2026-07)
+### v4.1.6 (2026-07)
 
-**🔴 Security & Performance**
-- **Rate Limiting** — Token bucket algorithm, global QPS + per-Consumer independent limits, 429 on excess
-- **CORS whitelist** — Exact match + `*.example.com` wildcard subdomain support
-- **Sensitive field encryption unified** — `coze_api_token` added to AES-256-GCM scope
-- **JSON parse error handling** — All API endpoints return 400 + clear error messages on parse failure
+**🌐 Federation / Private Mesh**
+- **Private-node mesh** — `public_domain` + `federation_endpoint` now resolve the correct public address for private mesh interconnection; `resolvePublicEndpoint` no longer falls back to LAN hostnames in production
+- **Manual peer UI** — Add-node form for pasting a peer's public URL, plus invite-code based interconnection
+- **Seed auth** — `/federation/pool` read-only path allowed for trusted seed `Host`s only (fixes the prior 403)
+- **QA regression** — endpoint priority, empty `node_id` peer handling, `GetInfo` public endpoint
 
-**🟡 Feature Enhancements**
-- **Provider model list auto-sync** — `SyncModels()` + `/api/providers/{id}/sync-models` endpoint + panel sync button
-- **Federation Phase 3 Gossip-DHT hybrid discovery** — DHT hash ring routing table
-- **Structured logging** — `log_level` config, request log middleware, output to `data/access.log` + stdout
-- **SSE real-time push** — `/events` endpoint, Provider status changes, health updates, config changes
-- **Prometheus metrics** — `/metrics` endpoint, request counts, latency, error rates, Token usage
-- **Frontend modularization** — admin.html JS split into 10+ module comment areas
-- **Config hot reload** — `SIGHUP` signal triggers config reload without process restart
+### v4.1.5 (2026-07)
 
-### v3.3.0 (2026-07)
+**🖥️ Built-in Browser Login Fix**
+- **Cross-platform Chrome discovery** — `findBrowserExecutable` (env override `OMP_CHROME_PATH`/`CHROME_PATH`/`CHROMIUM_PATH` + OS dirs + PATH); replaces the Windows-only lookup
+- **Launch flags** — `--headless=new`, `--disable-gpu`, `--enable-unsafe-swiftshader` (fixes Chromium 139+ "chrome failed to start" on Windows); Linux adds `--no-sandbox` + `--disable-dev-shm-usage`
+- **Per-session profile** — isolated temp `userDataDir`, cleaned up after use (avoids stale-profile lock)
+- **Panic-safe JSON** — all browser handlers return valid JSON on panic (fixes Linux "Unexpected end of JSON input")
+- **Docs** — added built-in browser prerequisite FAQ (requires Chrome/Chromium)
 
-**🔴 Web Session Template System**
-- **`web_session` provider type** — Generic abstraction for browser-login platforms (no API needed)
-- **`WebSessionConfig`** — 7 generic functions for cookie management, request building, response parsing
-- **Sider.ai migration** — Migrated to `web_session` template as first implementation (20 models)
-- **`AllModels()` fix** — Providers without keys no longer counted in model list
+### v4.1.4 (2026-07)
 
-**🔴 Security Fixes (from v3.3.0 security release)**
-- API Key masking — `/api/share/info` and `/api/config/export` no longer expose Proxy API Key in plaintext
-- Consumer Key encryption — AES-256-GCM at rest
-- CORS tightening — Removed wildcard `*`, localhost + tunnel URL only
-- File permissions — All data files 0644 → 0600
-- JWT security — admin.html removed localStorage token, switched to HttpOnly Cookie
-- Endpoint auth — `/metrics` and `/events` now require authentication
+**🧩 Web Session Providers on Main UI**
+- **`web_session` on main UI** — included in `/api/health` even without an API key, so web-session platforms (e.g. Sider.ai) show up on the primary interface
 
-### v3.4.1 (2026-07)
+### v4.1.3 (2026-07)
 
-**🔴 Admin UI Modularization**
-- **admin.html refactored** — From 5063 lines down to 2457 lines
-- **JS modular split** — 4 independent JS files: `admin-settings.js`, `admin-network.js`, `admin-share.js`, `admin-logs.js` + shared `admin-common.js`
-- **Sub-page architecture** — Provider/Models/Browser-Login moved to separate HTML pages, opened via iframe modal
-- **Dead code cleanup** — Removed 30 unused functions
-- **Cross-platform builds** — 4-platform cross-compilation verified, GitHub Release v3.4.1-release published
+**🛠️ Web Session Two-Step Save**
+- **Cookie field fix** — removed the readonly cookie field that blocked saving; `extra_cookies` now restored on edit load
+
+### v4.1.2 (2026-07)
+
+**🌐 LAN IP & Browser Login Fixes**
+- **LAN IP detection** — `getLocalIP` now filters APIPA/link-local (169.254/16) and prefers RFC1918 private IPs (192.168/10/172.16); fixes dashboard showing `169.254.x.x`
+- **Linux browser login** — added `chromedp.Headless` so the built-in browser works on headless servers (CloudStudio/Docker)
+- **Docs** — corrected the stale "v4.0.3 fixed 169.254" claim
+
+### v4.1.1 (2026-07)
+
+**🔗 Network Join Conditions & Hardening**
+- **Join requires shared key only** — network join condition no longer hard-requires remaining monthly quota; remaining quota downgraded to an idle-capacity reminder
+- **Codespace self-heal** — `run-omp.sh` uses repo-writable binary path; cron installed in postStart + `:8000` watchdog crontab
+- **Concurrency** — eliminated remaining data race (`Config.done` channel); resolved pre-existing CI smoke-test failures
+- **Free pool** — key-management UI + real model sync + LLM7.io auth fix
+
+### v4.1.0 (2026-07)
+
+**🎁 Free Model Pool**
+- **Auto-sync free LLM providers** — Automatically syncs 16+ free LLM API providers from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis) `data.json`, configured as low-priority public pool resources
+- **Anonymous provider support** — OVHcloud AI Endpoints works out-of-the-box with no API key required (anonymous access, 2 RPM/IP rate limit)
+- **Real model list sync** — After syncing from data.json, anonymous providers' actual `/v1/models` endpoints are queried to get up-to-date model lists (data.json model entries are often outdated)
+- **In-page API key management** — Non-anonymous providers (Groq, OpenRouter, Google Gemini, etc.) can be enabled directly from the Free Pool admin page by pasting an API key, with automatic model sync on key save
+- **24-hour auto-sync** — Periodic background sync keeps the free provider list fresh; manual sync button also available
+- **Smart provider filtering** — Skips non-OpenAI-compatible providers (Cohere v2 API, Ollama Cloud, Cloudflare Workers AI); adjusts Google Gemini to OpenAI-compatible endpoint
+- **Free Pool admin page** — Apple-style dark theme UI with sync status, provider list, key input, and auto-sync toggle
+
+### v4.0.7 (2026-07)
+
+**🪟 Windows Browser Login & Domain Bind**
+- **Windows built-in browser login** — added Windows support; use `chromedp.ExecPath` for the Chrome path (replaces invalid flag)
+- **Domain manual-bind route** — registered `POST /api/domain/manual-bind` (fixes 405)
+- **Codespace** — `postStartCommand` auto-starts cron + OMP on restart
+- **Windows script** — fixed `$var` parsing error inside double-quoted strings
+
+### v4.0.6 (2026-07)
+
+**🆔 Identity Module & Performance**
+- **Identity module (slice2)** — BIP39 mnemonic → unified Node ID (`mmx-` prefix)
+- **Performance** — preset caching + single-provider fetch for edit mode (68KB → 461B); parallel API calls + lite mode for add-platform page (10s → 2s); `/api/providers` lite mode (68KB → 2.4KB)
+- **Cloudflare tunnel** — auto-detect GUI (Token mode headless / cert mode GUI) + `cloudflared` install verification; Token mode for headless servers
+- **Deploy** — auto-detect existing deployment (modelmux legacy + openmodelpool); pipe-mode interactive input fix
+- **Docs** — consolidated 9 design docs into `openmodelpool-v4-design.md`; removed duplicate/outdated docs
+- **Scripts** — consolidated all 11 scripts into `omp-manager` (Linux + Windows) with `--auto-update` mode
+
+### v4.0.5 (2026-07)
+
+**🔵 Script Consolidation**
+- **All-in-one manager scripts** — Consolidated 11 separate scripts into 2: `omp-manager.sh` (Linux) + `omp-manager.ps1` (Windows)
+- **`--auto-update` mode** — Both scripts support unattended auto-update for cron / Task Scheduler
+- **Dynamic Release asset detection** — Auto-matches GitHub Release assets (binary or archive), auto-extracts compressed packages
+- **CPU arch auto-detection** — amd64 / arm64 / armv7, same command works on all platforms
+- **SHA256 verification** — All downloads verified
+- **Cache-busting timestamps** — All one-click commands include cache bypass for CDN
+
+### v4.0.4 (2026-07)
+
+**🟠 API & Performance**
+- **Anthropic Messages API compatibility** — New `/v1/messages` endpoint, accepts Anthropic-format requests with `x-api-key` + `anthropic-version` headers
+- **ChatMessage array content fix** — `UnmarshalJSON` now accepts both string and array content blocks (Anthropic-style)
+- **SOCKS5 connection pool** — Caches HTTP transports per proxy address, latency reduced from 5-7s to 0.3s
+- **FindCandidates fix** — Uses `GetAllRaw()` instead of `GetAll()` to preserve real proxy/API key (was masked by `Safe()`)
+
+### v4.0.3 (2026-07)
+
+**🟢 Multi-Key & Quota System**
+- **Multi-key health check** — Test button iterates all keys per provider, health check passes if any key succeeds, model list merges all keys' models
+- **Quota aggregation** — Shared key quota split between Public pool and Guest pool by `guest_pool_percent`
+- **Multi-period quota** — Key-level (daily/monthly/total) + Provider-level (private/shared × daily/monthly) dual quota control, effective quota = min(non-zero periods)
+- **Platform cap** — Platform quota = min(configured value, sum of all keys)
+
+### v4.0.2 (2026-07)
+
+**🔵 Tunnel & Deployment**
+- **ngrok tunnel support** — Added to both Linux and Windows manager scripts, with fixed domain reuse detection
+- **Cloudflare tunnel domain reuse** — Detects and reuses existing domain binding instead of creating new tunnel
+- **FRP tunnel reuse** — Checks existing config before prompting
+- **All tunnel types** — Cloudflare / FRP / ngrok, unified setup/reset/status/restart/uninstall
 
 ### v4.0.1 (2026-07)
 
@@ -1231,47 +1294,44 @@ Inspired by these open-source API management projects:
 - `POST /api/register` — Node self-registration (no auth)
 - `GET /api/seed/health` — Seed health check (no auth)
 
-### v4.0.2 (2026-07)
+### v3.4.1 (2026-07)
 
-**🔵 Tunnel & Deployment**
-- **ngrok tunnel support** — Added to both Linux and Windows manager scripts, with fixed domain reuse detection
-- **Cloudflare tunnel domain reuse** — Detects and reuses existing domain binding instead of creating new tunnel
-- **FRP tunnel reuse** — Checks existing config before prompting
-- **All tunnel types** — Cloudflare / FRP / ngrok, unified setup/reset/status/restart/uninstall
+**🔴 Admin UI Modularization**
+- **admin.html refactored** — From 5063 lines down to 2457 lines
+- **JS modular split** — 4 independent JS files: `admin-settings.js`, `admin-network.js`, `admin-share.js`, `admin-logs.js` + shared `admin-common.js`
+- **Sub-page architecture** — Provider/Models/Browser-Login moved to separate HTML pages, opened via iframe modal
+- **Dead code cleanup** — Removed 30 unused functions
+- **Cross-platform builds** — 4-platform cross-compilation verified, GitHub Release v3.4.1-release published
 
-### v4.0.3 (2026-07)
+### v3.3.0 (2026-07)
 
-**🟢 Multi-Key & Quota System**
-- **Multi-key health check** — Test button iterates all keys per provider, health check passes if any key succeeds, model list merges all keys' models
-- **Quota aggregation** — Shared key quota split between Public pool and Guest pool by `guest_pool_percent`
-- **Multi-period quota** — Key-level (daily/monthly/total) + Provider-level (private/shared × daily/monthly) dual quota control, effective quota = min(non-zero periods)
-- **Platform cap** — Platform quota = min(configured value, sum of all keys)
+**🔴 Web Session Template System**
+- **`web_session` provider type** — Generic abstraction for browser-login platforms (no API needed)
+- **`WebSessionConfig`** — 7 generic functions for cookie management, request building, response parsing
+- **Sider.ai migration** — Migrated to `web_session` template as first implementation (20 models)
+- **`AllModels()` fix** — Providers without keys no longer counted in model list
 
-### v4.0.4 (2026-07)
+**🔴 Security Fixes (from v3.3.0 security release)**
+- API Key masking — `/api/share/info` and `/api/config/export` no longer expose Proxy API Key in plaintext
+- Consumer Key encryption — AES-256-GCM at rest
+- CORS tightening — Removed wildcard `*`, localhost + tunnel URL only
+- File permissions — All data files 0644 → 0600
+- JWT security — admin.html removed localStorage token, switched to HttpOnly Cookie
+- Endpoint auth — `/metrics` and `/events` now require authentication
 
-**🟠 API & Performance**
-- **Anthropic Messages API compatibility** — New `/v1/messages` endpoint, accepts Anthropic-format requests with `x-api-key` + `anthropic-version` headers
-- **ChatMessage array content fix** — `UnmarshalJSON` now accepts both string and array content blocks (Anthropic-style)
-- **SOCKS5 connection pool** — Caches HTTP transports per proxy address, latency reduced from 5-7s to 0.3s
-- **FindCandidates fix** — Uses `GetAllRaw()` instead of `GetAll()` to preserve real proxy/API key (was masked by `Safe()`)
+### v3.2.0 (2026-07)
 
-### v4.0.5 (2026-07)
+**🔴 Security & Performance**
+- **Rate Limiting** — Token bucket algorithm, global QPS + per-Consumer independent limits, 429 on excess
+- **CORS whitelist** — Exact match + `*.example.com` wildcard subdomain support
+- **Sensitive field encryption unified** — `coze_api_token` added to AES-256-GCM scope
+- **JSON parse error handling** — All API endpoints return 400 + clear error messages on parse failure
 
-**🔵 Script Consolidation**
-- **All-in-one manager scripts** — Consolidated 11 separate scripts into 2: `omp-manager.sh` (Linux) + `omp-manager.ps1` (Windows)
-- **`--auto-update` mode** — Both scripts support unattended auto-update for cron / Task Scheduler
-- **Dynamic Release asset detection** — Auto-matches GitHub Release assets (binary or archive), auto-extracts compressed packages
-- **CPU arch auto-detection** — amd64 / arm64 / armv7, same command works on all platforms
-- **SHA256 verification** — All downloads verified
-- **Cache-busting timestamps** — All one-click commands include cache bypass for CDN
-
-### v4.1.0 (2026-07)
-
-**🎁 Free Model Pool**
-- **Auto-sync free LLM providers** — Automatically syncs 16+ free LLM API providers from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis) `data.json`, configured as low-priority public pool resources
-- **Anonymous provider support** — OVHcloud AI Endpoints works out-of-the-box with no API key required (anonymous access, 2 RPM/IP rate limit)
-- **Real model list sync** — After syncing from data.json, anonymous providers' actual `/v1/models` endpoints are queried to get up-to-date model lists (data.json model entries are often outdated)
-- **In-page API key management** — Non-anonymous providers (Groq, OpenRouter, Google Gemini, etc.) can be enabled directly from the Free Pool admin page by pasting an API key, with automatic model sync on key save
-- **24-hour auto-sync** — Periodic background sync keeps the free provider list fresh; manual sync button also available
-- **Smart provider filtering** — Skips non-OpenAI-compatible providers (Cohere v2 API, Ollama Cloud, Cloudflare Workers AI); adjusts Google Gemini to OpenAI-compatible endpoint
-- **Free Pool admin page** — Apple-style dark theme UI with sync status, provider list, key input, and auto-sync toggle
+**🟡 Feature Enhancements**
+- **Provider model list auto-sync** — `SyncModels()` + `/api/providers/{id}/sync-models` endpoint + panel sync button
+- **Federation Phase 3 Gossip-DHT hybrid discovery** — DHT hash ring routing table
+- **Structured logging** — `log_level` config, request log middleware, output to `data/access.log` + stdout
+- **SSE real-time push** — `/events` endpoint, Provider status changes, health updates, config changes
+- **Prometheus metrics** — `/metrics` endpoint, request counts, latency, error rates, Token usage
+- **Frontend modularization** — admin.html JS split into 10+ module comment areas
+- **Config hot reload** — `SIGHUP` signal triggers config reload without process restart
