@@ -1162,7 +1162,8 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 	enriched := make([]EnrichedHealth, 0, len(configured))
 	for _, p := range configured {
 		hasKey := (p.APIKey != "" && p.APIKey != "your-api-key-here") || len(p.APIKeys) > 0
-		if !hasKey {
+		isWebSession := p.Type == "web_session"
+		if !hasKey && !isWebSession {
 			continue
 		}
 
