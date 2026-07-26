@@ -397,7 +397,7 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
         <div class="form-group" id="pExtraCookiesGroup" style="display:none">
           <label class="form-label">🌐 浏览器 Cookie</label>
-          <textarea class="form-input" id="pExtraCookies" rows="2" style="font-family:monospace;font-size:11px" readonly placeholder="由内置浏览器登录自动填充"></textarea>
+          <textarea class="form-input" id="pExtraCookies" rows="2" style="font-family:monospace;font-size:11px" placeholder="可手动粘贴 Cookie，或由内置浏览器登录自动填充"></textarea>
           <div class="section-note" style="margin-top:4px">✅ 使用内置浏览器登录后自动填充，无需手动填写</div>
         </div>
         <div class="form-group"><label class="form-label">API 端点</label><input class="form-input" id="pApiEndpoint" placeholder="https://sider.ai/api/v3/completion/text"></div>
@@ -705,6 +705,7 @@ function editProvider(pid) {
     const ws = p.web_session;
     document.getElementById('pLoginUrl').value = ws.login_url || '';
     document.getElementById('pApiEndpoint').value = ws.api_endpoint || '';
+    document.getElementById('pExtraCookies').value = ws.extra_cookies || '';
     document.getElementById('pAuthMode').value = ws.auth_mode || 'bearer';
     document.getElementById('pModelField').value = ws.model_field || 'model';
     document.getElementById('pPromptField').value = ws.prompt_field || 'prompt';
