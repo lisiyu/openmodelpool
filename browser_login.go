@@ -237,6 +237,10 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	if !isWindows() {
 		opts = append(opts, chromedp.Flag("no-sandbox", true))
 		opts = append(opts, chromedp.Flag("disable-dev-shm-usage", true))
+		// Headless mode: no display server needed (works on CloudStudio,
+		// Docker, bare Linux without X11/Xvfb). Screenshots, navigation,
+		// keyboard/mouse all work via CDP.
+		opts = append(opts, chromedp.Headless)
 	}
 	// On Windows, explicitly specify Chrome path if available
 	if isWindows() {
