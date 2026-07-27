@@ -1,5 +1,16 @@
 package main
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+)
+
 // This file collects initialization/helper functions that the wiring in
 // init.go / handlers.go references but whose real implementations were missing
 // from the tree (lost or never committed). They are intentionally minimal
@@ -17,9 +28,163 @@ func initWAF(dataDir string) {}
 // region-aware routing is therefore not active yet.
 func initRegionManager() {}
 
-// startHeartbeatLoop periodically announces this node to peers. Placeholder
-// until the heartbeat/region sync layer is implemented.
-func startHeartbeatLoop() {}
+// startHeartbeatLoop launches the periodic node-to-node heartbeat sender.
+//
+// Each tick it collects this node's known peer endpoints (from the federation
+// trust pool / gossip peers, plus the network manager's manual peers), POSTs a
+// heartbeat to every peer's /api/network/heartbeat endpoint, and locally
+// refreshes this node's own global-pool liveness. Per-peer failures are logged
+// and never abort the loop. The interval is sourced from the heartbeat_interval_s
+// config key (default 60s) — this is what actually *consumes* that setting.
+//
+// The loop runs in its own goroutine and is intentionally long-lived; it exits
+// only when the process terminates.
+func startHeartbeatLoop() {
+	go func() {
+		ticker := time.NewTicker(getHeartbeatInterval())
+		defer ticker.Stop()
+		slog.Info("heartbeat loop started",
+			"interval", getHeartbeatInterval().String())
+		for range ticker.C {
+			runHeartbeatOnce()
+		}
+	}()
+}
+
+// getHeartbeatInterval returns the configured heartbeat interval.
+// cfg exposes only string getters, so we parse heartbeat_interval_s with a
+// safe fallback to the documented default of 60 seconds.
+func getHeartbeatInterval() time.Duration {
+	const defaultInterval = 60 * time.Second
+	if cfg == nil {
+		return defaultInterval
+	}
+	if v := cfg.Get("heartbeat_interval_s", ""); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return defaultInterval
+}
+
+// runHeartbeatOnce performs a single heartbeat broadcast to all known peers and
+// refreshes this node's own global-pool entry.
+func runHeartbeatOnce() {
+	if netMgr == nil {
+		return
+	}
+	selfNodeID := netMgr.GetNodeID()
+	if selfNodeID == "" {
+		// Personal mode / no identity yet — nothing to announce.
+		return
+	}
+
+	secret := ""
+	if cfg != nil {
+		secret = cfg.Get("federation_secret", "")
+	}
+
+	selfEndpoint := resolveSelfEndpoint()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, ep := range collectPeerEndpoints(selfEndpoint) {
+		peerURL := strings.TrimRight(ep, "/") + "/api/network/heartbeat"
+		if err := postHeartbeatToPeer(client, peerURL, selfNodeID, selfEndpoint, secret); err != nil {
+			slog.Debug("heartbeat send failed", "peer", ep, "error", err)
+		}
+	}
+
+	// Keep this node's own global-pool entry active (if it joined its own pool).
+	if globalPool != nil {
+		globalPool.Heartbeat(selfNodeID)
+	}
+}
+
+// resolveSelfEndpoint returns the best local advertisement endpoint for this node.
+// It prefers a previously-collected address (no cfg dependency) and falls back to
+// the federation endpoint resolver.
+func resolveSelfEndpoint() string {
+	if netMgr != nil {
+		netMgr.mu.RLock()
+		var addr string
+		if len(netMgr.config.Addresses) > 0 {
+			addr = netMgr.config.Addresses[0]
+		}
+		netMgr.mu.RUnlock()
+		if addr != "" {
+			return addr
+		}
+	}
+	return resolvePublicEndpoint("")
+}
+
+// collectPeerEndpoints gathers every known peer endpoint (deduplicated), merging
+// the federation trust-pool / gossip peers with the network manager's manually
+// added peers. The local node's own endpoint is excluded to avoid self-ping.
+func collectPeerEndpoints(selfEndpoint string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	add := func(ep string) {
+		ep = strings.TrimRight(ep, "/")
+		if ep == "" || seen[ep] {
+			return
+		}
+		if ep == selfEndpoint {
+			return
+		}
+		seen[ep] = true
+		out = append(out, ep)
+	}
+
+	if fed != nil {
+		for _, ep := range fed.allKnownEndpoints() {
+			add(ep)
+		}
+	}
+	if netMgr != nil {
+		for _, p := range netMgr.GetPeers() {
+			for _, a := range p.Addresses {
+				add(a)
+			}
+		}
+	}
+	return out
+}
+
+// postHeartbeatToPeer POSTs a heartbeat to a single peer endpoint. It is the
+// unit-testable core of the sender: it builds the JSON body, sets the
+// X-Node-ID / X-Federation-Secret auth headers, and returns any transport or
+// non-2xx error. It does NOT log or retry — callers decide how to handle errors.
+func postHeartbeatToPeer(client *http.Client, peerURL, selfNodeID, selfEndpoint, secret string) error {
+	body := map[string]string{
+		"node_id":  selfNodeID,
+		"endpoint": selfEndpoint,
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal heartbeat body: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, peerURL, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("build heartbeat request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Node-ID", selfNodeID)
+	if secret != "" {
+		req.Header.Set("X-Federation-Secret", secret)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send heartbeat to %s: %w", peerURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("heartbeat to %s returned status %d", peerURL, resp.StatusCode)
+	}
+	return nil
+}
 
 // startRegionSyncLoop periodically synchronizes region assignments. Placeholder.
 func startRegionSyncLoop() {}

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 // This file implements route handlers that were referenced by server.go's route
@@ -39,8 +40,94 @@ func handleNodePubKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleNetworkHeartbeat implements POST /api/network/heartbeat — the
+// receiving side of the node-to-node heartbeat. It:
+//   1. Authenticates the sender (federation secret, or known-node fallback
+//      when the mesh is open / unsecured).
+//   2. Requires a sender node_id (X-Node-ID header, else JSON body).
+//   3. Refreshes the sender's liveness in this node's local view:
+//        - bumps the peer's LastSeen in the network manager,
+//        - marks the node active in the federation manager,
+//        - keeps the participant active in the shared global pool.
+//
+// One failing sub-step must not abort the others; each is best-effort.
 func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"status": "ok"})
+	secret := ""
+	if cfg != nil {
+		secret = cfg.Get("federation_secret", "")
+	}
+
+	senderNodeID := r.Header.Get("X-Node-ID")
+
+	authed := false
+	if secret != "" {
+		// Secret-protected mesh: require the matching header.
+		authed = r.Header.Get("X-Federation-Secret") == secret
+	} else if fed != nil && senderNodeID != "" {
+		// Open mesh: require a node known to the federation manager.
+		if _, ok := fed.GetNode(senderNodeID); ok {
+			authed = true
+		}
+	} else if secret == "" && fed == nil {
+		// No auth mechanism configured at all — allow (best-effort open mesh).
+		authed = true
+	}
+	if !authed {
+		writeError(w, http.StatusForbidden, "federation authentication required")
+		return
+	}
+
+	// Resolve sender node id from header, falling back to the JSON body.
+	if senderNodeID == "" {
+		var body struct {
+			NodeID string `json:"node_id"`
+		}
+		_ = readJSON(r, &body)
+		senderNodeID = body.NodeID
+	}
+	if senderNodeID == "" {
+		writeError(w, http.StatusBadRequest, "node_id is required")
+		return
+	}
+
+	// Refresh the sender's liveness in this node's local view.
+	touchPeerLastSeen(senderNodeID)
+
+	if fed != nil {
+		if existing, ok := fed.GetNode(senderNodeID); ok {
+			updated := *existing
+			updated.Status = "active"
+			updated.LastSeen = time.Now().UTC().Format(time.RFC3339)
+			fed.UpdateNodeInfo(updated)
+		}
+	}
+
+	if globalPool != nil {
+		globalPool.Heartbeat(senderNodeID)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"node_id": senderNodeID,
+	})
+}
+
+// touchPeerLastSeen records that we recently heard from a peer by bumping its
+// LastSeen timestamp in the local network manager (best-effort). It accesses
+// the unexported NetworkManager fields directly because package main owns them;
+// this keeps the heartbeat receiver self-contained without touching network.go.
+func touchPeerLastSeen(nodeID string) {
+	if netMgr == nil || nodeID == "" {
+		return
+	}
+	netMgr.mu.Lock()
+	defer netMgr.mu.Unlock()
+	for i := range netMgr.config.Peers {
+		if netMgr.config.Peers[i].NodeID == nodeID {
+			netMgr.config.Peers[i].LastSeen = time.Now().Format(time.RFC3339)
+			return
+		}
+	}
 }
 
 // ---- Algorithm governance chain ----
@@ -88,7 +175,7 @@ func handleAlgorithmGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{
-		"status": "gossiped",
+		"status":  "gossiped",
 		"params": algoChain.GetCurrentParams(),
 	})
 }
@@ -98,7 +185,7 @@ func handleAlgorithmGossip(w http.ResponseWriter, r *http.Request) {
 func handleNetworkRegions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"regions": []any{},
-		"note":   "region manager not yet wired (see network_region_test.go)",
+		"note":    "region manager not yet wired (see network_region_test.go)",
 	})
 }
 
