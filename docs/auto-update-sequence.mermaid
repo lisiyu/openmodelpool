@@ -1,0 +1,86 @@
+%% ① 前端轮询检测（P0-1）
+sequenceDiagram
+    participant UI as admin-update.js
+    participant BE as UpdateManager
+    participant GH as GitHub Releases API
+    UI->>BE: GET /api/admin/version/latest (每5min)
+    alt 缓存未过期(<10min)
+        BE-->>UI: VersionInfo(来自缓存)
+    else 缓存过期
+        BE->>GH: GET /repos/lisiyu/openmodelpool/releases/latest
+        GH-->>BE: tag_name, assets
+        BE->>BE: compareVersion(latest, AppVersion)
+        BE-->>UI: VersionInfo{has_update, latest}
+    end
+    alt has_update
+        UI->>UI: 按钮 enabled + 提示「发现新版本 vX」
+    else 无更新
+        UI->>UI: 按钮 disabled + 提示「已是最新 vX」
+    end
+
+%% ② 点击触发本节点自更新（P0-2 / P0-3）
+sequenceDiagram
+    participant UI as admin-update.js
+    participant H as handleAdminUpdateStart
+    participant UM as UpdateManager
+    participant Net as GitHub/Asset
+    participant FS as 文件系统+Supervisor
+    UI->>H: POST /api/admin/update/start
+    H->>UM: TriggerSelfUpdate(target)
+    UM->>UM: local.phase=downloading, progress=10
+    UM->>Net: 下载对应平台二进制(data/.omp-update-<ver>.tmp)
+    Note over UM: 进度 10→60
+    UM->>FS: 原子替换(os.Rename / Win:旧→.bak,新→旧)
+    UM->>UM: local.phase=replacing→restarting
+    UM->>FS: 写 data/update-pending.json{target}
+    UM->>FS: 自身退出(os.Exit / SIGTERM)
+    FS->>FS: supervisor(run-omp.sh/systemd/schtasks) 重拉
+    Note over UI: 状态区每2-3s 轮询 GET /api/admin/update/status
+    UI->>H: GET /api/admin/update/status
+    H-->>UI: local.phase=success (新版本已起)
+
+%% ③ 跨环境广播更新信号（P1-1）
+sequenceDiagram
+    participant UM as Origin.UpdateManager
+    participant Fed as fed (GetActiveNodes)
+    participant P as Peer Node
+    UM->>UM: 构造 UpdateSignal{target,min_ver,origin_addrs}
+    UM->>UM: Signature=node.SignJSON(canonical)
+    UM->>Fed: GetActiveNodes() (排除自身)
+    loop 每个活跃 peer
+        UM->>P: POST /api/federation/update-signal (Header X-Node-ID)
+        alt peer 旧版(无端点)→404
+            UM->>UM: peers[p].phase=unsupported
+        else peer 新版→200
+            P-->>UM: accepted
+        end
+    end
+
+%% ④ peer 接收并自更新 + 回报（P1-2）
+sequenceDiagram
+    participant O as Origin
+    participant P as Peer.handleFederationUpdateSignal
+    participant PUM as Peer.UpdateManager
+    participant PFS as Peer 文件系统+Supervisor
+    participant OR as Origin.handleFederationUpdateReport
+    O->>P: POST /api/federation/update-signal
+    P->>P: withFederationAuth(X-Node-ID) + VerifyJSONSig
+    P->>P: 若 AppVersion<MinSupportedVersion → 回 unsupported
+    P->>PUM: OnSignalReceived(sig)
+    PUM->>PUM: 自身 TriggerSelfUpdate(target)
+    PUM->>PFS: 下载→原子替换→退出→supervisor重拉
+    Note over PUM: 过程写 peers 自身 local 状态
+    PUM->>O: POST /api/federation/update-report (回报,带签名)
+    O->>OR: 校验来源(fed.GetNode+验签)
+    OR->>O: peers[node_id]=UpdateReport 状态
+
+%% ⑤ 中心状态汇聚查询（P1-3）
+sequenceDiagram
+    participant UI as admin-update.js
+    participant H as handleAdminUpdateStatus
+    participant UM as UpdateManager
+    UI->>H: GET /api/admin/update/status (每2-3s,更新中)
+    H->>UM: 聚合 local + peers[]
+    UM-->>H: []UpdateStatus (本节点 + 各 peer)
+    H-->>UI: 渲染卡片: 本节点行 + 每 peer 行 + 汇总(成功/失败/进行中/不支持)
+    Note over UI: 全部终态后停止轮询,保留最终快照

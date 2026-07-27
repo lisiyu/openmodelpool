@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -561,9 +562,41 @@ func (n *NodeIdentity) Sign(message []byte) string {
 	return result
 }
 
+// canonicalJSON marshals v to JSON after temporarily zeroing its Signature
+// field, so SignJSON and VerifyJSONSig operate on byte-identical representations.
+// Without this, signing serializes the struct with an empty signature while
+// verifying serializes it with the populated signature, and ed25519 verification
+// can never succeed.
+func canonicalJSON(v any) ([]byte, error) {
+	rv := reflect.ValueOf(v)
+	for rv.Kind() == reflect.Ptr {
+		if rv.IsNil() {
+			return json.Marshal(v)
+		}
+		rv = rv.Elem()
+	}
+	if rv.Kind() == reflect.Struct {
+		if f := rv.FieldByName("Signature"); f.IsValid() && f.Kind() == reflect.String {
+			if f.CanSet() {
+				old := f.String()
+				f.SetString("")
+				defer f.SetString(old)
+				return json.Marshal(rv.Interface())
+			}
+			cp := reflect.New(rv.Type()).Elem()
+			cp.Set(rv)
+			if cf := cp.FieldByName("Signature"); cf.IsValid() && cf.CanSet() {
+				cf.SetString("")
+			}
+			return json.Marshal(cp.Interface())
+		}
+	}
+	return json.Marshal(v)
+}
+
 // SignJSON marshals v to JSON, signs it, and returns the signature.
 func (n *NodeIdentity) SignJSON(v any) string {
-	data, err := json.Marshal(v)
+	data, err := canonicalJSON(v)
 	if err != nil {
 		return ""
 	}
@@ -610,7 +643,7 @@ func VerifySignature(pubKeyB64 string, message []byte, signatureB64 string) bool
 
 // VerifyJSONSig marshals v to JSON and verifies the signature.
 func VerifyJSONSig(pubKeyB64 string, v any, signatureB64 string) bool {
-	data, err := json.Marshal(v)
+	data, err := canonicalJSON(v)
 	if err != nil {
 		return false
 	}

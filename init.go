@@ -77,6 +77,7 @@ func initAllFederation() {
 	initMessages("data")
 	initNodeWeightManager("data")
 	initInviteManager("data")
+	initUpdateManager("data")
 }
 
 // initAllNetwork initializes P2P networking, event bus, metrics, rate limiting, and load balancing.

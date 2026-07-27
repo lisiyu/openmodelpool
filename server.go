@@ -100,6 +100,13 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/info", withAuth(handleAdminInfo))
 	mux.HandleFunc("POST /api/admin/change-password", rateLimitByIP(3, "change_password")(withAuth(handleChangePassword)))
 	mux.HandleFunc("POST /api/admin/update-email", withAuth(handleUpdateEmail))
+	// One-click version update (incremental)
+	mux.HandleFunc("GET /api/admin/version/latest", withAuth(handleAdminVersionLatest))
+	mux.HandleFunc("POST /api/admin/update/start", rateLimitByIP(3, "update_start")(withAuth(handleAdminUpdateStart)))
+	mux.HandleFunc("GET /api/admin/update/status", withAuth(handleAdminUpdateStatus))
+	// Federation cross-node update signal + report-back
+	mux.HandleFunc("POST /api/federation/update-signal", rateLimitByIP(30, "update_signal")(withFederationAuth(handleFederationUpdateSignal)))
+	mux.HandleFunc("POST /api/federation/update-report", rateLimitByIP(30, "update_report")(withFederationAuth(handleFederationUpdateReport)))
 	mux.HandleFunc("POST /api/admin/restart", rateLimitByIP(3, "restart")(withAuth(handleRestart)))
 	mux.HandleFunc("GET /api/share/info", withAuth(handleShareInfo))
 
@@ -215,6 +222,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /admin-settings.js", handleAdminSettingsJS)
 	mux.HandleFunc("GET /admin-network.js", handleAdminNetworkJS)
 	mux.HandleFunc("GET /admin-share.js", handleAdminShareJS)
+	mux.HandleFunc("GET /admin-update.js", handleAdminUpdateJS)
 	mux.HandleFunc("GET /admin-logs.js", handleAdminLogsJS)
 
 	// Federation API (v3.0)

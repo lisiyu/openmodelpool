@@ -857,6 +857,12 @@ select.form-input{appearance:none;cursor:pointer}
       OpenModelPool v4.1 · Made with ❤️ · 开源协议 MIT
     </div>
   </div>
+  <!-- 🔄 版本更新（一键更新 · 增量功能） -->
+  <div id="versionUpdateCard" style="margin-top:16px;padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:12px">🔄 版本更新</div>
+    <div id="versionUpdateBody"><div style="color:var(--text-muted);font-size:13px">正在加载…</div></div>
+    <div id="updateStatusArea" style="margin-top:14px"></div>
+  </div>
   <!-- 共享网络 · 身份备份向导（切片② 四步状态机 S1→S2→S3→S4） -->
   <div class="modal-overlay" id="networkDisclaimerModal">
     <div class="modal" style="max-width:680px">
@@ -945,6 +951,7 @@ select.form-input{appearance:none;cursor:pointer}
 <script src="/admin-settings.js?v=344"></script>
 <script src="/admin-network.js?v=344"></script>
 <script src="/admin-share.js?v=344"></script>
+<script src="/admin-update.js?v=345"></script>
 <script src="/admin-logs.js?v=344"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async></script>
 
