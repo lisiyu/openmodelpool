@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // withFederationAuth restricts access to known federation nodes or authenticated requests.
@@ -90,15 +91,19 @@ func isTrustedSeed(r *http.Request) bool {
 
 // FederationManager manages this node's participation in the federation.
 type FederationManager struct {
-	mu           sync.RWMutex
-	trustPool    TrustPool
-	localPeers   map[string]*NodeInfo // node_id -> latest info from gossip
-	enabled      bool
-	relayEnabled bool
-	loopRunning  bool // whether the refresh loop goroutine is active
-	dataDir      string
-	stopCh       chan struct{}
-	lastETag     string // ETag for conditional HTTP requests to registry
+	mu         sync.RWMutex
+	trustPool  TrustPool
+	localPeers map[string]*NodeInfo // node_id -> latest info from gossip
+	// discoveryHints holds PEX address hints learned via gossip (P1-1), keyed by
+	// node_id. In-memory only (not persisted — D4): used as a fallback address
+	// source when a node's trust-pool endpoint is missing or stale.
+	discoveryHints map[string][]string
+	enabled        bool
+	relayEnabled   bool
+	loopRunning    bool // whether the refresh loop goroutine is active
+	dataDir        string
+	stopCh         chan struct{}
+	lastETag       string // ETag for conditional HTTP requests to registry
 }
 
 var fed *FederationManager
@@ -109,9 +114,10 @@ var fed *FederationManager
 // syncFederationToNetwork() (REQ-2 / T2).
 func initFederation(dataDir string) {
 	f := &FederationManager{
-		localPeers: make(map[string]*NodeInfo),
-		dataDir:    dataDir,
-		stopCh:     make(chan struct{}),
+		localPeers:     make(map[string]*NodeInfo),
+		discoveryHints: make(map[string][]string),
+		dataDir:        dataDir,
+		stopCh:         make(chan struct{}),
 	}
 
 	// REQ-2: federation is no longer driven by the legacy federation_enabled key.
@@ -252,6 +258,85 @@ func (f *FederationManager) RemoveNode(nodeID string) {
 	delete(f.localPeers, nodeID)
 
 	slog.Info("node removed from federation", "node_id", nodeID)
+}
+
+// AddKnownNode upserts a node into the local trust pool, marking it active and
+// bumping the trust pool version. This is the P0-2 "bridge": manual peers (added
+// via AddPeer / notify) and any other locally-known node are merged into the
+// gossip-reachable trust pool so the discovery loop can propagate them. It is a
+// no-op when federation is disabled (personal mode).
+func (f *FederationManager) AddKnownNode(node NodeInfo) {
+	if !f.IsEnabled() {
+		return
+	}
+	node.Status = "active"
+	if node.LastSeen == "" {
+		node.LastSeen = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for i := range f.trustPool.Nodes {
+		if f.trustPool.Nodes[i].NodeID == node.NodeID {
+			// Preserve existing rich fields if the new info didn't carry them,
+			// but always refresh identity, addresses and status.
+			existing := f.trustPool.Nodes[i]
+			if len(node.SharedModels) == 0 {
+				node.SharedModels = existing.SharedModels
+			}
+			if len(node.SharedProviders) == 0 {
+				node.SharedProviders = existing.SharedProviders
+			}
+			if node.PubKey == "" {
+				node.PubKey = existing.PubKey
+			}
+			if node.Endpoint == "" {
+				node.Endpoint = existing.Endpoint
+			}
+			if len(node.Addresses) == 0 {
+				node.Addresses = existing.Addresses
+			}
+			f.trustPool.Nodes[i] = node
+			f.trustPool.Version++
+			f.trustPool.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			_ = f.saveLocked()
+			return
+		}
+	}
+
+	f.trustPool.Nodes = append(f.trustPool.Nodes, node)
+	f.trustPool.Version++
+	f.trustPool.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	_ = f.saveLocked()
+}
+
+// MergePeerHints records peer address hints learned via gossip PEX (P1-1). These
+// are in-memory only (not persisted, per D4) and serve as fallback addresses
+// when a node's trust-pool endpoint is missing or stale. Existing hints for a
+// node id are kept stable (first-known wins).
+func (f *FederationManager) MergePeerHints(hints []PeerHint) {
+	if len(hints) == 0 {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, h := range hints {
+		if h.NodeID == "" || len(h.Addresses) == 0 {
+			continue
+		}
+		if _, ok := f.discoveryHints[h.NodeID]; ok {
+			continue
+		}
+		f.discoveryHints[h.NodeID] = h.Addresses
+	}
+}
+
+// HintAddresses returns the PEX-learned address hints for a node (P1-1).
+func (f *FederationManager) HintAddresses(nodeID string) []string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.discoveryHints[nodeID]
 }
 
 // save persists the trust pool to dataDir/federation_pool.json.

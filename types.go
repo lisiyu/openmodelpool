@@ -59,13 +59,13 @@ func extractContentText(raw json.RawMessage) string {
 }
 
 type ChatRequest struct {
-	Model          string        `json:"model"`
-	Messages       []ChatMessage `json:"messages"`
-	Stream         bool          `json:"stream"`
-	Temperature    *float64      `json:"temperature,omitempty"`
-	TopP           *float64      `json:"top_p,omitempty"`
-	MaxTokens      *int          `json:"max_tokens,omitempty"`
-	ConversationID string        `json:"conversation_id,omitempty"`
+	Model          string         `json:"model"`
+	Messages       []ChatMessage  `json:"messages"`
+	Stream         bool           `json:"stream"`
+	Temperature    *float64       `json:"temperature,omitempty"`
+	TopP           *float64       `json:"top_p,omitempty"`
+	MaxTokens      *int           `json:"max_tokens,omitempty"`
+	ConversationID string         `json:"conversation_id,omitempty"`
 	Extra          map[string]any `json:"-"` // extra fields preserved
 }
 
@@ -143,10 +143,10 @@ type ErrorDetail struct {
 }
 
 type ModelInfo struct {
-	ID       string `json:"id"`
-	Object   string `json:"object"`
-	Created  int64  `json:"created"`
-	OwnedBy  string `json:"owned_by"`
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	OwnedBy string `json:"owned_by"`
 }
 
 type ModelListResponse struct {
@@ -169,54 +169,54 @@ type ModelDef struct {
 
 // APIKeyConfig represents a single API key with its own quota and access control.
 type APIKeyConfig struct {
-	ID            string `json:"id"`              // unique identifier
-	Alias         string `json:"alias,omitempty"` // human-readable alias (optional)
-	Key           string `json:"key"`             // API key (encrypted at rest)
-	Quota         int64  `json:"quota"`           // total quota (tokens), 0=unlimited
-	QuotaDaily    int64  `json:"quota_daily"`     // daily quota limit, 0=unlimited
-	QuotaMonthly  int64  `json:"quota_monthly"`   // monthly quota limit, 0=unlimited
-	Used          int64  `json:"used"`            // used quota (total)
-	UsedDaily     int64  `json:"used_daily"`      // used today
-	UsedMonthly   int64  `json:"used_monthly"`    // used this month
+	ID               string `json:"id"`                           // unique identifier
+	Alias            string `json:"alias,omitempty"`              // human-readable alias (optional)
+	Key              string `json:"key"`                          // API key (encrypted at rest)
+	Quota            int64  `json:"quota"`                        // total quota (tokens), 0=unlimited
+	QuotaDaily       int64  `json:"quota_daily"`                  // daily quota limit, 0=unlimited
+	QuotaMonthly     int64  `json:"quota_monthly"`                // monthly quota limit, 0=unlimited
+	Used             int64  `json:"used"`                         // used quota (total)
+	UsedDaily        int64  `json:"used_daily"`                   // used today
+	UsedMonthly      int64  `json:"used_monthly"`                 // used this month
 	LastDailyReset   string `json:"last_daily_reset,omitempty"`   // date of last daily reset (YYYY-MM-DD)
 	LastMonthlyReset string `json:"last_monthly_reset,omitempty"` // month of last monthly reset (YYYY-MM)
-	AccessControl string `json:"access_control"`  // "private" | "shared" | "public"
-	Enabled       bool   `json:"enabled"`         // whether this key is enabled
-	Priority      int    `json:"priority"`        // priority for rotation (higher = preferred)
-	ExpiresAt     string `json:"expires_at"`      // expiration time (optional, RFC3339)
-	CreatedAt     string `json:"created_at"`
-	UpdatedAt     string `json:"updated_at"`
+	AccessControl    string `json:"access_control"`               // "private" | "shared" | "public"
+	Enabled          bool   `json:"enabled"`                      // whether this key is enabled
+	Priority         int    `json:"priority"`                     // priority for rotation (higher = preferred)
+	ExpiresAt        string `json:"expires_at"`                   // expiration time (optional, RFC3339)
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
 }
 
 type Provider struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Type        string     `json:"type"` // "openai_compatible", "coze", "sider", "anthropic", "web_session"
-	BaseURL     string     `json:"base_url"`
-	APIKey      string     `json:"api_key,omitempty"` // deprecated: use APIKeys instead
-	Enabled     bool       `json:"enabled"`
-	Models      []ModelDef `json:"models"`
-	Priority    int        `json:"priority"`
-	TokenLimit  int64      `json:"token_limit,omitempty"` // monthly token budget, 0=unlimited
-	RateLimitEnabled  bool  `json:"rate_limit_enabled,omitempty"`    // master toggle for rate limiting
-	DailyRequestLimit int64 `json:"daily_request_limit,omitempty"` // max requests per day, 0=unlimited
-	RateLimitPerMin     int   `json:"rate_limit_per_min,omitempty"`     // requests per minute, 0=unlimited
-	PrivateTokensDaily   int64 `json:"private_tokens_daily,omitempty"`   // private pool max tokens per day, 0=unlimited
-	PrivateQuotaMonthly int64 `json:"private_quota_monthly,omitempty"`  // private key quota limit per month, 0=unlimited
-	PrivateQuotaTotal   int64 `json:"private_quota_total,omitempty"`    // private key total quota cap, 0=unlimited
-	SharedTokensDaily    int64 `json:"shared_tokens_daily,omitempty"`    // shared pool max tokens per day, 0=unlimited
-	SharedQuotaMonthly  int64 `json:"shared_quota_monthly,omitempty"`   // shared key quota limit per month, 0=unlimited
-	SharedQuotaTotal    int64 `json:"shared_quota_total,omitempty"`     // shared key total quota cap, 0=unlimited
-	Description string     `json:"description,omitempty"`
-	Icon        string     `json:"icon,omitempty"`
-	APIKeyURL   string     `json:"api_key_url,omitempty"`
-	Proxy                 string     `json:"proxy,omitempty"` // http://, socks5://, or vmess:// link
-	HealthCheckEndpoint   string     `json:"health_check_endpoint,omitempty"` // "/models" (default), "/chat/completions", or custom
-	Owner                 string     `json:"owner,omitempty"` // consumer ID; empty = admin/system
-	AccessControl ProviderAccessControl `json:"access_control"`
+	ID                  string                `json:"id"`
+	Name                string                `json:"name"`
+	Type                string                `json:"type"` // "openai_compatible", "coze", "sider", "anthropic", "web_session"
+	BaseURL             string                `json:"base_url"`
+	APIKey              string                `json:"api_key,omitempty"` // deprecated: use APIKeys instead
+	Enabled             bool                  `json:"enabled"`
+	Models              []ModelDef            `json:"models"`
+	Priority            int                   `json:"priority"`
+	TokenLimit          int64                 `json:"token_limit,omitempty"`           // monthly token budget, 0=unlimited
+	RateLimitEnabled    bool                  `json:"rate_limit_enabled,omitempty"`    // master toggle for rate limiting
+	DailyRequestLimit   int64                 `json:"daily_request_limit,omitempty"`   // max requests per day, 0=unlimited
+	RateLimitPerMin     int                   `json:"rate_limit_per_min,omitempty"`    // requests per minute, 0=unlimited
+	PrivateTokensDaily  int64                 `json:"private_tokens_daily,omitempty"`  // private pool max tokens per day, 0=unlimited
+	PrivateQuotaMonthly int64                 `json:"private_quota_monthly,omitempty"` // private key quota limit per month, 0=unlimited
+	PrivateQuotaTotal   int64                 `json:"private_quota_total,omitempty"`   // private key total quota cap, 0=unlimited
+	SharedTokensDaily   int64                 `json:"shared_tokens_daily,omitempty"`   // shared pool max tokens per day, 0=unlimited
+	SharedQuotaMonthly  int64                 `json:"shared_quota_monthly,omitempty"`  // shared key quota limit per month, 0=unlimited
+	SharedQuotaTotal    int64                 `json:"shared_quota_total,omitempty"`    // shared key total quota cap, 0=unlimited
+	Description         string                `json:"description,omitempty"`
+	Icon                string                `json:"icon,omitempty"`
+	APIKeyURL           string                `json:"api_key_url,omitempty"`
+	Proxy               string                `json:"proxy,omitempty"`                 // http://, socks5://, or vmess:// link
+	HealthCheckEndpoint string                `json:"health_check_endpoint,omitempty"` // "/models" (default), "/chat/completions", or custom
+	Owner               string                `json:"owner,omitempty"`                 // consumer ID; empty = admin/system
+	AccessControl       ProviderAccessControl `json:"access_control"`
 
 	// Multi API key support
-	APIKeys     []APIKeyConfig `json:"api_keys,omitempty"` // multiple API keys
+	APIKeys []APIKeyConfig `json:"api_keys,omitempty"` // multiple API keys
 
 	// Web session template (for web_session type providers)
 	WebSession *WebSessionConfig `json:"web_session,omitempty"`
@@ -224,8 +224,8 @@ type Provider struct {
 	// Model-to-bot mapping for Coze (model ID -> Coze bot_id)
 	ModelBotMap map[string]string `json:"model_bot_map,omitempty"`
 
-	CreatedAt   string     `json:"created_at,omitempty"`
-	UpdatedAt   string     `json:"updated_at,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 // WebSessionConfig defines the template for web-session-based providers
@@ -331,7 +331,7 @@ type UsageRecord struct {
 	LatencyMS        float64 `json:"latency_ms"`
 	Success          bool    `json:"success"`
 	Error            string  `json:"error,omitempty"`
-	AccessType        string  `json:"access_type,omitempty"`
+	AccessType       string  `json:"access_type,omitempty"`
 }
 
 // ============================================================
@@ -358,7 +358,7 @@ type AdminData struct {
 type Collaborator struct {
 	Username     string `json:"username"`
 	PasswordHash string `json:"password_hash"`
-	GuestKey     string `json:"guest_key"`        // associated guest key
+	GuestKey     string `json:"guest_key"` // associated guest key
 	CreatedAt    string `json:"created_at"`
 	LastLogin    string `json:"last_login,omitempty"`
 }
@@ -380,16 +380,16 @@ type ResetToken struct {
 }
 
 type AdminStore struct {
-	Admin     AdminData  `json:"admin"`
-	JWTSecret        string     `json:"jwt_secret"`
-	JWTRefreshSecret string     `json:"jwt_refresh_secret"`
-	SMTP      SMTPConfig `json:"smtp"`
-	Reset     *ResetToken `json:"reset_token,omitempty"`
-	Initialized bool     `json:"initialized"`
+	Admin            AdminData   `json:"admin"`
+	JWTSecret        string      `json:"jwt_secret"`
+	JWTRefreshSecret string      `json:"jwt_refresh_secret"`
+	SMTP             SMTPConfig  `json:"smtp"`
+	Reset            *ResetToken `json:"reset_token,omitempty"`
+	Initialized      bool        `json:"initialized"`
 	// P0-2: Independent reset code (replaces Proxy API Key reuse for password reset)
-	ResetCodeHash   string `json:"reset_code_hash,omitempty"`
-	ResetCodeExpires string `json:"reset_code_expires,omitempty"`
-	Collaborators []Collaborator `json:"collaborators,omitempty"`
+	ResetCodeHash    string         `json:"reset_code_hash,omitempty"`
+	ResetCodeExpires string         `json:"reset_code_expires,omitempty"`
+	Collaborators    []Collaborator `json:"collaborators,omitempty"`
 }
 
 // ============================================================
@@ -443,14 +443,14 @@ type InviteCode struct {
 }
 
 type Consumer struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	APIKey       string `json:"api_key"`
-	InviteCode   string `json:"invite_code"`
-	CreatedAt    string `json:"created_at"`
-	TotalTokens  int64  `json:"total_tokens"`
-	TotalRequests int   `json:"total_requests"`
-	Enabled      bool   `json:"enabled"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	APIKey        string `json:"api_key"`
+	InviteCode    string `json:"invite_code"`
+	CreatedAt     string `json:"created_at"`
+	TotalTokens   int64  `json:"total_tokens"`
+	TotalRequests int    `json:"total_requests"`
+	Enabled       bool   `json:"enabled"`
 }
 
 // ============================================================
@@ -458,12 +458,12 @@ type Consumer struct {
 // ============================================================
 
 type SiderStatus struct {
-	TokenStatus        string `json:"token_status"`
-	LastSuccessAt      string `json:"last_success_at"`
-	LastFailureAt      string `json:"last_failure_at"`
-	ConsecutiveFailures int   `json:"consecutive_failures"`
-	FailureMessage     string `json:"failure_message"`
-	CheckedAt          string `json:"checked_at"`
+	TokenStatus         string `json:"token_status"`
+	LastSuccessAt       string `json:"last_success_at"`
+	LastFailureAt       string `json:"last_failure_at"`
+	ConsecutiveFailures int    `json:"consecutive_failures"`
+	FailureMessage      string `json:"failure_message"`
+	CheckedAt           string `json:"checked_at"`
 }
 
 // ============================================================
@@ -471,12 +471,12 @@ type SiderStatus struct {
 // ============================================================
 
 type CozeChatPayload struct {
-	BotID             string            `json:"bot_id"`
-	UserID            string            `json:"user_id"`
-	Stream            bool              `json:"stream"`
-	AutoSaveHistory   bool              `json:"auto_save_history"`
-	AdditionalMessages []CozeMessage     `json:"additional_messages"`
-	ConversationID    string            `json:"conversation_id,omitempty"`
+	BotID              string        `json:"bot_id"`
+	UserID             string        `json:"user_id"`
+	Stream             bool          `json:"stream"`
+	AutoSaveHistory    bool          `json:"auto_save_history"`
+	AdditionalMessages []CozeMessage `json:"additional_messages"`
+	ConversationID     string        `json:"conversation_id,omitempty"`
 }
 
 type CozeMessage struct {
@@ -502,23 +502,23 @@ type CozeResponse struct {
 
 // NodeInfo represents a node in the federation network.
 type NodeInfo struct {
-	NodeID         string             `json:"node_id"`
-	GitHubUser     string             `json:"github_user"`
-	GitHubID       int64              `json:"github_id,omitempty"`
-	Endpoint       string             `json:"endpoint"`
-	PubKey         string             `json:"pub_key"` // ed25519 base64
-	SharedModels   []string           `json:"shared_models"`
-	SharedProviders []SharedProvider  `json:"shared_providers"`
-	JoinedAt       string             `json:"joined_at"`
-	LastSeen       string             `json:"last_seen"`
-	Status         string             `json:"status"` // active, inactive, suspended
-	SeedNode       bool               `json:"seed_node,omitempty"` // deprecated: use Capabilities.CanSeed instead
-	Reputation     int                `json:"reputation"`
-	Version        string             `json:"version"`
-	InviteBy       string             `json:"invite_by,omitempty"`
-	TokenBudget    int64              `json:"token_budget"`    // monthly token budget declaration (0 = unlimited)
-	TokenUsed      int64              `json:"token_used"`      // tokens used this month
-	Addresses      []string           `json:"addresses,omitempty"` // multi-address support (P2P)
+	NodeID          string           `json:"node_id"`
+	GitHubUser      string           `json:"github_user"`
+	GitHubID        int64            `json:"github_id,omitempty"`
+	Endpoint        string           `json:"endpoint"`
+	PubKey          string           `json:"pub_key"` // ed25519 base64
+	SharedModels    []string         `json:"shared_models"`
+	SharedProviders []SharedProvider `json:"shared_providers"`
+	JoinedAt        string           `json:"joined_at"`
+	LastSeen        string           `json:"last_seen"`
+	Status          string           `json:"status"`              // active, inactive, suspended
+	SeedNode        bool             `json:"seed_node,omitempty"` // deprecated: use Capabilities.CanSeed instead
+	Reputation      int              `json:"reputation"`
+	Version         string           `json:"version"`
+	InviteBy        string           `json:"invite_by,omitempty"`
+	TokenBudget     int64            `json:"token_budget"`        // monthly token budget declaration (0 = unlimited)
+	TokenUsed       int64            `json:"token_used"`          // tokens used this month
+	Addresses       []string         `json:"addresses,omitempty"` // multi-address support (P2P)
 }
 
 // SharedProvider is a provider advertised by a remote node (no API key!).
@@ -537,6 +537,14 @@ type TrustPool struct {
 	Nodes     []NodeInfo `json:"nodes"`
 }
 
+// PeerHint is a lightweight endpoint hint exchanged during gossip (P1-1 PEX).
+// It lets receivers learn a node's reachable addresses even when that node's
+// trust-pool endpoint field is missing or stale.
+type PeerHint struct {
+	NodeID    string   `json:"node_id"`
+	Addresses []string `json:"addresses"`
+}
+
 // GossipMessage is exchanged between nodes during gossip rounds.
 type GossipMessage struct {
 	Type             string `json:"type"` // "sync", "announce", "score", "heartbeat"
@@ -546,6 +554,9 @@ type GossipMessage struct {
 	Timestamp        string `json:"timestamp"`
 	Signature        string `json:"signature"`
 	Payload          []byte `json:"payload,omitempty"` // optional embedded data
+	// KnownPeers carries PEX endpoint hints (P1-1) so peers learn addresses of
+	// nodes in the mesh without relying on a complete trust-pool endpoint.
+	KnownPeers []PeerHint `json:"known_peers,omitempty"`
 }
 
 // PeerScore is a rating one node gives to another.
@@ -573,32 +584,32 @@ type ProviderAnnouncement struct {
 
 // RelayRequest is sent to a remote node for provider relay.
 type RelayRequest struct {
-	Model    string        `json:"model"`
-	Messages []ChatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
+	Model    string         `json:"model"`
+	Messages []ChatMessage  `json:"messages"`
+	Stream   bool           `json:"stream"`
 	Extra    map[string]any `json:"extra,omitempty"`
 }
 
 // RelayResponse wraps the relay result.
 type RelayResponse struct {
-	Success   bool          `json:"success"`
-	Data      []byte        `json:"data,omitempty"`      // raw response body
-	Error     string        `json:"error,omitempty"`
-	Tokens    int           `json:"tokens,omitempty"`
-	LatencyMS float64      `json:"latency_ms,omitempty"`
+	Success   bool    `json:"success"`
+	Data      []byte  `json:"data,omitempty"` // raw response body
+	Error     string  `json:"error,omitempty"`
+	Tokens    int     `json:"tokens,omitempty"`
+	LatencyMS float64 `json:"latency_ms,omitempty"`
 }
 
 // FederationConfig holds federation-specific configuration.
 type FederationConfig struct {
-	Enabled          bool   `json:"enabled"`
-	NodeID           string `json:"node_id"`
-	SeedNode         bool   `json:"seed_node,omitempty"`          // deprecated: all nodes are seeds in unified Peer model
-	RelayEnabled     bool   `json:"relay_enabled"`                // deprecated: relay is a capability, not a type toggle
-	MaxConcurrentRelay int  `json:"max_concurrent_relay"`
-	RegistryURL      string `json:"registry_url"`      // GitHub raw URL
-	RegistryRepo     string `json:"registry_repo"`     // "lisiyu/openmodelpool"
-	GossipIntervalS  int    `json:"gossip_interval_s"` // default 30
-	HeartbeatIntervalS int  `json:"heartbeat_interval_s"` // default 60
+	Enabled            bool   `json:"enabled"`
+	NodeID             string `json:"node_id"`
+	SeedNode           bool   `json:"seed_node,omitempty"` // deprecated: all nodes are seeds in unified Peer model
+	RelayEnabled       bool   `json:"relay_enabled"`       // deprecated: relay is a capability, not a type toggle
+	MaxConcurrentRelay int    `json:"max_concurrent_relay"`
+	RegistryURL        string `json:"registry_url"`         // GitHub raw URL
+	RegistryRepo       string `json:"registry_repo"`        // "lisiyu/openmodelpool"
+	GossipIntervalS    int    `json:"gossip_interval_s"`    // default 30
+	HeartbeatIntervalS int    `json:"heartbeat_interval_s"` // default 60
 }
 
 // ============================================================
@@ -628,35 +639,35 @@ type PeerCapabilities struct {
 // Every deployed node is a Peer — there are no distinct "node types".
 type Peer struct {
 	// Identity
-	PeerID       string           `json:"peer_id"`
-	NodeID       string           `json:"node_id"`       // legacy alias for PeerID
-	Name         string           `json:"name"`
-	Endpoint     string           `json:"endpoint"`
-	PubKey       string           `json:"pub_key"`       // ed25519 base64
+	PeerID   string `json:"peer_id"`
+	NodeID   string `json:"node_id"` // legacy alias for PeerID
+	Name     string `json:"name"`
+	Endpoint string `json:"endpoint"`
+	PubKey   string `json:"pub_key"` // ed25519 base64
 
 	// Capabilities (replaces preset node types)
 	Capabilities PeerCapabilities `json:"capabilities"`
 
 	// Network presence
-	Addresses    []string         `json:"addresses,omitempty"`
-	Status       string           `json:"status"`        // active, inactive, suspended
-	JoinedAt     string           `json:"joined_at"`
-	LastSeen     string           `json:"last_seen"`
-	Version      string           `json:"version"`
+	Addresses []string `json:"addresses,omitempty"`
+	Status    string   `json:"status"` // active, inactive, suspended
+	JoinedAt  string   `json:"joined_at"`
+	LastSeen  string   `json:"last_seen"`
+	Version   string   `json:"version"`
 
 	// Shared resources (only populated when share_to_pool=true)
-	SharedModels     []string          `json:"shared_models,omitempty"`
-	SharedProviders  []SharedProvider  `json:"shared_providers,omitempty"`
+	SharedModels    []string         `json:"shared_models,omitempty"`
+	SharedProviders []SharedProvider `json:"shared_providers,omitempty"`
 
 	// Metrics
-	Reputation   int              `json:"reputation"`
-	TokenBudget  int64            `json:"token_budget"`
-	TokenUsed    int64            `json:"token_used"`
+	Reputation  int   `json:"reputation"`
+	TokenBudget int64 `json:"token_budget"`
+	TokenUsed   int64 `json:"token_used"`
 
 	// Social
-	InviteBy     string           `json:"invite_by,omitempty"`
-	GitHubUser   string           `json:"github_user,omitempty"`
-	GitHubID     int64            `json:"github_id,omitempty"`
+	InviteBy   string `json:"invite_by,omitempty"`
+	GitHubUser string `json:"github_user,omitempty"`
+	GitHubID   int64  `json:"github_id,omitempty"`
 }
 
 // ToNodeInfo converts a Peer to the legacy NodeInfo format for backward compatibility.
@@ -684,14 +695,14 @@ func (p *Peer) ToNodeInfo() NodeInfo {
 // NodeInfoToPeer converts a legacy NodeInfo to the unified Peer format.
 func NodeInfoToPeer(n NodeInfo) Peer {
 	return Peer{
-		PeerID:          n.NodeID,
-		NodeID:          n.NodeID,
-		Name:            "",
-		Endpoint:        n.Endpoint,
-		PubKey:          n.PubKey,
+		PeerID:   n.NodeID,
+		NodeID:   n.NodeID,
+		Name:     "",
+		Endpoint: n.Endpoint,
+		PubKey:   n.PubKey,
 		Capabilities: PeerCapabilities{
-			CanRelay: true,        // all nodes can relay by default
-			CanSeed:  n.SeedNode,  // backward compat: SeedNode → CanSeed capability
+			CanRelay: true,       // all nodes can relay by default
+			CanSeed:  n.SeedNode, // backward compat: SeedNode → CanSeed capability
 		},
 		Status:          n.Status,
 		JoinedAt:        n.JoinedAt,

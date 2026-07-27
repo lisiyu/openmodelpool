@@ -26,7 +26,7 @@ if (-not $RELEASE_TAG) {
     if ($releaseInfo) {
         $RELEASE_TAG = $releaseInfo.tag_name
     } else {
-        $RELEASE_TAG = "v4.1.6"  # fallback
+        $RELEASE_TAG = "v4.1.7"  # fallback
     }
 }
 $exeName = "openmodelpool.exe"

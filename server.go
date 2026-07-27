@@ -262,6 +262,11 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("PUT /api/network/config", withAuth(handleNetworkConfigUpdate))
 	mux.HandleFunc("GET /api/network/peers", withAuth(handleNetworkPeers))
 	mux.HandleFunc("POST /api/network/peers", withAuth(handleNetworkAddPeer))
+	// P0-1: reverse-registration notify endpoint. Rate-limited and protected by an
+	// ed25519 signature (verified against the embedded public key) — NOT wrapped
+	// in withFederationAuth/withAuth, because on first contact the sender is not
+	// yet in our trust pool (would 403) and a cross-instance admin JWT is absent.
+	mux.HandleFunc("POST /api/network/peers/notify", rateLimitByIP(10, "network_notify")(handleNetworkPeersNotify))
 	mux.HandleFunc("DELETE /api/network/peers/{id}", withAuth(handleNetworkRemovePeer))
 	mux.HandleFunc("GET /api/network/resolve/{id}", handleNetworkResolve)
 	mux.HandleFunc("GET /api/network/routes", withAuth(handleNetworkRoutes))

@@ -2,13 +2,13 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"crypto/rand"
 	"net/http"
 	"sort"
 	"sync"
@@ -80,11 +80,14 @@ func (g *GossipManager) doGossipRound() {
 	pool := fed.GetTrustPool()
 	msg := GossipMessage{
 		Type:             "sync",
-		FromNode:        node.NodeID(),
+		FromNode:         node.NodeID(),
 		Timestamp:        time.Now().UTC().Format(time.RFC3339),
 		TrustPoolVersion: pool.Version,
 		ScoreDigest:      g.computeScoreDigest(),
 	}
+	// P1-1: attach PEX endpoint hints so receivers learn peer addresses even
+	// when trust-pool endpoints are missing. Must be set BEFORE signing.
+	msg.KnownPeers = buildKnownPeers()
 	msg.Signature = node.SignJSON(msg)
 
 	for _, peer := range peers {
@@ -156,6 +159,49 @@ func peerEndpoints(peer NodeInfo) []string {
 	return nil
 }
 
+// knownNodeAddresses returns the best address list for a federation node,
+// preferring the multi-address field then the legacy single endpoint.
+func knownNodeAddresses(n NodeInfo) []string {
+	if len(n.Addresses) > 0 {
+		return n.Addresses
+	}
+	if n.Endpoint != "" {
+		return []string{n.Endpoint}
+	}
+	return nil
+}
+
+// buildKnownPeers returns the combined set of known peer endpoints (P1-1 PEX),
+// merging the federation trust pool / gossip-learned nodes with the locally
+// configured manual peers. It is used to populate GossipMessage.KnownPeers so
+// receivers learn addresses even when a node's trust-pool endpoint is missing.
+// De-duplicated by NodeID; the local node is excluded.
+func buildKnownPeers() []PeerHint {
+	seen := make(map[string]bool)
+	var hints []PeerHint
+	add := func(nodeID string, addrs []string) {
+		if nodeID == "" || seen[nodeID] || len(addrs) == 0 {
+			return
+		}
+		if node != nil && nodeID == node.NodeID() {
+			return // never advertise ourselves
+		}
+		seen[nodeID] = true
+		hints = append(hints, PeerHint{NodeID: nodeID, Addresses: addrs})
+	}
+	if fed != nil {
+		for _, n := range fed.GetActiveNodes() {
+			add(n.NodeID, knownNodeAddresses(n))
+		}
+	}
+	if netMgr != nil {
+		for _, p := range netMgr.GetPeers() {
+			add(p.NodeID, p.Addresses)
+		}
+	}
+	return hints
+}
+
 // exchange sends a signed GossipMessage to a peer, trying all available addresses.
 // Returns the peer's response message on first successful attempt.
 func (g *GossipManager) exchange(peer NodeInfo, msg GossipMessage) (*GossipMessage, error) {
@@ -169,8 +215,20 @@ func (g *GossipManager) exchange(peer NodeInfo, msg GossipMessage) (*GossipMessa
 	var lastErr error
 
 	for _, addr := range endpoints {
-		gossipURL := fmt.Sprintf("%s/federation/gossip", addr)
-		resp, err := client.Post(gossipURL, "application/json", bytes.NewReader(body))
+		gossipURL := fmt.Sprintf("%s/api/federation/gossip", addr)
+		req, err := http.NewRequest(http.MethodPost, gossipURL, bytes.NewReader(body))
+		if err != nil {
+			lastErr = fmt.Errorf("build request for %s: %w", addr, err)
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		// R5: identify ourselves via X-Node-ID so the receiver's
+		// withFederationAuth path-1 (X-Node-ID in trust pool) can admit us
+		// (we are bridged into the peer's trust pool by P0-2 on first contact).
+		if node != nil {
+			req.Header.Set("X-Node-ID", node.NodeID())
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("POST to %s: %w", addr, err)
 			continue // try next address
@@ -289,6 +347,12 @@ func (g *GossipManager) processGossipResponse(msg *GossipMessage, peer NodeInfo)
 	peer.LastSeen = time.Now().UTC().Format(time.RFC3339)
 	fed.UpdateNodeInfo(peer)
 
+	// P1-1: merge PEX address hints so receivers can later reach nodes whose
+	// trust-pool endpoint is missing (address-reachability fallback).
+	if len(msg.KnownPeers) > 0 && fed != nil {
+		fed.MergePeerHints(msg.KnownPeers)
+	}
+
 	// If peer reports a newer trust pool version, fetch the full pool
 	ourPool := fed.GetTrustPool()
 	if msg.TrustPoolVersion > ourPool.Version {
@@ -307,8 +371,18 @@ func (g *GossipManager) fetchFullPoolFromPeer(peer NodeInfo) {
 	endpoints := peerEndpoints(peer)
 
 	for _, addr := range endpoints {
-		poolURL := fmt.Sprintf("%s/federation/pool", addr)
-		resp, err := client.Get(poolURL)
+		poolURL := fmt.Sprintf("%s/api/federation/pool", addr)
+		req, err := http.NewRequest(http.MethodGet, poolURL, nil)
+		if err != nil {
+			slog.Debug("failed to build pool request",
+				"peer_id", peer.NodeID, "addr", addr, "error", err)
+			continue
+		}
+		// R5: identify ourselves via X-Node-ID (see exchange for rationale).
+		if node != nil {
+			req.Header.Set("X-Node-ID", node.NodeID())
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			slog.Debug("failed to fetch pool from peer address",
 				"peer_id", peer.NodeID, "addr", addr, "error", err)
@@ -440,11 +514,13 @@ func handleFederationGossip(w http.ResponseWriter, r *http.Request) {
 
 	resp := GossipMessage{
 		Type:             "sync",
-		FromNode:        node.NodeID(),
+		FromNode:         node.NodeID(),
 		Timestamp:        time.Now().UTC().Format(time.RFC3339),
 		TrustPoolVersion: fed.GetTrustPool().Version,
 		ScoreDigest:      digest,
 	}
+	// P1-1: echo our PEX endpoint hints (set before signing).
+	resp.KnownPeers = buildKnownPeers()
 	resp.Signature = node.SignJSON(resp)
 
 	writeJSON(w, http.StatusOK, resp)
@@ -556,8 +632,18 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 
 			endpoints := peerEndpoints(p)
 			for _, addr := range endpoints {
-				announceURL := fmt.Sprintf("%s/federation/announce", addr)
-				resp, err := client.Post(announceURL, "application/json", bytes.NewReader(body))
+				announceURL := fmt.Sprintf("%s/api/federation/announce", addr)
+				req, err := http.NewRequest(http.MethodPost, announceURL, bytes.NewReader(body))
+				if err != nil {
+					continue // try next address
+				}
+				req.Header.Set("Content-Type", "application/json")
+				// R5: identify ourselves via X-Node-ID so the receiver's
+				// withFederationAuth admits us (we are in its trust pool via P0-2).
+				if node != nil {
+					req.Header.Set("X-Node-ID", node.NodeID())
+				}
+				resp, err := client.Do(req)
 				if err != nil {
 					continue // try next address
 				}
@@ -598,8 +684,9 @@ func cryptoShuffle(nodes []NodeInfo) {
 		if _, err := rand.Read(buf); err != nil {
 			break // fallback: leave remaining elements in place
 		}
-		j := int(uint64(buf[0])<<56|uint64(buf[1])<<48|uint64(buf[2])<<40|uint64(buf[3])<<32|
-			uint64(buf[4])<<24|uint64(buf[5])<<16|uint64(buf[6])<<8|uint64(buf[7])) % (i + 1)
+		val := uint64(buf[0])<<56 | uint64(buf[1])<<48 | uint64(buf[2])<<40 | uint64(buf[3])<<32 |
+			uint64(buf[4])<<24 | uint64(buf[5])<<16 | uint64(buf[6])<<8 | uint64(buf[7])
+		j := int(val % uint64(i+1))
 		nodes[i], nodes[j] = nodes[j], nodes[i]
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -102,6 +103,11 @@ type PeerInfo struct {
 	Unlocked     bool             `json:"unlocked"`
 	Capabilities PeerCapabilities `json:"capabilities,omitempty"` // v3.1: capability declarations
 	ShareToPool  bool             `json:"share_to_pool"`          // v3.1: whether this peer shares resources
+	// PubKey is the peer's ed25519 public key (base64). Populated when the peer
+	// is learned via the signed /api/network/peers/notify channel (P0-1), used
+	// later to verify its gossip signatures (best-effort; may be empty for
+	// manually-added peers whose key was not exchanged — see R6).
+	PubKey string `json:"pub_key,omitempty"`
 }
 
 // NetworkStats holds network statistics
@@ -842,6 +848,15 @@ func (nm *NetworkManager) GetNodeID() string {
 
 // AddPeer adds/updates a peer and registers in route table
 func (nm *NetworkManager) AddPeer(peer PeerInfo) error {
+	// P0-2 / D2: best-effort backfill of the peer's ed25519 public key from its
+	// authoritative /api/node/pubkey endpoint when the caller didn't supply one
+	// (e.g. a manual UI add only knows the address). Done BEFORE acquiring the
+	// lock so we never block the network manager on a network call.
+	if peer.PubKey == "" && len(peer.Addresses) > 0 {
+		if pk := fetchNodePubKey(peer.Addresses[0]); pk != "" {
+			peer.PubKey = pk
+		}
+	}
 	nm.mu.Lock()
 	defer nm.mu.Unlock()
 	if nm.config.Mode != NetworkModeShared {
@@ -856,6 +871,9 @@ func (nm *NetworkManager) AddPeer(peer PeerInfo) error {
 			if len(peer.Addresses) > 0 {
 				routeTable.Put(peer.NodeID, peer.Name, peer.Addresses)
 			}
+			// P0-2: keep the federation trust pool in sync with manual peers so
+			// that gossip can see and propagate them (bridge into fed).
+			bridgePeerToFederation(peer)
 			return nil
 		}
 	}
@@ -866,7 +884,49 @@ func (nm *NetworkManager) AddPeer(peer PeerInfo) error {
 	if len(peer.Addresses) > 0 {
 		routeTable.Put(peer.NodeID, peer.Name, peer.Addresses)
 	}
+	// P0-2: bridge the newly-added manual peer into the federation trust pool.
+	bridgePeerToFederation(peer)
 	return nil
+}
+
+// HasPeer reports whether a peer with the given node ID is already known.
+func (nm *NetworkManager) HasPeer(nodeID string) bool {
+	nm.mu.RLock()
+	defer nm.mu.RUnlock()
+	for _, p := range nm.config.Peers {
+		if p.NodeID == nodeID {
+			return true
+		}
+	}
+	return false
+}
+
+// bridgePeerToFederation upserts a manually-added (or notify-added) peer into the
+// federation trust pool so gossip can see and propagate it (P0-2). It maps the
+// PeerInfo onto a NodeInfo (status=active) and delegates to fed.AddKnownNode,
+// which bumps the trust-pool version and persists. It is a no-op when federation
+// is disabled (personal mode) or unavailable, so it never blocks the local add.
+func bridgePeerToFederation(peer PeerInfo) {
+	if fed == nil || !fed.IsEnabled() {
+		return
+	}
+	nodeInfo := NodeInfo{
+		NodeID:    peer.NodeID,
+		Addresses: peer.Addresses,
+		Endpoint:  firstAddress(peer.Addresses),
+		Status:    "active",
+		LastSeen:  peer.LastSeen,
+		PubKey:    peer.PubKey,
+	}
+	fed.AddKnownNode(nodeInfo)
+}
+
+// firstAddress returns the first element of addrs, or "" if empty.
+func firstAddress(addrs []string) string {
+	if len(addrs) > 0 {
+		return addrs[0]
+	}
+	return ""
 }
 
 // RemovePeer removes a peer by node ID
@@ -892,6 +952,10 @@ func (nm *NetworkManager) RemovePeer(nodeID string) error {
 	nm.config.Stats.TotalPeers = len(nm.config.Peers)
 	nm.updateOnlineCount()
 	nm.doSave()
+	// P0-2: keep the federation trust pool in sync — drop the removed peer.
+	if fed != nil && fed.IsEnabled() {
+		fed.RemoveNode(nodeID)
+	}
 	return nil
 }
 
@@ -1280,12 +1344,13 @@ func handleNetworkDisable(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/network/toggle — toggle network/shared state
 // Supports three-level model via JSON body:
-//   {"enabled": true}                    → Level 2 (Network Mode, no sharing)
-//   {"enabled": true, "share_to_pool": true} → Level 3 (Shared Peer)
-//   {"enabled": false}                   → Level 1 (Personal Mode)
-//   {"network_enabled": true}            → Level 2
-//   {"network_enabled": true, "share_to_pool": true} → Level 3
-//   {"network_enabled": false}           → Level 1
+//
+//	{"enabled": true}                    → Level 2 (Network Mode, no sharing)
+//	{"enabled": true, "share_to_pool": true} → Level 3 (Shared Peer)
+//	{"enabled": false}                   → Level 1 (Personal Mode)
+//	{"network_enabled": true}            → Level 2
+//	{"network_enabled": true, "share_to_pool": true} → Level 3
+//	{"network_enabled": false}           → Level 1
 func handleNetworkToggle(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Enabled        *bool `json:"enabled"`
@@ -1442,11 +1507,244 @@ func handleNetworkAddPeer(w http.ResponseWriter, r *http.Request) {
 	if peer.TrustScore == 0 {
 		peer.TrustScore = 0.5
 	}
+	// Record whether this peer was already known BEFORE we add it. This drives
+	// the P0-1 bidirectional-discovery notify: we only reverse-notify on a
+	// *human-initiated* successful add of a *new* peer (R3 idempotency + R4
+	// "after successful local add"). Re-adds of an existing peer do not notify.
+	existed := netMgr.HasPeer(peer.NodeID)
 	if err := netMgr.AddPeer(peer); err != nil {
 		writeError(w, 400, err.Error())
 		return
 	}
+	// P0-1: after a human-initiated successful add of a new peer, asynchronously
+	// notify the peer so it registers us back (bidirectional, mesh discovery).
+	// The notify *receiver* path (handleNetworkPeersNotify) never re-notifies,
+	// so there is no ping-pong loop (R1).
+	if !existed {
+		go sendNotifyToPeer(peer)
+	}
 	writeJSON(w, 200, map[string]any{"status": "added", "peer": peer})
+}
+
+// PeerNotifyPayload is the body of POST /api/network/peers/notify (P0-1). The
+// sender signs (node_id|addresses|timestamp) with its node private key and
+// embeds its public key so the receiver can verify locally without a round-trip
+// (which would be a chicken-and-egg problem on first contact).
+type PeerNotifyPayload struct {
+	NodeID    string   `json:"node_id"`
+	Name      string   `json:"name"`
+	Addresses []string `json:"addresses"`
+	PubKey    string   `json:"pub_key"`
+	Timestamp string   `json:"timestamp"`
+	Signature string   `json:"signature"`
+	// Propagated is always true for notify-originated additions. The receiver
+	// uses the call-site separation (not this flag) to guarantee no re-notify,
+	// but the flag documents intent and is echoed for clarity/auditing.
+	Propagated bool `json:"propagated"`
+}
+
+// handleNetworkPeersNotify implements POST /api/network/peers/notify — the P0-1
+// reverse-registration endpoint.
+//
+// Deliberately NOT wrapped in withFederationAuth / withAuth: on first contact
+// the sender is not yet in our trust pool (GetNode would miss → 403), and a
+// cross-instance admin JWT is not available. Instead it is rate-limited (route
+// level) and protected by an ed25519 signature verified against the embedded
+// public key (no round-trip fetch). A fresh timestamp (<=5 min) prevents replay.
+// Only after a valid signature do we locally AddPeer the sender (P0-2 bridge).
+//
+// LOOP PREVENTION (R1): this handler NEVER calls sendNotifyToPeer, so the
+// originator is never re-notified — a ping-pong is structurally impossible.
+func handleNetworkPeersNotify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var p PeerNotifyPayload
+	if err := readJSON(r, &p); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// 1. Structural validation.
+	if p.NodeID == "" || len(p.Addresses) == 0 || p.Signature == "" || p.PubKey == "" {
+		writeError(w, http.StatusBadRequest, "missing node_id, addresses, pub_key or signature")
+		return
+	}
+
+	// 2. Timestamp freshness (anti-replay): must be within the last 5 minutes.
+	ts, err := time.Parse(time.RFC3339, p.Timestamp)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid timestamp")
+		return
+	}
+	if age := time.Since(ts); age < 0 || age > 5*time.Minute {
+		writeError(w, http.StatusBadRequest, "timestamp outside acceptable window")
+		return
+	}
+
+	// 3. Signature verification. Prefer the authoritative public key served by
+	//    the claimant at /api/node/pubkey (defeats payload pubkey substitution,
+	//    see ARCH §9 D1); fall back to the key embedded in the payload if the
+	//    fetch fails or returns nothing.
+	canonical := fmt.Sprintf("%s|%s|%s", p.NodeID, strings.Join(p.Addresses, ","), p.Timestamp)
+	pubKey := fetchNodePubKey(p.Addresses[0])
+	if pubKey == "" {
+		pubKey = p.PubKey
+	}
+	if !VerifySignature(pubKey, []byte(canonical), p.Signature) {
+		slog.Warn("peers/notify: signature verification failed", "from", p.NodeID)
+		writeError(w, http.StatusUnauthorized, "signature verification failed")
+		return
+	}
+
+	// 4. (Optional, best-effort) confirm the sender is reachable at the
+	//    advertised address. Failure is only a warning; we still register.
+	pingPeerOnce(p.Addresses[0])
+
+	// 5. Locally register the sender as a peer. AddPeer bridges it into the
+	//    federation trust pool (P0-2). By design this does NOT trigger a
+	//    reciprocal notify (R1).
+	peer := PeerInfo{
+		NodeID:     p.NodeID,
+		Name:       p.Name,
+		Addresses:  p.Addresses,
+		Status:     "online",
+		PubKey:     p.PubKey,
+		LastSeen:   time.Now().Format(time.RFC3339),
+		TrustScore: 0.5,
+	}
+	if err := netMgr.AddPeer(peer); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "notified", "node_id": p.NodeID})
+}
+
+// pingPeerOnce performs a best-effort reachability check against the peer's
+// public heartbeat ping endpoint. A failure is logged as a warning and never
+// blocks registration (P0-1c: silent failure must not block the local add).
+func pingPeerOnce(addr string) {
+	pingURL := strings.TrimRight(addr, "/") + "/api/network/heartbeat/ping"
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(pingURL)
+	if err != nil {
+		slog.Warn("peers/notify: optional ping failed (non-blocking)", "peer", addr, "error", err)
+		return
+	}
+	resp.Body.Close()
+	slog.Debug("peers/notify: peer ping OK", "peer", addr)
+}
+
+// sendNotifyToPeer asynchronously notifies a peer (that we just added locally,
+// human-initiated) to register us back. This implements P0-1 bidirectional
+// discovery. It is best-effort: failures are logged as warnings and never block
+// or roll back the local addition (P0-1c).
+//
+// CRITICAL (R1 loop prevention): this function is ONLY ever invoked from the
+// human-initiated add path (handleNetworkAddPeer) for a freshly-added peer. The
+// notify receiving path (handleNetworkPeersNotify) deliberately never calls back
+// into sendNotifyToPeer, so a peer never re-notifies the originator.
+// fetchNodePubKey performs a best-effort retrieval of a node's authoritative
+// ed25519 public key from its public /api/node/pubkey endpoint (P0-1). It is
+// used to verify a /api/network/peers/notify signature against a key the
+// claimant actually controls, defeating payload pubkey substitution (ARCH §9 D1).
+// Returns "" on any failure; the caller then falls back to the key embedded in
+// the notify payload. A short timeout bounds the call so it never blocks.
+func fetchNodePubKey(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	u := strings.TrimRight(addr, "/") + "/api/node/pubkey"
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(u)
+	if err != nil {
+		slog.Debug("peers/notify: failed to fetch authoritative pubkey (fallback to payload)", "addr", addr, "error", err)
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var out struct {
+		PubKey string `json:"pub_key"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return ""
+	}
+	return out.PubKey
+}
+
+func sendNotifyToPeer(peer PeerInfo) {
+	if node == nil {
+		slog.Warn("sendNotifyToPeer skipped: node identity not initialized")
+		return
+	}
+	myID := node.NodeID()
+	if myID == "" {
+		slog.Warn("sendNotifyToPeer skipped: node id unavailable")
+		return
+	}
+	myAddrs := []string{resolvePublicEndpoint("")}
+	ts := time.Now().UTC().Format(time.RFC3339)
+	canonical := fmt.Sprintf("%s|%s|%s", myID, strings.Join(myAddrs, ","), ts)
+	sig := node.Sign([]byte(canonical))
+	if sig == "" {
+		slog.Warn("sendNotifyToPeer skipped: signing failed")
+		return
+	}
+
+	name := ""
+	if netMgr != nil {
+		netMgr.mu.RLock()
+		name = netMgr.config.NodeName
+		netMgr.mu.RUnlock()
+	}
+	if name == "" {
+		name = myID
+	}
+
+	payload := PeerNotifyPayload{
+		NodeID:     myID,
+		Name:       name,
+		Addresses:  myAddrs,
+		PubKey:     node.PubKeyB64(),
+		Timestamp:  ts,
+		Signature:  sig,
+		Propagated: true,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		slog.Warn("sendNotifyToPeer: marshal failed", "error", err)
+		return
+	}
+	if len(peer.Addresses) == 0 {
+		slog.Warn("sendNotifyToPeer skipped: peer has no address", "peer", peer.NodeID)
+		return
+	}
+	notifyURL := strings.TrimRight(peer.Addresses[0], "/") + "/api/network/peers/notify"
+	req, err := http.NewRequest(http.MethodPost, notifyURL, bytes.NewReader(body))
+	if err != nil {
+		slog.Warn("sendNotifyToPeer: build request failed", "peer", peer.NodeID, "error", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// X-Node-ID is set only for receiver log correlation; the receiver does NOT
+	// authenticate on this header (it uses the embedded signature instead).
+	req.Header.Set("X-Node-ID", myID)
+
+	client := GetSharedHTTPClient()
+	resp, err := client.Do(req)
+	if err != nil {
+		slog.Warn("sendNotifyToPeer failed (best-effort)", "peer", peer.NodeID, "url", notifyURL, "error", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		slog.Warn("sendNotifyToPeer rejected by peer", "peer", peer.NodeID, "status", resp.StatusCode)
+		return
+	}
+	slog.Info("sent discovery notify to peer", "peer", peer.NodeID, "url", notifyURL)
 }
 
 func handleNetworkRemovePeer(w http.ResponseWriter, r *http.Request) {

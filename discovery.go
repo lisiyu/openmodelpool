@@ -6,8 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -87,8 +87,19 @@ func (f *FederationManager) fetchFromPeers() {
 			continue
 		}
 
-		url := fmt.Sprintf("%s/federation/pool", peer.Endpoint)
-		resp, err := client.Get(url)
+		url := fmt.Sprintf("%s/api/federation/pool", peer.Endpoint)
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			slog.Debug("failed to build pool request",
+				"peer_id", peer.NodeID, "error", err)
+			continue
+		}
+		// R5: identify ourselves via X-Node-ID so the peer's withFederationAuth
+		// admits us (we are in its trust pool via P0-2 on first contact).
+		if node != nil {
+			req.Header.Set("X-Node-ID", node.NodeID())
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			slog.Debug("failed to fetch pool from peer",
 				"peer_id", peer.NodeID, "error", err)
@@ -144,8 +155,17 @@ func (f *FederationManager) fetchFromSeedNodes() (*TrustPool, error) {
 
 	client := GetSharedHTTPClient()
 	for _, bootstrapURL := range bootstrapNodes {
-		poolURL := fmt.Sprintf("%s/federation/pool", strings.TrimRight(bootstrapURL, "/"))
-		resp, err := client.Get(poolURL)
+		poolURL := fmt.Sprintf("%s/api/federation/pool", strings.TrimRight(bootstrapURL, "/"))
+		req, err := http.NewRequest(http.MethodGet, poolURL, nil)
+		if err != nil {
+			slog.Debug("seed node request build failed", "url", bootstrapURL, "error", err)
+			continue
+		}
+		// R5: identify ourselves via X-Node-ID (see fetchFromPeers for rationale).
+		if node != nil {
+			req.Header.Set("X-Node-ID", node.NodeID())
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			slog.Debug("seed node unreachable", "url", bootstrapURL, "error", err)
 			continue
