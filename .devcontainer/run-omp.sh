@@ -34,18 +34,18 @@ OMP_PID=$!
 
 # 3) 兜底：若 8000 未被 openmodelpool 占用，起一个静态服务（保证端口可见、可探活）
 # 先等 openmodelpool 尝试绑定 :8000，避免 fallback 抢端口
-echo "$(date) [run-omp] waiting 10s before fallback patrol ..." >> "$LOG"
-sleep 10
-
-mkdir -p "$FALLBACK_DIR"
-echo "<html><body><h1>openmodelpool codespace</h1><p>fallback health page</p></body></html>" > "$FALLBACK_DIR/index.html"
-while true; do
-  if ! (ss -ltn 2>/dev/null | grep -q ':8000 '); then
-    ( cd "$FALLBACK_DIR" && python3 -m http.server 8000 --bind 0.0.0.0 >> "$LOG" 2>&1 & )
-    echo "$(date) [run-omp] fallback static server ensured on :8000" >> "$LOG"
-  fi
-  sleep 5
-done &
+# echo "$(date) [run-omp] waiting 10s before fallback patrol ..." >> "$LOG"
+# sleep 10
+# 
+# mkdir -p "$FALLBACK_DIR"
+# echo "<html><body><h1>openmodelpool codespace</h1><p>fallback health page</p></body></html>" > "$FALLBACK_DIR/index.html"
+# while true; do
+#   if ! (ss -ltn 2>/dev/null | grep -q ':8000 '); then
+#     ( cd "$FALLBACK_DIR" && python3 -m http.server 8000 --bind 0.0.0.0 >> "$LOG" 2>&1 & )
+#     echo "$(date) [run-omp] fallback static server ensured on :8000" >> "$LOG"
+#   fi
+#   sleep 5
+# done &
 FB_PID=$!
 
 # 4) Cloudflare Tunnel 看守：codespace 重启后自动恢复 openmodelpool.io 域名绑定
