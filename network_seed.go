@@ -125,7 +125,7 @@ func handleSeedPeers(w http.ResponseWriter, r *http.Request) {
 			NodeName:  cfg.Get("node_name", "OpenModelPool"),
 			Addresses: getSelfAddresses(),
 			Status:    "online",
-			IsGateway: true,
+			IsGateway: cfg.Get("is_gateway", "false") == "true",
 			IsSeed:    true,
 			Version:   AppVersion,
 			LastSeen:  time.Now().Unix(),

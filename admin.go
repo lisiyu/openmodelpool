@@ -375,6 +375,41 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================
+// Gateway mark handlers
+// ============================================================
+
+// handleGetGateway returns whether this node is marked as a Gateway
+// (network entry node). GET /api/gateway
+func handleGetGateway(w http.ResponseWriter, r *http.Request) {
+	isGateway := cfg.Get("is_gateway", "false") == "true"
+	writeJSON(w, 200, map[string]any{"is_gateway": isGateway})
+}
+
+// handleSetGateway marks or unmarks this node as a Gateway.
+// POST /api/gateway  body: {"is_gateway": bool}
+func handleSetGateway(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IsGateway bool `json:"is_gateway"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		slog.Error("handleSetGateway: readJSON failed", "error", err)
+		writeError(w, 400, "invalid JSON body: "+err.Error())
+		return
+	}
+	if body.IsGateway {
+		cfg.Set("is_gateway", "true")
+	} else {
+		cfg.Set("is_gateway", "false")
+	}
+	// Persist immediately so data/config.json reflects the mark without
+	// waiting for the debounced background writer.
+	cfg.saveSync()
+	isGateway := cfg.Get("is_gateway", "false") == "true"
+	slog.Info("gateway mark updated", "is_gateway", isGateway)
+	writeJSON(w, 200, map[string]any{"success": true, "is_gateway": isGateway})
+}
+
+// ============================================================
 // Provider handlers
 // ============================================================
 

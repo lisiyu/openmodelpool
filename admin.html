@@ -476,6 +476,89 @@ select.form-input{appearance:none;cursor:pointer}
       🎫 Guest Key 管理已移至下方「分享中心」
     </div>
   </div>
+  <!-- 🌐 节点类型 / Gateway 标记（P0：将本节点标记为网络入口节点） -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🌐</span> 节点类型 · Gateway 标记</div>
+    <div class="section-note">将本节点标记为 <b>Gateway（网络入口节点）</b>：其他节点可将其选为网络入口。Seed 节点默认即为 Gateway（设计约束，仅作展示说明，不强制）。</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+      <div style="font-size:13px;font-weight:500">🌐 标记为 Gateway（网络入口节点）</div>
+      <div class="toggle" id="gatewayToggle" onclick="toggleGateway()"></div>
+    </div>
+    <div id="gatewayStatus" style="font-size:12px;color:var(--text-muted);margin-top:10px">检测中...</div>
+  </div>
+  <script>
+  // ============================================================
+  // Gateway 标记（admin.html 内联模块，遵循 admin-update.js 的自初始化约定）
+  // ============================================================
+  // _gatewaySaving 防止重复点击导致重复上报
+  var _gatewaySaving = false;
+
+  async function loadGateway() {
+    var toggleEl = document.getElementById('gatewayToggle');
+    var statusEl = document.getElementById('gatewayStatus');
+    if (!toggleEl || !statusEl) return;
+    try {
+      var r = await authFetch('/api/gateway');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var d = await r.json();
+      setGatewayUI(!!(d && d.is_gateway));
+    } catch (e) {
+      statusEl.textContent = '状态加载失败：' + (e && e.message ? e.message : e);
+      statusEl.style.color = 'var(--error)';
+    }
+  }
+
+  // setGatewayUI 根据 isGateway 设置开关高亮与状态文字
+  function setGatewayUI(isGateway) {
+    var toggleEl = document.getElementById('gatewayToggle');
+    var statusEl = document.getElementById('gatewayStatus');
+    if (!toggleEl || !statusEl) return;
+    if (isGateway) {
+      toggleEl.classList.add('active');
+      statusEl.textContent = '本节点已标记为 Gateway（网络入口，可被其他节点选为入口）';
+      statusEl.style.color = 'var(--success)';
+    } else {
+      toggleEl.classList.remove('active');
+      statusEl.textContent = '本节点为普通节点';
+      statusEl.style.color = 'var(--text-muted)';
+    }
+  }
+
+  async function toggleGateway() {
+    var toggleEl = document.getElementById('gatewayToggle');
+    var statusEl = document.getElementById('gatewayStatus');
+    if (!toggleEl || !statusEl) return;
+    if (_gatewaySaving) return;
+    var next = !toggleEl.classList.contains('active');
+    setGatewayUI(next); // 乐观更新 UI
+    _gatewaySaving = true;
+    statusEl.textContent = next ? '正在标记为 Gateway...' : '正在取消 Gateway 标记...';
+    try {
+      var r = await authFetch('/api/gateway', {
+        method: 'POST',
+        body: JSON.stringify({ is_gateway: next })
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var d = await r.json();
+      setGatewayUI(!!(d && d.is_gateway));
+      toast(next ? '✅ 已标记为 Gateway' : '✅ 已取消 Gateway 标记', 'success');
+    } catch (e) {
+      setGatewayUI(!next); // 回滚
+      statusEl.textContent = '操作失败：' + (e && e.message ? e.message : e);
+      statusEl.style.color = 'var(--error)';
+      toast('操作失败：' + (e && e.message ? e.message : e), 'error');
+    } finally {
+      _gatewaySaving = false;
+    }
+  }
+
+  // 自初始化（与 admin-update.js 约定一致：DOMContentLoaded 触发首次加载）
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadGateway);
+  } else {
+    loadGateway();
+  }
+  </script>
   <!-- 使用量 & 动态路由 -->
   <div class="card" id="usageCard">
     <div class="card-title" style="justify-content:space-between">
