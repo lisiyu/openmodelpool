@@ -169,17 +169,56 @@ func initRouteTable() *RouteTable {
 	return &RouteTable{entries: make(map[string]*RouteEntry)}
 }
 
+// initNodeRegistry initializes the package-level on-disk node registry and
+// restores any previously persisted peers into the in-memory route table. This
+// gives a cold start known nodes before gossip or GitHub bootstrap completes,
+// improving restart resilience. It is safe to call once at startup.
+func initNodeRegistry(dataDir string) {
+	nodeRegistry = NewNodeRegistry(filepath.Join(dataDir, ".nodes"))
+	loaded, err := nodeRegistry.LoadAll()
+	if err != nil {
+		slog.Warn("failed to load persisted node registry", "error", err)
+		return
+	}
+	if len(loaded) == 0 {
+		return
+	}
+	for _, e := range loaded {
+		routeTable.UpsertEntry(e)
+	}
+	slog.Info("restored known nodes from local registry", "count", len(loaded))
+}
+
 // Put adds or updates a route entry
 func (rt *RouteTable) Put(nodeID, nodeName string, addresses []string) {
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	rt.entries[nodeID] = &RouteEntry{
+	e := &RouteEntry{
 		NodeID:    nodeID,
 		NodeName:  nodeName,
 		Addresses: addresses,
 		Status:    "online",
 		UpdatedAt: time.Now(),
 	}
+	rt.entries[nodeID] = e
+	rt.mu.Unlock()
+	// Mirror to the on-disk registry. No-op until nodeRegistry is initialized
+	// (e.g. in unit tests it stays nil and routing behavior is untouched).
+	if nodeRegistry != nil {
+		nodeRegistry.SaveNode(e)
+	}
+}
+
+// UpsertEntry stores a fully-formed RouteEntry without deriving fresh fields. It
+// is used during cold-start restore to preserve rich metadata (models, latency,
+// last-seen) that Put() would otherwise discard. It does NOT persist because the
+// entry already originates from the on-disk registry.
+func (rt *RouteTable) UpsertEntry(e *RouteEntry) {
+	if e == nil {
+		return
+	}
+	rt.mu.Lock()
+	rt.entries[e.NodeID] = e
+	rt.mu.Unlock()
 }
 
 // Get looks up a route entry by NodeID
@@ -205,8 +244,11 @@ func (rt *RouteTable) Get(nodeID string) *RouteEntry {
 // Remove deletes a route entry
 func (rt *RouteTable) Remove(nodeID string) {
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
 	delete(rt.entries, nodeID)
+	rt.mu.Unlock()
+	if nodeRegistry != nil {
+		nodeRegistry.RemoveNode(nodeID)
+	}
 }
 
 // GetAll returns all non-expired entries
@@ -231,13 +273,22 @@ func (rt *RouteTable) GetAll() []*RouteEntry {
 // PurgeExpired removes stale entries
 func (rt *RouteTable) PurgeExpired() int {
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
 	now := time.Now()
 	purged := 0
+	var removed []string
 	for id, e := range rt.entries {
 		if now.Sub(e.UpdatedAt) > routeTTL {
 			delete(rt.entries, id)
 			purged++
+			removed = append(removed, id)
+		}
+	}
+	rt.mu.Unlock()
+	// Keep the on-disk registry in sync with the in-memory purge so expired
+	// nodes do not reappear on the next cold start.
+	if nodeRegistry != nil {
+		for _, id := range removed {
+			nodeRegistry.RemoveNode(id)
 		}
 	}
 	return purged
@@ -356,6 +407,9 @@ func initNetworkManager(dataDir string) {
 	}
 	netMgr.load()
 	routeTable = initRouteTable()
+	// Restore known peers from the on-disk registry so a cold start has nodes
+	// before gossip / GitHub bootstrap completes (pure-incremental extension).
+	initNodeRegistry(dataDir)
 
 	// Re-register self in route table if we have addresses
 	if netMgr.config.NodeID != "" && len(netMgr.config.Addresses) > 0 {
@@ -868,10 +922,13 @@ func (nm *NetworkManager) AddPeer(peer PeerInfo) error {
 			peer.Unlocked = p.Unlocked
 			nm.config.Peers[i] = peer
 			nm.doSave()
-			if len(peer.Addresses) > 0 {
-				routeTable.Put(peer.NodeID, peer.Name, peer.Addresses)
+		if len(peer.Addresses) > 0 {
+			routeTable.Put(peer.NodeID, peer.Name, peer.Addresses)
+			if nodeRegistry != nil {
+				nodeRegistry.SavePeer(peer)
 			}
-			// P0-2: keep the federation trust pool in sync with manual peers so
+		}
+		// P0-2: keep the federation trust pool in sync with manual peers so
 			// that gossip can see and propagate them (bridge into fed).
 			bridgePeerToFederation(peer)
 			return nil
@@ -883,6 +940,9 @@ func (nm *NetworkManager) AddPeer(peer PeerInfo) error {
 	nm.doSave()
 	if len(peer.Addresses) > 0 {
 		routeTable.Put(peer.NodeID, peer.Name, peer.Addresses)
+		if nodeRegistry != nil {
+			nodeRegistry.SavePeer(peer)
+		}
 	}
 	// P0-2: bridge the newly-added manual peer into the federation trust pool.
 	bridgePeerToFederation(peer)
@@ -955,6 +1015,10 @@ func (nm *NetworkManager) RemovePeer(nodeID string) error {
 	// P0-2: keep the federation trust pool in sync — drop the removed peer.
 	if fed != nil && fed.IsEnabled() {
 		fed.RemoveNode(nodeID)
+	}
+	// Drop the removed peer from the on-disk registry as well.
+	if nodeRegistry != nil {
+		nodeRegistry.RemoveNode(nodeID)
 	}
 	return nil
 }

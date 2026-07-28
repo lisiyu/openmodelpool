@@ -6,6 +6,8 @@ modelmux.bak
 dist/
 # Data (sensitive)
 data/
+# Node registry (per-node JSON cache, local only)
+.nodes/
 # Xray
 xray/
 # Uploaded images

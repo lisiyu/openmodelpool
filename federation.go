@@ -235,12 +235,20 @@ func (f *FederationManager) UpdateNodeInfo(info NodeInfo) {
 		if f.trustPool.Nodes[i].NodeID == info.NodeID {
 			f.trustPool.Nodes[i] = info
 			slog.Debug("trust pool node refreshed via gossip", "node_id", info.NodeID)
+			// Mirror the learned node to the on-disk registry so a cold start
+			// can recover known peers without waiting for GitHub bootstrap.
+			if nodeRegistry != nil {
+				nodeRegistry.SaveNode(routeEntryFromNodeInfo(info))
+			}
 			return
 		}
 	}
 	// Otherwise store / update in the local peers map.
 	f.localPeers[info.NodeID] = &info
 	slog.Debug("gossip peer recorded", "node_id", info.NodeID, "status", info.Status)
+	if nodeRegistry != nil {
+		nodeRegistry.SaveNode(routeEntryFromNodeInfo(info))
+	}
 }
 
 // RemoveNode removes a node from both the trust pool and local peers.
