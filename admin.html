@@ -863,6 +863,121 @@ select.form-input{appearance:none;cursor:pointer}
     <div id="versionUpdateBody"><div style="color:var(--text-muted);font-size:13px">正在加载…</div></div>
     <div id="updateStatusArea" style="margin-top:14px"></div>
   </div>
+  <!-- 🌐 域名绑定引导（P0：展示当前域名 + 隧道/健康检查 + 绑定步骤引导） -->
+  <div id="domainBindingCard" style="margin-top:16px;padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:14px;font-weight:600">🌐 域名绑定引导</div>
+      <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="refreshDomainBinding()">🔄 刷新状态</button>
+    </div>
+    <div id="domainBindingBody"><div style="color:var(--text-muted);font-size:13px">正在加载…</div></div>
+
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;color:var(--text-secondary);font-size:13px;user-select:none">▸ 如何绑定自定义域名（点击展开）</summary>
+      <div style="margin-top:10px;font-size:13px;color:var(--text-secondary);line-height:1.75">
+        <p style="margin:0 0 8px"><b>① Cloudflared 命名隧道（推荐，codespace / 云主机场景）</b></p>
+        <ol style="margin:0 0 10px;padding-left:20px">
+          <li>安装 cloudflared（如 <code>$HOME/.local/bin/cloudflared</code>）。</li>
+          <li>登录并创建命名隧道：<code>cloudflared tunnel login</code> → <code>cloudflared tunnel create openmodelpool</code>。</li>
+          <li>配置 Ingress，将流量指向本机服务：管理页 <code>http://localhost:8000</code>、网关 <code>http://localhost:8001</code>。</li>
+          <li>添加 DNS：<code>cloudflared tunnel route dns &lt;隧道名&gt; &lt;你的域名&gt;</code>（自动生成 CNAME 指向 <code>*.cfargotunnel.com</code>）。</li>
+          <li>用连接器 token 启动：<code>cloudflared tunnel run --token &lt;token&gt;</code>。</li>
+          <li>若由 supervisor 托管，重启 <code>run-omp.sh</code> 使隧道随实例自启。</li>
+        </ol>
+        <p style="margin:0 0 8px"><b>② 反向代理（Nginx / Caddy）→ :8000</b></p>
+        <p style="margin:0 0 10px">将你的域名通过 Nginx / Caddy 反代到本机 <code>127.0.0.1:8000</code>（管理页）/ <code>:8001</code>（网关），并配置 SSL 证书即可。</p>
+        <p style="margin:0 0 8px"><b>③ DNS 解析说明</b></p>
+        <p style="margin:0">若用 Cloudflare，DNS 记录建议设为 <b>CNAME + 代理（Proxied）</b> 以启用 CDN 与防护；修改 DNS 后通常 1–5 分钟生效。本页仅作引导，不自动调用 Cloudflare API 或修改 DNS。</p>
+      </div>
+    </details>
+  </div>
+  <script>
+  // ============================================================
+  // 域名绑定引导（admin.html 内联模块，遵循 admin-update.js 的自初始化约定）
+  // ============================================================
+  function renderDomainBadge(text, kind) {
+    var map = {
+      ok:      { bg: 'rgba(34,197,94,.14)',   color: '#22c55e' },
+      warn:    { bg: 'rgba(234,179,8,.14)',   color: '#eab308' },
+      error:   { bg: 'rgba(239,68,68,.14)',   color: '#ef4444' },
+      neutral: { bg: 'rgba(148,163,184,.16)', color: '#94a3b8' }
+    };
+    var s = map[kind] || map.neutral;
+    return '<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;background:' + s.bg + ';color:' + s.color + ';border:1px solid ' + s.color + '33">' + escapeHtml(text) + '</span>';
+  }
+
+  async function loadDomainBinding() {
+    var el = document.getElementById('domainBindingBody');
+    if (!el) return;
+    try {
+      var r = await authFetch('/api/domain/binding-status');
+      var d = await r.json();
+      renderDomainBinding(el, d);
+    } catch (e) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px">状态加载失败：' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+    }
+  }
+
+  function refreshDomainBinding() {
+    var el = document.getElementById('domainBindingBody');
+    if (el) el.innerHTML = '<div style="color:var(--text-muted);font-size:13px">正在刷新…</div>';
+    loadDomainBinding();
+  }
+
+  function renderDomainBinding(el, d) {
+    var domain = d.domain || '';
+    var domainText = domain ? escapeHtml(domain) : '未绑定';
+
+    // 隧道状态徽章
+    var tunnelBadge;
+    if (d.tunnel_mode === 'manual') {
+      tunnelBadge = renderDomainBadge('手动绑定（外部隧道/反代）', 'neutral');
+    } else if (d.tunnel_running) {
+      tunnelBadge = renderDomainBadge('运行中', 'ok');
+    } else {
+      tunnelBadge = renderDomainBadge('未运行', 'error');
+    }
+
+    // 健康检查徽章
+    var healthBadge;
+    if (!domain) {
+      healthBadge = renderDomainBadge('未绑定域名', 'neutral');
+    } else if (d.http_reachable === null || d.http_reachable === undefined) {
+      healthBadge = renderDomainBadge('未检测', 'neutral');
+    } else if (d.http_reachable) {
+      healthBadge = renderDomainBadge('可达 ✅', 'ok');
+    } else {
+      healthBadge = renderDomainBadge('不可达 ❌', 'error');
+    }
+
+    var html = '';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">当前域名</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + domainText + '</div></div>';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">隧道状态</div><div style="margin-top:4px">' + tunnelBadge + '</div></div>';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">健康检查</div><div style="margin-top:4px">' + healthBadge + '</div></div>';
+    html += '</div>';
+
+    if (domain && d.http_reachable === false && d.reach_error) {
+      html += '<div style="margin-top:10px;font-size:12px;color:#ef4444">探测失败：' + escapeHtml(d.reach_error) + '</div>';
+    }
+
+    html += '<div style="margin-top:10px;font-size:12px;color:var(--text-muted)">版本 ' + escapeHtml(d.version || '-') + (d.public_url ? ' · 公网地址 ' + escapeHtml(d.public_url) : '') + '</div>';
+
+    if (domain) {
+      html += '<div style="margin-top:8px;font-size:12px;color:#22c55e">✅ 您正通过自定义域名 ' + escapeHtml(domain) + ' 访问</div>';
+    } else {
+      html += '<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">⚪ 尚未绑定自定义域名，按下方步骤绑定</div>';
+    }
+
+    el.innerHTML = html;
+  }
+
+  // 自初始化（与 admin-update.js 约定一致：DOMContentLoaded 触发首次加载）
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadDomainBinding);
+  } else {
+    loadDomainBinding();
+  }
+  </script>
   <!-- 共享网络 · 身份备份向导（切片② 四步状态机 S1→S2→S3→S4） -->
   <div class="modal-overlay" id="networkDisclaimerModal">
     <div class="modal" style="max-width:680px">

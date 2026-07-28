@@ -969,3 +969,160 @@ func isValidDomain(d string) bool {
 	}
 	return true
 }
+
+// ============================================================
+// Domain Binding Guide — read-only status endpoint
+// ============================================================
+
+// resolveBoundDomain derives the externally accessible domain name this OMP
+// instance is (or should be) reachable at. It returns the bare hostname
+// (no scheme/port), a flag indicating whether a domain was explicitly bound,
+// and the resolved public base URL (with scheme).
+//
+// Resolution priority (most accurate first):
+//  1. bound_domain        config — explicitly bound via manual/auto bind [strongest]
+//  2. public_domain       config / PUBLIC_DOMAIN env (e.g. https://openmodelpool.io)
+//  3. public_url          config — admin-facing public base URL
+//  4. federation_endpoint config
+//  5. r.Host              — the host the operator is actually accessing through
+func resolveBoundDomain(r *http.Request) (string, bool, string) {
+	// 1. Explicitly bound domain (manual bind or auto bind via Cloudflare API).
+	if d := cfg.Get("bound_domain", ""); d != "" {
+		return hostOf(d), true, ensureHTTPS(d)
+	}
+	// 2. public_domain config / PUBLIC_DOMAIN env (e.g. https://openmodelpool.io).
+	if pd := cfg.Get("public_domain", ""); pd != "" {
+		return hostOf(pd), false, ensureHTTPS(pd)
+	}
+	// 3. public_url config.
+	if pu := cfg.Get("public_url", ""); pu != "" {
+		return hostOf(pu), false, ensureHTTPS(pu)
+	}
+	// 4. federation_endpoint config.
+	if fe := cfg.Get("federation_endpoint", ""); fe != "" {
+		return hostOf(fe), false, ensureHTTPS(fe)
+	}
+	// 5. Request Host — what the operator is actually accessing through.
+	if r != nil && r.Host != "" {
+		h := r.Host
+		if i := strings.Index(h, ":"); i >= 0 {
+			h = h[:i]
+		}
+		return h, false, "https://" + h
+	}
+	return "", false, ""
+}
+
+// hostOf extracts the bare hostname from a URL or host:port string.
+func hostOf(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	// Strip scheme if present.
+	if i := strings.Index(s, "://"); i >= 0 {
+		s = s[i+3:]
+	}
+	// Drop path / query / fragment.
+	if i := strings.IndexAny(s, "/?#"); i >= 0 {
+		s = s[:i]
+	}
+	// Drop port, but keep IPv6 brackets (e.g. [::1]:8000) intact.
+	if i := strings.LastIndex(s, ":"); i >= 0 {
+		if !strings.Contains(s[:i], "[") {
+			s = s[:i]
+		}
+	}
+	return s
+}
+
+// ensureHTTPS normalizes an address to an https:// base URL.
+func ensureHTTPS(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if !strings.Contains(s, "://") {
+		return "https://" + s
+	}
+	return s
+}
+
+// probeDomainHealth performs a short, best-effort HTTPS health check against
+// https://<domain>/health. It returns (reachable, errorDetail). TLS verification
+// is kept ON because the public domain is fronted by Cloudflare and should
+// present a valid certificate; InsecureSkipVerify is intentionally NOT used to
+// avoid masking real certificate problems.
+func probeDomainHealth(domain string) (bool, string) {
+	if domain == "" || domain == "localhost" {
+		return false, "未配置可探测的域名"
+	}
+	client := &http.Client{Timeout: 4 * time.Second}
+	probeURL := "https://" + domain + "/health"
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)
+	if err != nil {
+		return false, err.Error()
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, err.Error()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return true, ""
+	}
+	return false, fmt.Sprintf("HTTP %d", resp.StatusCode)
+}
+
+// handleDomainBindingStatus returns a read-only snapshot of the instance's
+// domain-binding posture for the admin "域名绑定引导" guide card. It reports the
+// currently bound external domain, whether the Cloudflare tunnel is running,
+// whether the domain's /health endpoint is reachable, and the app version.
+// This endpoint is display-only and does NOT mutate any state.
+func handleDomainBindingStatus(w http.ResponseWriter, r *http.Request) {
+	domain, bound, publicURL := resolveBoundDomain(r)
+
+	// Tunnel state. tunnel_running reflects whether OMP's managed tunnel process
+	// is alive. In "manual" mode there is no cloudflared process managed by OMP,
+	// so we report tunnel_managed=false / tunnel_running=false (the binding is
+	// expected to be handled externally — an existing named tunnel or a reverse
+	// proxy).
+	tunnelRunning := false
+	tunnelManaged := false
+	tunnelMode := ""
+	tunnelURL := ""
+	if tunnel != nil {
+		tunnel.mu.Lock()
+		tunnelMode = tunnel.mode
+		tunnel.mu.Unlock()
+		if tunnelMode != "manual" {
+			tunnelRunning = tunnel.IsRunning()
+			tunnelManaged = tunnelRunning
+		}
+		tunnelURL = tunnel.GetURL()
+	}
+
+	// Best-effort health probe of the bound domain.
+	var httpReachable *bool
+	reachError := ""
+	if domain != "" && domain != "localhost" {
+		ok, errMsg := probeDomainHealth(domain)
+		httpReachable = &ok
+		reachError = errMsg
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"domain":         domain,
+		"bound":          bound,
+		"public_url":     publicURL,
+		"tunnel_running": tunnelRunning,
+		"tunnel_managed": tunnelManaged,
+		"tunnel_mode":    tunnelMode,
+		"tunnel_url":     tunnelURL,
+		"http_reachable": httpReachable,
+		"reach_error":    reachError,
+		"version":        AppVersion,
+	})
+}
