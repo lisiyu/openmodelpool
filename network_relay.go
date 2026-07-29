@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -42,6 +44,21 @@ import (
 const (
 	headerRelayHop  = "X-OpenModelPool-Agent-Hop"
 	headerRelayFrom = "X-OpenModelPool-Agent-Relay-From"
+)
+
+// G1 hardening (design §18.3 P1-5): relay/gateway forward authentication.
+// A forwarding node signs a RelayAuthEnvelope and attaches the base64 ed25519
+// signature plus an RFC3339 timestamp; the receiving node cryptographically
+// verifies the forwarding node's identity before serving the request.
+const (
+	// headerRelaySig carries the base64 ed25519 signature of the relay auth
+	// envelope (see RelayAuthEnvelope).
+	headerRelaySig = "X-OpenModelPool-Relay-Sig"
+	// headerRelayTs carries the RFC3339 timestamp used for replay protection.
+	headerRelayTs = "X-OpenModelPool-Relay-Ts"
+	// relaySigMaxAge is the allowed clock-skew / replay window for a relay
+	// forward signature (consistent with federation gossip/update anti-replay).
+	relaySigMaxAge = 5 * time.Minute
 )
 
 // handleNetworkRelay handles relay requests: /network/{node_id}/{rest...}
@@ -266,6 +283,20 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 
 	relayFrom := netMgr.GetNodeID()
 
+	// G1 hardening (design §18.3 P1-5): buffer the request body once so we can
+	// sign the forward. The reverse proxy would otherwise consume the stream; we
+	// restore it after signing so the proxy forwards the original payload.
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, 400, "failed to read request body")
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	// Sign the forward over the *forwarded* path (restPath) so the receiving
+	// node, which sees the stripped path, reconstructs an identical envelope.
+	sig, ts := signRelayForward(relayFrom, r.Method, restPath, bodyBytes)
+
 	relayStart := time.Now()
 
 	proxy := &httputil.ReverseProxy{
@@ -283,10 +314,9 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 			// S-4/V-3: Remove original Authorization to prevent Consumer Key leakage
 			req.Header.Del("Authorization")
 
-			// Add node-to-node authentication header
-			if relayFrom != "" {
-				req.Header.Set("X-Node-Auth", relayFrom)
-			}
+			// G1 hardening: attach the ed25519-signed relay auth so the
+			// receiving node can verify this forwarding-node identity.
+			attachRelayAuth(req, relayFrom, sig, ts)
 		},
 		Transport: GetSharedHTTPClient().Transport,
 		ErrorHandler: func(w2 http.ResponseWriter, r2 *http.Request, err error) {
@@ -389,6 +419,144 @@ func queryBootstrapForNode(nodeID string) *RouteEntry {
 	}
 	return nil
 }
+
+// ============================================================
+// Relay / Gateway forward authentication (G1 hardening, design §18.3 P1-5)
+// ============================================================
+//
+// Node-to-node relay/gateway forwards previously trusted the forwarding node
+// purely on a spoofable X-Node-Auth header. We now require every forwarded
+// request to carry an ed25519 signature over a RelayAuthEnvelope, verified by
+// the receiving node against the sender's trust-pool public key with a
+// timestamp replay window — mirroring the withFederationAuth + VerifyJSONSig
+// pattern used by /api/federation/* and gossip.
+//
+// The forwarded request body is NOT embedded in the envelope. Instead a SHA-256
+// hash of it (BodyHash) binds the signature to the exact forwarded payload while
+// keeping the body intact for OpenAI-SDK-compatible streaming. Signing uses
+// node.SignJSON and verification uses VerifyJSONSig; canonicalJSON guarantees
+// byte-identical representations on both sides.
+
+// RelayAuthEnvelope is the signed metadata a forwarding node attaches to a
+// relay/gateway forward request.
+type RelayAuthEnvelope struct {
+	NodeID    string `json:"node_id"`   // forwarding node id (== X-Node-Auth)
+	Method    string `json:"method"`    // HTTP method of the forwarded request
+	Path      string `json:"path"`      // forwarded request path (already stripped)
+	BodyHash  string `json:"body_hash"` // hex SHA-256 of the forwarded body
+	Timestamp string `json:"timestamp"` // RFC3339; anti-replay window ±5min
+	Signature string `json:"signature"` // node.SignJSON(env) over the fields above
+}
+
+// sha256Hex returns the hex-encoded SHA-256 of b.
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// signRelayForward builds and signs a RelayAuthEnvelope for an outbound relay
+// request, returning the base64 signature and RFC3339 timestamp. It uses the
+// node's ed25519 key via SignJSON so the receiver can verify with VerifyJSONSig.
+// Returns empty strings when signing is impossible (e.g. uninitialized node),
+// in which case the caller must NOT claim a relay identity.
+func signRelayForward(nodeID string, method string, path string, body []byte) (sig string, ts string) {
+	if nodeID == "" || node == nil {
+		return "", ""
+	}
+	env := RelayAuthEnvelope{
+		NodeID:    nodeID,
+		Method:    method,
+		Path:      path,
+		BodyHash:  sha256Hex(body),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+	env.Signature = node.SignJSON(env)
+	return env.Signature, env.Timestamp
+}
+
+// attachRelayAuth sets the relay-auth headers on an outbound request: the
+// forwarding node identity (X-Node-ID + X-Node-Auth, federation style) and,
+// when a signature was produced, the signature and timestamp.
+func attachRelayAuth(req *http.Request, nodeID string, sig string, ts string) {
+	if nodeID == "" {
+		return
+	}
+	req.Header.Set("X-Node-ID", nodeID)
+	req.Header.Set("X-Node-Auth", nodeID)
+	if sig != "" {
+		req.Header.Set(headerRelaySig, sig)
+		req.Header.Set(headerRelayTs, ts)
+	}
+}
+
+// verifyRelayForwardAuth enforces ed25519 signature verification for relay/
+// gateway forward requests (G1 hardening). It MUST be called by the receiving
+// node's request handler before serving a forwarded request.
+//
+// Behaviour:
+//   - No relay identity header (X-Node-ID / X-Node-Auth) -> not a relay forward;
+//     returns (0,"") so the caller falls back to normal consumer auth.
+//   - Relay identity present but no signature -> reject (401): a relay forward
+//     must always be signed, otherwise it is a forged/unauthenticated claim.
+//   - Signature present -> verify the sender is a known federation node, the
+//     timestamp is within the replay window, and VerifyJSONSig succeeds.
+//
+// Returns (httpStatus, message); httpStatus == 0 means the request is allowed.
+func verifyRelayForwardAuth(r *http.Request, body []byte) (int, string) {
+	nodeID := r.Header.Get("X-Node-ID")
+	if nodeID == "" {
+		nodeID = r.Header.Get("X-Node-Auth")
+	}
+	if nodeID == "" {
+		// No relay identity claim -> normal consumer request (withProxyAuth).
+		return 0, ""
+	}
+
+	sig := r.Header.Get(headerRelaySig)
+	if sig == "" {
+		return 401, "relay forward missing signature"
+	}
+	ts := r.Header.Get(headerRelayTs)
+	if ts == "" {
+		return 401, "relay forward missing timestamp"
+	}
+
+	// 1. Sender must be a known federation node (trust pool / gossip peers),
+	//    equivalent to withFederationAuth path-1 (X-Node-ID in trust pool).
+	if fed == nil {
+		return 403, "relay sender trust pool unavailable"
+	}
+	sender, ok := fed.GetNode(nodeID)
+	if !ok {
+		return 403, "relay sender not in trust pool"
+	}
+
+	// 2. Timestamp freshness (anti-replay), consistent with federation ±5min.
+	parsed, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return 400, "invalid relay timestamp"
+	}
+	if age := time.Since(parsed); age < 0 || age > relaySigMaxAge {
+		return 401, "relay timestamp outside acceptable window"
+	}
+
+	// 3. Reconstruct the envelope and verify the ed25519 signature.
+	env := RelayAuthEnvelope{
+		NodeID:    nodeID,
+		Method:    r.Method,
+		Path:      r.URL.Path,
+		BodyHash:  sha256Hex(body),
+		Timestamp: ts,
+		Signature: sig,
+	}
+	if !VerifyJSONSig(sender.PubKey, env, sig) {
+		slog.Warn("relay forward signature verification failed", "from", nodeID, "path", r.URL.Path)
+		return 403, "relay signature verification failed"
+	}
+
+	return 0, ""
+}
+
 // ============================================================
 // Gateway Mode — Unified Entry Point
 // ============================================================
@@ -427,6 +595,16 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body.Close()
+
+	// G1 hardening (design §18.3 P1-5): enforce ed25519 signature verification
+	// on relay/gateway forwards. A forwarded request from another node carries
+	// signed relay-auth headers; a forged or unsigned forward is rejected.
+	// Direct consumer requests (authenticated via withProxyAuth) carry no relay
+	// headers and pass through unchanged.
+	if status, msg := verifyRelayForwardAuth(r, bodyBytes); status != 0 {
+		writeError(w, status, msg)
+		return
+	}
 
 	// Parse model from body
 	var bodyMap map[string]json.RawMessage
@@ -606,6 +784,12 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 		outReq.Header.Set(headerRelayFrom, relayFrom)
 	}
 
+	// G1 hardening (design §18.3 P1-5): sign the forward so the receiving node
+	// can cryptographically verify this forwarding node's identity. The target
+	// path (r.URL.Path) is what the receiver sees, so we sign over it.
+	sig, ts := signRelayForward(relayFrom, r.Method, r.URL.Path, bodyBytes)
+	attachRelayAuth(outReq, relayFrom, sig, ts)
+
 	outReq.ContentLength = int64(len(bodyBytes))
 	outReq.Host = target.Host
 
@@ -692,10 +876,10 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 	models := make([]ModelInfo, 0, len(modelSet))
 	for id := range modelSet {
 		models = append(models, ModelInfo{
-			ID:       id,
-			Object:   "model",
-			Created:  time.Now().Unix(),
-			OwnedBy:  "network",
+			ID:      id,
+			Object:  "model",
+			Created: time.Now().Unix(),
+			OwnedBy: "network",
 		})
 	}
 
