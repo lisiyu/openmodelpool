@@ -52,6 +52,9 @@ func initCore() {
 	// §3.2.3: Public key four-layer quota
 	initPublicKeyQuota()
 
+	// G6: Cross-pool consumption priority manager (ACCESS_CONTROL.md §4.2)
+	initQuotaPriority()
+
 	// Free pool auto-sync (awesome-free-llm-apis)
 	initFreePool()
 

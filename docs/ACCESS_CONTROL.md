@@ -82,9 +82,11 @@ OpenModelPool 共有 **3 种 Key 类型**，其中 Guest Key 有 2 种分享模�
 
 > 简单说：管理员先预设哪些 Key 可以共享，但能不能真正共享出来，取决于管理员有没有加入共享网络。
 
-### 4.2 额度池分配与消耗优先级（待实现）
+### 4.2 额度池分配与消耗优先级（G6 已实现）
 
-> ⚠️ 本节描述的是设计目标，代码尚未实现额度池分级扣减逻辑。当前代码仅实现了路由优先级（先本机后共享池），额度的实际扣减和限流待后续版本完成。
+> ✅ **G6 已落地跨池额度消耗优先级逻辑**（`quota_priority.go`，opt-in）。消费入口 `handleChatCompletions` 对 Guest / Admin(Proxy) Key 按 **私有 → 共享 → 他节点共享池** 顺序尝试扣减，前一池不足才降级下一池，并记录实际扣自哪个池（响应头 `X-Quota-Pool`，取值 `private`/`shared`/`remote_shared`）。
+>
+> 为保证线上已部署节点的单池场景外显零变化，**默认关闭**：`quota_priority_enabled=false` 时所有池视为无限制，请求恒从私有池通过（纯 passthrough）。仅当管理员显式开启 `quota_priority_enabled=true` 并设置有限池额度后才真正执行分级扣减。共享池扣减会镜像写入既有 `globalPool` 账本（`RecordConsumption`），他节点共享池扣减发生在目标节点、本节点不重复计。
 
 共享模式下，额度分为不同的池，不同 Key 类型消耗额度的优先级不同：
 

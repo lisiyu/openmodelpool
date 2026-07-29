@@ -692,6 +692,29 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// G6: Cross-pool consumption priority (private -> shared -> remote_shared).
+	// For Guest / Admin(Proxy) keys, deduct from the highest-priority pool that
+	// still has capacity. Enforcement is opt-in (quota_priority_enabled): the
+	// whole block below is gated on quotaPriorityMgr.enabled. When the flag is
+	// false (the default) the block is skipped ENTIRELY — no X-Quota-Pool header
+	// is written and control flows straight to provider selection, which is
+	// exactly the pre-G6 external behavior (zero wire impact). Only when enabled
+	// do we deduct from a pool, write X-Quota-Pool, and return 429 once all
+	// three pools (private / shared / remote_shared) are exhausted.
+	if (keyType == "guest" || keyType == "proxy" || keyType == "admin") && quotaPriorityMgr != nil && quotaPriorityMgr.enabled {
+		estimate := int64(4096)
+		if req.MaxTokens != nil && *req.MaxTokens > 0 {
+			estimate = int64(*req.MaxTokens)
+		}
+		qres := quotaPriorityMgr.Resolve(keyTypeFromString(keyType), estimate)
+		// Surface which pool was charged for observability ("返回实际扣自哪个池").
+		w.Header().Set("X-Quota-Pool", qres.Kind.String())
+		if !qres.OK {
+			writeError(w, 429, "额度耗尽：私有/共享/他节点共享池均不足")
+			return
+		}
+	}
+
 	// Smart routing with fallback — uses the unified pool (all providers from all users)
 	routingMode := cfg.Get("routing_mode", "priority")
 	allCandidates := pm.OrderedCandidates(model, routingMode)
