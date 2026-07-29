@@ -42,13 +42,13 @@ func handleNodePubKey(w http.ResponseWriter, r *http.Request) {
 
 // handleNetworkHeartbeat implements POST /api/network/heartbeat — the
 // receiving side of the node-to-node heartbeat. It:
-//   1. Authenticates the sender (federation secret, or known-node fallback
-//      when the mesh is open / unsecured).
-//   2. Requires a sender node_id (X-Node-ID header, else JSON body).
-//   3. Refreshes the sender's liveness in this node's local view:
-//        - bumps the peer's LastSeen in the network manager,
-//        - marks the node active in the federation manager,
-//        - keeps the participant active in the shared global pool.
+//  1. Authenticates the sender (federation secret, or known-node fallback
+//     when the mesh is open / unsecured).
+//  2. Requires a sender node_id (X-Node-ID header, else JSON body).
+//  3. Refreshes the sender's liveness in this node's local view:
+//     - bumps the peer's LastSeen in the network manager,
+//     - marks the node active in the federation manager,
+//     - keeps the participant active in the shared global pool.
 //
 // One failing sub-step must not abort the others; each is best-effort.
 func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
@@ -175,7 +175,7 @@ func handleAlgorithmGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{
-		"status":  "gossiped",
+		"status": "gossiped",
 		"params": algoChain.GetCurrentParams(),
 	})
 }
@@ -200,22 +200,55 @@ func handleNetworkRegionConfigUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- WAF (four-layer protection) ----
+//
+// These handlers now reflect the real WAF engine state (see waf.go). They report
+// live enforcement status, recorded violations, and active dynamic bans, and
+// allow unbanning a previously-banned key.
 
 func handleWAFStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{
-		"enabled": false,
-		"note":    "WAF engine not yet wired into the proxy path",
-	})
+	if wafEngine == nil {
+		writeJSON(w, 200, map[string]any{"enabled": false, "note": "WAF engine not initialized"})
+		return
+	}
+	writeJSON(w, 200, wafEngine.Status())
 }
 
 func handleWAFBans(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"bans": []any{}})
+	if wafEngine == nil {
+		writeJSON(w, 200, map[string]any{"bans": []any{}})
+		return
+	}
+	bans := wafEngine.Bans()
+	out := make([]any, 0, len(bans))
+	for _, b := range bans {
+		out = append(out, b)
+	}
+	writeJSON(w, 200, map[string]any{"bans": out})
 }
 
 func handleWAFViolations(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"violations": []any{}})
+	if wafEngine == nil {
+		writeJSON(w, 200, map[string]any{"violations": []any{}})
+		return
+	}
+	vs := wafEngine.Violations()
+	out := make([]any, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, v)
+	}
+	writeJSON(w, 200, map[string]any{"violations": out})
 }
 
 func handleWAFUnban(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"status": "ok"})
+	key := r.PathValue("key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, "ban key required")
+		return
+	}
+	if wafEngine == nil {
+		writeJSON(w, 200, map[string]any{"status": "ok", "removed": false})
+		return
+	}
+	removed := wafEngine.RemoveBan(key)
+	writeJSON(w, 200, map[string]any{"status": "ok", "removed": removed})
 }

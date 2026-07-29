@@ -3,17 +3,17 @@ package main
 import (
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"golang.org/x/crypto/bcrypt"
 	"io"
 	"log/slog"
-	"fmt"
-	"net/smtp"
-	"strings"
 	"net/http"
-	"strconv"
-	"time"
+	"net/smtp"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // ============================================================
@@ -103,7 +103,9 @@ func handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "system not initialized")
 		return
 	}
-	var body struct{ Email string `json:"email"` }
+	var body struct {
+		Email string `json:"email"`
+	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
@@ -188,7 +190,9 @@ func handleResetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleVerifyResetToken(w http.ResponseWriter, r *http.Request) {
-	var body struct{ Token string `json:"token"` }
+	var body struct {
+		Token string `json:"token"`
+	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
@@ -207,7 +211,6 @@ func handleVerifyResetToken(w http.ResponseWriter, r *http.Request) {
 func handleAdminInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, auth.AdminInfo())
 }
-
 
 // maskKey masks an API key: shows first 4 and last 4 chars.
 func maskKey(key string) string {
@@ -298,7 +301,9 @@ func handleChangePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleUpdateEmail(w http.ResponseWriter, r *http.Request) {
-	var body struct{ Email string `json:"email"` }
+	var body struct {
+		Email string `json:"email"`
+	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
@@ -310,7 +315,6 @@ func handleUpdateEmail(w http.ResponseWriter, r *http.Request) {
 func handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, cfg.Masked())
 }
-
 
 func mapKeys(m map[string]string) []string {
 	keys := make([]string, 0, len(m))
@@ -371,6 +375,8 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		cachedSelfAddresses = nil
 	}
 	cfg.SetMany(update)
+	// §10A: re-read WAF configuration if any WAF keys were updated.
+	reloadWAF()
 	writeJSON(w, 200, cfg.Masked())
 }
 
@@ -474,9 +480,15 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 					models = append(models, ModelDef{ID: mv, Enabled: true})
 				case map[string]any:
 					md := ModelDef{Enabled: true}
-					if mid, ok := mv["id"].(string); ok { md.ID = mid }
-					if mname, ok := mv["name"].(string); ok { md.Name = mname }
-					if menabled, ok := mv["enabled"].(bool); ok { md.Enabled = menabled }
+					if mid, ok := mv["id"].(string); ok {
+						md.ID = mid
+					}
+					if mname, ok := mv["name"].(string); ok {
+						md.Name = mname
+					}
+					if menabled, ok := mv["enabled"].(bool); ok {
+						md.Enabled = menabled
+					}
 					models = append(models, md)
 				}
 			}
@@ -674,7 +686,7 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, _ := pm.GetRaw(id)
-	
+
 	// Check if testing a specific key by key_id query parameter
 	keyID := r.URL.Query().Get("key_id")
 	if keyID != "" {
@@ -706,7 +718,7 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, result)
 		return
 	}
-	
+
 	// Default: test with effective key
 	result := testConnection(p)
 	// Sanitize error messages but keep HTTP status for debugging
@@ -727,7 +739,7 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, _ := pm.GetRaw(id)
-	
+
 	if len(p.APIKeys) == 0 {
 		writeJSON(w, 200, map[string]any{
 			"success": false,
@@ -736,18 +748,18 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	results := make([]map[string]any, 0, len(p.APIKeys))
 	allSuccess := true
-	
+
 	for i, key := range p.APIKeys {
 		keyResult := map[string]any{
-			"index":    i + 1,
-			"key_id":   key.ID,
-			"alias":    key.Alias,
-			"enabled":  key.Enabled,
+			"index":   i + 1,
+			"key_id":  key.ID,
+			"alias":   key.Alias,
+			"enabled": key.Enabled,
 		}
-		
+
 		if !key.Enabled {
 			keyResult["success"] = false
 			keyResult["error"] = "key is disabled"
@@ -755,7 +767,7 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 			results = append(results, keyResult)
 			continue
 		}
-		
+
 		// Decrypt the key for testing
 		decryptedKey, err := decryptAPIKey(key.Key)
 		if err != nil {
@@ -765,7 +777,7 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 			results = append(results, keyResult)
 			continue
 		}
-		
+
 		// Test this specific key
 		testResult := testConnectionWithKey(p, decryptedKey)
 		keyResult["success"] = testResult["success"]
@@ -806,7 +818,7 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 
 		results = append(results, keyResult)
 	}
-	
+
 	response := map[string]any{
 		"success": allSuccess,
 		"results": results,
@@ -826,7 +838,6 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, 200, response)
 }
-
 
 func handleGetProviderModels(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -968,14 +979,14 @@ func handleUsageSummary(w http.ResponseWriter, r *http.Request) {
 		totalCost1 += s["total_cost_usd"].(float64)
 	}
 	writeJSON(w, 200, map[string]any{
-		"today_requests":      totalReqs1,
-		"today_tokens":        totalTok1,
-		"today_cost_usd":      round4(totalCost1),
-		"total_requests_30d":  totalReqs30,
-		"total_tokens_30d":    totalTok30,
-		"total_cost_usd_30d":  round4(totalCost30),
-		"providers_active":    len(stats30),
-		"total_records":       len(tracker.records),
+		"today_requests":     totalReqs1,
+		"today_tokens":       totalTok1,
+		"today_cost_usd":     round4(totalCost1),
+		"total_requests_30d": totalReqs30,
+		"total_tokens_30d":   totalTok30,
+		"total_cost_usd_30d": round4(totalCost30),
+		"providers_active":   len(stats30),
+		"total_records":      len(tracker.records),
 	})
 }
 
@@ -1029,7 +1040,9 @@ func handleGetRoutingMode(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSetRoutingMode(w http.ResponseWriter, r *http.Request) {
-	var body struct{ Mode string `json:"mode"` }
+	var body struct {
+		Mode string `json:"mode"`
+	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
@@ -1047,7 +1060,6 @@ func handleGetRoutingWeights(w http.ResponseWriter, r *http.Request) {
 	weights := pm.getWeights()
 	writeJSON(w, 200, weights)
 }
-
 
 func handleSetRoutingWeights(w http.ResponseWriter, r *http.Request) {
 	var body map[string]float64
@@ -1119,48 +1131,48 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Get today's usage stats
 	todayStats := tracker.ProviderStats(1)
-	
+
 	// Get this month's usage stats (days since start of month)
 	now := time.Now()
 	daysInMonth := now.Day() // e.g., on Jan 15, this is 15
 	monthlyStats := tracker.ProviderStats(daysInMonth)
 
 	type EnrichedHealth struct {
-		ProviderID       string  `json:"provider_id"`
-		ProviderName     string  `json:"provider_name"`
-		Type             string  `json:"type"`
-		Status           string  `json:"status"`
-		LatencyMS        float64 `json:"latency_ms"`
-		ConsecutiveFails int     `json:"consecutive_fails"`
-		FailureReason    string  `json:"failure_reason,omitempty"`
-		ModelCount        int     `json:"model_count"`
-		TotalModelCount   int     `json:"total_model_count"`
-		PrivateModelCount int     `json:"private_model_count"`
-		SharedModelCount  int     `json:"shared_model_count"`
-		TokenLimit       int64   `json:"token_limit"`
-		TokenUsed        int64   `json:"token_used"`
-		TodayRequests    int     `json:"today_requests"`
-		TodayTokens      int     `json:"today_tokens"`
-		KeyCount         int     `json:"key_count"`
-		PrivateKeyCount  int     `json:"private_key_count"`
-		SharedKeyCount   int     `json:"shared_key_count"`
-		FailedKeyCount   int     `json:"failed_key_count"`
-		Enabled             bool  `json:"enabled"`
-		RateLimitEnabled      bool  `json:"rate_limit_enabled"`
-		RateLimitPerMin       int   `json:"rate_limit_per_min"`
-		DailyRequestLimit     int64 `json:"daily_request_limit"`
-		Priority         int     `json:"priority"`
-		IsShared         bool    `json:"is_shared"`
-		SuccessRate      *float64 `json:"success_rate"`
-		Models           []ModelDef             `json:"models"`
-		AccessControl    *ProviderAccessControl `json:"access_control"`
+		ProviderID        string                 `json:"provider_id"`
+		ProviderName      string                 `json:"provider_name"`
+		Type              string                 `json:"type"`
+		Status            string                 `json:"status"`
+		LatencyMS         float64                `json:"latency_ms"`
+		ConsecutiveFails  int                    `json:"consecutive_fails"`
+		FailureReason     string                 `json:"failure_reason,omitempty"`
+		ModelCount        int                    `json:"model_count"`
+		TotalModelCount   int                    `json:"total_model_count"`
+		PrivateModelCount int                    `json:"private_model_count"`
+		SharedModelCount  int                    `json:"shared_model_count"`
+		TokenLimit        int64                  `json:"token_limit"`
+		TokenUsed         int64                  `json:"token_used"`
+		TodayRequests     int                    `json:"today_requests"`
+		TodayTokens       int                    `json:"today_tokens"`
+		KeyCount          int                    `json:"key_count"`
+		PrivateKeyCount   int                    `json:"private_key_count"`
+		SharedKeyCount    int                    `json:"shared_key_count"`
+		FailedKeyCount    int                    `json:"failed_key_count"`
+		Enabled           bool                   `json:"enabled"`
+		RateLimitEnabled  bool                   `json:"rate_limit_enabled"`
+		RateLimitPerMin   int                    `json:"rate_limit_per_min"`
+		DailyRequestLimit int64                  `json:"daily_request_limit"`
+		Priority          int                    `json:"priority"`
+		IsShared          bool                   `json:"is_shared"`
+		SuccessRate       *float64               `json:"success_rate"`
+		Models            []ModelDef             `json:"models"`
+		AccessControl     *ProviderAccessControl `json:"access_control"`
 		// Quota fields (placeholder — zero until quota tracking is implemented)
 		QuotaPrivateUsed  int64 `json:"quota_private_used"`
 		QuotaPrivateTotal int64 `json:"quota_private_total"`
 		QuotaPublicUsed   int64 `json:"quota_public_used"`
 		QuotaPublicTotal  int64 `json:"quota_public_total"`
-		QuotaGuestUsed      int64 `json:"quota_guest_used"`
-		QuotaGuestTotal     int64 `json:"quota_guest_total"`
+		QuotaGuestUsed    int64 `json:"quota_guest_used"`
+		QuotaGuestTotal   int64 `json:"quota_guest_total"`
 		// Daily/Monthly quota limits per pool
 		QuotaPrivateDaily   int64 `json:"quota_private_daily"`
 		QuotaPrivateMonthly int64 `json:"quota_private_monthly"`
@@ -1216,12 +1228,24 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			if tokens, ok := stats["total_tokens"].(int); ok {
 				todayTokens = tokens
 			}
-			if v, ok := stats["private_reqs"].(int); ok { todayPrivReqs = v }
-			if v, ok := stats["public_reqs"].(int); ok { todayPubReqs = v }
-			if v, ok := stats["guest_reqs"].(int); ok { todayGuestReqs = v }
-			if v, ok := stats["private_tokens"].(int); ok { todayPrivTokens = v }
-			if v, ok := stats["public_tokens"].(int); ok { todayPubTokens = v }
-			if v, ok := stats["guest_tokens"].(int); ok { todayGuestTokens = v }
+			if v, ok := stats["private_reqs"].(int); ok {
+				todayPrivReqs = v
+			}
+			if v, ok := stats["public_reqs"].(int); ok {
+				todayPubReqs = v
+			}
+			if v, ok := stats["guest_reqs"].(int); ok {
+				todayGuestReqs = v
+			}
+			if v, ok := stats["private_tokens"].(int); ok {
+				todayPrivTokens = v
+			}
+			if v, ok := stats["public_tokens"].(int); ok {
+				todayPubTokens = v
+			}
+			if v, ok := stats["guest_tokens"].(int); ok {
+				todayGuestTokens = v
+			}
 		}
 
 		// Get total usage
@@ -1445,20 +1469,20 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 				monthlyTotal = tokens
 			}
 		}
-		
+
 		// Split daily/monthly usage by pool based on key access_control ratios
 		var dailyPrivUsed, dailyPubUsed, dailyGuestUsed int64
 		var monthlyPrivUsed, monthlyPubUsed, monthlyGuestUsed int64
-		
+
 		if privateKeyCount+sharedKeyCount > 0 {
 			privRatio := float64(privateKeyCount) / float64(privateKeyCount+sharedKeyCount)
 			sharedRatio := float64(sharedKeyCount) / float64(privateKeyCount+sharedKeyCount)
-			
+
 			dailyPrivUsed = int64(float64(dailyTotal) * privRatio)
 			dailySharedUsed := int64(float64(dailyTotal) * sharedRatio)
 			dailyPubUsed = dailySharedUsed * int64(publicPct) / 100
 			dailyGuestUsed = dailySharedUsed * int64(guestPct) / 100
-			
+
 			monthlyPrivUsed = int64(float64(monthlyTotal) * privRatio)
 			monthlySharedUsed := int64(float64(monthlyTotal) * sharedRatio)
 			monthlyPubUsed = monthlySharedUsed * int64(publicPct) / 100
@@ -1470,47 +1494,72 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		}
 
 		enriched = append(enriched, EnrichedHealth{
-			ProviderID:       p.ID,
-			ProviderName:     p.Name,
-			Type:             p.Type,
-			Status:           func() string { if hasHealth { return h.Status }; return "pending" }(),
-			LatencyMS:        func() float64 { if hasHealth { return h.LatencyMS }; return 0 }(),
-			ConsecutiveFails: func() int { if hasHealth { return h.ConsecutiveFails }; return 0 }(),
-			FailureReason:    func() string { if hasHealth { return h.FailureReason }; return "" }(),
-			ModelCount:        enabledModelCount,
-			TotalModelCount:   len(p.Models),
-			PrivateModelCount: privateModelCount,
-			SharedModelCount:  sharedModelCount,
-			TokenLimit:       p.TokenLimit,
-			TokenUsed:        totalUsed,
-			TodayRequests:    todayReqs,
-			TodayTokens:      todayTokens,
+			ProviderID:   p.ID,
+			ProviderName: p.Name,
+			Type:         p.Type,
+			Status: func() string {
+				if hasHealth {
+					return h.Status
+				}
+				return "pending"
+			}(),
+			LatencyMS: func() float64 {
+				if hasHealth {
+					return h.LatencyMS
+				}
+				return 0
+			}(),
+			ConsecutiveFails: func() int {
+				if hasHealth {
+					return h.ConsecutiveFails
+				}
+				return 0
+			}(),
+			FailureReason: func() string {
+				if hasHealth {
+					return h.FailureReason
+				}
+				return ""
+			}(),
+			ModelCount:         enabledModelCount,
+			TotalModelCount:    len(p.Models),
+			PrivateModelCount:  privateModelCount,
+			SharedModelCount:   sharedModelCount,
+			TokenLimit:         p.TokenLimit,
+			TokenUsed:          totalUsed,
+			TodayRequests:      todayReqs,
+			TodayTokens:        todayTokens,
 			TodayReqsPrivate:   todayPrivReqs,
 			TodayTokensPrivate: todayPrivTokens,
 			TodayReqsPublic:    todayPubReqs,
 			TodayTokensPublic:  todayPubTokens,
 			TodayReqsGuest:     todayGuestReqs,
 			TodayTokensGuest:   todayGuestTokens,
-			KeyCount:         keyCount,
-			PrivateKeyCount:  privateKeyCount,
-			SharedKeyCount:   sharedKeyCount,
-			FailedKeyCount:   func() int { if hasHealth { return h.FailedKeyCount }; return 0 }(),
-			Enabled:             p.Enabled,
-			RateLimitEnabled:      p.RateLimitEnabled,
-			RateLimitPerMin:       p.RateLimitPerMin,
-			DailyRequestLimit:     p.DailyRequestLimit,
-			Priority:         p.Priority,
-			IsShared:         isShared,
-			SuccessRate:      nil, // placeholder: not yet tracked
-			Models:           p.Models,
-			AccessControl:       &ac,
-			ActiveConns:         GetProviderConns(p.ID),
-			QuotaPrivateUsed:    quotaPrivUsed,
-			QuotaPrivateTotal:   quotaPrivTotal,
-			QuotaPublicUsed:     quotaPubUsed,
-			QuotaPublicTotal:    quotaPubTotal,
-			QuotaGuestUsed:      quotaGuestUsed,
-			QuotaGuestTotal:     quotaGuestTotal,
+			KeyCount:           keyCount,
+			PrivateKeyCount:    privateKeyCount,
+			SharedKeyCount:     sharedKeyCount,
+			FailedKeyCount: func() int {
+				if hasHealth {
+					return h.FailedKeyCount
+				}
+				return 0
+			}(),
+			Enabled:           p.Enabled,
+			RateLimitEnabled:  p.RateLimitEnabled,
+			RateLimitPerMin:   p.RateLimitPerMin,
+			DailyRequestLimit: p.DailyRequestLimit,
+			Priority:          p.Priority,
+			IsShared:          isShared,
+			SuccessRate:       nil, // placeholder: not yet tracked
+			Models:            p.Models,
+			AccessControl:     &ac,
+			ActiveConns:       GetProviderConns(p.ID),
+			QuotaPrivateUsed:  quotaPrivUsed,
+			QuotaPrivateTotal: quotaPrivTotal,
+			QuotaPublicUsed:   quotaPubUsed,
+			QuotaPublicTotal:  quotaPubTotal,
+			QuotaGuestUsed:    quotaGuestUsed,
+			QuotaGuestTotal:   quotaGuestTotal,
 			// Daily/Monthly quotas: private from config, public/guest split from shared
 			QuotaPrivateDaily:   p.PrivateTokensDaily,
 			QuotaPrivateMonthly: p.PrivateQuotaMonthly,
@@ -1622,8 +1671,12 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		for _, p2 := range configured {
 			if p2.ID == ep.ProviderID {
 				gp := p2.AccessControl.GuestPoolPercent
-				if gp <= 0 { gp = 50 }
-				if gp > 100 { gp = 100 }
+				if gp <= 0 {
+					gp = 50
+				}
+				if gp > 100 {
+					gp = 100
+				}
 				// Weight by this provider's shared quota total
 				var pSharedQuota int64
 				for _, k := range p2.APIKeys {
@@ -1643,48 +1696,48 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nodeStats := map[string]any{
-		"provider_total":    totalProviders,
-		"provider_online":   onlineProviders,
-		"key_total":         totalKeys,
-		"private_key_count": privateKeyCount,
-		"shared_key_count":  sharedKeyCount,
-		"failed_key_count":  failedKeys,
-		"model_total":       totalModels,
-		"model_enabled":     enabledModels,
-		"private_models":    privateModels,
-		"shared_models":     sharedModels,
-		"avg_latency":       avgLatency,
-		"success_rate":      avgSuccessRate,
-		"today_reqs_private":  todayReqsPrivate,
-		"today_tokens_private": todayTokensPrivate,
-		"today_reqs_public":   todayReqsPublic,
-		"today_tokens_public":  todayTokensPublic,
-		"today_reqs_guest":    todayReqsGuest,
-		"today_tokens_guest":   todayTokensGuest,
-		"quota_private_used":  quotaPrivUsed,
-		"quota_private_total": quotaPrivTotal,
-		"quota_public_used":   quotaPubUsed,
-		"quota_public_total":  quotaPubTotal,
-		"quota_guest_used":    quotaGuestUsed,
-		"quota_guest_total":   quotaGuestTotal,
-		"quota_private_daily":   quotaPrivDaily,
-		"quota_private_monthly": quotaPrivMonthly,
-		"quota_public_daily":    quotaPubDaily,
-		"quota_public_monthly":  quotaPubMonthly,
-		"quota_guest_daily":     quotaGuestDaily,
-		"quota_guest_monthly":   quotaGuestMonthly,
+		"provider_total":             totalProviders,
+		"provider_online":            onlineProviders,
+		"key_total":                  totalKeys,
+		"private_key_count":          privateKeyCount,
+		"shared_key_count":           sharedKeyCount,
+		"failed_key_count":           failedKeys,
+		"model_total":                totalModels,
+		"model_enabled":              enabledModels,
+		"private_models":             privateModels,
+		"shared_models":              sharedModels,
+		"avg_latency":                avgLatency,
+		"success_rate":               avgSuccessRate,
+		"today_reqs_private":         todayReqsPrivate,
+		"today_tokens_private":       todayTokensPrivate,
+		"today_reqs_public":          todayReqsPublic,
+		"today_tokens_public":        todayTokensPublic,
+		"today_reqs_guest":           todayReqsGuest,
+		"today_tokens_guest":         todayTokensGuest,
+		"quota_private_used":         quotaPrivUsed,
+		"quota_private_total":        quotaPrivTotal,
+		"quota_public_used":          quotaPubUsed,
+		"quota_public_total":         quotaPubTotal,
+		"quota_guest_used":           quotaGuestUsed,
+		"quota_guest_total":          quotaGuestTotal,
+		"quota_private_daily":        quotaPrivDaily,
+		"quota_private_monthly":      quotaPrivMonthly,
+		"quota_public_daily":         quotaPubDaily,
+		"quota_public_monthly":       quotaPubMonthly,
+		"quota_guest_daily":          quotaGuestDaily,
+		"quota_guest_monthly":        quotaGuestMonthly,
 		"quota_private_daily_used":   quotaPrivDailyUsed,
 		"quota_private_monthly_used": quotaPrivMonthlyUsed,
 		"quota_public_daily_used":    quotaPubDailyUsed,
 		"quota_public_monthly_used":  quotaPubMonthlyUsed,
 		"quota_guest_daily_used":     quotaGuestDailyUsed,
 		"quota_guest_monthly_used":   quotaGuestMonthlyUsed,
-		"guest_pool_percent": avgGuestPct,
-		"conns_private": connsPrivate,
-		"conns_public":  connsPublic,
-		"conns_guest":   connsGuest,
-		"node_id":       cfg.Get("node_name", ""),
-		"version":       AppVersion,
+		"guest_pool_percent":         avgGuestPct,
+		"conns_private":              connsPrivate,
+		"conns_public":               connsPublic,
+		"conns_guest":                connsGuest,
+		"node_id":                    cfg.Get("node_name", ""),
+		"version":                    AppVersion,
 	}
 
 	writeJSON(w, 200, map[string]any{"providers": enriched, "node_stats": nodeStats})
@@ -1693,7 +1746,6 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 // Static pages
 // ============================================================
-
 
 func handleAdminPage(w http.ResponseWriter, r *http.Request) {
 	if !auth.Initialized() {
@@ -1760,8 +1812,12 @@ func handleAdminCommonJS(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func clamp(v, min, max float64) float64 {
-	if v < min { return min }
-	if v > max { return max }
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
 	return v
 }
 
@@ -1800,10 +1856,10 @@ func handleSyncProviderURL(w http.ResponseWriter, r *http.Request) {
 	p.BaseURL = presetBaseURL
 	pm.Add(p)
 	writeJSON(w, 200, map[string]any{
-		"changed":  true,
-		"message":  fmt.Sprintf("地址已从 %s 更新为 %s", oldURL, presetBaseURL),
-		"old_url":  oldURL,
-		"new_url":  presetBaseURL,
+		"changed": true,
+		"message": fmt.Sprintf("地址已从 %s 更新为 %s", oldURL, presetBaseURL),
+		"old_url": oldURL,
+		"new_url": presetBaseURL,
 	})
 }
 
@@ -1985,15 +2041,15 @@ func handleExportConfig(w http.ResponseWriter, r *http.Request) {
 	for _, p := range pm.GetAll() {
 		sp := p.Safe()
 		maskedProviders = append(maskedProviders, map[string]any{
-			"id":          sp.ID,
-			"name":        sp.Name,
-			"type":        sp.Type,
-			"base_url":    sp.BaseURL,
-			"api_key":     sp.APIKey,
-			"enabled":     sp.Enabled,
-			"models":      sp.Models,
-			"priority":    sp.Priority,
-			"proxy":       sp.Proxy,
+			"id":       sp.ID,
+			"name":     sp.Name,
+			"type":     sp.Type,
+			"base_url": sp.BaseURL,
+			"api_key":  sp.APIKey,
+			"enabled":  sp.Enabled,
+			"models":   sp.Models,
+			"priority": sp.Priority,
+			"proxy":    sp.Proxy,
 		})
 	}
 	export := map[string]any{
@@ -2218,6 +2274,7 @@ func handleResetKeyQuota(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"success": true, "message": "quota reset"})
 }
+
 // ============================================================
 
 // ============================================================
@@ -2227,17 +2284,17 @@ func handleResetKeyQuota(w http.ResponseWriter, r *http.Request) {
 func handleRestart(w http.ResponseWriter, r *http.Request) {
 	slog.Info("Restart requested via admin API")
 	writeJSON(w, 200, map[string]any{"success": true, "message": "Service restarting..."})
-	
+
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		pid := os.Getpid()
 		slog.Info("Initiating restart", "current_pid", pid)
-		
+
 		// Run restart script with current PID
 		cmd := exec.Command("bash", "./restart.sh", fmt.Sprintf("%d", pid))
 		cmd.Dir = "."
 		cmd.Start()
-		
+
 		// Current process will be killed by the script
 	}()
 }

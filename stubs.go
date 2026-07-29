@@ -19,9 +19,9 @@ import (
 // initEncryptor is a no-op: encryption is initialized via encryptor.go's init().
 func initEncryptor(keyPath string) {}
 
-// initWAF initializes the four-layer WAF. The WAF engine is not yet wired into
-// the proxy path; this is a placeholder so startup does not fail.
-func initWAF(dataDir string) {}
+// NOTE: initWAF now has a real implementation in waf.go (the four-layer WAF
+// engine is wired into the proxy/relay request path). This file's previous
+// no-op placeholder was removed to avoid a duplicate definition.
 
 // initRegionManager initializes the region manager. The RegionManager
 // implementation currently lives only in the test file (network_region_test.go);

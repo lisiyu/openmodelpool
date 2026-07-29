@@ -67,12 +67,13 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/version", handleVersion)
 
 	// OpenAI-compatible endpoints — Gateway mode
-	mux.HandleFunc("GET /v1/models", withProxyAuth(rateLimitMiddleware(handleGatewayModels)))
-	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
-	mux.HandleFunc("POST /v1/completions", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
-	mux.HandleFunc("POST /v1/embeddings", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
+	// §10A: WAF is enforced on the inbound proxy path (no-op until enabled).
+	mux.HandleFunc("GET /v1/models", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayModels))))
+	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
+	mux.HandleFunc("POST /v1/completions", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
+	mux.HandleFunc("POST /v1/embeddings", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
 	// Anthropic Messages API compatibility — for Claude Code and other Anthropic clients
-	mux.HandleFunc("POST /v1/messages", anthropicAuthAdapter(withProxyAuth(rateLimitMiddleware(handleAnthropicMessages))))
+	mux.HandleFunc("POST /v1/messages", anthropicAuthAdapter(withProxyAuth(wafMiddleware(rateLimitMiddleware(handleAnthropicMessages)))))
 
 	// Seed discovery endpoints (public, no auth required)
 	mux.HandleFunc("GET /api/peers", handleSeedPeers)
@@ -343,12 +344,13 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/network/balance/recalculate", withAuth(handleBalanceRecalculate))
 
 	// P2P Relay: /network/{node_id}/{rest...} — any shared node can relay
-	mux.HandleFunc("GET /network/{id}/", handleNetworkRelay)
-	mux.HandleFunc("POST /network/{id}/", handleNetworkRelay)
-	mux.HandleFunc("PUT /network/{id}/", handleNetworkRelay)
-	mux.HandleFunc("DELETE /network/{id}/", handleNetworkRelay)
-	mux.HandleFunc("GET /network/{id}", handleNetworkRelay)
-	mux.HandleFunc("POST /network/{id}", handleNetworkRelay)
+	// §10A: WAF is enforced on the relay proxy path (no-op until enabled).
+	mux.HandleFunc("GET /network/{id}/", wafMiddleware(handleNetworkRelay))
+	mux.HandleFunc("POST /network/{id}/", wafMiddleware(handleNetworkRelay))
+	mux.HandleFunc("PUT /network/{id}/", wafMiddleware(handleNetworkRelay))
+	mux.HandleFunc("DELETE /network/{id}/", wafMiddleware(handleNetworkRelay))
+	mux.HandleFunc("GET /network/{id}", wafMiddleware(handleNetworkRelay))
+	mux.HandleFunc("POST /network/{id}", wafMiddleware(handleNetworkRelay))
 
 	return mux
 }
