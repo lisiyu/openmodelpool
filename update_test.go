@@ -51,7 +51,7 @@ func TestCompareVersion(t *testing.T) {
 		{"4.10.0", "4.9.9", 1},
 		{"5.0.0", "4.99.99", 1},
 		{"4.0.0", MinSupportedUpdateVersion, -1},   // old node < min supported
-		{AppVersion, MinSupportedUpdateVersion, 0}, // current == min supported
+		{AppVersion, MinSupportedUpdateVersion, 1}, // current (4.1.11) > min supported (4.1.7)
 		{"", "4.1.7", -1},
 	}
 	for _, c := range cases {
