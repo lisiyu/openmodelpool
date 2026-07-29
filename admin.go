@@ -1166,7 +1166,8 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		SuccessRate       *float64               `json:"success_rate"`
 		Models            []ModelDef             `json:"models"`
 		AccessControl     *ProviderAccessControl `json:"access_control"`
-		// Quota fields (placeholder — zero until quota tracking is implemented)
+		// Quota fields: limits come from provider/key config; "used" tokens come
+		// from per-key usage (multi-key) or the tracker (legacy single key).
 		QuotaPrivateUsed  int64 `json:"quota_private_used"`
 		QuotaPrivateTotal int64 `json:"quota_private_total"`
 		QuotaPublicUsed   int64 `json:"quota_public_used"`
@@ -1187,7 +1188,7 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		QuotaPublicMonthlyUsed  int64 `json:"quota_public_monthly_used"`
 		QuotaGuestDailyUsed     int64 `json:"quota_guest_daily_used"`
 		QuotaGuestMonthlyUsed   int64 `json:"quota_guest_monthly_used"`
-		// Per-pool today stats (placeholder)
+		// Per-pool today stats derived from tracker.ProviderStats (split by access type).
 		TodayReqsPrivate   int `json:"today_reqs_private"`
 		TodayTokensPrivate int `json:"today_tokens_private"`
 		TodayReqsPublic    int `json:"today_reqs_public"`
@@ -1493,6 +1494,20 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			monthlyPrivUsed = int64(monthlyTotal)
 		}
 
+		// Real reliability metric: success rate over the current month (broadest
+		// window the tracker keeps in memory). Only set when there is actual
+		// traffic; otherwise leave nil ("no data") to avoid implying 0% for a
+		// provider that has had zero requests.
+		var poolSuccessRate *float64
+		if ms, ok := monthlyStats[p.ID]; ok {
+			if cnt, ok := ms["request_count"].(int); ok && cnt > 0 {
+				if sr, ok := ms["success_rate"].(float64); ok {
+					v := sr
+					poolSuccessRate = &v
+				}
+			}
+		}
+
 		enriched = append(enriched, EnrichedHealth{
 			ProviderID:   p.ID,
 			ProviderName: p.Name,
@@ -1550,7 +1565,7 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			DailyRequestLimit: p.DailyRequestLimit,
 			Priority:          p.Priority,
 			IsShared:          isShared,
-			SuccessRate:       nil, // placeholder: not yet tracked
+			SuccessRate:       poolSuccessRate, // real: monthly success rate (nil = no traffic yet)
 			Models:            p.Models,
 			AccessControl:     &ac,
 			ActiveConns:       GetProviderConns(p.ID),
@@ -1661,7 +1676,8 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			connsPrivate += ep.ActiveConns
 		}
 	}
-	connsGuest = 0 // placeholder: no per-guest connection tracking yet
+	// Real guest connection count from the connection tracker (access type "guest").
+	connsGuest = GetGuestConns()
 
 	// Compute weighted average guest_pool_percent (weighted by shared key quota)
 	var totalSharedQuota int64

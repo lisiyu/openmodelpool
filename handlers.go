@@ -1,9 +1,9 @@
 package main
 
 import (
-	"log/slog"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"runtime"
@@ -45,10 +45,10 @@ func readJSON(r *http.Request, v any) error {
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	status := map[string]any{
-		"status":           "ok",
-		"version":          AppVersion,
+		"status":            "ok",
+		"version":           AppVersion,
 		"providers_enabled": len(pm.Enabled()),
-		"models_available": len(pm.AllModels()),
+		"models_available":  len(pm.AllModels()),
 	}
 	if fed != nil && fed.IsEnabled() {
 		pool := fed.GetTrustPool()
@@ -292,26 +292,26 @@ func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 	servicePort := cfg.Get("port", "8000")
 
 	writeJSON(w, 200, map[string]any{
-		"federation_enabled":       cfg.Get("federation_enabled", "false"),
-		"federation_relay_enabled": cfg.Get("federation_relay_enabled", "false"),
-		"federation_registry_url":  cfg.Get("federation_registry_url", ""),
-		"federation_registry_repo": cfg.Get("federation_registry_repo", "lisiyu/openmodelpool"),
-		"gossip_interval_s":        cfg.Get("gossip_interval_s", "30"),
-		"heartbeat_interval_s":     cfg.Get("heartbeat_interval_s", "60"),
-		"tunnel_enabled":           cfg.Get("tunnel_enabled", "false"),
-		"tunnel_mode":              cfg.Get("tunnel_mode", "quick"), // quick | named
-		"tunnel_domain":            filterPlaceholder(cfg.Get("tunnel_domain", "")),
-		"tunnel_url":               filterPlaceholder(cfg.Get("tunnel_url", "")),
-		"lan_ip":                   lanIP,
-		"service_port":             servicePort,
-		"public_ip":                getPublicIP(),
-		"bound_ip":                 cfg.Get("bound_ip", ""),
-		"bound_port":              cfg.Get("bound_port", "8000"),
-		"federation_doc_version":   AppVersion,                       // current doc version
+		"federation_enabled":          cfg.Get("federation_enabled", "false"),
+		"federation_relay_enabled":    cfg.Get("federation_relay_enabled", "false"),
+		"federation_registry_url":     cfg.Get("federation_registry_url", ""),
+		"federation_registry_repo":    cfg.Get("federation_registry_repo", "lisiyu/openmodelpool"),
+		"gossip_interval_s":           cfg.Get("gossip_interval_s", "30"),
+		"heartbeat_interval_s":        cfg.Get("heartbeat_interval_s", "60"),
+		"tunnel_enabled":              cfg.Get("tunnel_enabled", "false"),
+		"tunnel_mode":                 cfg.Get("tunnel_mode", "quick"), // quick | named
+		"tunnel_domain":               filterPlaceholder(cfg.Get("tunnel_domain", "")),
+		"tunnel_url":                  filterPlaceholder(cfg.Get("tunnel_url", "")),
+		"lan_ip":                      lanIP,
+		"service_port":                servicePort,
+		"public_ip":                   getPublicIP(),
+		"bound_ip":                    cfg.Get("bound_ip", ""),
+		"bound_port":                  cfg.Get("bound_port", "8000"),
+		"federation_doc_version":      AppVersion,                                 // current doc version
 		"federation_doc_read_version": cfg.Get("federation_doc_read_version", ""), // last read version
-		"node_approval_mode":       cfg.Get("node_approval_mode", "auto"),
-		"approval_mode":            approvalMode,
-		"token_budget":             tokenBudget,
+		"node_approval_mode":          cfg.Get("node_approval_mode", "auto"),
+		"approval_mode":               approvalMode,
+		"token_budget":                tokenBudget,
 	})
 }
 
@@ -609,12 +609,12 @@ func handleVerifyInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, 200, map[string]any{
-		"valid":     true,
-		"inviter":   invite.Inviter,
-		"endpoint":  invite.Endpoint,
-		"network":   invite.NetworkID,
-		"type":      invite.Type,
-		"expires":   invite.ExpiresAt,
+		"valid":    true,
+		"inviter":  invite.Inviter,
+		"endpoint": invite.Endpoint,
+		"network":  invite.NetworkID,
+		"type":     invite.Type,
+		"expires":  invite.ExpiresAt,
 	})
 }
 
@@ -747,9 +747,9 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
 
 		if stream {
-			IncrProviderConn(p.ID)
+			IncrConn(p.ID, accessType)
 			dataSent, err := handleStreamProxy(w, p, actualModel, req.Messages, extra, model, startTime, accessType)
-			DecrProviderConn(p.ID)
+			DecrConn(p.ID, accessType)
 			if err == nil {
 				if consumerID != "" {
 					multiUser.RecordConsumerUsage(consumerID, 0)
@@ -765,9 +765,9 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("stream failed before data sent, trying next provider", "provider", p.Name, "error", err)
 			lastErr = err
 		} else {
-			IncrProviderConn(p.ID)
+			IncrConn(p.ID, accessType)
 			resp, err := doNonStream(p, actualModel, req.Messages, extra)
-			DecrProviderConn(p.ID)
+			DecrConn(p.ID, accessType)
 			if err != nil {
 				slog.Warn("non-stream provider failed", "provider", p.Name, "model", actualModel, "error", err)
 				lastErr = err
@@ -931,10 +931,10 @@ func handleNetworkIdentityGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{
-		"mnemonic":         mnemonic,
-		"word_count":       body.WordCount,
-		"backup_confirmed": false,
-		"node_id":          node.NodeID(),
+		"mnemonic":             mnemonic,
+		"word_count":           body.WordCount,
+		"backup_confirmed":     false,
+		"node_id":              node.NodeID(),
 		"identity_initialized": true,
 	})
 }
