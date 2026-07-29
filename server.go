@@ -305,6 +305,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/network/algorithm/vote", withAuth(handleAlgorithmVote))
 	mux.HandleFunc("POST /api/network/algorithm/gossip", rateLimitByIP(30, "algo_gossip")(handleAlgorithmGossip))
 	mux.HandleFunc("GET /api/network/algorithm/proposals", handleAlgorithmProposals)
+	mux.HandleFunc("POST /api/network/algorithm/proposals/{id}/resolve", withAuth(handleAlgorithmProposalResolve))
 	mux.HandleFunc("GET /api/network/algorithm/validate", handleAlgorithmValidate)
 	mux.HandleFunc("GET /api/network/open-key-quota", handleOpenKeyQuota)
 	mux.HandleFunc("GET /api/network/open-key-quota/all", handleOpenKeyQuotaAll)

@@ -141,24 +141,150 @@ func handleAlgorithmCurrent(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAlgorithmHistory(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"history": []any{}})
-}
-
-func handleAlgorithmProposals(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"proposals": []any{}})
-}
-
-func handleAlgorithmPropose(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{
-		"status": "accepted",
-		"note":   "algorithm governance proposal accepted locally; decentralized voting not yet implemented",
+	if governor == nil {
+		writeError(w, http.StatusInternalServerError, "algorithm governance not initialized")
+		return
+	}
+	history := governor.GetHistory()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"history":          history,
+		"count":            len(history),
+		"governance_scope": GovernanceScope,
+		"note":             GovernanceScopeNote,
 	})
 }
 
+func handleAlgorithmProposals(w http.ResponseWriter, r *http.Request) {
+	if governor == nil {
+		writeError(w, http.StatusInternalServerError, "algorithm governance not initialized")
+		return
+	}
+	statusFilter := r.URL.Query().Get("status")
+	proposals := governor.ListProposals(statusFilter)
+	views := make([]proposalView, 0, len(proposals))
+	for _, p := range proposals {
+		views = append(views, toProposalView(p))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"proposals":        views,
+		"count":            len(views),
+		"governance_scope": GovernanceScope,
+		"note":             GovernanceScopeNote,
+	})
+}
+
+// algorithmProposeRequest is the body of POST /api/network/algorithm/propose.
+type algorithmProposeRequest struct {
+	Title        string           `json:"title"`
+	Description  string           `json:"description"`
+	Proposer     string           `json:"proposer"`
+	ProposerName string           `json:"proposer_name"`
+	Target       *AlgorithmParams `json:"target,omitempty"`
+}
+
+func handleAlgorithmPropose(w http.ResponseWriter, r *http.Request) {
+	if governor == nil {
+		writeError(w, http.StatusInternalServerError, "algorithm governance not initialized")
+		return
+	}
+	var req algorithmProposeRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	p, err := governor.CreateProposal(req.Title, req.Description, req.Proposer, req.ProposerName, req.Target)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":           "created",
+		"proposal":         toProposalView(p),
+		"governance_scope": GovernanceScope,
+		"note":             GovernanceScopeNote,
+	})
+}
+
+// algorithmVoteRequest is the body of POST /api/network/algorithm/vote.
+type algorithmVoteRequest struct {
+	ProposalID string `json:"proposal_id"`
+	Voter      string `json:"voter"`
+	VoterName  string `json:"voter_name"`
+	Choice     string `json:"choice"`
+	Comment    string `json:"comment"`
+}
+
 func handleAlgorithmVote(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{
-		"status": "accepted",
-		"note":   "vote recorded locally; decentralized voting not yet implemented",
+	if governor == nil {
+		writeError(w, http.StatusInternalServerError, "algorithm governance not initialized")
+		return
+	}
+	var req algorithmVoteRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.ProposalID == "" {
+		writeError(w, http.StatusBadRequest, "proposal_id is required")
+		return
+	}
+	p, err := governor.CastVote(req.ProposalID, req.Voter, req.VoterName, req.Choice, req.Comment)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":           "recorded",
+		"proposal":         toProposalView(p),
+		"governance_scope": GovernanceScope,
+		"note":             GovernanceScopeNote,
+	})
+}
+
+// algorithmResolveRequest is the body of POST .../algorithm/proposals/{id}/resolve.
+type algorithmResolveRequest struct {
+	Decision string `json:"decision"` // "passed" | "rejected" | "closed"
+	Reason   string `json:"reason"`
+	Resolver string `json:"resolver"`
+}
+
+func handleAlgorithmProposalResolve(w http.ResponseWriter, r *http.Request) {
+	if governor == nil {
+		writeError(w, http.StatusInternalServerError, "algorithm governance not initialized")
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "proposal id is required")
+		return
+	}
+	var req algorithmResolveRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	var status ProposalStatus
+	switch req.Decision {
+	case "passed":
+		status = ProposalStatusPassed
+	case "rejected":
+		status = ProposalStatusRejected
+	case "closed":
+		status = ProposalStatusClosed
+	default:
+		writeError(w, http.StatusBadRequest, "decision must be one of passed/rejected/closed")
+		return
+	}
+	p, err := governor.ResolveProposal(id, req.Resolver, req.Reason, status)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":           "resolved",
+		"proposal":         toProposalView(p),
+		"governance_scope": GovernanceScope,
+		"note":             GovernanceScopeNote,
 	})
 }
 

@@ -40,6 +40,7 @@ func initCore() {
 
 	// Algorithm chain & quota manager (Phase 3)
 	initAlgorithmChain("data")
+	initAlgorithmGovernance("data")
 	initQuotaManager(algoChain)
 
 	// Global pool (Phase 4)
