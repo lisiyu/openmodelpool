@@ -202,12 +202,15 @@ func TestQADomainBindingStatusRouteRegistered(t *testing.T) {
 
 func TestQAResolveBoundDomainPriority(t *testing.T) {
 	_ = setupTestEnv(t)
-	origEnv := os.Getenv("PUBLIC_DOMAIN")
-	defer os.Setenv("PUBLIC_DOMAIN", origEnv)
+	// Isolate from any process-wide PUBLIC_DOMAIN (host env or a sibling test).
+	// Config.Get consults the PUBLIC_DOMAIN env via its file > env > default
+	// fallback, so an un-cleared env would leak into the public_url /
+	// federation_endpoint priority cases. t.Setenv auto-restores on cleanup.
+	t.Setenv("PUBLIC_DOMAIN", "")
 
 	cases := []struct {
 		name      string
-		setup     func()
+		setup     func(t *testing.T)
 		host      string // request Host
 		wantDom   string
 		wantBound bool
@@ -215,7 +218,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 	}{
 		{
 			name: "1_bound_domain_wins",
-			setup: func() {
+			setup: func(t *testing.T) {
 				qaDomainResetConfig()
 				cfg.Set("bound_domain", "https://bound.example.com")
 			},
@@ -226,7 +229,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		},
 		{
 			name: "2_public_domain_config",
-			setup: func() {
+			setup: func(t *testing.T) {
 				qaDomainResetConfig()
 				cfg.Set("public_domain", "https://pool.example.com")
 			},
@@ -237,10 +240,11 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		},
 		{
 			name: "2b_public_domain_env_PUBLIC_DOMAIN",
-			setup: func() {
+			setup: func(t *testing.T) {
 				qaDomainResetConfig()
-				os.Unsetenv("PUBLIC_DOMAIN")
-				os.Setenv("PUBLIC_DOMAIN", "openmodelpool.io")
+				// Scoped to this subtest only; auto-restored afterwards so it
+				// cannot leak into the public_url / federation_endpoint cases.
+				t.Setenv("PUBLIC_DOMAIN", "openmodelpool.io")
 			},
 			host:      "ignored.example.com",
 			wantDom:   "openmodelpool.io",
@@ -249,7 +253,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		},
 		{
 			name: "3_public_url_config",
-			setup: func() {
+			setup: func(t *testing.T) {
 				qaDomainResetConfig()
 				cfg.Set("public_url", "https://pub.example.com:9000")
 			},
@@ -260,7 +264,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		},
 		{
 			name: "4_federation_endpoint_config",
-			setup: func() {
+			setup: func(t *testing.T) {
 				qaDomainResetConfig()
 				cfg.Set("federation_endpoint", "https://fed.example.com/v1")
 			},
@@ -271,7 +275,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		},
 		{
 			name: "5_request_host_fallback",
-			setup: func() {
+			setup: func(t *testing.T) {
 				qaDomainResetConfig()
 				os.Unsetenv("PUBLIC_DOMAIN")
 			},
@@ -284,7 +288,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			c.setup()
+			c.setup(t)
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			if c.host != "" {
 				req.Host = c.host

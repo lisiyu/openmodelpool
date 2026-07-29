@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -369,14 +370,20 @@ func TestP0_4_ProviderManagerSaveMutex(t *testing.T) {
 		t.Errorf("expected at least 20 providers, got %d", len(all))
 	}
 
-	// Verify the file was written with correct permissions
-	info, err := os.Stat(filepath.Join(env.dir, "providers.json"))
-	if err != nil {
-		t.Fatalf("providers.json not found: %v", err)
-	}
-	perm := info.Mode().Perm()
-	if perm != 0600 {
-		t.Errorf("expected file permissions 0600, got %04o", perm)
+	// Verify the file was written with correct permissions.
+	// On Windows the Go runtime synthesizes permission bits (typically 0666)
+	// because Windows ACLs do not map to Unix mode bits, so the 0600 assertion
+	// is only meaningful on Unix-like systems. The 0600 intent is still enforced
+	// by ProviderManager.writeFile on the source side.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(filepath.Join(env.dir, "providers.json"))
+		if err != nil {
+			t.Fatalf("providers.json not found: %v", err)
+		}
+		perm := info.Mode().Perm()
+		if perm != 0600 {
+			t.Errorf("expected file permissions 0600, got %04o", perm)
+		}
 	}
 }
 
@@ -393,15 +400,20 @@ func TestP0_4_ProviderManagerSaveFilePermissions(t *testing.T) {
 	}
 	env.pmInst.Add(p)
 
-	info, err := os.Stat(filepath.Join(env.dir, "providers.json"))
-	if err != nil {
-		t.Fatalf("file not found: %v", err)
-	}
+	// On Unix we assert the restrictive 0600 mode written by
+	// ProviderManager.save(). On Windows the mode bits are synthesized (0666)
+	// and irrelevant to the underlying ACLs, so the assertion is skipped there.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(filepath.Join(env.dir, "providers.json"))
+		if err != nil {
+			t.Fatalf("file not found: %v", err)
+		}
 
-	// Verify restrictive permissions (0600, not 0644)
-	perm := info.Mode().Perm()
-	if perm != 0600 {
-		t.Errorf("providers.json should have 0600 permissions, got %04o", perm)
+		// Verify restrictive permissions (0600, not 0644)
+		perm := info.Mode().Perm()
+		if perm != 0600 {
+			t.Errorf("providers.json should have 0600 permissions, got %04o", perm)
+		}
 	}
 }
 
@@ -528,6 +540,15 @@ func TestP0_6_LoggerConcurrentRotation(t *testing.T) {
 		maxSize:    100, // very small for testing
 		level:      0,
 	}
+
+	// Release the underlying file handle so the test's TempDir can be removed on
+	// Windows (an open handle blocks deletion there). l.checkAndRotate may
+	// reassign l.accessFile via rotate(); we close whatever is current at the end.
+	defer func() {
+		if l.accessFile != nil {
+			l.accessFile.Close()
+		}
+	}()
 
 	// Simulate concurrent rotation checks
 	var wg sync.WaitGroup
