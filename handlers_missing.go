@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 )
@@ -57,7 +56,23 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 		secret = cfg.Get("federation_secret", "")
 	}
 
+	// Read the (optional) heartbeat body once. Region info is self-reported and,
+	// when present, is used to register/refresh the node's region in the
+	// RegionManager (see the wiring below, after authentication).
+	var hbBody struct {
+		NodeID    string  `json:"node_id"`
+		Endpoint  string  `json:"endpoint"`
+		Region    string  `json:"region"`
+		SubRegion string  `json:"sub_region"`
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+	}
+	_ = readJSON(r, &hbBody)
+
 	senderNodeID := r.Header.Get("X-Node-ID")
+	if senderNodeID == "" {
+		senderNodeID = hbBody.NodeID
+	}
 
 	authed := false
 	if secret != "" {
@@ -77,17 +92,22 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve sender node id from header, falling back to the JSON body.
-	if senderNodeID == "" {
-		var body struct {
-			NodeID string `json:"node_id"`
-		}
-		_ = readJSON(r, &body)
-		senderNodeID = body.NodeID
-	}
 	if senderNodeID == "" {
 		writeError(w, http.StatusBadRequest, "node_id is required")
 		return
+	}
+
+	// Register / refresh the sender's region from the self-reported heartbeat.
+	// This is the heartbeat half of the Region Manager wiring: nodes that include
+	// a "region" field in their heartbeat are tracked for region-aware routing.
+	if regionManager != nil && hbBody.Region != "" {
+		info := &HeartbeatRegionInfo{
+			Region:    hbBody.Region,
+			SubRegion: hbBody.SubRegion,
+			Latitude:  hbBody.Latitude,
+			Longitude: hbBody.Longitude,
+		}
+		regionManager.ProcessHeartbeatRegion(senderNodeID, info, extractRemoteIP(r))
 	}
 
 	// Refresh the sender's liveness in this node's local view.
@@ -308,21 +328,77 @@ func handleAlgorithmGossip(w http.ResponseWriter, r *http.Request) {
 
 // ---- Region manager ----
 
+// handleNetworkRegions implements GET /api/network/regions. It returns the set
+// of currently-known regions, a per-region node count, and the active region
+// configuration. When the RegionManager is not initialized it returns empty
+// (rather than erroring) so the UI degrades gracefully.
 func handleNetworkRegions(w http.ResponseWriter, r *http.Request) {
+	if regionManager == nil {
+		writeJSON(w, 200, map[string]any{
+			"regions":     []any{},
+			"node_counts": map[string]int{},
+			"config":      DefaultRegionConfig(),
+		})
+		return
+	}
+
+	regions := regionManager.GetAllRegions()
+	if regions == nil {
+		regions = []Region{}
+	}
+
+	summary := regionManager.GetRegionSummary()
+	nodeCounts := make(map[string]int, len(summary))
+	for rg, c := range summary {
+		nodeCounts[string(rg)] = c
+	}
+
 	writeJSON(w, 200, map[string]any{
-		"regions": []any{},
-		"note":    "region manager not yet wired (see network_region_test.go)",
+		"regions":     regions,
+		"node_counts": nodeCounts,
+		"config":      regionManager.GetConfig(),
 	})
 }
 
+// handleNetworkRegionNodes implements GET /api/network/regions/{region}/nodes.
+// It returns the node IDs registered in the requested region (matched after
+// canonicalizing the region alias, e.g. "asia" -> "ap").
 func handleNetworkRegionNodes(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"nodes": []any{}})
+	regionStr := r.PathValue("region")
+	if regionManager == nil {
+		writeJSON(w, 200, map[string]any{"region": regionStr, "nodes": []string{}})
+		return
+	}
+	region := regionCanonical(regionStr)
+	nodes := regionManager.GetNodesByRegion(region)
+	if nodes == nil {
+		nodes = []string{}
+	}
+	writeJSON(w, 200, map[string]any{
+		"region": region,
+		"nodes":  nodes,
+	})
 }
 
+// handleNetworkRegionConfigUpdate implements PUT /api/network/regions/config.
+// It parses a RegionConfig from the request body (the Region type's
+// UnmarshalJSON lets callers use aliases like "ap"/"eu" for RegionWeights keys),
+// applies it via UpdateConfig, and echoes the resulting configuration.
 func handleNetworkRegionConfigUpdate(w http.ResponseWriter, r *http.Request) {
-	var body json.RawMessage
-	_ = readJSON(r, &body)
-	writeJSON(w, 200, map[string]any{"status": "updated"})
+	if regionManager == nil {
+		writeError(w, http.StatusInternalServerError, "region manager not initialized")
+		return
+	}
+	var cfg RegionConfig
+	if err := readJSON(r, &cfg); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	regionManager.UpdateConfig(cfg)
+	writeJSON(w, 200, map[string]any{
+		"status": "updated",
+		"config": regionManager.GetConfig(),
+	})
 }
 
 // ---- WAF (four-layer protection) ----

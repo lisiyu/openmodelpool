@@ -23,10 +23,13 @@ func initEncryptor(keyPath string) {}
 // engine is wired into the proxy/relay request path). This file's previous
 // no-op placeholder was removed to avoid a duplicate definition.
 
-// initRegionManager initializes the region manager. The RegionManager
-// implementation currently lives only in the test file (network_region_test.go);
-// region-aware routing is therefore not active yet.
-func initRegionManager() {}
+// initRegionManager wires up the process-wide region manager instance. The
+// RegionManager implementation lives in network_region_impl.go; this function
+// simply instantiates it so the /api/network/regions endpoints serve real data
+// instead of the previous "not yet wired" stubs.
+func initRegionManager() {
+	regionManager = NewRegionManager()
+}
 
 // startHeartbeatLoop launches the periodic node-to-node heartbeat sender.
 //
@@ -186,8 +189,23 @@ func postHeartbeatToPeer(client *http.Client, peerURL, selfNodeID, selfEndpoint,
 	return nil
 }
 
-// startRegionSyncLoop periodically synchronizes region assignments. Placeholder.
-func startRegionSyncLoop() {}
+// startRegionSyncLoop periodically synchronizes region assignments across the
+// federation. The local RegionManager is already authoritative per-node: nodes
+// register their region on join (RegisterNodeSelfReport) and on every heartbeat
+// (ProcessHeartbeatRegion). This loop is the future hook for cross-node region
+// reconciliation once the gossip/federation layer exposes a region-state channel.
+//
+// TODO(region-sync): replace the sleep-only loop with real cross-node region
+// reconciliation. For now it only keeps the goroutine alive on a 30s cadence.
+func startRegionSyncLoop() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			// No-op today; see TODO above.
+		}
+	}()
+}
 
 // registerWithBootstraps registers this node with bootstrap/seed nodes. Placeholder.
 func registerWithBootstraps() {}

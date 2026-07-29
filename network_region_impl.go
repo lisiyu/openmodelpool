@@ -69,6 +69,12 @@ type HeartbeatRegionInfo struct {
 	Longitude float64
 }
 
+// regionManager is the process-wide RegionManager instance. It is wired up by
+// initRegionManager() (see stubs.go) during startup. Every access site must
+// nil-check it, because it stays nil in personal mode or if initialization
+// failed — the region endpoints then degrade to safe empty responses.
+var regionManager *RegionManager
+
 // RegionManager tracks node regions and provides region-based selection.
 type RegionManager struct {
 	mu     sync.RWMutex
@@ -200,6 +206,23 @@ func (rm *RegionManager) GetRegionSummary() map[Region]int {
 	out := make(map[Region]int)
 	for _, n := range rm.nodes {
 		out[n.Region]++
+	}
+	return out
+}
+
+// GetNodesByRegion returns the node IDs registered in the given region. The
+// region argument is canonicalized (via regionCanonical) before comparison, so
+// aliases such as "asia"/"apac" match RegionAsiaPacific and "us"/"na" match
+// RegionAmericas. The returned slice is non-nil (empty when no match).
+func (rm *RegionManager) GetNodesByRegion(region Region) []string {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	target := regionCanonical(string(region))
+	out := make([]string, 0)
+	for id, n := range rm.nodes {
+		if n.Region == target {
+			out = append(out, id)
+		}
 	}
 	return out
 }

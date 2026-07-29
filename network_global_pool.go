@@ -35,7 +35,7 @@ type GlobalPoolNode struct {
 	Region        string    `json:"region"`
 	Contributed   int64     `json:"contributed"`
 	Consumed      int64     `json:"consumed"`
-	Ratio         float64   `json:"ratio"`       // contributed / (consumed + 1)
+	Ratio         float64   `json:"ratio"` // contributed / (consumed + 1)
 	Reputation    float64   `json:"reputation"`
 	LastHeartbeat time.Time `json:"last_heartbeat"`
 	JoinedAt      string    `json:"joined_at"`
@@ -47,9 +47,9 @@ type GlobalPool struct {
 	mu sync.RWMutex
 
 	// Global counters
-	TotalContributed int64            `json:"total_contributed"`
-	TotalConsumed    int64            `json:"total_consumed"`
-	AvailableQuota   int64            `json:"available_quota"`
+	TotalContributed int64 `json:"total_contributed"`
+	TotalConsumed    int64 `json:"total_consumed"`
+	AvailableQuota   int64 `json:"available_quota"`
 
 	// Per-node tracking
 	NodeContributions map[string]int64 `json:"node_contributions"`
@@ -81,7 +81,6 @@ const (
 
 	// Global pool refresh interval
 	globalPoolRefreshInterval = 2 * time.Minute
-
 )
 
 // ============================================================
@@ -176,6 +175,17 @@ func (gp *GlobalPool) JoinPool(nodeID, region string, initialContribution int64)
 	}
 	if initialContribution < globalPoolMinJoinContribution {
 		return fmt.Errorf("minimum contribution to join: %d", globalPoolMinJoinContribution)
+	}
+
+	// G4: Region Manager wiring — register the node's region at join time so the
+	// /api/network/regions endpoints reflect join-time region info. This complements
+	// the heartbeat half (handleNetworkHeartbeat -> ProcessHeartbeatRegion). The
+	// RegionManager is process-global and nil-checked: in personal mode, or if
+	// initialization failed, this is a safe no-op. It runs before the pool lock
+	// because it uses the manager's own mutex and must apply on both the new-join
+	// and the already-participant re-join paths below.
+	if region != "" && regionManager != nil {
+		regionManager.RegisterNodeSelfReport(nodeID, region, "", 0, 0)
 	}
 
 	gp.mu.Lock()
@@ -322,13 +332,13 @@ func (gp *GlobalPool) GetStatus() map[string]any {
 	}
 
 	return map[string]any{
-		"total_contributed":  gp.TotalContributed,
-		"total_consumed":     gp.TotalConsumed,
-		"available_quota":    gp.AvailableQuota,
-		"participant_count":  len(gp.ParticipantNodes),
-		"active_count":       activeCount,
-		"utilization":        gp.utilizationLocked(),
-		"last_updated":       gp.LastUpdated.Format(time.RFC3339),
+		"total_contributed": gp.TotalContributed,
+		"total_consumed":    gp.TotalConsumed,
+		"available_quota":   gp.AvailableQuota,
+		"participant_count": len(gp.ParticipantNodes),
+		"active_count":      activeCount,
+		"utilization":       gp.utilizationLocked(),
+		"last_updated":      gp.LastUpdated.Format(time.RFC3339),
 	}
 }
 
@@ -356,7 +366,7 @@ func (gp *GlobalPool) GetStats() map[string]any {
 
 	var (
 		totalContrib, totalConsumed int64
-		regionCounts               = make(map[string]int)
+		regionCounts                = make(map[string]int)
 		activeCount, degradedCount  int
 		avgRatio                    float64
 	)
@@ -426,7 +436,7 @@ func (gp *GlobalPool) topContributorsLocked(n int) []map[string]any {
 }
 
 // SelectBestNode selects the best node for routing a global key request.
-//综合考虑: contribution ratio, reputation, latency, load.
+// 综合考虑: contribution ratio, reputation, latency, load.
 func (gp *GlobalPool) SelectBestNode(requestedRegion string) *GlobalPoolNode {
 	gp.mu.RLock()
 	defer gp.mu.RUnlock()
@@ -544,9 +554,9 @@ func handleGlobalPoolJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		NodeID     string `json:"node_id"`
-		Region     string `json:"region"`
-		Amount     int64  `json:"amount"`
+		NodeID string `json:"node_id"`
+		Region string `json:"region"`
+		Amount int64  `json:"amount"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
@@ -572,10 +582,10 @@ func handleGlobalPoolJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, 200, map[string]any{
-		"status":   "joined",
-		"node_id":  body.NodeID,
-		"region":   body.Region,
-		"amount":   body.Amount,
+		"status":  "joined",
+		"node_id": body.NodeID,
+		"region":  body.Region,
+		"amount":  body.Amount,
 	})
 }
 
@@ -681,8 +691,8 @@ type PublicKeyQuota struct {
 
 // IPUsageTracker tracks per-IP token usage.
 type IPUsageTracker struct {
-	DailyUsed  int64 `json:"daily_used"`
-	HourlyUsed int64 `json:"hourly_used"`
+	DailyUsed  int64     `json:"daily_used"`
+	HourlyUsed int64     `json:"hourly_used"`
 	LastReset  time.Time `json:"last_reset"`
 }
 
@@ -717,7 +727,7 @@ func initPublicKeyQuota() {
 // loadModelLimits returns per-model daily limits from config or defaults.
 func loadModelLimits() map[string]int64 {
 	limits := map[string]int64{
-		"gpt-4o":        500,
+		"gpt-4o":            500,
 		"claude-3-5-sonnet": 500,
 		"deepseek-chat":     500,
 		"gemini-2.5-flash":  500,
