@@ -606,3 +606,14 @@ func handleUpdateConsumer(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"success": true})
 }
+
+// HasConsumers returns whether any consumers are registered (thread-safe).
+func (m *MultiUserManager) HasConsumers() bool {
+	if m == nil {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.consumers) > 0
+}
+

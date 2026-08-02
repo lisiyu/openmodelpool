@@ -1161,7 +1161,10 @@ func handleRequestLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
-	health := healthChecker.GetHealth()
+	var health []ProviderHealth
+	if healthChecker != nil {
+		health = healthChecker.GetHealth()
+	}
 
 	// Get today's usage stats
 	todayStats := tracker.ProviderStats(1)

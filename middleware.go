@@ -88,7 +88,7 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 		}
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			proxyKey := cfg.Get("proxy_api_key", "")
-			if proxyKey == "" && len(multiUser.consumers) == 0 {
+			if proxyKey == "" && !multiUser.HasConsumers() {
 				// C3-fix: Only allow anonymous admin access from localhost/private networks
 				clientIP := extractClientIP(r.RemoteAddr)
 				if isLocalOrPrivateIP(clientIP) {
@@ -135,7 +135,7 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 
 		// C3-fix: Fallback anonymous admin only from localhost/private networks
 		if proxyKey == "" {
-			if len(multiUser.consumers) == 0 {
+			if !multiUser.HasConsumers() {
 				clientIP := extractClientIP(r.RemoteAddr)
 				if isLocalOrPrivateIP(clientIP) {
 					r.Header.Set("X-Request-Owner", "")
