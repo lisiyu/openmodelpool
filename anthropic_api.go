@@ -442,6 +442,7 @@ func convertFinishReason(reason string) string {
 // writeAnthropicError writes an error in Anthropic API format.
 func writeAnthropicError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]any{
 		"type": "error",

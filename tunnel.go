@@ -786,8 +786,7 @@ func handleBindIP(w http.ResponseWriter, r *http.Request) {
 	
 	slog.Info("IP bound successfully", "ip", body.IP, "port", body.Port, "url", url)
 	
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, 200, map[string]interface{}{
 		"success": true,
 		"url":     url,
 	})
@@ -804,8 +803,7 @@ func handleUnbindIP(w http.ResponseWriter, r *http.Request) {
 	
 	slog.Info("IP unbound successfully")
 	
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, 200, map[string]interface{}{
 		"success": true,
 	})
 }
@@ -906,8 +904,7 @@ func handleGetAddresses(w http.ResponseWriter, r *http.Request) {
 		result["lan_url"] = fmt.Sprintf("http://%s:%s/v1", lanIP, port)
 	}
 	
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	writeJSON(w, 200, result)
 }
 
 // handleManualDomainBind allows manual domain binding without Cloudflare API token.
