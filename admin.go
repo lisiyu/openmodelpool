@@ -320,6 +320,11 @@ func handleUpdateEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid request body")
 		return
 	}
+	// B62: Validate email format
+	if body.Email != "" && !strings.Contains(body.Email, "@") {
+		writeError(w, 400, "invalid email format")
+		return
+	}
 	auth.UpdateEmail(body.Email)
 	writeJSON(w, 200, map[string]any{"success": true, "message": "email updated"})
 }
@@ -367,6 +372,22 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	genericKeys := []string{"public_url", "service_port", "node_name", "region"}
 	for _, k := range genericKeys {
 		if v, ok := body[k]; ok {
+			// B60: Validate service_port is a valid port number
+			if k == "service_port" {
+				port, err := strconv.Atoi(v)
+				if err != nil || port < 1 || port > 65535 {
+					writeError(w, 400, "service_port must be a valid port number (1-65535)")
+					return
+				}
+			}
+			// B61: Validate public_url is a valid http/https URL
+			if k == "public_url" && v != "" {
+				u, err := url.Parse(v)
+				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+					writeError(w, 400, "public_url must be a valid http/https URL")
+					return
+				}
+			}
 			update[k] = v
 		}
 	}
