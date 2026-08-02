@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
@@ -216,7 +217,7 @@ func (g *GossipManager) exchange(peer NodeInfo, msg GossipMessage) (*GossipMessa
 
 	for _, addr := range endpoints {
 		gossipURL := fmt.Sprintf("%s/api/federation/gossip", addr)
-		req, err := http.NewRequest(http.MethodPost, gossipURL, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, gossipURL, bytes.NewReader(body))
 		if err != nil {
 			lastErr = fmt.Errorf("build request for %s: %w", addr, err)
 			continue
@@ -372,7 +373,7 @@ func (g *GossipManager) fetchFullPoolFromPeer(peer NodeInfo) {
 
 	for _, addr := range endpoints {
 		poolURL := fmt.Sprintf("%s/api/federation/pool", addr)
-		req, err := http.NewRequest(http.MethodGet, poolURL, nil)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, poolURL, nil)
 		if err != nil {
 			slog.Debug("failed to build pool request",
 				"peer_id", peer.NodeID, "addr", addr, "error", err)
@@ -634,7 +635,7 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 			endpoints := peerEndpoints(p)
 			for _, addr := range endpoints {
 				announceURL := fmt.Sprintf("%s/api/federation/announce", addr)
-				req, err := http.NewRequest(http.MethodPost, announceURL, bytes.NewReader(body))
+				req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, announceURL, bytes.NewReader(body))
 				if err != nil {
 					continue // try next address
 				}

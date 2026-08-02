@@ -33,6 +33,7 @@ var sharedTransport = &http.Transport{
 // sharedHTTPClient reuses connections across requests.
 var sharedHTTPClient = &http.Client{
 	Transport: sharedTransport,
+	Timeout:   5 * time.Minute, // B12: global timeout to prevent hung connections
 }
 
 // proxiedTransportCache caches HTTP transports per proxy address for connection reuse.
@@ -498,7 +499,7 @@ func testWebSession(p Provider) map[string]any {
 		payload[cfg.PromptField] = "ping"
 	}
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", cfg.APIEndpoint, bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", cfg.APIEndpoint, bytes.NewReader(body))
 	req.Header = webSessionBuildHeaders(cfg, token)
 	client := proxyHTTPClient(p, 30*time.Second)
 	resp, err := client.Do(req)
@@ -1331,7 +1332,7 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		if baseURL == "" {
 			baseURL = "https://api.coze.cn"
 		}
-		req, _ := http.NewRequest("GET", baseURL+"/v1/workspaces", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", baseURL+"/v1/workspaces", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		client := proxyHTTPClient(testProvider, 15 * time.Second)
 		resp, err := client.Do(req)
@@ -1352,7 +1353,7 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		payload := siderBuildPayload("auto", []ChatMessage{{Role: "user", Content: "hi"}}, false)
 		payload["prompt"] = "ping"
 		body, _ := json.Marshal(payload)
-		req, _ := http.NewRequest("POST", siderChatURL, bytes.NewReader(body))
+		req, _ := http.NewRequestWithContext(context.Background(), "POST", siderChatURL, bytes.NewReader(body))
 		req.Header = h
 		client := proxyHTTPClient(testProvider, 30 * time.Second)
 		resp, err := client.Do(req)
@@ -1379,7 +1380,7 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 			"messages":   []map[string]any{{"role": "user", "content": "hi"}},
 		}
 		testBody, _ := json.Marshal(testPayload)
-		testReq, _ := http.NewRequest("POST", testProvider.BaseURL+"/v1/messages", bytes.NewReader(testBody))
+		testReq, _ := http.NewRequestWithContext(context.Background(), "POST", testProvider.BaseURL+"/v1/messages", bytes.NewReader(testBody))
 		testReq.Header.Set("Content-Type", "application/json")
 		testReq.Header.Set("x-api-key", testProvider.APIKey)
 		testReq.Header.Set("anthropic-version", "2023-06-01")
@@ -1405,7 +1406,7 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		baseURL := strings.TrimRight(testProvider.BaseURL, "/")
 
 		// Step 1: Fetch /models to verify key and get available model names
-		modelsReq, _ := http.NewRequest("GET", baseURL+"/models", nil)
+		modelsReq, _ := http.NewRequestWithContext(context.Background(), "GET", baseURL+"/models", nil)
 		modelsReq.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
 		modelsResp, err := client.Do(modelsReq)
 		if err != nil {
@@ -1479,7 +1480,7 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 			"messages":   []map[string]any{{"role": "user", "content": "hi"}},
 		}
 		testBody, _ := json.Marshal(testPayload)
-		testReq, _ := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewReader(testBody))
+		testReq, _ := http.NewRequestWithContext(context.Background(), "POST", baseURL+"/chat/completions", bytes.NewReader(testBody))
 		testReq.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
 		testReq.Header.Set("Content-Type", "application/json")
 		testResp, err := client.Do(testReq)
@@ -1528,7 +1529,7 @@ func queryKeyBalance(baseURL, apiKey string) map[string]any {
 	}
 
 	for _, ep := range endpoints {
-		req, err := http.NewRequest("GET", baseURL+ep.path, nil)
+		req, err := http.NewRequestWithContext(context.Background(), "GET", baseURL+ep.path, nil)
 		if err != nil {
 			continue
 		}
@@ -1627,7 +1628,7 @@ func fetchRemoteModels(p Provider) []map[string]string {
 	if p.Type != "openai_compatible" || p.APIKey == "" {
 		return nil
 	}
-	req, _ := http.NewRequest("GET", strings.TrimRight(p.BaseURL, "/")+"/models", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", strings.TrimRight(p.BaseURL, "/")+"/models", nil)
 	if p.APIKey != "free-anonymous" {
 		req.Header.Set("Authorization", "Bearer "+p.APIKey)
 	}

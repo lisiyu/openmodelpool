@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -320,7 +321,7 @@ func fetchGitHubLists() []DiscoveredPlatform {
 	}
 
 	for _, srcURL := range sources {
-		req, err := http.NewRequest("GET", srcURL, nil)
+		req, err := http.NewRequestWithContext(context.Background(), "GET", srcURL, nil)
 		if err != nil {
 			continue
 		}

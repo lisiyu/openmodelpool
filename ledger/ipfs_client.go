@@ -1,6 +1,7 @@
 package ledger
 
 import (
+	"context"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -113,7 +114,7 @@ func (c *IPFSClient) storeViaGateway(gateway string, data []byte) (string, error
 
 	body := &bytes.Buffer{}
 	// Multipart is ideal but for simplicity we send raw body.
-	req, err := http.NewRequest("POST", url, body)
+	req, err := http.NewRequestWithContext(context.Background(), "POST", url, body)
 	if err != nil {
 		return "", err
 	}

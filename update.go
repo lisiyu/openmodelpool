@@ -19,6 +19,7 @@ package main
 // library and existing internal helpers are used.
 
 import (
+	"context"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -242,7 +243,7 @@ func (um *UpdateManager) fetchLatestVersionLocked() VersionInfo {
 		CurrentVersion: AppVersion,
 		CheckedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
-	req, err := http.NewRequest(http.MethodGet, um.githubURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, um.githubURL, nil)
 	if err != nil {
 		info.Error = err.Error()
 		return info
@@ -510,7 +511,7 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 // downloadFile fetches url into dest, validating a non-empty result.
 // It updates local progress along the way. Caller must NOT hold um.mu.
 func (um *UpdateManager) downloadFile(url, dest string) error {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
@@ -666,7 +667,7 @@ func (um *UpdateManager) BroadcastUpdateSignal(target string) {
 func (um *UpdateManager) sendUpdateSignalToPeer(peer NodeInfo, body []byte, client *http.Client) {
 	for _, addr := range peerEndpoints(peer) {
 		url := fmt.Sprintf("%s/api/federation/update-signal", strings.TrimRight(addr, "/"))
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			continue
 		}
@@ -785,7 +786,7 @@ func (um *UpdateManager) reportToOrigin(sig UpdateSignal, phase UpdatePhase, pro
 	client := GetSharedHTTPClientWithTimeout(8 * time.Second)
 	for _, addr := range addrs {
 		url := fmt.Sprintf("%s/api/federation/update-report", strings.TrimRight(addr, "/"))
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			continue
 		}

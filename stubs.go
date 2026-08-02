@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -168,7 +169,7 @@ func postHeartbeatToPeer(client *http.Client, peerURL, selfNodeID, selfEndpoint,
 		return fmt.Errorf("marshal heartbeat body: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, peerURL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, peerURL, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("build heartbeat request: %w", err)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,7 +19,7 @@ func (f *FederationManager) fetchFromRegistry() (*TrustPool, error) {
 	registryURL := cfg.Get("federation_registry_url",
 		"https://raw.githubusercontent.com/lisiyu/openmodelpool/main/federation/trust_pool.json")
 
-	req, err := http.NewRequest("GET", registryURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", registryURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create registry request: %w", err)
 	}
@@ -88,7 +89,7 @@ func (f *FederationManager) fetchFromPeers() {
 		}
 
 		url := fmt.Sprintf("%s/api/federation/pool", peer.Endpoint)
-		req, err := http.NewRequest(http.MethodGet, url, nil)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 		if err != nil {
 			slog.Debug("failed to build pool request",
 				"peer_id", peer.NodeID, "error", err)
@@ -157,7 +158,7 @@ func (f *FederationManager) fetchFromSeedNodes() (*TrustPool, error) {
 	client := GetSharedHTTPClient()
 	for _, bootstrapURL := range bootstrapNodes {
 		poolURL := fmt.Sprintf("%s/api/federation/pool", strings.TrimRight(bootstrapURL, "/"))
-		req, err := http.NewRequest(http.MethodGet, poolURL, nil)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, poolURL, nil)
 		if err != nil {
 			slog.Debug("seed node request build failed", "url", bootstrapURL, "error", err)
 			continue
