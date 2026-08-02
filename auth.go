@@ -352,7 +352,10 @@ func (a *Auth) RefreshAccessToken(refreshTokenStr string) (string, error) {
 		"type": "access",
 	}
 	newAccessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, newAccessClaims)
-	s, _ := newAccessToken.SignedString([]byte(accessSecret))
+	s, err := newAccessToken.SignedString([]byte(accessSecret))
+	if err != nil {
+		return "", fmt.Errorf("failed to sign token: %w", err)
+	}
 	return s, nil
 }
 

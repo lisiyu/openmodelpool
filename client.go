@@ -879,8 +879,9 @@ func cozeNonStream(ctx context.Context, p Provider, model string, messages []Cha
 			Status         string `json:"status"`
 		} `json:"data"`
 	}
-	json.NewDecoder(resp.Body).Decode(&chatResp)
-
+	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+		return nil, fmt.Errorf("coze API decode error: %w", err)
+	}
 	if chatResp.Data.Status == "" {
 		return nil, fmt.Errorf("coze API error: empty response")
 	}
@@ -903,7 +904,10 @@ func cozeNonStream(ctx context.Context, p Provider, model string, messages []Cha
 		var pollResult struct {
 			Data struct{ Status string `json:"status"` } `json:"data"`
 		}
-		json.NewDecoder(pollResp.Body).Decode(&pollResult)
+		if err := json.NewDecoder(pollResp.Body).Decode(&pollResult); err != nil {
+			pollResp.Body.Close()
+			return nil, fmt.Errorf("coze poll decode error: %w", err)
+		}
 		pollResp.Body.Close()
 		status = pollResult.Data.Status
 	}
@@ -931,7 +935,9 @@ func cozeNonStream(ctx context.Context, p Provider, model string, messages []Cha
 			Type        string `json:"type"`
 		} `json:"data"`
 	}
-	json.NewDecoder(msgResp.Body).Decode(&msgList)
+	if err := json.NewDecoder(msgResp.Body).Decode(&msgList); err != nil {
+		return nil, fmt.Errorf("coze message list decode error: %w", err)
+	}
 
 	var assistantContent string
 	for _, m := range msgList.Data {
@@ -1647,7 +1653,10 @@ func fetchRemoteModels(p Provider) []map[string]string {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	json.NewDecoder(resp.Body).Decode(&data)
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		slog.Warn("failed to decode coze workspace list", "error", err)
+		return nil
+	}
 	var out []map[string]string
 	for _, m := range data.Data {
 		if m.ID != "" {
