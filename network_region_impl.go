@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
@@ -88,6 +89,40 @@ func NewRegionManager() *RegionManager {
 		nodes:  make(map[string]*NodeRegion),
 		config: DefaultRegionConfig(),
 	}
+}
+
+func (rm *RegionManager) AutoDetectSelfRegion() {
+	if node == nil || !node.IsInitialized() {
+		return
+	}
+	selfID := node.NodeID()
+	if selfID == "" {
+		return
+	}
+
+	rm.mu.RLock()
+	existing := rm.nodes[selfID]
+	rm.mu.RUnlock()
+	if existing != nil && existing.Region != RegionUnknown && existing.Region != RegionEmpty {
+		return
+	}
+
+	publicIP := detectPublicIP()
+	if publicIP == "" {
+		slog.Debug("region auto-detect: no public IP available")
+		return
+	}
+
+	region := rm.DetectRegion(selfID, publicIP)
+	if region == RegionUnknown {
+		slog.Debug("region auto-detect: could not determine region from IP", "ip", publicIP)
+		return
+	}
+
+	rm.mu.Lock()
+	rm.nodes[selfID] = &NodeRegion{Region: region, Source: "auto_detect"}
+	rm.mu.Unlock()
+	slog.Info("region auto-detected for local node", "node_id", selfID, "region", region, "ip", publicIP)
 }
 
 // DetectRegion returns the region for the given node IP.

@@ -1399,6 +1399,10 @@ func handleNetworkEnable(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleNetworkDisable(w http.ResponseWriter, r *http.Request) {
+	if netMgr == nil {
+		writeJSON(w, 200, map[string]any{"status": "disabled", "mode": "personal", "network_enabled": false, "share_to_pool": false})
+		return
+	}
 	if err := netMgr.DisableSharedNetwork(); err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -1458,6 +1462,10 @@ func handleNetworkToggle(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleNetworkConfigUpdate(w http.ResponseWriter, r *http.Request) {
+	if netMgr == nil {
+		writeError(w, 503, "network manager not available")
+		return
+	}
 	var body struct {
 		NodeName     string   `json:"node_name"`
 		SharedModels []string `json:"shared_models"`
@@ -1476,7 +1484,7 @@ func handleNetworkConfigUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleNetworkPeers(w http.ResponseWriter, r *http.Request) {
-	if !netMgr.IsSharedMode() {
+	if netMgr == nil || !netMgr.IsSharedMode() {
 		writeJSON(w, 200, map[string]any{"peers": []PeerInfo{}, "message": "shared network not active"})
 		return
 	}
@@ -1545,6 +1553,10 @@ func handleNetworkAddPeer(w http.ResponseWriter, r *http.Request) {
 	var peer PeerInfo
 	if err := readJSON(r, &peer); err != nil {
 		writeError(w, 400, "invalid request body")
+		return
+	}
+	if netMgr == nil {
+		writeError(w, 503, "network manager not available")
 		return
 	}
 	// node_id may be omitted; when omitted we resolve it from the peer's public
@@ -1677,6 +1689,10 @@ func handleNetworkPeersNotify(w http.ResponseWriter, r *http.Request) {
 		PubKey:     p.PubKey,
 		LastSeen:   time.Now().Format(time.RFC3339),
 		TrustScore: 0.5,
+	}
+	if netMgr == nil {
+		writeError(w, http.StatusServiceUnavailable, "network manager not available")
+		return
 	}
 	if err := netMgr.AddPeer(peer); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1817,6 +1833,10 @@ func handleNetworkRemovePeer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "peer id required")
 		return
 	}
+	if netMgr == nil {
+		writeError(w, 503, "network manager not available")
+		return
+	}
 	if err := netMgr.RemovePeer(nodeID); err != nil {
 		writeError(w, 404, err.Error())
 		return
@@ -1863,4 +1883,55 @@ func handleNetworkJoinConditions(w http.ResponseWriter, r *http.Request) {
 	}
 	_, result := netMgr.CheckJoinConditions()
 	writeJSON(w, 200, result)
+}
+
+type IdleQuotaStatus struct {
+	HasIdleQuota   bool   `json:"has_idle_quota"`
+	TotalQuota     int64  `json:"total_quota"`
+	UsedQuota      int64  `json:"used_quota"`
+	RemainingQuota int64  `json:"remaining_quota"`
+	ShouldNotify   bool   `json:"should_notify"`
+	Message        string `json:"message,omitempty"`
+}
+
+func checkIdleQuota() IdleQuotaStatus {
+	status := IdleQuotaStatus{}
+	if pm == nil {
+		return status
+	}
+	var totalQuota, usedQuota int64
+	for _, p := range pm.GetAllRaw() {
+		if !p.Enabled {
+			continue
+		}
+		if p.TokenLimit > 0 {
+			totalQuota += p.TokenLimit
+		}
+		for _, k := range p.APIKeys {
+			if k.Enabled && k.Quota > 0 {
+				totalQuota += k.Quota
+				usedQuota += k.Used
+			}
+		}
+	}
+	status.TotalQuota = totalQuota
+	status.UsedQuota = usedQuota
+	status.RemainingQuota = totalQuota - usedQuota
+	status.HasIdleQuota = totalQuota > usedQuota && totalQuota > 0
+
+	if status.HasIdleQuota && netMgr != nil && !netMgr.config.NetworkEnabled {
+		usagePct := float64(0)
+		if totalQuota > 0 {
+			usagePct = float64(usedQuota) / float64(totalQuota) * 100
+		}
+		if usagePct < 70 {
+			status.ShouldNotify = true
+			status.Message = fmt.Sprintf("您本月额度使用率仅 %.0f%%，尚有 %d tokens 闲置。考虑加入共享网络，将闲置额度贡献给社区？", usagePct, status.RemainingQuota)
+		}
+	}
+	return status
+}
+
+func handleIdleQuotaCheck(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, checkIdleQuota())
 }

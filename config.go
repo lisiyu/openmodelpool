@@ -75,23 +75,25 @@ var sensitiveKeys = []string{"proxy_api_key", "coze_api_token", "cf_api_token", 
 
 func (c *Config) load() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	path := c.path
+	c.mu.Unlock()
 
-	// Use loadWithIntegrity to handle HMAC-prefixed files
-	if err := loadWithIntegrity(c.path, &c.data); err != nil {
-		// Fallback: try plain JSON (pre-upgrade or corrupted file)
-		b, ferr := os.ReadFile(c.path)
+	if err := loadWithIntegrity(path, &c.data); err != nil {
+		b, ferr := os.ReadFile(path)
 		if ferr == nil {
+			c.mu.Lock()
 			json.Unmarshal(b, &c.data)
+			c.mu.Unlock()
 		}
 	}
-	// Decrypt sensitive fields
+	c.mu.Lock()
 	for _, key := range sensitiveKeys {
 		if v, ok := c.data[key].(string); ok && v != "" && IsEncrypted(v) {
 			c.data[key] = decryptField(v)
 		}
 	}
-	slog.Info("config loaded", "path", c.path, "keys", len(c.data))
+	c.mu.Unlock()
+	slog.Info("config loaded", "path", path, "keys", len(c.data))
 }
 
 func (c *Config) save() {
@@ -108,9 +110,22 @@ func (c *Config) save() {
 // saveSync forces synchronous save (used during shutdown).
 func (c *Config) saveSync() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.doSave()
+	safe := make(map[string]any, len(c.data))
+	for k, v := range c.data {
+		safe[k] = v
+	}
+	for _, key := range sensitiveKeys {
+		if v, ok := safe[key].(string); ok && v != "" && !IsEncrypted(v) {
+			safe[key] = encryptField(v)
+		}
+	}
 	c.dirty = false
+	c.mu.Unlock()
+
+	os.MkdirAll(filepath.Dir(c.path), 0755)
+	if err := saveWithIntegrity(c.path, safe); err != nil {
+		slog.Error("failed to save config with integrity", "error", err)
+	}
 }
 
 func (c *Config) doSave() {

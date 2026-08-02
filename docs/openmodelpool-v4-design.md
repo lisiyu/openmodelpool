@@ -313,12 +313,12 @@ API 设置中有三个 URL 地址，覆盖全生命周期：
 
 | 模块名称 | 推荐 Go 技术选型 | 选型优势与说明 |
 |---|---|---|
-| **底层网络协议** | `go-libp2p` | 顶级 Web3 P2P 网络库，内置发现、加密、打洞及中继服务 |
+| **底层网络协议** | Go 原生 `net/http` + 自定义 P2P Overlay | 零外部依赖，单二进制编译，内置 DHT Kademlia 256-bit 发现 + Gossip 广播 + Seed 注册 |
 | **HTTP 代理分发** | Go 原生 `net/http/httputil` | 原生 ReverseProxy，完美支持 LLM 流式输出 (SSE) 转发 |
-| **本地轻量级数据库** | `go.etcd.io/bbolt` (BoltDB) | 纯 Go 编写的 K-V 数据库，无需 CGO 编译，用于存储账单与配置 |
+| **本地持久化** | JSON 文件 + 内存索引 | 零依赖，人类可读可调试，Phase 1 轻量级方案；bbolt 留 Phase 2 性能优化 |
 | **内存限流 (防刷)** | `x/time/rate` + `golang-lru` | 内存级令牌桶，高性能维护各请求节点 ID 的频率限制 |
 | **合规审查 (敏感词)** | `cloudflare/ahocorasick` | 纯 Go 高性能 AC 自动机，纳秒级正则/敏感词过滤，极低内存消耗 |
-| **密钥安全存储** | OS Keyring (via `keyring` 库) | 调用操作系统原生 Keychain/Credential Manager 加密存储 API Key |
+| **密钥安全存储** | AES-256-GCM 加密文件 + BIP39 助记词 | 零 CGO 依赖，跨平台一致行为；OS Keyring 留 Phase 2 可选增强 |
 
 **选型原则**：
 - **零外部依赖**：编译产物为单二进制文件，用户无需安装 runtime 或依赖
@@ -2557,7 +2557,8 @@ Gossip 协议 = DHT（日常运行）
 
 - **日常运行**：Gossip 最终一致，GitHub 注册表为最终权威
 - **冲突解决**：GitHub trust_pool.json 为最终权威，Gossip 为加速层
-- **争议裁决**：多节点签名确认，关键事件上链存证
+- **争议裁决**：多签确认（2/3+1 阈值签名），关键事件上链存证
+- **参数决策**：Phase 1 由管理员配置，不引入社区投票共识（见 A.5 决策）
 
 ---
 
@@ -3074,7 +3075,7 @@ BT 客户端之间通过扩展协议（如 uTP、PEX）交换控制消息；Open
 | **安全底线** | API Key 永远保存在本地绝不上传服务器；Prompt 传输路径加密 |
 | **消费端体验** | 零配置启动，本地暴露 OpenAI 兼容 API 端口，即插即用 |
 | **提供方存储** | 调用操作系统 Keyring 加密存储 Provider Key |
-| **技术栈** | 纯 Go 生态，单二进制文件，go-libp2p + BoltDB + AC 自动机 |
+| **技术栈** | 纯 Go 生态，单二进制文件，net/http + DHT Kademlia + AES-256-GCM + AC 自动机 |
 | **穿透模式** | 直连优先 + Relay 降级（5秒超时，2分钟中继上限） |
 | **WAF 防护** | 本地四层防护（Rate Limit / Token Limit / Content Safety / Behavioral） |
 | **防双花** | Usage Ticket 双向签名 + 批量公证 + 关联分析 |

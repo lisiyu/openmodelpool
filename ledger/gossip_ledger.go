@@ -1,8 +1,9 @@
 package ledger
 
 import (
-	"encoding/json"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -22,6 +23,8 @@ type GossipLedger struct {
 	trusts    map[string]*TrustRecord
 	claims    map[string]*CapabilityClaim
 	penalties map[string]*PenaltyRecord
+	txs       []*SignedTransaction
+	txIndex   map[string]*SignedTransaction
 	seq       uint64
 	pub       ed25519.PublicKey
 	priv      ed25519.PrivateKey
@@ -40,6 +43,8 @@ func NewGossipLedger(peerID string) (*GossipLedger, error) {
 		trusts:    make(map[string]*TrustRecord),
 		claims:    make(map[string]*CapabilityClaim),
 		penalties: make(map[string]*PenaltyRecord),
+		txs:       make([]*SignedTransaction, 0),
+		txIndex:   make(map[string]*SignedTransaction),
 		pub:       pub,
 		priv:      priv,
 	}, nil
@@ -276,4 +281,84 @@ func (g *GossipLedger) GossipSync(contributions []*ContributionRecord, trusts []
 		}
 	}
 	return added
+}
+
+func (g *GossipLedger) AppendTransaction(txType, nodeID string, amount int64, modelID, requestID string) (*SignedTransaction, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.seq++
+	txID := fmt.Sprintf("tx-%s-%d", g.peerID, g.seq)
+
+	var prevHash string
+	if len(g.txs) > 0 {
+		prevHash = g.txs[len(g.txs)-1].Hash
+	}
+
+	tx := &SignedTransaction{
+		ID:        txID,
+		Type:      txType,
+		NodeID:    nodeID,
+		Amount:    amount,
+		ModelID:   modelID,
+		RequestID: requestID,
+		PrevHash:  prevHash,
+		Timestamp: time.Now(),
+	}
+
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%d|%s|%s|%s", tx.ID, tx.Type, tx.NodeID, tx.Amount, tx.ModelID, tx.RequestID, tx.PrevHash)))
+	tx.Hash = fmt.Sprintf("%x", hash[:])
+
+	data, _ := json.Marshal(tx)
+	tx.Signature = ed25519.Sign(g.priv, data)
+
+	g.txs = append(g.txs, tx)
+	g.txIndex[tx.ID] = tx
+	return tx, nil
+}
+
+func (g *GossipLedger) GetTransactionChain(nodeID string) []*SignedTransaction {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	var chain []*SignedTransaction
+	for _, tx := range g.txs {
+		if tx.NodeID == nodeID {
+			chain = append(chain, tx)
+		}
+	}
+	return chain
+}
+
+func (g *GossipLedger) DeriveBalance(nodeID string) int64 {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	var balance int64
+	for _, tx := range g.txs {
+		if tx.NodeID == nodeID {
+			switch tx.Type {
+			case "contribution":
+				balance += tx.Amount
+			case "consumption":
+				balance -= tx.Amount
+			}
+		}
+	}
+	return balance
+}
+
+func (g *GossipLedger) VerifyChain() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	for i, tx := range g.txs {
+		if i > 0 {
+			if tx.PrevHash != g.txs[i-1].Hash {
+				return false
+			}
+		}
+		expected := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%d|%s|%s|%s", tx.ID, tx.Type, tx.NodeID, tx.Amount, tx.ModelID, tx.RequestID, tx.PrevHash)))
+		if tx.Hash != fmt.Sprintf("%x", expected[:]) {
+			return false
+		}
+	}
+	return true
 }

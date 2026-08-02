@@ -124,7 +124,8 @@ func TestWAFConcurrentStress(t *testing.T) {
 	eng := newWAFTestEngine(t, func(c *Config) {
 		c.Set("waf_enabled", "true")
 		c.Set("waf_ip_blacklist", "10.0.0.1")
-		// rate limit disabled so only the blacklist determines outcome
+		c.Set("waf_rate_limit_rps", "0")
+		c.Set("waf_rate_limit_burst", "0")
 	})
 
 	var wg sync.WaitGroup

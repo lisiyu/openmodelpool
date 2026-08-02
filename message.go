@@ -487,7 +487,7 @@ func handleReceiveMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	senderNodeID := r.Header.Get("X-Node-ID")
+	senderNodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 
 	var msg FederationMessage
 	if err := readJSON(r, &msg); err != nil {

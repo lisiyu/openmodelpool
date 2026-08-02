@@ -205,9 +205,10 @@ func (r *NodeRegistry) LoadAll() ([]*RouteEntry, error) {
 // same directory/files from racing. Callers must not hold r.mu.
 func (r *NodeRegistry) writeLocked(pn persistedNode) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	name := registryFileName(pn.NodeID)
 	path := filepath.Join(r.dir, name)
+	r.mu.Unlock()
+
 	tmp := path + ".tmp"
 	data, err := json.MarshalIndent(pn, "", "  ")
 	if err != nil {
@@ -219,7 +220,6 @@ func (r *NodeRegistry) writeLocked(pn persistedNode) {
 		return
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		// Best-effort cleanup of the temp file on rename failure.
 		_ = os.Remove(tmp)
 		slog.Error("failed to persist node", "node_id", pn.NodeID, "error", err)
 	}

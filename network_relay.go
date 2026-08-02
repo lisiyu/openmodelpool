@@ -286,7 +286,7 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 	// G1 hardening (design §18.3 P1-5): buffer the request body once so we can
 	// sign the forward. The reverse proxy would otherwise consume the stream; we
 	// restore it after signing so the proxy forwards the original payload.
-	bodyBytes, err := io.ReadAll(r.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
 	if err != nil {
 		writeError(w, 400, "failed to read request body")
 		return
@@ -503,9 +503,9 @@ func attachRelayAuth(req *http.Request, nodeID string, sig string, ts string) {
 //
 // Returns (httpStatus, message); httpStatus == 0 means the request is allowed.
 func verifyRelayForwardAuth(r *http.Request, body []byte) (int, string) {
-	nodeID := r.Header.Get("X-Node-ID")
+	nodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 	if nodeID == "" {
-		nodeID = r.Header.Get("X-Node-Auth")
+		nodeID = sanitizeNodeID(r.Header.Get("X-Node-Auth"))
 	}
 	if nodeID == "" {
 		// No relay identity claim -> normal consumer request (withProxyAuth).
@@ -589,7 +589,7 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read and buffer the body so we can parse model and re-send
-	bodyBytes, err := io.ReadAll(r.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
 	if err != nil {
 		writeError(w, 400, "failed to read request body")
 		return

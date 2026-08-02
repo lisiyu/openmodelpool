@@ -331,9 +331,11 @@ func (r *ReputationManager) save() {
 		slog.Error("failed to marshal reputation data", "error", err)
 		return
 	}
-	if err := os.WriteFile(path, raw, 0644); err != nil {
+	r.mu.Unlock()
+	if err := os.WriteFile(path, raw, 0600); err != nil {
 		slog.Error("failed to write reputation file", "error", err)
 	}
+	r.mu.Lock()
 }
 
 func (r *ReputationManager) load() {
@@ -392,6 +394,10 @@ func handleGetReputations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if repMgr == nil {
+		writeJSON(w, 200, map[string]any{"reputations": []any{}, "total": 0})
+		return
+	}
 	reps := repMgr.GetAllReputations()
 	writeJSON(w, 200, map[string]any{
 		"reputations": reps,

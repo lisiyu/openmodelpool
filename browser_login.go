@@ -456,7 +456,7 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(p.Proxy, "vmess://") {
 			resolved, err := ResolveProxy(p.ID, p.Proxy)
 			if err != nil {
-				writeError(w, 500, "代理解析失败: "+err.Error())
+				writeError(w, 500, "代理解析失败")
 				return
 			}
 			proxyURL = resolved
@@ -472,7 +472,7 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	// profile locks that cause "chrome failed to start" on Windows).
 	userDataDir, err := userDataDirFor(id)
 	if err != nil {
-		writeError(w, 500, "浏览器启动失败（无法准备用户目录）: "+err.Error())
+		writeError(w, 500, "浏览器启动失败（无法准备用户目录）")
 		return
 	}
 
@@ -766,7 +766,10 @@ func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(time.Duration(t) * time.Second)
 
 	case "navigate":
-		// Use setTimeout for async navigation (doesn't block CDP connection)
+		if !strings.HasPrefix(req.Value, "http://") && !strings.HasPrefix(req.Value, "https://") {
+			errMsg = "只允许 http/https 协议"
+			break
+		}
 		sess.update("navigating", "正在导航到 "+req.Value+" ...", nil)
 		navErr := chromedp.Run(sess.ctx, chromedp.Navigate(req.Value))
 		if navErr != nil {
@@ -923,7 +926,7 @@ func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 	buf, err := takeScreenshot(sess.ctx)
 	if err != nil {
 		sess.update("error", "截图失败: "+err.Error(), nil)
-		writeError(w, 500, "截图失败: "+err.Error())
+		writeError(w, 500, "截图失败")
 		return
 	}
 
@@ -973,7 +976,7 @@ func handleBrowserLoginFinish(w http.ResponseWriter, r *http.Request) {
 	}))
 
 	if err != nil {
-		writeError(w, 500, "获取Cookie失败: "+err.Error())
+		writeError(w, 500, "获取Cookie失败")
 		return
 	}
 

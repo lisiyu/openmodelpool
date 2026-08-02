@@ -81,6 +81,7 @@ type WAFEngine struct {
 }
 
 const wafDefaultMaxViolations = 1000
+const wafIPLimitersMaxEntries = 10000
 
 // wafEngine is the package-global singleton, initialized by initWAF.
 var wafEngine *WAFEngine
@@ -121,17 +122,24 @@ func (e *WAFEngine) Reload() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	e.enabled = cfg.Get("waf_enabled", "false") == "true"
+	e.enabled = cfg.Get("waf_enabled", "true") == "true"
 	e.ipBlacklist = parseListToSet(cfg.Get("waf_ip_blacklist", ""))
 	e.uaBlacklist = parseList(cfg.Get("waf_ua_blacklist", ""))
 	e.blockedPaths = parseList(cfg.Get("waf_blocked_paths", ""))
 	e.contentKw = parseList(cfg.Get("waf_content_keywords", ""))
-	e.rateRPS = parseFloat64(cfg.Get("waf_rate_limit_rps", "0"), 0)
-	e.rateBurst = parseFloat64(cfg.Get("waf_rate_limit_burst", "0"), 0)
-	if e.rateBurst < 1 {
-		e.rateBurst = e.rateRPS
+	rpsStr := cfg.Get("waf_rate_limit_rps", "10")
+	burstStr := cfg.Get("waf_rate_limit_burst", "20")
+	if rpsStr == "0" || rpsStr == "0.0" {
+		e.rateRPS = 0
+		e.rateBurst = 0
+	} else {
+		e.rateRPS = parseFloat64(rpsStr, 10)
+		e.rateBurst = parseFloat64(burstStr, 20)
 		if e.rateBurst < 1 {
-			e.rateBurst = 1
+			e.rateBurst = e.rateRPS
+			if e.rateBurst < 1 {
+				e.rateBurst = 1
+			}
 		}
 	}
 }
@@ -237,6 +245,9 @@ func (e *WAFEngine) Check(r *http.Request) (bool, *WAFViolation) {
 	if limiter == nil && rateRPS > 0 {
 		e.mu.Lock()
 		if limiter = e.ipLimiters[ip]; limiter == nil {
+			if len(e.ipLimiters) >= wafIPLimitersMaxEntries {
+				e.cleanupIPLimitersLocked()
+			}
 			limiter = NewRateLimiterWithBurst(rateRPS, rateBurst)
 			e.ipLimiters[ip] = limiter
 		}
@@ -374,6 +385,18 @@ func (e *WAFEngine) RemoveBan(key string) bool {
 		return true
 	}
 	return false
+}
+
+func (e *WAFEngine) cleanupIPLimitersLocked() {
+	now := time.Now()
+	for ip, lim := range e.ipLimiters {
+		if now.Sub(lim.lastRefill) > 10*time.Minute {
+			delete(e.ipLimiters, ip)
+		}
+		if len(e.ipLimiters) < wafIPLimitersMaxEntries/2 {
+			break
+		}
+	}
 }
 
 // wafMiddleware enforces the WAF engine on inbound requests. It is a no-op when

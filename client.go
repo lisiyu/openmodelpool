@@ -66,6 +66,10 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 	}
 
 	if proxy == "" {
+		if isPrivateHost(p.BaseURL) {
+			slog.Warn("blocked SSRF attempt: provider BaseURL resolves to private IP", "provider", p.ID, "url", p.BaseURL)
+			return &http.Client{Timeout: timeout}
+		}
 		return &http.Client{Transport: sharedTransport, Timeout: timeout}
 	}
 
@@ -108,35 +112,61 @@ func mustParseURL(rawurl string) *url.URL {
 	return u
 }
 
+// isPrivateHost checks if a hostname resolves to a private/loopback IP.
+// Returns true if the host is private or unresolvable (fail-closed).
+func isPrivateHost(host string) bool {
+	h := host
+	if i := strings.LastIndex(h, ":"); i >= 0 {
+		h = h[:i]
+	}
+	if h == "localhost" || h == "" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	if ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+	}
+	ips, err := net.LookupHost(h)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	for _, ipStr := range ips {
+		parsed := net.ParseIP(ipStr)
+		if parsed != nil && (parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast() || parsed.IsLinkLocalMulticast()) {
+			return true
+		}
+	}
+	return false
+}
+
 // doNonStream sends a non-streaming request and returns the OpenAI-format response.
-func doNonStream(p Provider, model string, messages []ChatMessage, extra map[string]any) (*ChatResponse, error) {
+func doNonStream(ctx context.Context, p Provider, model string, messages []ChatMessage, extra map[string]any) (*ChatResponse, error) {
 	switch p.Type {
 	case "sider":
-		return siderNonStream(p, model, messages)
+		return siderNonStream(ctx, p, model, messages)
 	case "web_session":
-		return webSessionNonStream(p, model, messages)
+		return webSessionNonStream(ctx, p, model, messages)
 	case "coze":
-		return cozeNonStream(p, model, messages)
+		return cozeNonStream(ctx, p, model, messages)
 	case "anthropic":
-		return anthropicNonStream(p, model, messages)
+		return anthropicNonStream(ctx, p, model, messages)
 	default:
-		return openaiNonStream(p, model, messages, extra)
+		return openaiNonStream(ctx, p, model, messages, extra)
 	}
 }
 
-// doStream writes SSE chunks to w. Returns when stream completes.
-func doStream(p Provider, model string, messages []ChatMessage, extra map[string]any, w io.Writer) error {
+func doStream(ctx context.Context, p Provider, model string, messages []ChatMessage, extra map[string]any, w io.Writer) error {
 	switch p.Type {
 	case "sider":
-		return siderStream(p, model, messages, w)
+		return siderStream(ctx, p, model, messages, w)
 	case "web_session":
-		return webSessionStream(p, model, messages, w)
+		return webSessionStream(ctx, p, model, messages, w)
 	case "coze":
-		return cozeStream(p, model, messages, w)
+		return cozeStream(ctx, p, model, messages, w)
 	case "anthropic":
-		return anthropicStream(p, model, messages, w)
+		return anthropicStream(ctx, p, model, messages, w)
 	default:
-		return openaiStream(p, model, messages, extra, w)
+		return openaiStream(ctx, p, model, messages, extra, w)
 	}
 }
 // ============================================================
@@ -249,7 +279,7 @@ func webSessionExtractText(data map[string]any, path string) string {
 }
 
 // webSessionNonStream sends a non-streaming request and returns OpenAI-format response.
-func webSessionNonStream(p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
+func webSessionNonStream(ctx context.Context, p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
 	cfg := p.WebSession
 	if cfg == nil {
 		return nil, fmt.Errorf("web_session config missing for provider %s", p.ID)
@@ -264,7 +294,7 @@ func webSessionNonStream(p Provider, model string, messages []ChatMessage) (*Cha
 
 	payload := webSessionBuildPayload(cfg, model, messages, false)
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", cfg.APIEndpoint, bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", cfg.APIEndpoint, bytes.NewReader(body))
 	req.Header = webSessionBuildHeaders(cfg, token)
 
 	client := proxyHTTPClient(p, 300*time.Second)
@@ -329,7 +359,7 @@ func webSessionNonStream(p Provider, model string, messages []ChatMessage) (*Cha
 }
 
 // webSessionStream sends a streaming request and writes SSE chunks in OpenAI format.
-func webSessionStream(p Provider, model string, messages []ChatMessage, w io.Writer) error {
+func webSessionStream(ctx context.Context, p Provider, model string, messages []ChatMessage, w io.Writer) error {
 	cfg := p.WebSession
 	if cfg == nil {
 		return fmt.Errorf("web_session config missing for provider %s", p.ID)
@@ -344,7 +374,7 @@ func webSessionStream(p Provider, model string, messages []ChatMessage, w io.Wri
 
 	payload := webSessionBuildPayload(cfg, model, messages, true)
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", cfg.APIEndpoint, bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", cfg.APIEndpoint, bytes.NewReader(body))
 	req.Header = webSessionBuildHeaders(cfg, token)
 
 	client := proxyHTTPClient(p, 300*time.Second)
@@ -475,8 +505,11 @@ func testWebSession(p Provider) map[string]any {
 	if err != nil {
 		return map[string]any{"success": false, "error": err.Error()}
 	}
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 	respBody, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
 	bodyStr := string(respBody)
 	// Detect Cloudflare challenge
 	if resp.StatusCode == 403 && (strings.Contains(bodyStr, "Just a moment") || strings.Contains(bodyStr, "cloudflare")) {
@@ -500,9 +533,9 @@ func testWebSession(p Provider) map[string]any {
 // OpenAI-compatible
 // ============================================================
 
-func openaiNonStream(p Provider, model string, messages []ChatMessage, extra map[string]any) (*ChatResponse, error) {
+func openaiNonStream(ctx context.Context, p Provider, model string, messages []ChatMessage, extra map[string]any) (*ChatResponse, error) {
 	body := buildOpenAIBody(model, messages, false, extra)
-	req, _ := http.NewRequest("POST", p.BaseURL+"/chat/completions", jsonBody(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", jsonBody(body))
 	setOpenAIHeaders(req, p.APIKey)
 
 	resp, err := proxyHTTPClient(p, 300 * time.Second).Do(req)
@@ -523,9 +556,9 @@ func openaiNonStream(p Provider, model string, messages []ChatMessage, extra map
 	return &result, nil
 }
 
-func openaiStream(p Provider, model string, messages []ChatMessage, extra map[string]any, w io.Writer) error {
+func openaiStream(ctx context.Context, p Provider, model string, messages []ChatMessage, extra map[string]any, w io.Writer) error {
 	body := buildOpenAIBody(model, messages, true, extra)
-	req, _ := http.NewRequest("POST", p.BaseURL+"/chat/completions", jsonBody(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", jsonBody(body))
 	setOpenAIHeaders(req, p.APIKey)
 
 	// Use a long overall timeout but with idle detection via pipe
@@ -644,10 +677,10 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 	}
 }
 
-func siderNonStream(p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
+func siderNonStream(ctx context.Context, p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
 	payload := siderBuildPayload(model, messages, false)
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", siderChatURL, bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(body))
 	req.Header = siderBuildHeaders(p.APIKey)
 
 	client := proxyHTTPClient(p, 300 * time.Second)
@@ -702,10 +735,10 @@ func siderNonStream(p Provider, model string, messages []ChatMessage) (*ChatResp
 	}, nil
 }
 
-func siderStream(p Provider, model string, messages []ChatMessage, w io.Writer) error {
+func siderStream(ctx context.Context, p Provider, model string, messages []ChatMessage, w io.Writer) error {
 	payload := siderBuildPayload(model, messages, true)
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", siderChatURL, bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(body))
 	req.Header = siderBuildHeaders(p.APIKey)
 
 	client := proxyHTTPClient(p, 300 * time.Second)
@@ -781,7 +814,7 @@ func siderStream(p Provider, model string, messages []ChatMessage, w io.Writer) 
 // Coze adapter
 // ============================================================
 
-func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
+func cozeNonStream(ctx context.Context, p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
 	token := p.APIKey
 	if token == "" {
 		token = cfg.Get("coze_api_token", "")
@@ -826,7 +859,7 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 	}
 
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", baseURL+"/v3/chat", bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", baseURL+"/v3/chat", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -858,7 +891,7 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 
 	for status != "completed" && status != "failed" {
 		time.Sleep(time.Second)
-		pollReq, _ := http.NewRequest("GET", baseURL+"/v3/chat/retrieve?conversation_id="+convID+"&chat_id="+chatID, nil)
+		pollReq, _ := http.NewRequestWithContext(ctx, "GET", baseURL+"/v3/chat/retrieve?conversation_id="+convID+"&chat_id="+chatID, nil)
 		pollReq.Header.Set("Authorization", "Bearer "+token)
 		pollReq.Header.Set("Content-Type", "application/json")
 
@@ -879,7 +912,7 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 	}
 
 	// Get messages
-	msgReq, _ := http.NewRequest("GET", baseURL+"/v3/chat/message/list?conversation_id="+convID+"&chat_id="+chatID, nil)
+	msgReq, _ := http.NewRequestWithContext(ctx, "GET", baseURL+"/v3/chat/message/list?conversation_id="+convID+"&chat_id="+chatID, nil)
 	msgReq.Header.Set("Authorization", "Bearer "+token)
 	msgReq.Header.Set("Content-Type", "application/json")
 
@@ -927,7 +960,7 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 	}, nil
 }
 
-func cozeStream(p Provider, model string, messages []ChatMessage, w io.Writer) error {
+func cozeStream(ctx context.Context, p Provider, model string, messages []ChatMessage, w io.Writer) error {
 	token := p.APIKey
 	if token == "" {
 		token = cfg.Get("coze_api_token", "")
@@ -972,14 +1005,14 @@ func cozeStream(p Provider, model string, messages []ChatMessage, w io.Writer) e
 	}
 
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", baseURL+"/v3/chat", bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", baseURL+"/v3/chat", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := proxyHTTPClient(p, 300 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
-		writeSSEError(w, model, err.Error())
+		writeSSEError(w, model, "upstream request failed")
 		return nil
 	}
 	defer resp.Body.Close()
@@ -1058,7 +1091,7 @@ func anthropicBuildMessages(messages []ChatMessage) ([]map[string]any, string) {
 	return out, systemMsg
 }
 
-func anthropicNonStream(p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
+func anthropicNonStream(ctx context.Context, p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
 	anthMessages, systemMsg := anthropicBuildMessages(messages)
 
 	payload := map[string]any{
@@ -1072,7 +1105,7 @@ func anthropicNonStream(p Provider, model string, messages []ChatMessage) (*Chat
 	}
 
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", p.BaseURL+"/v1/messages", bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/v1/messages", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", p.APIKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
@@ -1136,7 +1169,7 @@ func anthropicNonStream(p Provider, model string, messages []ChatMessage) (*Chat
 	}, nil
 }
 
-func anthropicStream(p Provider, model string, messages []ChatMessage, w io.Writer) error {
+func anthropicStream(ctx context.Context, p Provider, model string, messages []ChatMessage, w io.Writer) error {
 	anthMessages, systemMsg := anthropicBuildMessages(messages)
 
 	payload := map[string]any{
@@ -1150,7 +1183,7 @@ func anthropicStream(p Provider, model string, messages []ChatMessage, w io.Writ
 	}
 
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", p.BaseURL+"/v1/messages", bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/v1/messages", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", p.APIKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
@@ -1269,7 +1302,7 @@ func testConnection(p Provider) map[string]any {
 	if IsEncrypted(p.APIKey) {
 		decrypted, err := decryptAPIKey(p.APIKey)
 		if err != nil {
-			return map[string]any{"success": false, "error": "failed to decrypt API key: " + err.Error()}
+			return map[string]any{"success": false, "error": "failed to decrypt API key"}
 		}
 		p.APIKey = decrypted
 	}

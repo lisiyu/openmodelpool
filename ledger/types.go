@@ -117,3 +117,16 @@ type ContributionLedger interface {
 	VerifyContribution(id string) (bool, error)
 	GetPeerContributions(peerID string) ([]*ContributionRecord, error)
 }
+
+type SignedTransaction struct {
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	NodeID    string    `json:"node_id"`
+	Amount    int64     `json:"amount"`
+	ModelID   string    `json:"model_id,omitempty"`
+	RequestID string    `json:"request_id,omitempty"`
+	PrevHash  string    `json:"prev_hash"`
+	Hash      string    `json:"hash"`
+	Timestamp time.Time `json:"timestamp"`
+	Signature []byte    `json:"signature"`
+}

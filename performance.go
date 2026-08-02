@@ -202,8 +202,7 @@ func (wp *WorkerPool) Submit(f func()) bool {
 	case wp.taskCh <- f:
 		return true
 	default:
-		// Queue full — execute in a new goroutine to avoid blocking
-		go f()
+		wp.total.Add(-1)
 		return false
 	}
 }

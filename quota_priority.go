@@ -90,6 +90,12 @@ func (p *QuotaPool) Deduct(amount int64) bool {
 	return true
 }
 
+// TryDeduct atomically checks and deducts in a single operation, preventing TOCTOU races.
+// Prefer this over CanDeduct+Deduct sequences.
+func (p *QuotaPool) TryDeduct(amount int64) bool {
+	return p.Deduct(amount)
+}
+
 // Remaining returns the remaining balance, or -1 for an unlimited pool.
 func (p *QuotaPool) Remaining() int64 {
 	p.mu.Lock()
@@ -133,7 +139,7 @@ func ConsumeWithPriority(keyType KeyType, amount int64, pools map[PoolKind]*Quot
 		if !ok || pool == nil {
 			continue
 		}
-		if pool.CanDeduct(amount) && pool.Deduct(amount) {
+		if pool.TryDeduct(amount) {
 			slog.Debug("quota priority: deducted from pool",
 				"key_type", keyType, "pool", pool.Kind.String(),
 				"node", pool.NodeID, "amount", amount)

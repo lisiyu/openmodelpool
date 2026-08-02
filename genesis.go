@@ -134,7 +134,7 @@ func HandleJoinRequest(req NodeJoinRequest) NodeJoinResponse {
 	}
 
 	// Step 2: Verify node ID format
-	if len(req.NodeID) < 4 || req.NodeID[:3] != "mm-" {
+	if len(req.NodeID) < 5 || req.NodeID[:4] != "mmx-" {
 		return NodeJoinResponse{
 			Accepted: false,
 			Reason:   "invalid node_id format",

@@ -33,9 +33,13 @@ func handleNodeInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleNodePubKey(w http.ResponseWriter, r *http.Request) {
+	pubKeyB64 := ""
+	if node != nil && node.IsInitialized() {
+		pubKeyB64 = node.PubKeyB64()
+	}
 	writeJSON(w, 200, map[string]any{
-		"public_key": "",
-		"note":       "node public key not exposed (BIP39 identity not yet wired)",
+		"public_key": pubKeyB64,
+		"node_id":    func() string { if node != nil { return node.NodeID() }; return "" }(),
 	})
 }
 
@@ -69,7 +73,7 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = readJSON(r, &hbBody)
 
-	senderNodeID := r.Header.Get("X-Node-ID")
+	senderNodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 	if senderNodeID == "" {
 		senderNodeID = hbBody.NodeID
 	}

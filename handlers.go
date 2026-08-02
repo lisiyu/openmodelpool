@@ -771,7 +771,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 		if stream {
 			IncrConn(p.ID, accessType)
-			dataSent, err := handleStreamProxy(w, p, actualModel, req.Messages, extra, model, startTime, accessType)
+			dataSent, err := handleStreamProxy(w, r, p, actualModel, req.Messages, extra, model, startTime, accessType)
 			DecrConn(p.ID, accessType)
 			if err == nil {
 				if consumerID != "" {
@@ -789,7 +789,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			lastErr = err
 		} else {
 			IncrConn(p.ID, accessType)
-			resp, err := doNonStream(p, actualModel, req.Messages, extra)
+			resp, err := doNonStream(r.Context(), p, actualModel, req.Messages, extra)
 			DecrConn(p.ID, accessType)
 			if err != nil {
 				slog.Warn("non-stream provider failed", "provider", p.Name, "model", actualModel, "error", err)
@@ -818,7 +818,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 // handleStreamProxy handles streaming requests. Returns (dataSent bool, err error).
 // If dataSent is true, the response headers have been written and retry is not possible.
-func handleStreamProxy(w http.ResponseWriter, p Provider, model string, messages []ChatMessage, extra map[string]any, origModel string, startTime time.Time, accessType string) (bool, error) {
+func handleStreamProxy(w http.ResponseWriter, r *http.Request, p Provider, model string, messages []ChatMessage, extra map[string]any, origModel string, startTime time.Time, accessType string) (bool, error) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -829,7 +829,7 @@ func handleStreamProxy(w http.ResponseWriter, p Provider, model string, messages
 	}
 
 	sw := &streamWriter{w: w, flusher: flusher}
-	err := doStream(p, model, messages, extra, sw)
+	err := doStream(r.Context(), p, model, messages, extra, sw)
 
 	latencyMS := float64(time.Since(startTime).Milliseconds())
 	if err != nil {
@@ -876,11 +876,11 @@ func handleCozeRequest(w http.ResponseWriter, r *http.Request, model string, mes
 		w.Header().Set("X-Accel-Buffering", "no")
 		flusher, _ := w.(http.Flusher)
 		sw := &streamWriter{w: w, flusher: flusher}
-		cozeStream(p, model, messages, sw)
+		cozeStream(r.Context(), p, model, messages, sw)
 		return
 	}
 
-	resp, err := cozeNonStream(p, model, messages)
+	resp, err := cozeNonStream(r.Context(), p, model, messages)
 	if err != nil {
 		writeError(w, 502, fmt.Sprintf("Coze error: %v", err))
 		return

@@ -77,11 +77,13 @@ func (rl *RateLimiter) Allow() bool {
 }
 
 // GlobalRateLimiter manages global and per-consumer rate limiting.
+const consumersMaxEntries = 10000
+
 type GlobalRateLimiter struct {
-	global     *RateLimiter
-	consumers  map[string]*RateLimiter
-	mu         sync.RWMutex
-	globalQPS  float64
+	global      *RateLimiter
+	consumers   map[string]*RateLimiter
+	mu          sync.RWMutex
+	globalQPS   float64
 	consumerQPS float64
 }
 
@@ -116,8 +118,23 @@ func (g *GlobalRateLimiter) getConsumerLimiter(consumerID string) *RateLimiter {
 		return limiter
 	}
 	limiter = NewRateLimiter(g.consumerQPS)
+	if len(g.consumers) >= consumersMaxEntries {
+		g.cleanupConsumersLocked()
+	}
 	g.consumers[consumerID] = limiter
 	return limiter
+}
+
+func (g *GlobalRateLimiter) cleanupConsumersLocked() {
+	now := time.Now()
+	for id, lim := range g.consumers {
+		if now.Sub(lim.lastRefill) > 10*time.Minute {
+			delete(g.consumers, id)
+		}
+		if len(g.consumers) < consumersMaxEntries/2 {
+			break
+		}
+	}
 }
 
 // rateLimitMiddleware enforces rate limits. Should be placed after auth middleware.
@@ -186,6 +203,8 @@ type ipRateLimitEntry struct {
 
 // rateLimitByIP returns a middleware that limits requests per client IP.
 // maxRequests defines the allowed requests per minute for each unique IP.
+const ipRateLimitersMaxEntries = 10000
+
 func rateLimitByIP(maxRequestsPerMinute float64, endpointName string) func(http.HandlerFunc) http.HandlerFunc {
 	qps := maxRequestsPerMinute / 60.0
 	return func(next http.HandlerFunc) http.HandlerFunc {
@@ -198,9 +217,26 @@ func rateLimitByIP(maxRequestsPerMinute float64, endpointName string) func(http.
 
 			if !exists {
 				ipRateLimiters.Lock()
-				// Double-check
 				entry, exists = ipRateLimiters.limiters[ip+endpointName]
 				if !exists {
+					if len(ipRateLimiters.limiters) >= ipRateLimitersMaxEntries {
+						cutoff := time.Now().Add(-5 * time.Minute)
+						for k, e := range ipRateLimiters.limiters {
+							if e.lastSeen.Before(cutoff) {
+								delete(ipRateLimiters.limiters, k)
+							}
+						}
+					}
+					if len(ipRateLimiters.limiters) >= ipRateLimitersMaxEntries {
+						ipRateLimiters.Unlock()
+						slog.Warn("IP rate limiter map full, rejecting new IP", "ip", ip)
+						writeJSON(w, http.StatusTooManyRequests, ErrorResponse{Error: ErrorDetail{
+							Message: "rate limit exceeded, please try again later",
+							Type:    "rate_limit_error",
+							Code:    "rate_limit_ip_map_full",
+						}})
+						return
+					}
 					entry = &ipRateLimitEntry{
 						limiter:  NewRateLimiterWithBurst(qps, maxRequestsPerMinute),
 						lastSeen: time.Now(),

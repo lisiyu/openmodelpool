@@ -7,18 +7,17 @@ import (
 )
 
 // TestFederationAuth_TrustedSeedGETPoolAllowed verifies P1-1: a GET to
-// /federation/pool whose Host matches a configured bootstrap seed node is
-// allowed through withFederationAuth without presenting credentials.
+// /federation/pool with a valid X-Seed-Token is allowed through
+// withFederationAuth without presenting other credentials.
 func TestFederationAuth_TrustedSeedGETPoolAllowed(t *testing.T) {
 	_ = setupTestEnv(t)
-	netMgr = &NetworkManager{config: NetworkConfig{BootstrapNodes: []string{"https://openmodelpool.com"}}}
-	t.Cleanup(func() { netMgr = nil })
+	cfg.Set("federation_secret", "test-seed-secret")
 	fed = &FederationManager{enabled: true}
 	t.Cleanup(func() { fed = nil })
 
 	handler := withFederationAuth(handleFederationPool)
 	req := httptest.NewRequest(http.MethodGet, "/api/federation/pool", nil)
-	req.Host = "openmodelpool.com"
+	req.Header.Set("X-Seed-Token", "test-seed-secret")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
@@ -32,14 +31,13 @@ func TestFederationAuth_TrustedSeedGETPoolAllowed(t *testing.T) {
 // preserving the strict SA-12 posture.
 func TestFederationAuth_NonSeedGETPoolForbidden(t *testing.T) {
 	_ = setupTestEnv(t)
-	netMgr = &NetworkManager{config: NetworkConfig{BootstrapNodes: []string{"https://openmodelpool.com"}}}
-	t.Cleanup(func() { netMgr = nil })
+	cfg.Set("federation_secret", "test-seed-secret")
 	fed = &FederationManager{enabled: true}
 	t.Cleanup(func() { fed = nil })
 
 	handler := withFederationAuth(handleFederationPool)
 	req := httptest.NewRequest(http.MethodGet, "/api/federation/pool", nil)
-	req.Host = "evil.example.com"
+	req.Header.Set("X-Seed-Token", "wrong-secret")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
@@ -53,14 +51,13 @@ func TestFederationAuth_NonSeedGETPoolForbidden(t *testing.T) {
 // must still be rejected.
 func TestFederationAuth_NonGETPoolForbidden(t *testing.T) {
 	_ = setupTestEnv(t)
-	netMgr = &NetworkManager{config: NetworkConfig{BootstrapNodes: []string{"https://openmodelpool.com"}}}
-	t.Cleanup(func() { netMgr = nil })
+	cfg.Set("federation_secret", "test-seed-secret")
 	fed = &FederationManager{enabled: true}
 	t.Cleanup(func() { fed = nil })
 
 	handler := withFederationAuth(handleFederationPool)
 	req := httptest.NewRequest(http.MethodPost, "/api/federation/pool", nil)
-	req.Host = "openmodelpool.com"
+	req.Header.Set("X-Seed-Token", "test-seed-secret")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
@@ -73,15 +70,14 @@ func TestFederationAuth_NonGETPoolForbidden(t *testing.T) {
 // does NOT weaken any other federation path (SA-12 preserved).
 func TestFederationAuth_OtherProtectedPathForbidden(t *testing.T) {
 	_ = setupTestEnv(t)
-	netMgr = &NetworkManager{config: NetworkConfig{BootstrapNodes: []string{"https://openmodelpool.com"}}}
-	t.Cleanup(func() { netMgr = nil })
+	cfg.Set("federation_secret", "test-seed-secret")
 	fed = &FederationManager{enabled: true}
 	t.Cleanup(func() { fed = nil })
 
 	dummy := func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }
 	handler := withFederationAuth(dummy)
 	req := httptest.NewRequest(http.MethodGet, "/api/federation/registry", nil)
-	req.Host = "openmodelpool.com" // trusted seed, but path is not /federation/pool
+	req.Header.Set("X-Seed-Token", "test-seed-secret")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 

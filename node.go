@@ -466,7 +466,7 @@ func (n *NodeIdentity) generate() error {
 	n.encPrivKey = encryptField(privKeyB64)
 	n.privKey = priv // temporarily held for save(), cleared after save
 	n.pubKey = pub
-	n.nodeID = "mm-" + base58Encode(pub[:16])
+	n.nodeID = "mmx-" + hex.EncodeToString(pub)
 	n.hasMnemonic = false
 	n.joinedAt = time.Now().UTC()
 	return nil
@@ -474,15 +474,12 @@ func (n *NodeIdentity) generate() error {
 
 func (n *NodeIdentity) save() {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 
-	// SA-13: Use encrypted in-memory key if available, otherwise encrypt from plaintext
 	encKey := n.encPrivKey
 	if encKey == "" && n.privKey != nil {
 		privKeyB64 := base64.StdEncoding.EncodeToString(n.privKey)
 		encKey = encryptField(privKeyB64)
 		n.encPrivKey = encKey
-		// Clear plaintext private key after encryption
 		for i := range n.privKey {
 			n.privKey[i] = 0
 		}
@@ -490,10 +487,10 @@ func (n *NodeIdentity) save() {
 	}
 
 	if encKey == "" {
+		n.mu.Unlock()
 		return
 	}
 
-	// Encrypt mnemonic if available
 	encMnemonic := ""
 	if n.mnemonic != "" {
 		encMnemonic = encryptField(n.mnemonic)
@@ -509,10 +506,12 @@ func (n *NodeIdentity) save() {
 		GitHubUser:      n.githubUser,
 		GitHubID:        n.githubID,
 		JoinedAt:        n.joinedAt.Format(time.RFC3339),
-		Version:         2, // v4.0 storage version
+		Version:         2,
 	}
 
 	data, _ := json.MarshalIndent(store, "", "  ")
+	n.mu.Unlock()
+
 	atomicWriteFile(n.keyPath, data, 0600)
 }
 
@@ -560,6 +559,23 @@ func (n *NodeIdentity) Sign(message []byte) string {
 	}
 
 	return result
+}
+
+// privateKey returns the decrypted Ed25519 private key for transport encryption.
+// The caller must zero the returned key after use.
+func (n *NodeIdentity) privateKey() ed25519.PrivateKey {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	decrypted := decryptField(n.encPrivKey)
+	if decrypted == "" {
+		return nil
+	}
+	keyBytes, err := base64.StdEncoding.DecodeString(decrypted)
+	if err != nil {
+		return nil
+	}
+	return ed25519.PrivateKey(keyBytes)
 }
 
 // canonicalJSON marshals v to JSON after temporarily zeroing its Signature

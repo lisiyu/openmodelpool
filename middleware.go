@@ -50,13 +50,6 @@ func isOriginAllowed(origin, whitelist string) bool {
 		if allowed == origin {
 			return true
 		}
-		// Wildcard subdomain: *.example.com matches sub.example.com
-		if strings.HasPrefix(allowed, "*.") {
-			suffix := allowed[1:] // ".example.com"
-			if strings.HasSuffix(origin, suffix) {
-				return true
-			}
-		}
 	}
 	return false
 }
@@ -78,9 +71,8 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			// No auth header - check if proxy key is required
 			proxyKey := cfg.Get("proxy_api_key", "")
-			if proxyKey == "" {
+			if proxyKey == "" && len(multiUser.consumers) == 0 {
 				r.Header.Set("X-Request-Owner", "")
 				r.Header.Set("X-Request-Role", "admin")
 				handler(w, r)

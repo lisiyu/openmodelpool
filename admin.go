@@ -11,8 +11,10 @@ import (
 	"net/smtp"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,7 +26,12 @@ func handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"initialized": auth.Initialized()})
 }
 
+var setupMu sync.Mutex
+
 func handleSetup(w http.ResponseWriter, r *http.Request) {
+	setupMu.Lock()
+	defer setupMu.Unlock()
+
 	if auth.Initialized() {
 		writeError(w, 400, "admin already initialized")
 		return
@@ -165,7 +172,7 @@ func handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		slog.Error("failed to send reset email", "error", err)
-		writeError(w, 500, "发送重置邮件失败: "+err.Error())
+		writeError(w, 500, "发送重置邮件失败")
 		return
 	}
 
@@ -369,10 +376,14 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	// Invalidate cached self addresses when public_url or service_port changes
 	if _, ok := update["public_url"]; ok {
+		cachedSelfAddressesMu.Lock()
 		cachedSelfAddresses = nil
+		cachedSelfAddressesMu.Unlock()
 	}
 	if _, ok := update["service_port"]; ok {
+		cachedSelfAddressesMu.Lock()
 		cachedSelfAddresses = nil
+		cachedSelfAddressesMu.Unlock()
 	}
 	cfg.SetMany(update)
 	// §10A: re-read WAF configuration if any WAF keys were updated.
@@ -992,7 +1003,7 @@ func handleUsageSummary(w http.ResponseWriter, r *http.Request) {
 
 func handleUsageProviders(w http.ResponseWriter, r *http.Request) {
 	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
-	if days == 0 {
+	if days <= 0 || days > 365 {
 		days = 30
 	}
 	writeJSON(w, 200, tracker.ProviderStats(days))
@@ -1958,7 +1969,7 @@ func handleSMTPTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		writeJSON(w, 200, map[string]any{"success": false, "detail": err.Error()})
+		writeJSON(w, 200, map[string]any{"success": false, "detail": "邮件发送失败"})
 		return
 	}
 	writeJSON(w, 200, map[string]any{"success": true, "message": "测试邮件已发送至 " + adminEmail})
@@ -2306,10 +2317,25 @@ func handleRestart(w http.ResponseWriter, r *http.Request) {
 		pid := os.Getpid()
 		slog.Info("Initiating restart", "current_pid", pid)
 
-		// Run restart script with current PID
-		cmd := exec.Command("bash", "./restart.sh", fmt.Sprintf("%d", pid))
-		cmd.Dir = "."
-		cmd.Start()
+		exePath, err := os.Executable()
+		if err != nil {
+			slog.Error("Failed to get executable path for restart", "error", err)
+			return
+		}
+		exeDir := filepath.Dir(exePath)
+		scriptPath := filepath.Join(exeDir, "restart.sh")
+		scriptPath = filepath.Clean(scriptPath)
+		info, err := os.Stat(scriptPath)
+		if err != nil || info.IsDir() {
+			slog.Error("restart.sh not found or not a file", "path", scriptPath, "error", err)
+			return
+		}
+		cmd := exec.Command(scriptPath, fmt.Sprintf("%d", pid))
+		cmd.Dir = exeDir
+		if err := cmd.Start(); err != nil {
+			slog.Error("failed to start restart script", "path", scriptPath, "error", err)
+			return
+		}
 
 		// Current process will be killed by the script
 	}()

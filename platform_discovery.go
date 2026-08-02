@@ -43,24 +43,28 @@ func loadDiscoveredPlatforms() []DiscoveredPlatform {
 	}
 	discoveredMu.RUnlock()
 
-	discoveredMu.Lock()
-	defer discoveredMu.Unlock()
-
 	data, err := os.ReadFile(discoveredPlatformsFile)
 	if err != nil {
+		discoveredMu.Lock()
 		discoveredPlatforms = []DiscoveredPlatform{}
+		discoveredMu.Unlock()
 		os.WriteFile(discoveredPlatformsFile, []byte("[]"), 0644)
-		return discoveredPlatforms
+		return []DiscoveredPlatform{}
 	}
 
 	var platforms []DiscoveredPlatform
 	if err := json.Unmarshal(data, &platforms); err != nil {
 		slog.Warn("failed to parse discovered platforms", "error", err)
+		discoveredMu.Lock()
 		discoveredPlatforms = []DiscoveredPlatform{}
-		return discoveredPlatforms
+		discoveredMu.Unlock()
+		return []DiscoveredPlatform{}
 	}
+
+	discoveredMu.Lock()
 	discoveredPlatforms = platforms
-	return discoveredPlatforms
+	discoveredMu.Unlock()
+	return platforms
 }
 
 func saveDiscoveredPlatforms() error {
@@ -423,7 +427,14 @@ func handleCheckDiscoveredPlatform(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &http.Client{Timeout: 8 * time.Second}
-	req, _ := http.NewRequest("GET", modelsURL, nil)
+	req, err := http.NewRequestWithContext(r.Context(), "GET", modelsURL, nil)
+	if err != nil {
+		writeJSON(w, 200, map[string]any{
+			"compatible": false,
+			"message":    "invalid URL",
+		})
+		return
+	}
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)

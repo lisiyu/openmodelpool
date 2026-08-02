@@ -862,7 +862,7 @@ func handleFederationUpdateSignal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid request body")
 		return
 	}
-	senderID := r.Header.Get("X-Node-ID")
+	senderID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 	if senderID == "" {
 		senderID = sig.BroadcastBy
 	}
@@ -904,7 +904,7 @@ func handleFederationUpdateReport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid request body")
 		return
 	}
-	senderID := r.Header.Get("X-Node-ID")
+	senderID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 	if senderID == "" {
 		senderID = report.NodeID
 	}

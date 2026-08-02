@@ -1,14 +1,14 @@
 package main
 
 import (
+	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
-// providerConns tracks active connections per provider
 var providerConns sync.Map
 
-// IncrProviderConn increments the active connection count for a provider
 func IncrProviderConn(providerID string) {
 	if v, ok := providerConns.Load(providerID); ok {
 		atomic.AddInt64(v.(*int64), 1)
@@ -18,14 +18,12 @@ func IncrProviderConn(providerID string) {
 	}
 }
 
-// DecrProviderConn decrements the active connection count for a provider
 func DecrProviderConn(providerID string) {
 	if v, ok := providerConns.Load(providerID); ok {
 		atomic.AddInt64(v.(*int64), -1)
 	}
 }
 
-// GetProviderConns returns the current active connection count for a provider
 func GetProviderConns(providerID string) int {
 	if v, ok := providerConns.Load(providerID); ok {
 		n := atomic.LoadInt64(v.(*int64))
@@ -35,6 +33,33 @@ func GetProviderConns(providerID string) int {
 		return int(n)
 	}
 	return 0
+}
+
+func cleanupStaleProviderConns() {
+	providerConns.Range(func(key, value any) bool {
+		n := atomic.LoadInt64(value.(*int64))
+		if n <= 0 {
+			providerConns.Delete(key)
+		}
+		return true
+	})
+}
+
+func startConnTrackerCleanup() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			before := 0
+			providerConns.Range(func(_, _ any) bool { before++; return true })
+			cleanupStaleProviderConns()
+			after := 0
+			providerConns.Range(func(_, _ any) bool { after++; return true })
+			if after < before {
+				slog.Debug("conn tracker cleanup", "removed", before-after, "remaining", after)
+			}
+		}
+	}()
 }
 
 // ============================================================

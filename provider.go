@@ -130,10 +130,11 @@ func (m *ProviderManager) saveLocked() {
 	list := m.makeProviderListLocked()
 	m.cacheValid = false
 
-	// Serialize file writes (saveMu never held with m.mu to prevent deadlock)
+	m.mu.Unlock()
 	m.saveMu.Lock()
-	defer m.saveMu.Unlock()
 	m.writeFile(list)
+	m.saveMu.Unlock()
+	m.mu.Lock()
 }
 
 // makeProviderListLocked creates an encrypted copy of all providers.

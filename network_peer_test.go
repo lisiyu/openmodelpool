@@ -28,7 +28,7 @@ func TestNetworkAddPeer_EmptyNodeIDResolvedByPing(t *testing.T) {
 		if r.URL.Path == "/api/network/heartbeat/ping" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "node_id": "mm-test"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "node_id": "mmx-test"})
 			return
 		}
 		http.NotFound(w, r)
@@ -56,7 +56,7 @@ func TestNetworkAddPeer_EmptyNodeIDResolvedByPing(t *testing.T) {
 	if resp.Status != "added" {
 		t.Errorf("status = %q, want added", resp.Status)
 	}
-	if resp.Peer.NodeID != "mm-test" {
+	if resp.Peer.NodeID != "mmx-test" {
 		t.Errorf("resolved node_id = %q, want mm-test", resp.Peer.NodeID)
 	}
 }
@@ -97,7 +97,7 @@ func TestNetworkAddPeer_NonSharedMode(t *testing.T) {
 	ensureRouteTable()
 	t.Cleanup(func() { routeTable = nil })
 
-	body := strings.NewReader(`{"addresses":["https://peer.example.com"],"node_id":"mm-other"}`)
+	body := strings.NewReader(`{"addresses":["https://peer.example.com"],"node_id":"mmx-other"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/network/peers", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

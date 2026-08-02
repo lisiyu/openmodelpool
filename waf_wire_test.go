@@ -131,7 +131,7 @@ func TestWAFBlocksBlockedPath(t *testing.T) {
 // ② WAF disabled => all requests pass even with rules configured.
 func TestWAFDisabledAllowsAll(t *testing.T) {
 	eng := newWAFTestEngine(t, func(c *Config) {
-		// waf_enabled left as default false, but a blacklist is present.
+		c.Set("waf_enabled", "false")
 		c.Set("waf_ip_blacklist", "1.2.3.4")
 	})
 

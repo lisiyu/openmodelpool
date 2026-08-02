@@ -213,8 +213,25 @@ func registerWithBootstraps() {}
 // GetDHTStats returns DHT routing-table statistics. DHT (Kademlia) is not yet
 // implemented, so this reports a clear "not implemented" status.
 func GetDHTStats() map[string]any {
+	if fed == nil || fed.dht == nil {
+		return map[string]any{
+			"enabled":     false,
+			"total_nodes": 0,
+			"buckets":     0,
+			"records":     0,
+		}
+	}
+	stats := fed.dht.BucketStats()
+	records := 0
+	fed.dht.mu.RLock()
+	records = len(fed.dht.records)
+	fed.dht.mu.RUnlock()
 	return map[string]any{
-		"enabled": false,
-		"note":    "DHT (Kademlia) not yet implemented; discovery uses the seed/gossip layer",
+		"enabled":      true,
+		"self_id":      fed.dht.SelfID(),
+		"total_nodes":  fed.dht.TotalNodes(),
+		"buckets_used": len(stats),
+		"bucket_stats": stats,
+		"records":      records,
 	}
 }

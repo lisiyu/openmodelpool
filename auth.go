@@ -60,13 +60,13 @@ func (a *Auth) load() {
 // P0-3: save acquires its own lock to prevent concurrent write corruption.
 func (a *Auth) save() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	// Deep copy and encrypt SMTP password before writing
 	safe := a.data
 	if safe.SMTP.Password != "" && !IsEncrypted(safe.SMTP.Password) {
 		safe.SMTP.Password = encryptField(safe.SMTP.Password)
 	}
 	b, _ := json.MarshalIndent(safe, "", "  ")
+	a.mu.Unlock()
+
 	os.MkdirAll("data", 0755)
 	atomicWriteFile(a.path, b, 0600)
 }
@@ -258,9 +258,11 @@ func (a *Auth) CreateToken(username string, remember bool) (accessToken string, 
 		"type": "access",
 	}
 	accessTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	accessToken, _ = accessTokenObj.SignedString([]byte(accessSecret))
+	accessToken, err := accessTokenObj.SignedString([]byte(accessSecret))
+	if err != nil {
+		return "", ""
+	}
 
-	// Refresh token: always 7 days, signed with different secret
 	refreshClaims := jwt.MapClaims{
 		"sub":  username,
 		"exp":  time.Now().Add(7 * 24 * time.Hour).Unix(),
@@ -268,7 +270,10 @@ func (a *Auth) CreateToken(username string, remember bool) (accessToken string, 
 		"type": "refresh",
 	}
 	refreshTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshToken, _ = refreshTokenObj.SignedString([]byte(refreshSecret))
+	refreshToken, err = refreshTokenObj.SignedString([]byte(refreshSecret))
+	if err != nil {
+		return "", ""
+	}
 
 	return accessToken, refreshToken
 }
@@ -287,6 +292,9 @@ func (a *Auth) RefreshAccessToken(refreshTokenStr string) (string, error) {
 	a.mu.RUnlock()
 
 	token, err := jwt.Parse(refreshTokenStr, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
 		return []byte(refreshSecret), nil
 	})
 	if err != nil || !token.Valid {
@@ -325,6 +333,9 @@ func (a *Auth) VerifyToken(tokenStr string) (string, error) {
 	a.mu.RUnlock()
 
 	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
 		return []byte(secret), nil
 	})
 	if err != nil || !token.Valid {
@@ -455,7 +466,9 @@ func (a *Auth) GenerateResetCode() (string, time.Time, error) {
 
 	// Generate a random code: 8 chars, human-friendly
 	codeBytes := make([]byte, 6)
-	rand.Read(codeBytes)
+	if _, err := rand.Read(codeBytes); err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to generate reset code: %w", err)
+	}
 	code := base64.URLEncoding.EncodeToString(codeBytes)[:8]
 
 	// Hash the code for storage (so we don't store it in plaintext)
@@ -513,6 +526,8 @@ func (a *Auth) HasResetCode() bool {
 
 func randomString(n int) string {
 	b := make([]byte, n)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand.Read failed: " + err.Error())
+	}
 	return base64.URLEncoding.EncodeToString(b)[:n]
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"math/rand"
@@ -26,7 +27,15 @@ import (
 
 // S-12: Package-level random source with explicit seed for safer randomness.
 // While Go 1.20+ auto-seeds the global source, using a local source is explicit.
+var lbRandMu sync.Mutex
 var lbRand = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+func lbRandFloat64() float64 {
+	lbRandMu.Lock()
+	v := lbRand.Float64()
+	lbRandMu.Unlock()
+	return v
+}
 
 // NodeMetrics holds real-time performance data for a single node.
 type NodeMetrics struct {
@@ -78,16 +87,10 @@ type RouteRequirements struct {
 type LoadBalancer struct {
 	mu sync.RWMutex
 
-	// Per-node real-time metrics
 	nodeMetrics map[string]*NodeMetrics
-
-	// Routing history for fairness (nodeID → recent route count)
 	routeHistory map[string]int64
-
-	// Configuration
 	config LBConfig
-
-	// Lifecycle
+	selfNodeID string
 	cancel context.CancelFunc
 }
 
@@ -112,10 +115,15 @@ func DefaultLBConfig() LBConfig {
 
 // NewLoadBalancer creates and returns a new LoadBalancer.
 func NewLoadBalancer(cfg LBConfig) *LoadBalancer {
+	selfID := ""
+	if node != nil {
+		selfID = node.NodeID()
+	}
 	return &LoadBalancer{
 		nodeMetrics:  make(map[string]*NodeMetrics),
 		routeHistory: make(map[string]int64),
 		config:       cfg,
+		selfNodeID:   selfID,
 	}
 }
 
@@ -175,7 +183,9 @@ func (lb *LoadBalancer) probeAllNodes() {
 		go func(nodeID, addr string) {
 			pingURL := fmt.Sprintf("%s/api/network/heartbeat/ping", trimTrailingSlash(addr))
 			start := time.Now()
-			req, err := http.NewRequest("GET", pingURL, nil)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, "GET", pingURL, nil)
 			if err != nil {
 				lb.recordProbe(nodeID, 0, false)
 				return
@@ -185,13 +195,14 @@ func (lb *LoadBalancer) probeAllNodes() {
 			resp, err := client.Do(req)
 			elapsed := time.Since(start)
 
-			if err != nil || resp == nil || resp.StatusCode >= 500 {
+			if err != nil || resp == nil {
 				lb.recordProbe(nodeID, elapsed, false)
 				if err != nil {
 					slog.Debug("health probe failed", "node", nodeID, "error", err)
 				}
 				return
 			}
+			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			lb.recordProbe(nodeID, elapsed, resp.StatusCode < 400)
 		}(entry.NodeID, addr)
@@ -246,61 +257,83 @@ func (lb *LoadBalancer) ScoreNode(nodeID string) float64 {
 	lb.mu.RLock()
 	m := lb.nodeMetrics[nodeID]
 	histCount := lb.routeHistory[nodeID]
-	lb.mu.RUnlock()
-
-	// If we have no metrics yet, return a neutral score so the node
-	// still gets a chance (exploration vs exploitation).
-	if m == nil {
-		return 50.0
-	}
-
-	// --- latency_score (0-100) ---
-	avgLatency := m.Latency
-	if avgLatency <= 0 {
-		avgLatency = lb.config.MaxLatency // treat unknown as worst
-	}
-	maxMs := float64(lb.config.MaxLatency.Milliseconds())
-	curMs := float64(avgLatency.Milliseconds())
-	latencyScore := 100.0 * (1.0 - math.Min(curMs/maxMs, 1.0))
-	// Sharply penalize nodes that exceed the threshold
-	if avgLatency > lb.config.MaxLatency {
-		latencyScore = 0
-	}
-
-	// --- trust_score (0-100) ---
-	trustScore := lb.getTrustScore(nodeID)
-
-	// --- reputation_score (0-100) ---
-	reputationScore := lb.getReputationScore(nodeID)
-
-	// --- availability_score (0-100) ---
-	// Derived from error rate: low error = high availability
-	availabilityScore := 100.0 * (1.0 - math.Min(m.ErrorRate, 1.0))
-	// Also factor in health status
-	if !m.Healthy {
-		availabilityScore *= 0.5 // penalize unhealthy nodes
-	}
-
-	// --- contribution_score (0-100) ---
-	// Fewer recent routes → higher score (fairness in routing)
 	var maxHist int64 = 1
-	lb.mu.RLock()
 	for _, v := range lb.routeHistory {
 		if v > maxHist {
 			maxHist = v
 		}
 	}
 	lb.mu.RUnlock()
-	contributionScore := 100.0 * (1.0 - float64(histCount)/float64(maxHist+1))
 
-	// --- composite (§9.2) ---
+	if m == nil {
+		return 50.0
+	}
+
+	avgLatency := m.Latency
+	if avgLatency <= 0 {
+		avgLatency = lb.config.MaxLatency
+	}
+	maxMs := float64(lb.config.MaxLatency.Milliseconds())
+	curMs := float64(avgLatency.Milliseconds())
+	latencyScore := 100.0 * (1.0 - math.Min(curMs/maxMs, 1.0))
+	if avgLatency > lb.config.MaxLatency {
+		latencyScore = 0
+	}
+
+	trustScore := lb.getTrustScore(nodeID)
+	reputationScore := lb.getReputationScore(nodeID)
+
+	availabilityScore := 100.0 * (1.0 - math.Min(m.ErrorRate, 1.0))
+	if !m.Healthy {
+		availabilityScore *= 0.5
+	}
+
+	contributionScore := lb.getContributionScore(nodeID)
+	if contributionScore < 0 {
+		contributionScore = 100.0 * (1.0 - float64(histCount)/float64(maxHist+1))
+	}
+
 	score := trustScore*lb.config.TrustWeight +
 		reputationScore*lb.config.ReputationWeight +
 		latencyScore*lb.config.LatencyWeight +
 		availabilityScore*lb.config.AvailabilityWeight +
 		contributionScore*lb.config.ContributionWeight
 
-	return math.Round(score*100) / 100 // two decimal places
+	if regionManager != nil {
+		myNR := regionManager.GetNodeRegion(lb.selfNodeID)
+		nodeNR := regionManager.GetNodeRegion(nodeID)
+		if myNR != nil && nodeNR != nil && myNR.Region != RegionUnknown && nodeNR.Region != RegionUnknown {
+			if myNR.Region == nodeNR.Region {
+				score += 0.15 * 100.0
+			} else {
+				score -= 0.10 * 100.0
+			}
+		}
+	}
+
+	return math.Round(score*100) / 100
+}
+
+// getContributionScore derives contribution from GlobalPool share ratio.
+// v4 design §11.2: Contribution = shared ratio (contribution/consumption).
+// Returns -1 if no pool data available (caller should use fallback).
+func (lb *LoadBalancer) getContributionScore(nodeID string) float64 {
+	if globalPool == nil {
+		return -1
+	}
+	globalPool.mu.RLock()
+	contributed := globalPool.NodeContributions[nodeID]
+	consumed := globalPool.NodeConsumptions[nodeID]
+	globalPool.mu.RUnlock()
+	if consumed <= 0 {
+		if contributed > 0 {
+			return 100.0
+		}
+		return -1
+	}
+	ratio := float64(contributed) / float64(consumed)
+	score := math.Min(ratio, 2.0) / 2.0 * 100.0
+	return score
 }
 
 // getReputationScore derives reputation from the Phase 2/3 contribution system.
@@ -440,7 +473,7 @@ func (lb *LoadBalancer) SelectNode(reqs RouteRequirements) (string, error) {
 	}
 
 	// Weighted random selection
-	r := lbRand.Float64() * totalWeight
+	r := lbRandFloat64() * totalWeight
 	cumulative := 0.0
 	selected := top[0]
 	for _, c := range top {
@@ -754,9 +787,13 @@ func initLoadBalancer(ctx context.Context) {
 
 // handleHeartbeatPing responds to health probe pings from other nodes.
 func handleHeartbeatPing(w http.ResponseWriter, r *http.Request) {
+	nodeID := ""
+	if netMgr != nil {
+		nodeID = netMgr.GetNodeID()
+	}
 	writeJSON(w, 200, map[string]any{
 		"status":    "ok",
-		"node_id":   netMgr.GetNodeID(),
+		"node_id":   nodeID,
 		"timestamp": time.Now().Unix(),
 	})
 }

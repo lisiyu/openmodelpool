@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -216,37 +217,38 @@ func handleSeedHealth(w http.ResponseWriter, r *http.Request) {
 
 // cachedSelfAddresses stores the auto-detected addresses
 var cachedSelfAddresses []string
+var cachedSelfAddressesMu sync.RWMutex
 
-// getSelfAddresses returns the addresses other nodes can use to reach this node
-// Priority: configured public_url > auto-detected public IP > LAN IP
 func getSelfAddresses() []string {
+	cachedSelfAddressesMu.RLock()
 	if cachedSelfAddresses != nil {
-		return cachedSelfAddresses
+		result := cachedSelfAddresses
+		cachedSelfAddressesMu.RUnlock()
+		return result
 	}
+	cachedSelfAddressesMu.RUnlock()
 
 	addrs := []string{}
 
-	// 1. Configured public_url (highest priority)
 	publicURL := cfg.Get("public_url", "")
 	if publicURL != "" {
 		addrs = append(addrs, publicURL)
+		cachedSelfAddressesMu.Lock()
 		cachedSelfAddresses = addrs
+		cachedSelfAddressesMu.Unlock()
 		return addrs
 	}
 
-	// 2. Auto-detect public IP
 	publicIP := detectPublicIP()
 	if publicIP != "" {
 		port := cfg.Get("service_port", "8000")
 		addrs = append(addrs, "https://"+publicIP+":"+port)
 	}
 
-	// 3. LAN IP as fallback
 	lanIP := cfg.Get("lan_ip", "")
 	if lanIP != "" {
 		port := cfg.Get("service_port", "8000")
 		lanAddr := "https://" + lanIP + ":" + port
-		// Avoid duplicate if lanIP == publicIP
 		found := false
 		for _, a := range addrs {
 			if a == lanAddr {
@@ -259,7 +261,9 @@ func getSelfAddresses() []string {
 		}
 	}
 
+	cachedSelfAddressesMu.Lock()
 	cachedSelfAddresses = addrs
+	cachedSelfAddressesMu.Unlock()
 	return addrs
 }
 

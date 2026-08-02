@@ -107,6 +107,7 @@ func (f *FederationManager) fetchFromPeers() {
 		}
 
 		if resp.StatusCode != http.StatusOK {
+			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			continue
 		}
@@ -172,6 +173,7 @@ func (f *FederationManager) fetchFromSeedNodes() (*TrustPool, error) {
 		}
 
 		if resp.StatusCode != http.StatusOK {
+			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			continue
 		}
@@ -242,7 +244,9 @@ func (f *FederationManager) doRefresh() {
 			f.trustPool = *pool
 			slog.Info("trust pool refreshed from seed nodes",
 				"version", pool.Version, "nodes", len(pool.Nodes))
-			_ = f.saveLocked()
+			if err := f.saveLocked(); err != nil {
+				slog.Error("failed to persist trust pool after seed refresh", "error", err)
+			}
 		}
 		f.mu.Unlock()
 		return

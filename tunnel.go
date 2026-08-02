@@ -93,32 +93,30 @@ func initTunnel(port int) {
 // start begins the cloudflared tunnel process.
 func (t *TunnelManager) start() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	
 	if t.running {
+		t.mu.Unlock()
 		slog.Warn("tunnel already running")
 		return
 	}
 	
-	// Check if cloudflared is available
 	if _, err := exec.LookPath("cloudflared"); err != nil {
+		t.mu.Unlock()
 		slog.Error("cloudflared not found in PATH", "error", err)
 		return
 	}
 	
 	var args []string
 	if t.mode == "named" && t.token != "" {
-		// Named tunnel mode: use connector token to connect to existing tunnel
 		args = []string{"tunnel", "run", "--token", t.token}
 		slog.Info("starting named tunnel", "domain", t.domain, "tunnel_id", t.tunnelID)
 	} else if t.mode == "manual" {
-		// Manual mode: domain is set up externally, no cloudflared process needed
 		slog.Info("manual domain binding, no tunnel process needed", "domain", t.domain)
 		t.url = "https://" + t.domain
 		t.running = true
+		t.mu.Unlock()
 		return
 	} else {
-		// Quick tunnel mode (default) - no account required
 		args = []string{"tunnel", "--url", fmt.Sprintf("http://localhost:%d", t.port)}
 		slog.Info("starting quick tunnel", "port", t.port)
 	}
@@ -126,23 +124,24 @@ func (t *TunnelManager) start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "cloudflared", args...)
 	
-	// Capture stdout to extract the tunnel URL
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		t.mu.Unlock()
 		slog.Error("failed to create stdout pipe", "error", err)
 		cancel()
 		return
 	}
 	
-	// Also capture stderr (cloudflared outputs to stderr)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		t.mu.Unlock()
 		slog.Error("failed to create stderr pipe", "error", err)
 		cancel()
 		return
 	}
 	
 	if err := cmd.Start(); err != nil {
+		t.mu.Unlock()
 		slog.Error("failed to start cloudflared", "error", err)
 		cancel()
 		return
@@ -151,11 +150,10 @@ func (t *TunnelManager) start() {
 	t.cmd = cmd
 	t.cancel = cancel
 	t.running = true
+	t.mu.Unlock()
 	
-	// URL pattern: https://xxx-xxx-xxx.trycloudflare.com
 	urlPattern := regexp.MustCompile(`https://[a-z0-9-]+\.trycloudflare\.com`)
 	
-	// Scan stdout and stderr for the tunnel URL
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
@@ -184,7 +182,6 @@ func (t *TunnelManager) start() {
 		}
 	}()
 	
-	// Wait for the process to exit
 	go func() {
 		err := cmd.Wait()
 		t.mu.Lock()
@@ -197,7 +194,6 @@ func (t *TunnelManager) start() {
 		}
 	}()
 	
-	// Wait a bit for URL to be detected
 	time.Sleep(5 * time.Second)
 }
 
@@ -617,7 +613,7 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	slog.Info("domain binding: verifying token")
 	accountID, err := binder.getAccountID(ctx)
 	if err != nil {
-		writeError(w, 400, "invalid API token: "+err.Error())
+		writeError(w, 400, "invalid API token")
 		return
 	}
 	// P0-5: Set accountID on binder so all subsequent API calls include it
@@ -630,7 +626,7 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Tunnel might already exist, try to continue
 		slog.Warn("domain binding: tunnel creation failed (may exist)", "error", err)
-		writeError(w, 500, "create tunnel failed: "+err.Error())
+		writeError(w, 500, "create tunnel failed")
 		return
 	}
 
@@ -638,7 +634,7 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	localAddr := fmt.Sprintf("http://localhost:%d", getListenPort())
 	slog.Info("domain binding: configuring tunnel", "tunnel_id", tunnelInfo.ID, "local", localAddr)
 	if err := binder.configureTunnel(ctx, tunnelInfo.ID, localAddr); err != nil {
-		writeError(w, 500, "configure tunnel failed: "+err.Error())
+		writeError(w, 500, "configure tunnel failed")
 		return
 	}
 
@@ -646,14 +642,14 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	slog.Info("domain binding: looking up zone", "domain", body.Domain)
 	zoneID, err := binder.getZoneID(ctx, body.Domain)
 	if err != nil {
-		writeError(w, 500, "get zone ID failed: "+err.Error())
+		writeError(w, 500, "get zone ID failed")
 		return
 	}
 
 	// Step 5: Create DNS record
 	slog.Info("domain binding: creating DNS record", "domain", body.Domain, "tunnel", tunnelInfo.ID)
 	if err := binder.createDNSRecord(ctx, zoneID, body.Domain, tunnelInfo.ID); err != nil {
-		writeError(w, 500, "create DNS record failed: "+err.Error())
+		writeError(w, 500, "create DNS record failed")
 		return
 	}
 
@@ -828,6 +824,9 @@ func detectExternalSSHTunnel() string {
 		}
 		// Check if it's a PID
 		pid := entry.Name()
+		if _, err := strconv.Atoi(pid); err != nil {
+			continue
+		}
 		cmdline, err := os.ReadFile("/proc/" + pid + "/cmdline")
 		if err != nil {
 			continue

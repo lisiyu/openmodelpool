@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -27,6 +28,7 @@ var (
 	rateLimitMap  = make(map[string]*rateLimitEntry)
 	rateLimitMax  = 60
 	rateLimitWin  = time.Minute
+	rateLimitMapMaxEntries = 10000
 )
 
 func rateLimitCheck(nodeID string) bool {
@@ -36,6 +38,9 @@ func rateLimitCheck(nodeID string) bool {
 	now := time.Now()
 	e, ok := rateLimitMap[nodeID]
 	if !ok || now.Sub(e.windowStart) >= rateLimitWin {
+		if len(rateLimitMap) >= rateLimitMapMaxEntries {
+			cleanupRateLimitMapLocked()
+		}
 		rateLimitMap[nodeID] = &rateLimitEntry{count: 1, windowStart: now}
 		return true
 	}
@@ -44,6 +49,18 @@ func rateLimitCheck(nodeID string) bool {
 	}
 	e.count++
 	return true
+}
+
+func cleanupRateLimitMapLocked() {
+	now := time.Now()
+	for id, e := range rateLimitMap {
+		if now.Sub(e.windowStart) >= rateLimitWin {
+			delete(rateLimitMap, id)
+		}
+		if len(rateLimitMap) < rateLimitMapMaxEntries/2 {
+			break
+		}
+	}
 }
 
 // ============================================================
@@ -56,14 +73,18 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodeID := r.Header.Get("X-Node-ID")
+	nodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 	signature := r.Header.Get("X-Signature")
 	if nodeID == "" || signature == "" {
 		writeError(w, 401, "missing X-Node-ID or X-Signature headers")
 		return
 	}
 
-	// Verify sender is in trust pool
+	if fed == nil {
+		writeError(w, 503, "federation not enabled")
+		return
+	}
+
 	trustPool := fed.GetTrustPool()
 	var senderNode *NodeInfo
 	for i := range trustPool.Nodes {
@@ -89,16 +110,29 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bodyBytes, err := io.ReadAll(r.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
 	if err != nil {
 		writeError(w, 400, "failed to read request body")
 		return
 	}
 
+	rawBody := bodyBytes
+
 	pubKey := ed25519.PublicKey(pubKeyBytes)
-	if !ed25519.Verify(pubKey, bodyBytes, sigBytes) {
+	if !ed25519.Verify(pubKey, rawBody, sigBytes) {
 		writeError(w, 403, "signature verification failed")
 		return
+	}
+
+	if r.Header.Get("X-Transport-Encrypted") == "true" {
+		decrypted, decErr := DecryptFromTransport(rawBody)
+		if decErr != nil {
+			slog.Warn("relay: transport decryption failed", "from", nodeID, "error", decErr)
+			writeError(w, 400, "transport decryption failed")
+			return
+		}
+		bodyBytes = decrypted
+		slog.Debug("relay: transport decryption succeeded", "from", nodeID)
 	}
 
 	// Rate limit check
@@ -168,7 +202,7 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			err := doStream(p, actualModel, relayReq.Messages, extra, sw)
+			err := doStream(r.Context(), p, actualModel, relayReq.Messages, extra, sw)
 			latencyMS := float64(time.Since(startTime).Milliseconds())
 			if err != nil {
 				tracker.RecordWithAccessType(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, false, err.Error(), false, 0, "relay")
@@ -206,7 +240,7 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		resp, err := doNonStream(p, actualModel, relayReq.Messages, extra)
+		resp, err := doNonStream(r.Context(), p, actualModel, relayReq.Messages, extra)
 		latencyMS := float64(time.Since(startTime).Milliseconds())
 		if err != nil {
 			tracker.RecordWithAccessType(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, false, err.Error(), false, 0, "relay")
@@ -246,7 +280,7 @@ func mustMarshalJSON(v any) []byte {
 // Outgoing relay: send request to a remote node
 // ============================================================
 
-func (f *FederationManager) RelayToRemote(nodeInfo NodeInfo, req ChatRequest, model string) (*ChatResponse, error) {
+func (f *FederationManager) RelayToRemote(ctx context.Context, nodeInfo NodeInfo, req ChatRequest, model string) (*ChatResponse, error) {
 	relayReq := RelayRequest{
 		Model:    model,
 		Messages: req.Messages,
@@ -259,17 +293,34 @@ func (f *FederationManager) RelayToRemote(nodeInfo NodeInfo, req ChatRequest, mo
 		return nil, fmt.Errorf("marshal relay request: %w", err)
 	}
 
-	// Sign the request body
-	sig := node.Sign(bodyBytes)
+	var sendBody []byte
+	transportEncrypted := false
+	if node != nil && node.IsInitialized() && nodeInfo.NodeID != "" {
+		if encrypted, encErr := EncryptForTransport(bodyBytes, nodeInfo.NodeID); encErr == nil {
+			sendBody = encrypted
+			transportEncrypted = true
+			slog.Debug("relay request transport-encrypted", "target", nodeInfo.NodeID)
+		} else {
+			slog.Warn("transport encryption failed, sending plaintext", "error", encErr)
+			sendBody = bodyBytes
+		}
+	} else {
+		sendBody = bodyBytes
+	}
+
+	sig := node.Sign(sendBody)
 
 	url := nodeInfo.Endpoint + "/federation/relay"
-	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyBytes))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(sendBody))
 	if err != nil {
 		return nil, fmt.Errorf("create relay request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("X-Node-ID", node.NodeID())
 	httpReq.Header.Set("X-Signature", sig)
+	if transportEncrypted {
+		httpReq.Header.Set("X-Transport-Encrypted", "true")
+	}
 
 	client := GetSharedHTTPClientWithTimeout(90 * time.Second)
 	resp, err := client.Do(httpReq)
@@ -308,7 +359,7 @@ func (f *FederationManager) RelayToRemote(nodeInfo NodeInfo, req ChatRequest, mo
 // Outgoing relay: streaming version
 // ============================================================
 
-func (f *FederationManager) RelayStreamToRemote(nodeInfo NodeInfo, req ChatRequest, model string, sw *streamWriter, origModel string, startTime time.Time) (bool, error) {
+func (f *FederationManager) RelayStreamToRemote(ctx context.Context, nodeInfo NodeInfo, req ChatRequest, model string, sw *streamWriter, origModel string, startTime time.Time) (bool, error) {
 	relayReq := RelayRequest{
 		Model:    model,
 		Messages: req.Messages,
@@ -321,18 +372,35 @@ func (f *FederationManager) RelayStreamToRemote(nodeInfo NodeInfo, req ChatReque
 		return false, fmt.Errorf("marshal relay request: %w", err)
 	}
 
-	sig := node.Sign(bodyBytes)
+	var sendBody []byte
+	transportEncrypted := false
+	if node != nil && node.IsInitialized() && nodeInfo.NodeID != "" {
+		if encrypted, encErr := EncryptForTransport(bodyBytes, nodeInfo.NodeID); encErr == nil {
+			sendBody = encrypted
+			transportEncrypted = true
+		} else {
+			slog.Warn("transport encryption failed for stream, sending plaintext", "error", encErr)
+			sendBody = bodyBytes
+		}
+	} else {
+		sendBody = bodyBytes
+	}
+
+	sig := node.Sign(sendBody)
 
 	url := nodeInfo.Endpoint + "/federation/relay"
-	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyBytes))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(sendBody))
 	if err != nil {
 		return false, fmt.Errorf("create relay request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("X-Node-ID", node.NodeID())
 	httpReq.Header.Set("X-Signature", sig)
+	if transportEncrypted {
+		httpReq.Header.Set("X-Transport-Encrypted", "true")
+	}
 
-	client := GetSharedHTTPClientWithTimeout(5 * time.Minute)
+	client := GetSharedHTTPClientWithTimeout(90 * time.Second)
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return false, fmt.Errorf("relay stream request failed: %w", err)

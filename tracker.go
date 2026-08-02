@@ -20,14 +20,14 @@ type Tracker struct {
 	dataPath     string
 	stopCh       chan struct{}
 
-	// Request log ring buffer
 	reqLogMu     sync.RWMutex
 	reqLog       []RequestLogEntry
 	reqLogMax    int
 
-	// Token budget alert thresholds (percentage)
 	alertThresholds []float64
-	alertedTokens   map[string]map[float64]bool // providerID -> threshold -> alerted
+	alertedTokens   map[string]map[float64]bool
+
+	tokenUsageByProvider map[string]int64
 }
 
 const (
@@ -41,13 +41,14 @@ var tracker *Tracker
 
 func initTracker(path string) {
 	tracker = &Tracker{
-		dataPath:        path,
-		ewmaCache:       make(map[string]float64),
-		lastFlush:       time.Now(),
-		stopCh:          make(chan struct{}),
-		reqLogMax:       1000,
-		alertThresholds: []float64{0.8, 0.9, 1.0},
-		alertedTokens:   make(map[string]map[float64]bool),
+		dataPath:            path,
+		ewmaCache:           make(map[string]float64),
+		lastFlush:           time.Now(),
+		stopCh:              make(chan struct{}),
+		reqLogMax:           1000,
+		alertThresholds:     []float64{0.8, 0.9, 1.0},
+		alertedTokens:       make(map[string]map[float64]bool),
+		tokenUsageByProvider: make(map[string]int64),
 	}
 	tracker.load()
 	go tracker.periodicFlush()
@@ -62,6 +63,13 @@ func (t *Tracker) load() {
 	json.Unmarshal(b, &t.records)
 	slog.Info("usage records loaded", "count", len(t.records))
 	t.rebuildEWMA()
+	t.rebuildTokenUsage()
+}
+
+func (t *Tracker) rebuildTokenUsage() {
+	for _, r := range t.records {
+		t.tokenUsageByProvider[r.ProviderID] += int64(r.TotalTokens)
+	}
 }
 
 func (t *Tracker) rebuildEWMA() {
@@ -93,10 +101,12 @@ func (t *Tracker) save() {
 		t.records = t.records[len(t.records)-trackerMaxRecords:]
 	}
 	b, _ := json.MarshalIndent(t.records, "", "  ")
-	os.MkdirAll("data", 0755)
-	os.WriteFile(t.dataPath, b, 0600)
 	t.dirtyCount = 0
 	t.lastFlush = time.Now()
+	t.mu.Unlock()
+	os.MkdirAll("data", 0755)
+	os.WriteFile(t.dataPath, b, 0600)
+	t.mu.Lock()
 }
 
 func (t *Tracker) periodicFlush() {
@@ -154,6 +164,7 @@ func (t *Tracker) RecordWithRetry(providerID, providerName, model string, prompt
 	t.mu.Lock()
 	t.records = append(t.records, entry)
 	t.dirtyCount++
+	t.tokenUsageByProvider[providerID] += int64(totalTokens)
 
 	// Realtime EWMA update
 	if success && latencyMS > 0 {
@@ -252,15 +263,9 @@ func (t *Tracker) checkTokenBudget(providerID, providerName string) {
 }
 
 func (t *Tracker) tokensUsedByProvider(providerID string) int64 {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	var total int64
-	for _, r := range t.records {
-		if r.ProviderID == providerID {
-			total += int64(r.TotalTokens)
-		}
-	}
-	return total
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.tokenUsageByProvider[providerID]
 }
 
 // sendBudgetAlert sends a token budget alert email if SMTP is configured.
@@ -360,11 +365,11 @@ func (t *Tracker) GetEWMA(providerID string) float64 {
 
 // TotalTokensByProvider returns total tokens consumed per provider.
 func (t *Tracker) TotalTokensByProvider() map[string]int64 {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	totals := make(map[string]int64)
-	for _, r := range t.records {
-		totals[r.ProviderID] += int64(r.TotalTokens)
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	totals := make(map[string]int64, len(t.tokenUsageByProvider))
+	for k, v := range t.tokenUsageByProvider {
+		totals[k] = v
 	}
 	return totals
 }

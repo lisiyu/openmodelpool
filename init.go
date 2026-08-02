@@ -114,6 +114,9 @@ func initAllNetwork() {
 
 	// Phase 4: Region manager & Balance engine
 	initRegionManager()
+	if regionManager != nil {
+		regionManager.AutoDetectSelfRegion()
+	}
 	initBalanceEngine()
 
 	// Dynamic load balancer (Phase 4)
@@ -154,6 +157,8 @@ func startBackgroundTasks() {
 			cleanupIPRateLimiters(1 * time.Hour)
 		}
 	}()
+
+	startConnTrackerCleanup()
 }
 
 // restartVMessProxies re-starts all VMess proxies on startup.

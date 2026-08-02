@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"sync"
 	"time"
 )
 
@@ -43,9 +44,11 @@ const maxMissedHeartbeats = 3
 
 // heartbeatStates maps a node ID to its heartbeat tracking state.
 var heartbeatStates = make(map[string]*peerHeartbeatState)
+var heartbeatStatesMu sync.Mutex
 
-// recordSuccessfulHeartbeat records a successful heartbeat for a node.
 func recordSuccessfulHeartbeat(nodeID string) {
+	heartbeatStatesMu.Lock()
+	defer heartbeatStatesMu.Unlock()
 	st, ok := heartbeatStates[nodeID]
 	if !ok {
 		st = &peerHeartbeatState{}
@@ -55,8 +58,9 @@ func recordSuccessfulHeartbeat(nodeID string) {
 	st.lastHeartbeat = time.Now()
 }
 
-// recordMissedHeartbeat increments the missed-heartbeat counter for a node.
 func recordMissedHeartbeat(nodeID string) {
+	heartbeatStatesMu.Lock()
+	defer heartbeatStatesMu.Unlock()
 	st, ok := heartbeatStates[nodeID]
 	if !ok {
 		st = &peerHeartbeatState{}

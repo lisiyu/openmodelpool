@@ -272,14 +272,12 @@ func (gp *GlobalPool) Contribute(nodeID string, amount int64) error {
 // RecordConsumption records that a node has consumed tokens via the global pool.
 func (gp *GlobalPool) RecordConsumption(nodeID string, amount int64) {
 	gp.mu.Lock()
-	defer gp.mu.Unlock()
-
 	gp.NodeConsumptions[nodeID] += amount
 	gp.TotalConsumed += amount
 	gp.recalculateLocked()
+	gp.mu.Unlock()
 
-	// Async save (avoid blocking on every request)
-	go gp.doSave()
+	gp.doSave()
 }
 
 // recalculateLocked recomputes aggregate values. Caller must hold gp.mu.

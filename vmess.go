@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,39 +102,44 @@ func ParseVMessLink(link string) (*VMessConfig, error) {
 	if config.Add == "" || config.ID == "" || config.Port == "" {
 		return nil, fmt.Errorf("vmess link missing required fields (add/id/port)")
 	}
+	if isPrivateHost(net.JoinHostPort(config.Add, config.Port)) {
+		return nil, fmt.Errorf("vmess address resolves to private/loopback IP: %s", config.Add)
+	}
 	return &config, nil
 }
 
 // StartProxy starts a local Xray SOCKS5 proxy for the given VMess config
 func (m *VMessProxy) StartProxy(providerID string, config *VMessConfig) (string, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if m.xrayPath == "" {
+		m.mu.Unlock()
 		return "", fmt.Errorf("xray binary not found")
 	}
 
-	// Reuse existing proxy if already running for this provider
 	if inst, ok := m.proxies[providerID]; ok {
 		if inst.cmd.ProcessState == nil || !inst.cmd.ProcessState.Exited() {
 			proxyAddr := fmt.Sprintf("socks5://127.0.0.1:%d", inst.port)
+			m.mu.Unlock()
 			return proxyAddr, nil
 		}
-		// Process exited, clean up
 		m.stopInstance(inst)
 	}
 
-	// Allocate a port
 	port := m.nextPort
 	m.nextPort++
+	m.mu.Unlock()
 
-	// Generate Xray config
 	xrayConfig := m.generateConfig(config, port)
-	configFile := filepath.Join(os.TempDir(), fmt.Sprintf("xray-%s.json", providerID))
+	sanitized := filepath.Base(providerID)
+	if sanitized != providerID || sanitized == "." || sanitized == ".." {
+		return "", fmt.Errorf("invalid provider ID: %q", providerID)
+	}
+	configFile := filepath.Join(os.TempDir(), fmt.Sprintf("xray-%s.json", sanitized))
 	b, _ := json.MarshalIndent(xrayConfig, "", "  ")
-	os.WriteFile(configFile, b, 0644)
+	if err := os.WriteFile(configFile, b, 0600); err != nil {
+		return "", fmt.Errorf("failed to write xray config: %w", err)
+	}
 
-	// Start Xray
 	cmd := exec.Command(m.xrayPath, "run", "-c", configFile)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
@@ -147,17 +153,20 @@ func (m *VMessProxy) StartProxy(providerID string, config *VMessConfig) (string,
 		provider: providerID,
 		config:   *config,
 	}
+
+	m.mu.Lock()
 	m.proxies[providerID] = inst
+	m.mu.Unlock()
 
 	proxyAddr := fmt.Sprintf("socks5://127.0.0.1:%d", port)
 	slog.Info("VMess proxy started", "provider", providerID, "proxy", proxyAddr, "server", config.Add)
 
-	// Wait a moment for Xray to start
 	time.Sleep(500 * time.Millisecond)
 
-	// Verify it's running
 	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		m.mu.Lock()
 		delete(m.proxies, providerID)
+		m.mu.Unlock()
 		return "", fmt.Errorf("xray exited immediately, check config")
 	}
 

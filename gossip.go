@@ -390,6 +390,7 @@ func (g *GossipManager) fetchFullPoolFromPeer(peer NodeInfo) {
 		}
 
 		if resp.StatusCode != http.StatusOK {
+			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			continue
 		}
@@ -645,12 +646,13 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 				}
 				resp, err := client.Do(req)
 				if err != nil {
-					continue // try next address
+					continue
 				}
+				io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
 
 				if resp.StatusCode != http.StatusOK {
-					continue // try next address
+					continue
 				}
 
 				slog.Debug("announcement delivered to peer", "peer_id", p.NodeID, "addr", addr)

@@ -25,9 +25,16 @@ const encPrefix = "omp:e:"
 // referenced an undefined `enc` Encryptor and the README claimed AES-256-GCM
 // with no implementation — that gap is now closed by real crypto/aes usage.
 type Encryptor struct {
-	mu    sync.RWMutex
-	key   []byte
-	ready bool
+	mu        sync.RWMutex
+	key       []byte
+	ready     bool
+	ephemeral bool
+}
+
+// IsEphemeral reports whether the encryptor is using a temporary key
+// that will be lost on restart (all previously encrypted data becomes unrecoverable).
+func (e *Encryptor) IsEphemeral() bool {
+	return e.ephemeral
 }
 
 // NewEncryptor resolves the 32-byte AES key with the following precedence:
@@ -121,8 +128,8 @@ func init() {
 		// Last-resort: ephemeral key so the process can still run.
 		key := make([]byte, 32)
 		_, _ = rand.Read(key)
-		enc = &Encryptor{key: key, ready: true}
-		slog.Warn("encryptor fell back to ephemeral key", "err", err)
+		enc = &Encryptor{key: key, ready: true, ephemeral: true}
+		slog.Error("CRITICAL: encryptor fell back to ephemeral key — all encrypted data from previous sessions is UNRECOVERABLE. Resolve the key file issue before storing any sensitive data.")
 		return
 	}
 	enc.ready = true

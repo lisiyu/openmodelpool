@@ -1,13 +1,30 @@
 package main
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+var nodeIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+func sanitizeNodeID(id string) string {
+	if len(id) > 128 {
+		id = id[:128]
+	}
+	if !nodeIDPattern.MatchString(id) {
+		return ""
+	}
+	return id
+}
 
 // withFederationAuth restricts access to known federation nodes or authenticated requests.
 // SA-12 (strict): NO localhost bypass. All requests MUST present valid credentials:
@@ -31,12 +48,25 @@ func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// Auth path 1: Known node identity (X-Node-ID + trust pool verification)
-		nodeID := r.Header.Get("X-Node-ID")
+		// Auth path 1: Known node identity (X-Node-ID + signature verification)
+		nodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 		if nodeID != "" && fed != nil {
-			if _, ok := fed.GetNode(nodeID); ok {
-				handler(w, r)
-				return
+			if n, ok := fed.GetNode(nodeID); ok && n.PubKey != "" {
+				sig := r.Header.Get("X-Node-Signature")
+				timestamp := r.Header.Get("X-Node-Timestamp")
+				if sig != "" && timestamp != "" {
+					ts, err := strconv.ParseInt(timestamp, 10, 64)
+					if err == nil {
+						elapsed := time.Now().Unix() - ts
+						if elapsed >= 0 && elapsed <= 300 {
+							payload := []byte(fmt.Sprintf("%s:%s:%s", nodeID, r.Method, r.URL.Path))
+							if VerifySignature(n.PubKey, payload, sig) {
+								handler(w, r)
+								return
+							}
+						}
+					}
+				}
 			}
 		}
 
@@ -53,7 +83,7 @@ func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 		fedSecret := cfg.Get("federation_secret", "")
 		if fedSecret != "" {
 			requestSecret := r.Header.Get("X-Federation-Secret")
-			if requestSecret != "" && requestSecret == fedSecret {
+			if requestSecret != "" && subtle.ConstantTimeCompare([]byte(requestSecret), []byte(fedSecret)) == 1 {
 				handler(w, r)
 				return
 			}
@@ -65,45 +95,33 @@ func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 }
 
 // isTrustedSeed reports whether the incoming request originates from a configured
-// bootstrap seed node. It compares the request Host (port stripped) against each
-// entry of netMgr.config.BootstrapNodes, tolerating http/https prefixes and a
-// trailing slash so operators can paste a bare domain or a full URL interchangeably.
+// bootstrap seed node. It verifies a pre-shared X-Seed-Token header against the
+// federation_secret, avoiding reliance on the easily-spoofed Host header.
 func isTrustedSeed(r *http.Request) bool {
-	if netMgr == nil {
+	seedToken := r.Header.Get("X-Seed-Token")
+	if seedToken == "" {
 		return false
 	}
-	host := r.Host
-	if i := strings.IndexByte(host, ':'); i >= 0 {
-		host = host[:i]
+	fedSecret := cfg.Get("federation_secret", "")
+	if fedSecret == "" {
+		return false
 	}
-	for _, seed := range netMgr.config.BootstrapNodes {
-		seedHost := strings.TrimPrefix(strings.TrimPrefix(seed, "https://"), "http://")
-		seedHost = strings.TrimRight(seedHost, "/")
-		if i := strings.IndexByte(seedHost, ':'); i >= 0 {
-			seedHost = seedHost[:i]
-		}
-		if seedHost != "" && seedHost == host {
-			return true
-		}
-	}
-	return false
+	return subtle.ConstantTimeCompare([]byte(seedToken), []byte(fedSecret)) == 1
 }
 
 // FederationManager manages this node's participation in the federation.
 type FederationManager struct {
 	mu         sync.RWMutex
 	trustPool  TrustPool
-	localPeers map[string]*NodeInfo // node_id -> latest info from gossip
-	// discoveryHints holds PEX address hints learned via gossip (P1-1), keyed by
-	// node_id. In-memory only (not persisted — D4): used as a fallback address
-	// source when a node's trust-pool endpoint is missing or stale.
+	localPeers map[string]*NodeInfo
 	discoveryHints map[string][]string
+	dht        *DHT
 	enabled        bool
 	relayEnabled   bool
-	loopRunning    bool // whether the refresh loop goroutine is active
+	loopRunning    bool
 	dataDir        string
 	stopCh         chan struct{}
-	lastETag       string // ETag for conditional HTTP requests to registry
+	lastETag       string
 }
 
 var fed *FederationManager
@@ -119,6 +137,12 @@ func initFederation(dataDir string) {
 		dataDir:        dataDir,
 		stopCh:         make(chan struct{}),
 	}
+
+	selfID := "unknown"
+	if node != nil {
+		selfID = node.NodeID()
+	}
+	f.dht = NewDHT(selfID)
 
 	// REQ-2: federation is no longer driven by the legacy federation_enabled key.
 	// Its enabled state now follows NetworkManager.network_enabled via
@@ -220,6 +244,10 @@ func (f *FederationManager) UpdateTrustPool(pool TrustPool) {
 	f.trustPool = pool
 	slog.Info("trust pool updated", "version", pool.Version, "nodes", len(pool.Nodes))
 
+	for i := range pool.Nodes {
+		f.dhtAddNodeLocked(&pool.Nodes[i])
+	}
+
 	if err := f.saveLocked(); err != nil {
 		slog.Error("failed to persist trust pool", "error", err)
 	}
@@ -230,20 +258,18 @@ func (f *FederationManager) UpdateNodeInfo(info NodeInfo) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// Try to update in the trust pool first.
+	f.dhtAddNodeLocked(&info)
+
 	for i := range f.trustPool.Nodes {
 		if f.trustPool.Nodes[i].NodeID == info.NodeID {
 			f.trustPool.Nodes[i] = info
 			slog.Debug("trust pool node refreshed via gossip", "node_id", info.NodeID)
-			// Mirror the learned node to the on-disk registry so a cold start
-			// can recover known peers without waiting for GitHub bootstrap.
 			if nodeRegistry != nil {
 				nodeRegistry.SaveNode(routeEntryFromNodeInfo(info))
 			}
 			return
 		}
 	}
-	// Otherwise store / update in the local peers map.
 	f.localPeers[info.NodeID] = &info
 	slog.Debug("gossip peer recorded", "node_id", info.NodeID, "status", info.Status)
 	if nodeRegistry != nil {
@@ -308,7 +334,9 @@ func (f *FederationManager) AddKnownNode(node NodeInfo) {
 			f.trustPool.Nodes[i] = node
 			f.trustPool.Version++
 			f.trustPool.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-			_ = f.saveLocked()
+			if err := f.saveLocked(); err != nil {
+				slog.Error("failed to persist trust pool after node removal", "error", err)
+			}
 			return
 		}
 	}
@@ -316,7 +344,9 @@ func (f *FederationManager) AddKnownNode(node NodeInfo) {
 	f.trustPool.Nodes = append(f.trustPool.Nodes, node)
 	f.trustPool.Version++
 	f.trustPool.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	_ = f.saveLocked()
+	if err := f.saveLocked(); err != nil {
+		slog.Error("failed to persist trust pool after node addition", "error", err)
+	}
 }
 
 // MergePeerHints records peer address hints learned via gossip PEX (P1-1). These
@@ -389,7 +419,9 @@ func (f *FederationManager) refreshFromGitHub() error {
 			"version", pool.Version,
 			"nodes", len(pool.Nodes),
 		)
-		_ = f.saveLocked()
+		if err := f.saveLocked(); err != nil {
+			slog.Error("failed to persist trust pool after GitHub refresh", "error", err)
+		}
 	}
 	f.mu.Unlock()
 	return nil
@@ -595,4 +627,44 @@ func (f *FederationManager) stopLoop() {
 func (f *FederationManager) stop() {
 	f.stopLoop()
 	slog.Info("federation manager stopped")
+}
+
+func (f *FederationManager) dhtAddNodeLocked(info *NodeInfo) {
+	if f.dht == nil || info.NodeID == "" {
+		return
+	}
+	id := DHTNodeID(sha256.Sum256([]byte(info.NodeID)))
+	addresses := info.Endpoint
+	if addresses == "" {
+		addresses = "unknown"
+	}
+	f.dht.AddNode(&DHTEntry{
+		NodeID:    id,
+		Addresses: []string{addresses},
+	})
+}
+
+func (f *FederationManager) DHTLookup(targetNodeID string, count int) []*DHTEntry {
+	if f.dht == nil {
+		return nil
+	}
+	id := DHTNodeID(sha256.Sum256([]byte(targetNodeID)))
+	if count <= 0 {
+		count = dhtAlpha
+	}
+	return f.dht.FindClosest(id, count)
+}
+
+func (f *FederationManager) DHTPut(key string, value []byte) {
+	if f.dht == nil {
+		return
+	}
+	f.dht.Put(key, value, f.dht.self)
+}
+
+func (f *FederationManager) DHTGet(key string) (*DHTRecord, bool) {
+	if f.dht == nil {
+		return nil, false
+	}
+	return f.dht.Get(key)
 }
