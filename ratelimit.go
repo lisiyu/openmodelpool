@@ -147,6 +147,7 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// Check global limit first
 		if !rateLimiter.global.Allow() {
+			metrics.requestErrors.Add(1)
 			slog.Warn("global rate limit exceeded", "remote", r.RemoteAddr)
 			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", rateLimiter.globalQPS))
 			w.Header().Set("Retry-After", "1")
@@ -166,6 +167,7 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		limiter := rateLimiter.getConsumerLimiter(consumerID)
 		if !limiter.Allow() {
+			metrics.requestErrors.Add(1)
 			slog.Warn("consumer rate limit exceeded", "consumer", consumerID, "remote", r.RemoteAddr)
 			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", rateLimiter.consumerQPS))
 			w.Header().Set("Retry-After", "1")
