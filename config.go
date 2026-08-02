@@ -83,7 +83,10 @@ func (c *Config) load() {
 		b, ferr := os.ReadFile(path)
 		if ferr == nil {
 			c.mu.Lock()
-			json.Unmarshal(b, &c.data)
+			if uerr := json.Unmarshal(b, &c.data); uerr != nil {
+				slog.Error("failed to parse config data, using defaults", "error", uerr)
+				c.data = make(map[string]any)
+			}
 			c.mu.Unlock()
 		}
 	}

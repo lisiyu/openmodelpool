@@ -40,7 +40,16 @@ func (a *Auth) load() {
 		}
 		return
 	}
-	json.Unmarshal(b, &a.data)
+	if err := json.Unmarshal(b, &a.data); err != nil {
+		slog.Error("failed to parse auth data, resetting to defaults", "error", err)
+		a.data = AuthData{
+			JWTSecret:       randomString(64),
+			JWTRefreshSecret: randomString(64),
+			SMTP:            SMTPConfig{Port: 587, UseTLS: true},
+		}
+		a.save()
+		return
+	}
 	if a.data.JWTSecret == "" {
 		slog.Warn("auth data: JWTSecret missing, generating new one")
 		a.data.JWTSecret = randomString(64)
