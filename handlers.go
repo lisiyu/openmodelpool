@@ -1020,3 +1020,63 @@ func handleNetworkIdentityRestore(w http.ResponseWriter, r *http.Request) {
 		"restored":         true,
 	})
 }
+
+// handleDiagnostics returns comprehensive system diagnostics for troubleshooting.
+// F16: Consolidated diagnostic endpoint for admin/support use.
+func handleDiagnostics(w http.ResponseWriter, r *http.Request) {
+	diag := map[string]any{}
+
+	// Runtime info
+	diag["version"] = AppVersion
+	diag["go_version"] = runtime.Version()
+	diag["goroutines"] = runtime.NumGoroutine()
+	diag["uptime_seconds"] = time.Since(metrics.startTime).Seconds()
+
+	// Memory stats
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	diag["memory"] = map[string]any{
+		"alloc_mb":       m.Alloc / 1024 / 1024,
+		"total_alloc_mb": m.TotalAlloc / 1024 / 1024,
+		"sys_mb":         m.Sys / 1024 / 1024,
+		"gc_count":       m.NumGC,
+	}
+
+	// Provider health
+	if healthChecker != nil {
+		healthy := 0
+		unhealthy := 0
+		for _, h := range healthChecker.GetHealth() {
+			if h.Status == "healthy" {
+				healthy++
+			} else {
+				unhealthy++
+			}
+		}
+		diag["providers"] = map[string]any{
+			"healthy":   healthy,
+			"unhealthy": unhealthy,
+		}
+	}
+
+	// Network status
+	if netMgr != nil {
+		s := netMgr.GetStatus()
+		diag["network"] = s
+	}
+
+	// Encryption status
+	if enc != nil {
+		diag["encryption"] = map[string]any{
+			"ready":     enc.IsReady(),
+			"ephemeral": enc.IsEphemeral(),
+		}
+	}
+
+	// Connection tracker
+	if connTracker != nil {
+		diag["connections"] = GetConnStats()
+	}
+
+	writeJSON(w, 200, diag)
+}

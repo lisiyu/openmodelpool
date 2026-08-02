@@ -139,3 +139,23 @@ func DecrConn(providerID, accessType string) {
 		DecrGuestConn()
 	}
 }
+
+// GetStats returns connection statistics for diagnostics.
+func GetConnStats() map[string]any {
+	providerConnsMu.RLock()
+	pConns := make(map[string]int, len(providerConns))
+	for k, v := range providerConns {
+		pConns[k] = v
+	}
+	providerConnsMu.RUnlock()
+
+	guestConnsMu.RLock()
+	gConns := guestConns
+	guestConnsMu.RUnlock()
+
+	return map[string]any{
+		"provider_connections": pConns,
+		"guest_connections":    gConns,
+	}
+}
+
