@@ -81,6 +81,9 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		maxAge = 7 * 86400
 	}
 	// Determine if Secure flag should be set
+	// NOTE: X-Forwarded-Proto is only trustworthy when behind a trusted
+	// reverse proxy. In direct-exposure deployments, an attacker can spoof
+	// this header to prevent the Secure cookie flag from being set.
 	isHTTPS := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	c := &http.Cookie{
 		Name:     "admin_token",
