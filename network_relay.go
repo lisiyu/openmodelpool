@@ -274,6 +274,13 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 		return
 	}
 
+	// B119: Block relay to private/internal IPs to prevent SSRF
+	if host := target.Hostname(); isLocalOrPrivateIP(host) {
+		slog.Warn("relay target is private IP, rejecting", "host", host)
+		writeError(w, 502, "relay target must be a public address")
+		return
+	}
+
 	// Reconstruct the path: /network/{node_id}/{rest} → /network/{node_id}/{rest}
 	// We keep the full path so the target can also strip it if it's also a relay
 	// Actually, we strip it so the target sees the original path: /{rest}
@@ -759,6 +766,13 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	target, err := url.Parse(targetAddr)
 	if err != nil {
 		writeError(w, 502, "invalid target address")
+		return
+	}
+
+	// B119: Block relay to private/internal IPs to prevent SSRF
+	if host := target.Hostname(); isLocalOrPrivateIP(host) {
+		slog.Warn("relay target is private IP, rejecting", "host", host)
+		writeError(w, 502, "relay target must be a public address")
 		return
 	}
 
