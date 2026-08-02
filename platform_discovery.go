@@ -138,7 +138,7 @@ func handleUpdateDiscoveredPlatform(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Status string `json:"status"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}

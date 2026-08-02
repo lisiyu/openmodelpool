@@ -858,7 +858,7 @@ func handleFederationUpdateSignal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var sig UpdateSignal
-	if err := readJSON(r, &sig); err != nil {
+	if err := readJSON(w, r, &sig); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -900,7 +900,7 @@ func handleFederationUpdateReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var report UpdateReport
-	if err := readJSON(r, &report); err != nil {
+	if err := readJSON(w, r, &report); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}

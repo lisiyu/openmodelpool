@@ -414,7 +414,7 @@ func handlePostScore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var score PeerScore
-	if err := readJSON(r, &score); err != nil {
+	if err := readJSON(w, r, &score); err != nil {
 		writeError(w, 400, "invalid score body")
 		return
 	}

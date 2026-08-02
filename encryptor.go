@@ -141,8 +141,14 @@ func IsEncrypted(s string) bool {
 }
 
 // encryptField best-effort encrypts a field, returning the input unchanged on error.
+// M3-fix: Refuses to encrypt new data when using an ephemeral key to prevent
+// data loss on restart (previously encrypted data would become unrecoverable).
 func encryptField(s string) string {
 	if enc == nil || s == "" {
+		return s
+	}
+	if enc.IsEphemeral() {
+		slog.Warn("refusing to encrypt data with ephemeral key — data would be unrecoverable after restart", "hint", "resolve the encryption key file issue before storing sensitive data")
 		return s
 	}
 	e, err := enc.Encrypt(s)

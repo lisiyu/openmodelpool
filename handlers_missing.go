@@ -71,7 +71,7 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`
 	}
-	_ = readJSON(r, &hbBody)
+	_ = readJSON(w, r, &hbBody)
 
 	senderNodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 	if senderNodeID == "" {
@@ -212,7 +212,7 @@ func handleAlgorithmPropose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req algorithmProposeRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -244,7 +244,7 @@ func handleAlgorithmVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req algorithmVoteRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -283,7 +283,7 @@ func handleAlgorithmProposalResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req algorithmResolveRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -394,7 +394,7 @@ func handleNetworkRegionConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var cfg RegionConfig
-	if err := readJSON(r, &cfg); err != nil {
+	if err := readJSON(w, r, &cfg); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

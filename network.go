@@ -1361,7 +1361,7 @@ func handleNetworkConsent(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Accepted bool `json:"accepted"`
 	}
-	if err := readJSON(r, &body); err != nil || !body.Accepted {
+	if err := readJSON(w, r, &body); err != nil || !body.Accepted {
 		writeError(w, 400, "accepted must be true")
 		return
 	}
@@ -1425,7 +1425,7 @@ func handleNetworkToggle(w http.ResponseWriter, r *http.Request) {
 		NetworkEnabled *bool `json:"network_enabled"`
 		ShareToPool    *bool `json:"share_to_pool"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -1472,7 +1472,7 @@ func handleNetworkConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		MaxDaily     int      `json:"max_daily_requests"`
 		RelayEnabled *bool    `json:"relay_enabled,omitempty"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -1551,7 +1551,7 @@ func resolvePeerNodeID(addr string) (string, error) {
 
 func handleNetworkAddPeer(w http.ResponseWriter, r *http.Request) {
 	var peer PeerInfo
-	if err := readJSON(r, &peer); err != nil {
+	if err := readJSON(w, r, &peer); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -1637,7 +1637,7 @@ func handleNetworkPeersNotify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p PeerNotifyPayload
-	if err := readJSON(r, &p); err != nil {
+	if err := readJSON(w, r, &p); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

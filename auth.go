@@ -58,9 +58,10 @@ func (a *Auth) load() {
 
 // save persists the auth data to disk.
 // P0-3: save acquires its own lock to prevent concurrent write corruption.
+// C1-fix: Deep copy data before encrypting to avoid mutating in-memory plaintext.
 func (a *Auth) save() {
 	a.mu.Lock()
-	safe := a.data
+	safe := a.deepCopyDataLocked()
 	if safe.SMTP.Password != "" && !IsEncrypted(safe.SMTP.Password) {
 		safe.SMTP.Password = encryptField(safe.SMTP.Password)
 	}
@@ -73,14 +74,31 @@ func (a *Auth) save() {
 
 // saveLocked persists auth data; caller must already hold a.mu.
 // Used internally by methods that already hold the lock.
+// C1-fix: Deep copy data before encrypting to avoid mutating in-memory plaintext.
 func (a *Auth) saveLocked() {
-	safe := a.data
+	safe := a.deepCopyDataLocked()
 	if safe.SMTP.Password != "" && !IsEncrypted(safe.SMTP.Password) {
 		safe.SMTP.Password = encryptField(safe.SMTP.Password)
 	}
 	b, _ := json.MarshalIndent(safe, "", "  ")
 	os.MkdirAll("data", 0755)
 	atomicWriteFile(a.path, b, 0600)
+}
+
+// deepCopyDataLocked returns a deep copy of a.data.
+// Caller must hold a.mu.
+func (a *Auth) deepCopyDataLocked() AdminStore {
+	cp := a.data
+	// Deep copy slices to avoid shared references
+	if len(a.data.Collaborators) > 0 {
+		cp.Collaborators = make([]Collaborator, len(a.data.Collaborators))
+		copy(cp.Collaborators, a.data.Collaborators)
+	}
+	if a.data.Reset != nil {
+		r := *a.data.Reset
+		cp.Reset = &r
+	}
+	return cp
 }
 
 // Initialized returns whether admin has been set up.

@@ -456,7 +456,7 @@ func handleCreateInviteCode(w http.ResponseWriter, r *http.Request) {
 		MaxUses int    `json:"max_uses"` // 0 = single use
 		Role    string `json:"role"`     // consumer (default) or collaborator
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -506,7 +506,7 @@ func handleCreateConsumer(w http.ResponseWriter, r *http.Request) {
 		Name       string `json:"name"`
 		InviteCode string `json:"invite_code"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -544,7 +544,7 @@ func handleToggleConsumer(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Enabled bool `json:"enabled"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -561,7 +561,7 @@ func handleConsumerRegister(w http.ResponseWriter, r *http.Request) {
 		Name       string `json:"name"`
 		InviteCode string `json:"invite_code"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -595,7 +595,7 @@ func handleUpdateConsumer(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Disabled bool `json:"disabled"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}

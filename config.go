@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -217,13 +218,7 @@ func maskToken(s string) string {
 func (c *Config) stop() { close(c.stopCh) }
 
 func toUpper(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if c >= 'a' && c <= 'z' {
-			b[i] = c - 32
-		}
-	}
-	return string(b)
+	return strings.ToUpper(s)
 }
 
 // atomicWriteFile writes data to a file atomically by first writing to a temp

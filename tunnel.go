@@ -577,7 +577,7 @@ func handleVerifyDomainToken(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		APIToken string `json:"api_token"`
 	}
-	if err := readJSON(r, &body); err != nil || body.APIToken == "" {
+	if err := readJSON(w, r, &body); err != nil || body.APIToken == "" {
 		writeError(w, 400, "api_token required")
 		return
 	}
@@ -600,7 +600,7 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 		APIToken string `json:"api_token"`
 		Domain   string `json:"domain"`
 	}
-	if err := readJSON(r, &body); err != nil || body.APIToken == "" || body.Domain == "" {
+	if err := readJSON(w, r, &body); err != nil || body.APIToken == "" || body.Domain == "" {
 		writeError(w, 400, "api_token and domain required")
 		return
 	}
@@ -916,7 +916,7 @@ func handleManualDomainBind(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Domain string `json:"domain"`
 	}
-	if err := readJSON(r, &body); err != nil || body.Domain == "" {
+	if err := readJSON(w, r, &body); err != nil || body.Domain == "" {
 		writeError(w, 400, "domain required")
 		return
 	}

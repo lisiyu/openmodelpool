@@ -40,6 +40,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 // isOriginAllowed checks if an origin match the whitelist.
 // Supports exact match and wildcard subdomain (*.example.com).
+// M1-fix: Implemented wildcard subdomain matching.
 func isOriginAllowed(origin, whitelist string) bool {
 	origins := strings.Split(whitelist, ",")
 	for _, allowed := range origins {
@@ -50,13 +51,22 @@ func isOriginAllowed(origin, whitelist string) bool {
 		if allowed == origin {
 			return true
 		}
+		// M1-fix: Support wildcard subdomain matching (e.g. *.example.com)
+		if strings.HasPrefix(allowed, "*.") {
+			suffix := allowed[1:] // ".example.com"
+			// origin must end with the suffix and have at least one char before it
+			if strings.HasSuffix(origin, suffix) && len(origin) > len(suffix) {
+				return true
+			}
+		}
 	}
 	return false
 }
 
 // withProxyAuth authenticates v1 proxy endpoints.
 // Accepts: public trial key, admin proxy API key, or consumer API key.
-// If no proxy API key is set and no consumer key matches, allows anonymous access as admin.
+// C3-fix: Anonymous admin access is only allowed from localhost/private networks.
+// Public internet requests without credentials are always rejected.
 func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -73,9 +83,21 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			proxyKey := cfg.Get("proxy_api_key", "")
 			if proxyKey == "" && len(multiUser.consumers) == 0 {
-				r.Header.Set("X-Request-Owner", "")
-				r.Header.Set("X-Request-Role", "admin")
-				handler(w, r)
+				// C3-fix: Only allow anonymous admin access from localhost/private networks
+				clientIP := extractClientIP(r.RemoteAddr)
+				if isLocalOrPrivateIP(clientIP) {
+					r.Header.Set("X-Request-Owner", "")
+					r.Header.Set("X-Request-Role", "admin")
+					handler(w, r)
+					return
+				}
+				// Non-local anonymous access rejected even in unprotected mode
+				slog.Warn("rejected anonymous access from non-local IP", "ip", clientIP, "path", r.URL.Path)
+				writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
+					Message: "API key required",
+					Type:    "authentication_error",
+					Code:    "missing_api_key",
+				}})
 				return
 			}
 			writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
@@ -105,14 +127,16 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// No anonymous fallback - require valid credentials
+		// C3-fix: Fallback anonymous admin only from localhost/private networks
 		if proxyKey == "" {
-			// Only allow if there's no proxy key AND consumer keys exist (unprotected mode)
 			if len(multiUser.consumers) == 0 {
-				r.Header.Set("X-Request-Owner", "")
-				r.Header.Set("X-Request-Role", "admin")
-				handler(w, r)
-				return
+				clientIP := extractClientIP(r.RemoteAddr)
+				if isLocalOrPrivateIP(clientIP) {
+					r.Header.Set("X-Request-Owner", "")
+					r.Header.Set("X-Request-Role", "admin")
+					handler(w, r)
+					return
+				}
 			}
 		}
 
@@ -126,16 +150,25 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 }
 
 // withAuth authenticates admin-only endpoints via JWT token.
+// A3-fix: Unified error response format using ErrorResponse.
 func withAuth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := extractToken(r)
 		if token == "" {
-			writeJSON(w, 401, map[string]string{"error": "not authenticated"})
+			writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
+				Message: "not authenticated",
+				Type:    "authentication_error",
+				Code:    "missing_token",
+			}})
 			return
 		}
 		_, err := auth.VerifyToken(token)
 		if err != nil {
-			writeJSON(w, 401, map[string]string{"error": "token expired"})
+			writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
+				Message: "token expired",
+				Type:    "authentication_error",
+				Code:    "invalid_token",
+			}})
 			return
 		}
 		r.Header.Set("X-Request-Owner", "")

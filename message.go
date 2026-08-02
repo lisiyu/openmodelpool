@@ -457,7 +457,7 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req sendMessageRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
@@ -490,7 +490,7 @@ func handleReceiveMessage(w http.ResponseWriter, r *http.Request) {
 	senderNodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 
 	var msg FederationMessage
-	if err := readJSON(r, &msg); err != nil {
+	if err := readJSON(w, r, &msg); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid message body: "+err.Error())
 		return
 	}
@@ -570,7 +570,7 @@ func handleMarkAsRead(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		MessageID string `json:"message_id"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

@@ -629,7 +629,7 @@ func handleGuestKeyShareType(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ShareType string `json:"share_type"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -665,7 +665,7 @@ func handleGuestKeyUpdateQuota(w http.ResponseWriter, r *http.Request) {
 		QuotaPerRequest *int64 `json:"quota_per_request"`
 		RPM             *int   `json:"rpm"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -706,7 +706,7 @@ func handleNetworkKeyValidate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Key string `json:"key"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -778,7 +778,7 @@ func handleUpdateQuotaAllocation(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		GuestKeyPercent int `json:"guest_key_percent"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}

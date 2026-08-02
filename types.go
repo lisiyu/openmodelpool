@@ -283,20 +283,21 @@ func (ac *ProviderAccessControl) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Safe returns a copy with API key masked
+// Safe returns a deep copy with API key masked.
+// m4-fix: Deep copy map/slice fields to avoid shared references with original.
 func (p *Provider) Safe() Provider {
-	safe := *p
-	if len(safe.APIKey) > 8 {
-		safe.APIKey = safe.APIKey[:4] + "..." + safe.APIKey[len(safe.APIKey)-4:]
-	} else if safe.APIKey != "" {
-		safe.APIKey = "***"
-	} else {
-		safe.APIKey = ""
+	safe := *p // shallow copy of value fields
+
+	// Deep copy Models slice
+	if len(safe.Models) > 0 {
+		safe.Models = make([]ModelDef, len(p.Models))
+		copy(safe.Models, p.Models)
 	}
-	// Mask API keys in the multi-key array
+
+	// Deep copy APIKeys slice and mask keys
 	if len(safe.APIKeys) > 0 {
-		maskedKeys := make([]APIKeyConfig, len(safe.APIKeys))
-		for i, k := range safe.APIKeys {
+		maskedKeys := make([]APIKeyConfig, len(p.APIKeys))
+		for i, k := range p.APIKeys {
 			maskedKeys[i] = k
 			if len(maskedKeys[i].Key) > 8 {
 				maskedKeys[i].Key = maskedKeys[i].Key[:4] + "..." + maskedKeys[i].Key[len(maskedKeys[i].Key)-4:]
@@ -308,6 +309,42 @@ func (p *Provider) Safe() Provider {
 		}
 		safe.APIKeys = maskedKeys
 	}
+
+	// Mask legacy API key
+	if len(safe.APIKey) > 8 {
+		safe.APIKey = safe.APIKey[:4] + "..." + safe.APIKey[len(safe.APIKey)-4:]
+	} else if safe.APIKey != "" {
+		safe.APIKey = "***"
+	} else {
+		safe.APIKey = ""
+	}
+
+	// Deep copy WebSession
+	if safe.WebSession != nil {
+		ws := *safe.WebSession
+		if len(ws.ExtraHeaders) > 0 {
+			ws.ExtraHeaders = make(map[string]string, len(safe.WebSession.ExtraHeaders))
+			for k, v := range safe.WebSession.ExtraHeaders {
+				ws.ExtraHeaders[k] = v
+			}
+		}
+		if len(ws.ExtraBody) > 0 {
+			ws.ExtraBody = make(map[string]any, len(safe.WebSession.ExtraBody))
+			for k, v := range safe.WebSession.ExtraBody {
+				ws.ExtraBody[k] = v
+			}
+		}
+		safe.WebSession = &ws
+	}
+
+	// Deep copy ModelBotMap
+	if len(safe.ModelBotMap) > 0 {
+		safe.ModelBotMap = make(map[string]string, len(p.ModelBotMap))
+		for k, v := range p.ModelBotMap {
+			safe.ModelBotMap[k] = v
+		}
+	}
+
 	// Mask vmess proxy links (contains sensitive UUID)
 	if strings.HasPrefix(safe.Proxy, "vmess://") {
 		safe.Proxy = "vmess://***"

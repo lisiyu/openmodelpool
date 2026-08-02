@@ -149,7 +149,7 @@ func TestSA11_ReadJSON_SizeLimit(t *testing.T) {
 	req := httptest.NewRequest("POST", "/test", bytes.NewReader(largeBody))
 
 	var result map[string]any
-	err := readJSON(req, &result)
+	err := readJSON(httptest.NewRecorder(), req, &result)
 	if err == nil {
 		t.Fatal("expected error for oversized body (>1MB)")
 	}
@@ -161,7 +161,7 @@ func TestSA11_ReadJSON_NormalSize(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	var result map[string]any
-	err := readJSON(req, &result)
+	err := readJSON(httptest.NewRecorder(), req, &result)
 	if err != nil {
 		t.Fatalf("expected no error for normal body, got: %v", err)
 	}

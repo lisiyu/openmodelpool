@@ -31,9 +31,10 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 // readJSON decodes JSON from request body with a 1MB size limit (SA-11).
-func readJSON(r *http.Request, v any) error {
+// m6-fix: Pass w to MaxBytesReader so it can auto-send 413 on overflow.
+func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	const maxBodySize = 1 << 20 // 1 MB — strict limit for all API endpoints
-	limited := http.MaxBytesReader(nil, r.Body, maxBodySize)
+	limited := http.MaxBytesReader(w, r.Body, maxBodySize)
 	defer limited.Close()
 	decoder := json.NewDecoder(limited)
 	return decoder.Decode(v)
@@ -318,7 +319,7 @@ func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 // handleSaveFederationConfig saves federation configuration.
 func handleSaveFederationConfig(w http.ResponseWriter, r *http.Request) {
 	var body map[string]string
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -364,7 +365,7 @@ func handleInitNode(w http.ResponseWriter, r *http.Request) {
 		GitHubUser string `json:"github_user"`
 		GitHubID   int64  `json:"github_id"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -411,7 +412,7 @@ func handleSetNodeWeight(w http.ResponseWriter, r *http.Request) {
 		NodeID string  `json:"node_id"`
 		Weight float64 `json:"weight"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -469,7 +470,7 @@ func handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 		RequestID string `json:"request_id"`
 		Approve   bool   `json:"approve"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -493,7 +494,7 @@ func handleSetTokenBudget(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Budget int64 `json:"budget"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -508,7 +509,7 @@ func handleSetTokenBudget(w http.ResponseWriter, r *http.Request) {
 // handleJoinNetwork processes a node join request (Genesis Hash verification).
 func handleJoinNetwork(w http.ResponseWriter, r *http.Request) {
 	var req NodeJoinRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -537,7 +538,7 @@ func handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 		Type        string `json:"type"`          // directed, public, chain
 		ExpiresIn   int    `json:"expires_hours"` // hours until expiration, default 168 (7 days)
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -588,7 +589,7 @@ func handleVerifyInvite(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Encoded string `json:"encoded"` // base64-encoded invite
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -624,7 +625,7 @@ func handleVerifyInvite(w http.ResponseWriter, r *http.Request) {
 
 func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	var req ChatRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -944,7 +945,7 @@ func handleNetworkIdentityGenerate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		WordCount int `json:"word_count"`
 	}
-	_ = readJSON(r, &body)
+	_ = readJSON(w, r, &body)
 	if body.WordCount != 24 {
 		body.WordCount = 12 // default 12
 	}
@@ -993,7 +994,7 @@ func handleNetworkIdentityRestore(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Mnemonic string `json:"mnemonic"`
 	}
-	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.Mnemonic) == "" {
+	if err := readJSON(w, r, &body); err != nil || strings.TrimSpace(body.Mnemonic) == "" {
 		writeError(w, 400, "请提供有效的助记词")
 		return
 	}

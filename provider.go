@@ -67,11 +67,6 @@ func (m *ProviderManager) load() {
 			}
 		}
 		slog.Info("providers loaded", "count", len(m.providers))
-	for _, p := range m.providers {
-		for _, k := range p.APIKeys {
-			slog.Info("after load", "provider", p.ID, "keyID", k.ID, "keyLen", len(k.Key), "isEncrypted", IsEncrypted(k.Key))
-		}
-	}
 	}
 }
 
@@ -162,11 +157,12 @@ func (m *ProviderManager) makeProviderListLocked() []Provider {
 	return list
 }
 
-// writeFile writes the provider list to disk. Called under saveMu only.
+// writeFile writes the provider list to disk atomically. Called under saveMu only.
+// C2-fix: Use atomicWriteFile to prevent data corruption from partial writes.
 func (m *ProviderManager) writeFile(list []Provider) {
 	b, _ := json.MarshalIndent(list, "", "  ")
 	os.MkdirAll("data", 0755)
-	os.WriteFile(m.dataPath, b, 0600) // P0-4: restrict file permissions to owner-only
+	atomicWriteFile(m.dataPath, b, 0600) // P0-4: restrict file permissions to owner-only
 }
 
 // GetAll returns all providers (configured + preset), cached. This is the unified pool for routing.

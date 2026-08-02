@@ -556,7 +556,7 @@ func handleGlobalPoolJoin(w http.ResponseWriter, r *http.Request) {
 		Region string `json:"region"`
 		Amount int64  `json:"amount"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -598,7 +598,7 @@ func handleGlobalPoolContribute(w http.ResponseWriter, r *http.Request) {
 		NodeID string `json:"node_id"`
 		Amount int64  `json:"amount"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}

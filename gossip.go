@@ -448,7 +448,7 @@ func handleFederationGossip(w http.ResponseWriter, r *http.Request) {
 
 	// Parse incoming message
 	var msg GossipMessage
-	if err := readJSON(r, &msg); err != nil {
+	if err := readJSON(w, r, &msg); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid gossip message")
 		return
 	}
@@ -543,7 +543,7 @@ func handleFederationAnnounce(w http.ResponseWriter, r *http.Request) {
 
 	// Parse the announcement
 	var ann ProviderAnnouncement
-	if err := readJSON(r, &ann); err != nil {
+	if err := readJSON(w, r, &ann); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid announcement")
 		return
 	}

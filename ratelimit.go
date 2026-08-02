@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -263,12 +263,13 @@ func rateLimitByIP(maxRequestsPerMinute float64, endpointName string) func(http.
 }
 
 // extractClientIP extracts the IP address from a RemoteAddr string (host:port).
+// M4-fix: Use net.SplitHostPort for correct IPv6 handling (e.g. [::1]:8000 → ::1).
 func extractClientIP(remoteAddr string) string {
-	// Handle IPv6 [::1]:port and IPv4 127.0.0.1:port
-	if idx := strings.LastIndex(remoteAddr, ":"); idx != -1 {
-		return remoteAddr[:idx]
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return remoteAddr // no port present, return as-is
 	}
-	return remoteAddr
+	return host
 }
 
 // cleanupIPRateLimiters removes stale IP limiter entries older than maxAge.
