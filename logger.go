@@ -255,6 +255,7 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			"latency_ms", latency.Milliseconds(),
 			"consumer", consumer,
 			"remote", maskedIP,
+			"request_id", r.Header.Get("X-Request-ID"),
 			"user_agent", r.Header.Get("User-Agent"),
 		)
 	})

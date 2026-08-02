@@ -39,6 +39,14 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 // readJSON decodes JSON from request body with a 1MB size limit (SA-11).
 // m6-fix: Pass w to MaxBytesReader so it can auto-send 413 on overflow.
 func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	// B83: Validate Content-Type for POST/PUT/PATCH requests
+	if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+		ct := r.Header.Get("Content-Type")
+		if ct != "" && !strings.HasPrefix(ct, "application/json") && !strings.HasPrefix(ct, "multipart/form-data") {
+			writeError(w, 415, "Content-Type must be application/json")
+			return fmt.Errorf("unsupported Content-Type: %s", ct)
+		}
+	}
 	const maxBodySize = 1 << 20 // 1 MB — strict limit for all API endpoints
 	limited := http.MaxBytesReader(w, r.Body, maxBodySize)
 	defer limited.Close()
