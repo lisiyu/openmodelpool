@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -1087,4 +1088,126 @@ func handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, 200, diag)
+}
+
+// handleSecurityCheck returns a security assessment of the current configuration.
+// F25: Security audit endpoint for admin dashboard.
+func handleSecurityCheck(w http.ResponseWriter, r *http.Request) {
+	findings := []map[string]any{}
+
+	// Check 1: Default admin password
+	if auth != nil {
+		info := auth.AdminInfo()
+		if info["username"] == "admin" {
+			findings = append(findings, map[string]any{
+				"severity": "medium",
+				"category": "authentication",
+				"message":  "Default admin username detected",
+				"detail":   "Change the default 'admin' username to reduce brute-force attack surface",
+			})
+		}
+	}
+
+	// Check 2: HTTPS enforcement
+	if cfg != nil {
+		publicURL := cfg.Get("public_url", "")
+		if publicURL != "" && !strings.HasPrefix(publicURL, "https://") {
+			findings = append(findings, map[string]any{
+				"severity": "high",
+				"category": "transport",
+				"message":  "Public URL uses HTTP instead of HTTPS",
+				"detail":   "Set public_url to an HTTPS URL to protect data in transit",
+			})
+		}
+	}
+
+	// Check 3: Encryption status
+	if enc != nil {
+		if enc.IsEphemeral() {
+			findings = append(findings, map[string]any{
+				"severity": "high",
+				"category": "encryption",
+				"message":  "Using ephemeral encryption key",
+				"detail":   "Encryption key could not be persisted; encrypted data will be lost on restart",
+			})
+		}
+	}
+
+	// Check 4: Rate limiting
+	if rateLimiter == nil {
+		findings = append(findings, map[string]any{
+			"severity": "medium",
+			"category": "rate_limiting",
+			"message":  "Rate limiting is not enabled",
+			"detail":   "Configure rate_limit_global and rate_limit_per_consumer to prevent abuse",
+		})
+	}
+
+	// Check 5: WAF
+	if wafInstance == nil {
+		findings = append(findings, map[string]any{
+			"severity": "low",
+			"category": "waf",
+			"message":  "WAF is not enabled",
+			"detail":   "Enable WAF for additional request filtering and IP blacklisting",
+		})
+	}
+
+	// Check 6: Provider API key exposure
+	if pm != nil {
+		emptyKeys := 0
+		for _, p := range pm.GetAll() {
+			if p.APIKey == "" {
+				emptyKeys++
+			}
+		}
+		if emptyKeys > 0 {
+			findings = append(findings, map[string]any{
+				"severity": "low",
+				"category": "providers",
+				"message":  fmt.Sprintf("%d provider(s) have empty API keys", emptyKeys),
+				"detail":   "Providers without API keys will fail on requests",
+			})
+		}
+	}
+
+	// Check 7: Data directory permissions
+	if info, err := os.Stat("data"); err == nil {
+		if info.Mode().Perm()&0077 != 0 {
+			findings = append(findings, map[string]any{
+				"severity": "medium",
+				"category": "file_permissions",
+				"message":  "Data directory has overly permissive access",
+				"detail":   fmt.Sprintf("Data directory mode: %o (should be 0700)", info.Mode().Perm()),
+			})
+		}
+	}
+
+	severity := "ok"
+	if len(findings) > 0 {
+		for _, f := range findings {
+			if f["severity"] == "high" {
+				severity = "high"
+				break
+			}
+		}
+		if severity != "high" {
+			for _, f := range findings {
+				if f["severity"] == "medium" {
+					severity = "medium"
+					break
+				}
+			}
+		}
+		if severity != "high" && severity != "medium" {
+			severity = "low"
+		}
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"severity":     severity,
+		"findings":     findings,
+		"total_checks": 7,
+		"timestamp":    time.Now().Format(time.RFC3339),
+	})
 }
