@@ -88,6 +88,9 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 	hopCount := 0
 	if hopStr := r.Header.Get(headerRelayHop); hopStr != "" {
 		hopCount, _ = strconv.Atoi(hopStr)
+		if hopCount < 0 {
+			hopCount = 0 // B2: sanitize negative hop count
+		}
 	}
 	if hopCount >= maxRelayHops {
 		writeError(w, 508, "max relay hops exceeded")
@@ -581,6 +584,9 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	hopCount := 0
 	if hopStr := r.Header.Get(headerRelayHop); hopStr != "" {
 		hopCount, _ = strconv.Atoi(hopStr)
+		if hopCount < 0 {
+			hopCount = 0 // B2: sanitize negative hop count
+		}
 	}
 	if hopCount >= maxRelayHops {
 		writeError(w, 508, "max relay hops exceeded")

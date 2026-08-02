@@ -34,7 +34,8 @@ func (m *ChatMessage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// extractContentText converts content (string or array) to plain text
+// extractContentText converts content (string or array) to plain text.
+// m3-fix: Log when non-text content blocks are silently ignored.
 func extractContentText(raw json.RawMessage) string {
 	// Try string first
 	var s string
@@ -51,6 +52,8 @@ func extractContentText(raw json.RawMessage) string {
 		for _, b := range blocks {
 			if b.Type == "text" && b.Text != "" {
 				parts = append(parts, b.Text)
+			} else if b.Type != "text" {
+				slog.Debug("extractContentText: skipping non-text content block", "type", b.Type)
 			}
 		}
 		return strings.Join(parts, "\n")

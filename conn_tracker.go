@@ -45,22 +45,31 @@ func cleanupStaleProviderConns() {
 	})
 }
 
+var connTrackerStopCh = make(chan struct{})
+
 func startConnTrackerCleanup() {
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-			before := 0
-			providerConns.Range(func(_, _ any) bool { before++; return true })
-			cleanupStaleProviderConns()
-			after := 0
-			providerConns.Range(func(_, _ any) bool { after++; return true })
-			if after < before {
-				slog.Debug("conn tracker cleanup", "removed", before-after, "remaining", after)
+		for {
+			select {
+			case <-ticker.C:
+				before := 0
+				providerConns.Range(func(_, _ any) bool { before++; return true })
+				cleanupStaleProviderConns()
+				after := 0
+				providerConns.Range(func(_, _ any) bool { after++; return true })
+				if after < before {
+					slog.Debug("conn tracker cleanup", "removed", before-after, "remaining", after)
+				}
+			case <-connTrackerStopCh:
+				return
 			}
 		}
 	}()
 }
+
+func stopConnTracker() { close(connTrackerStopCh) }
 
 // ============================================================
 // Guest connection tracking

@@ -109,6 +109,9 @@ func (c *Config) save() {
 }
 
 // saveSync forces synchronous save (used during shutdown).
+// B5-note: safe map is a shallow copy; encryptField only replaces string values
+// (immutable in Go), so in-memory c.data is not mutated — unlike auth.go which
+// needed deepCopyDataLocked due to struct field assignment.
 func (c *Config) saveSync() {
 	c.mu.Lock()
 	safe := make(map[string]any, len(c.data))

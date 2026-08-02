@@ -1063,7 +1063,7 @@ func handleBrowserLoginFinish(w http.ResponseWriter, r *http.Request) {
 	pm.Add(p)
 	cleanupSession(id)
 
-	go healthChecker.CheckProviderNow(id)
+	go safeCheckProviderNow(id)
 
 	slog.Info("browser login completed",
 		"provider", id,

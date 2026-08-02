@@ -66,6 +66,10 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "username and password required")
 		return
 	}
+	if len(body.Username) > 128 || len(body.Password) > 256 { // B9: input length limit
+		writeError(w, 400, "input too long")
+		return
+	}
 	if !auth.VerifyCredentials(body.Username, body.Password) {
 		writeError(w, 401, "invalid credentials")
 		return
@@ -574,7 +578,7 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := pm.Add(p)
-	healthChecker.CheckProviderNow(p.ID)
+	safeCheckProviderNow(p.ID)
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
 
@@ -673,7 +677,7 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := pm.Add(merged)
-	healthChecker.CheckProviderNow(id)
+	safeCheckProviderNow(id)
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
 
@@ -845,7 +849,7 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 	response["failed_count"] = failedCount
 
 	// Update health status with actual failed key count from manual test
-	healthChecker.SetFailedKeyCount(id, failedCount)
+	safeSetFailedKeyCount(id, failedCount)
 
 	writeJSON(w, 200, response)
 }
@@ -2025,7 +2029,7 @@ func handleResetWithCode(w http.ResponseWriter, r *http.Request) {
 		Code        string `json:"code"`
 		NewPassword string `json:"new_password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
@@ -2035,6 +2039,10 @@ func handleResetWithCode(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(body.NewPassword) < 8 {
 		writeError(w, 400, "password must be at least 8 characters")
+		return
+	}
+	if len(body.NewPassword) > 256 { // B9: max password length
+		writeError(w, 400, "password too long")
 		return
 	}
 
@@ -2394,6 +2402,10 @@ func handleCollaboratorRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Username == "" || body.Password == "" || body.GuestKey == "" {
 		writeError(w, 400, "username, password and guest_key are required")
+		return
+	}
+	if len(body.Username) > 128 || len(body.Password) > 256 || len(body.GuestKey) > 128 { // B9
+		writeError(w, 400, "input too long")
 		return
 	}
 	if !auth.ValidateGuestKeyForRegistration(body.GuestKey) {

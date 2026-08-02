@@ -190,7 +190,9 @@ func (g *AlgorithmGovernor) persistLocked() {
 // newProposalID returns a collision-resistant local proposal id.
 func newProposalID() string {
 	b := make([]byte, 6)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		slog.Error("crypto/rand.Read failed in newProposalID", "err", err) // B10: log instead of ignore
+	}
 	return fmt.Sprintf("prop-%d-%x", time.Now().UnixNano(), b)
 }
 

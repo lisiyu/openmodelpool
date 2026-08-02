@@ -30,7 +30,7 @@ func runServer() {
 	}
 	initTunnel(portNum)
 
-	handler := corsMiddleware(requestLogMiddleware(concurrencyMiddleware(mux)))
+	handler := requestIDMiddleware(corsMiddleware(requestLogMiddleware(concurrencyMiddleware(mux))))
 
 	server := &http.Server{
 		Addr:         addr,
@@ -103,7 +103,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/status", withAuth(handleStatus))
 	mux.HandleFunc("GET /api/admin/info", withAuth(handleAdminInfo))
 	mux.HandleFunc("POST /api/admin/change-password", rateLimitByIP(3, "change_password")(withAuth(handleChangePassword)))
-	mux.HandleFunc("POST /api/admin/update-email", withAuth(handleUpdateEmail))
+	mux.HandleFunc("POST /api/admin/update-email", rateLimitByIP(5, "update_email")(withAuth(handleUpdateEmail)))
 	// One-click version update (incremental)
 	mux.HandleFunc("GET /api/admin/version/latest", withAuth(handleAdminVersionLatest))
 	mux.HandleFunc("POST /api/admin/update/start", rateLimitByIP(3, "update_start")(withAuth(handleAdminUpdateStart)))
@@ -435,6 +435,10 @@ func gracefulShutdown(server *http.Server) {
 			cfg.stop()
 			cfg.saveSync()
 			tracker.Stop()
+			stopConnTracker() // B11: stop conn tracker goroutine
+			if freePool != nil {
+				freePool.stop() // B11: stop free pool sync goroutine
+			}
 			healthChecker.stop()
 			CloseAccessLog()
 			if tunnel != nil {
@@ -445,6 +449,9 @@ func gracefulShutdown(server *http.Server) {
 			}
 			if gossip != nil {
 				gossip.stop()
+			}
+			if netMgr != nil {
+				netMgr.stopRefreshLoop()
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()

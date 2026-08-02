@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -708,7 +707,7 @@ func handleLBConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var newCfg LBConfig
-	if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
+	if err := readJSON(w, r, &newCfg); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}

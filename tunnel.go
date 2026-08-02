@@ -739,7 +739,7 @@ func handleBindIP(w http.ResponseWriter, r *http.Request) {
 		IP   string `json:"ip"`
 		Port string `json:"port"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request")
 		return
 	}

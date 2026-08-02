@@ -514,7 +514,7 @@ func handleGuestKeyIssue(w http.ResponseWriter, r *http.Request) {
 			ExpDays         int    `json:"exp_days"`
 			Note            string `json:"note"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+		if err := readJSON(w, r, &body); err == nil {
 			opts.Quota = body.Quota
 			opts.QuotaHourly = body.QuotaHourly
 			opts.QuotaPerRequest = body.QuotaPerRequest

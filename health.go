@@ -353,3 +353,17 @@ func (h *HealthChecker) IsHealthy(providerID string) bool {
 func (h *HealthChecker) stop() {
 	close(h.stopCh)
 }
+
+// safeCheckProviderNow safely calls healthChecker.CheckProviderNow if initialized.
+func safeCheckProviderNow(providerID string) {
+	if healthChecker != nil {
+		healthChecker.CheckProviderNow(providerID)
+	}
+}
+
+// safeSetFailedKeyCount safely calls healthChecker.SetFailedKeyCount if initialized.
+func safeSetFailedKeyCount(providerID string, count int) {
+	if healthChecker != nil {
+		healthChecker.SetFailedKeyCount(providerID, count)
+	}
+}

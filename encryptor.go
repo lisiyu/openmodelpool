@@ -127,7 +127,9 @@ func init() {
 	if err != nil {
 		// Last-resort: ephemeral key so the process can still run.
 		key := make([]byte, 32)
-		_, _ = rand.Read(key)
+		if _, err := rand.Read(key); err != nil {
+			slog.Error("crypto/rand.Read failed for ephemeral key fallback", "err", err) // B10
+		}
 		enc = &Encryptor{key: key, ready: true, ephemeral: true}
 		slog.Error("CRITICAL: encryptor fell back to ephemeral key — all encrypted data from previous sessions is UNRECOVERABLE. Resolve the key file issue before storing any sensitive data.")
 		return

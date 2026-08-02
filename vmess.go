@@ -208,6 +208,9 @@ func (m *VMessProxy) stopInstance(inst *vmessInstance) {
 
 func (m *VMessProxy) generateConfig(vmess *VMessConfig, localPort int) map[string]any {
 	port, _ := strconv.Atoi(vmess.Port)
+	if port <= 0 || port > 65535 { // B2: validate port range
+		port = 443 // default to HTTPS
+	}
 	alterID, _ := strconv.Atoi(vmess.Aid)
 	if alterID == 0 {
 		alterID = 0 // AEAD mode

@@ -1,10 +1,14 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // corsMiddleware handles CORS headers based on configured allowed origins.
@@ -29,7 +33,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400") // Cache preflight for 24h
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(200)
 			return
@@ -229,4 +235,35 @@ func isLocalOrPrivateIP(ip string) bool {
 		}
 	}
 	return false
+}
+
+// ============================================================
+// F1: Request ID middleware — assigns a unique ID to every request
+// for distributed tracing and log correlation.
+// ============================================================
+
+const requestIDHeader = "X-Request-ID"
+
+// requestIDMiddleware injects a unique request ID into the context and response headers.
+// If the client provides an X-Request-ID header, it is preserved (up to 64 chars).
+func requestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get(requestIDHeader)
+		if id == "" || len(id) > 64 {
+			id = generateRequestID()
+		}
+		r.Header.Set(requestIDHeader, id)
+		w.Header().Set(requestIDHeader, id)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// generateRequestID creates a 16-byte random hex string.
+func generateRequestID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based ID (should never happen)
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
 }

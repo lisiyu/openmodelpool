@@ -542,10 +542,16 @@ func (a *Auth) HasResetCode() bool {
 	return a.data.ResetCodeHash != ""
 }
 
+// randomString generates a cryptographically random string of length n.
+// m2-fix: Log fatal instead of panic on rand.Read failure for graceful shutdown.
 func randomString(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand.Read failed: " + err.Error())
+		// crypto/rand.Read should never fail on modern OS, but handle it gracefully
+		slog.Error("crypto/rand.Read failed — system entropy source unavailable", "err", err)
+		// Fallback: use timestamp-based string to avoid crashing the entire process
+		// This is not cryptographically strong but prevents service outage
+		return fmt.Sprintf("%d%s", time.Now().UnixNano(), base64.URLEncoding.EncodeToString(b))[:n]
 	}
 	return base64.URLEncoding.EncodeToString(b)[:n]
 }

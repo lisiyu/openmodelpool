@@ -17,6 +17,9 @@ import (
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")   // B4: prevent MIME sniffing
+	w.Header().Set("X-Frame-Options", "DENY")             // B4: prevent clickjacking
+	w.Header().Set("Cache-Control", "no-store")           // B4: prevent caching of API responses
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
@@ -79,6 +82,15 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	} else {
 		status["network"] = map[string]any{"mode": "personal"}
 	}
+	// F3: Encryption and config health
+	if enc != nil {
+		status["encryption"] = map[string]any{
+			"ready":      !enc.IsEphemeral(),
+			"ephemeral":  enc.IsEphemeral(),
+		}
+	}
+	// Uptime
+	status["uptime_seconds"] = time.Since(metrics.startTime).Seconds()
 	writeJSON(w, 200, status)
 }
 
@@ -890,18 +902,14 @@ func handleCozeRequest(w http.ResponseWriter, r *http.Request, model string, mes
 }
 
 // filterLocalOnly filters candidates to only include providers from this node.
-// Currently all providers in pm are local, so this is a passthrough.
+// B8-fix: Properly filter by Owner — empty Owner means local admin/system provider.
 // D-2/D-3: Ensures Guest Key and Proxy API Key requests prioritize local providers
 // before falling back to pool resources.
 func filterLocalOnly(cands []candidate) []candidate {
-	// All providers managed by pm are local to this node.
-	// This function serves as an explicit filter for the "local-first" routing policy.
-	// If future changes introduce remote/virtual providers into the candidate list,
-	// this function should filter them out by checking provider origin.
 	local := make([]candidate, 0, len(cands))
 	for _, c := range cands {
-		// All pm providers are local (they have a local ID and local API keys)
-		if c.Provider.ID != "" {
+		// Local providers have empty Owner (admin/system) or match this node's ID
+		if c.Provider.Owner == "" || c.Provider.Owner == node.NodeID() {
 			local = append(local, c)
 		}
 	}

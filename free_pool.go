@@ -29,6 +29,7 @@ type FreePoolManager struct {
 	sourceURL string
 	autoSync  bool
 	stats     FreePoolStats
+	stopCh    chan struct{} // B11: graceful shutdown
 }
 
 // FreePoolStats holds sync status information for the admin UI.
@@ -89,6 +90,7 @@ func initFreePool() {
 	freePool = &FreePoolManager{
 		sourceURL: freePoolSourceURL,
 		autoSync:  cfg.Get("free_pool_auto_sync", "true") == "true",
+		stopCh:    make(chan struct{}),
 	}
 
 	// Initial sync on startup (delayed to let other components initialize)
@@ -110,17 +112,24 @@ func initFreePool() {
 func (f *FreePoolManager) syncLoop() {
 	ticker := time.NewTicker(freePoolSyncInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		f.mu.RLock()
-		auto := f.autoSync
-		f.mu.RUnlock()
-		if auto {
-			if err := f.Sync(); err != nil {
-				slog.Warn("free pool periodic sync failed", "error", err)
+	for {
+		select {
+		case <-ticker.C:
+			f.mu.RLock()
+			auto := f.autoSync
+			f.mu.RUnlock()
+			if auto {
+				if err := f.Sync(); err != nil {
+					slog.Warn("free pool periodic sync failed", "error", err)
+				}
 			}
+		case <-f.stopCh:
+			return
 		}
 	}
 }
+
+func (f *FreePoolManager) stop() { close(f.stopCh) }
 
 // Sync fetches the latest data.json and updates OMP providers.
 func (f *FreePoolManager) Sync() error {
