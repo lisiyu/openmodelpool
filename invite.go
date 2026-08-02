@@ -286,7 +286,7 @@ func (m *inviteManager) save() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(m.dataDir+"/invites.json", b, 0644)
+	atomicWriteFile(m.dataDir+"/invites.json", b, 0644)
 }
 
 func (m *inviteManager) load() {

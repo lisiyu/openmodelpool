@@ -406,7 +406,7 @@ func (m *MessageManager) save() {
 		slog.Error("failed to marshal messages", "error", err)
 		return
 	}
-	if err := os.WriteFile(path, b, 0600); err != nil {
+	if err := atomicWriteFile(path, b, 0600); err != nil {
 		slog.Error("failed to write messages file", "path", path, "error", err)
 	}
 }

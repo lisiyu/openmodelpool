@@ -474,7 +474,7 @@ func (nm *NetworkManager) save() {
 func (nm *NetworkManager) doSave() {
 	os.MkdirAll(filepath.Dir(nm.dataPath), 0755)
 	b, _ := json.MarshalIndent(nm.config, "", "  ")
-	os.WriteFile(nm.dataPath, b, 0600)
+	atomicWriteFile(nm.dataPath, b, 0600)
 }
 
 // Init loads config and activates network subsystems only when network_enabled

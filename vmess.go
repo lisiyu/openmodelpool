@@ -136,7 +136,7 @@ func (m *VMessProxy) StartProxy(providerID string, config *VMessConfig) (string,
 	}
 	configFile := filepath.Join(os.TempDir(), fmt.Sprintf("xray-%s.json", sanitized))
 	b, _ := json.MarshalIndent(xrayConfig, "", "  ")
-	if err := os.WriteFile(configFile, b, 0600); err != nil {
+	if err := atomicWriteFile(configFile, b, 0600); err != nil {
 		return "", fmt.Errorf("failed to write xray config: %w", err)
 	}
 

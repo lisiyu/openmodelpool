@@ -33,7 +33,7 @@ func (s *SiderMonitor) load() {
 func (s *SiderMonitor) save() {
 	b, _ := json.MarshalIndent(s.status, "", "  ")
 	os.MkdirAll("data", 0755)
-	os.WriteFile(s.filePath, b, 0644)
+	atomicWriteFile(s.filePath, b, 0644)
 }
 
 // RecordSuccess records a successful request. Only writes disk on status change.

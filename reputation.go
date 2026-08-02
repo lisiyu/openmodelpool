@@ -332,7 +332,7 @@ func (r *ReputationManager) save() {
 		return
 	}
 	r.mu.Unlock()
-	if err := os.WriteFile(path, raw, 0600); err != nil {
+	if err := atomicWriteFile(path, raw, 0600); err != nil {
 		slog.Error("failed to write reputation file", "error", err)
 	}
 	r.mu.Lock()

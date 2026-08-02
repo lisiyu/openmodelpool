@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 )
@@ -121,5 +120,5 @@ func (l *IPFSLedger) persist() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(l.path, data, 0600)
+	return atomicWriteFile(l.path, data, 0600)
 }

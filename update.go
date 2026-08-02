@@ -574,7 +574,9 @@ func (um *UpdateManager) writePending(target string) {
 		Timestamp:     time.Now().UTC().Format(time.RFC3339),
 	}
 	data, _ := json.MarshalIndent(pending, "", "  ")
-	_ = os.WriteFile(path, data, 0600)
+	if err := atomicWriteFile(path, data, 0600); err != nil {
+		slog.Error("failed to write pending update state", "error", err)
+	}
 }
 
 // setReportBack / clearReportBack manage the optional "report success to

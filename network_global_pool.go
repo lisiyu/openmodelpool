@@ -161,7 +161,7 @@ func (gp *GlobalPool) doSave() {
 	}
 	b, _ := json.MarshalIndent(store, "", "  ")
 	os.MkdirAll(filepath.Dir(gp.dataPath), 0755)
-	os.WriteFile(gp.dataPath, b, 0600)
+	atomicWriteFile(gp.dataPath, b, 0600)
 }
 
 // ============================================================

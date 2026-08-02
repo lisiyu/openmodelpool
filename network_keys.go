@@ -118,7 +118,7 @@ func (gks *GuestKeyStore) save() {
 		return
 	}
 	os.MkdirAll(filepath.Dir(gks.dataPath), 0755)
-	if err := os.WriteFile(gks.dataPath, data, 0600); err != nil {
+	if err := atomicWriteFile(gks.dataPath, data, 0600); err != nil {
 		slog.Error("failed to write guest keys", "error", err)
 	}
 }
@@ -486,7 +486,7 @@ func (gks *GuestKeyStore) doSaveLocked() {
 		return
 	}
 	os.MkdirAll(filepath.Dir(gks.dataPath), 0755)
-	if err := os.WriteFile(gks.dataPath, data, 0600); err != nil {
+	if err := atomicWriteFile(gks.dataPath, data, 0600); err != nil {
 		slog.Error("failed to write guest keys", "error", err)
 	}
 }
