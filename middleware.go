@@ -254,6 +254,10 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 		}
 		r.Header.Set(requestIDHeader, id)
 		w.Header().Set(requestIDHeader, id)
+		// F13: HSTS header for HTTPS connections
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

@@ -20,6 +20,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")   // B4: prevent MIME sniffing
 	w.Header().Set("X-Frame-Options", "DENY")             // B4: prevent clickjacking
 	w.Header().Set("Cache-Control", "no-store")           // B4: prevent caching of API responses
+	w.Header().Set("Content-Security-Policy", "default-src 'none'") // F12: CSP for API responses
+	w.Header().Set("Referrer-Policy", "no-referrer")              // F14: prevent referrer leak
+	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()") // F15
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
