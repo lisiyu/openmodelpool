@@ -294,6 +294,7 @@ func (a *Auth) CreateToken(username string, remember bool) (accessToken string, 
 		"sub":  username,
 		"exp":  time.Now().Add(time.Duration(accessExpHours) * time.Hour).Unix(),
 		"iat":  time.Now().Unix(),
+		"iss":  "openmodelpool",
 		"type": "access",
 	}
 	accessTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
@@ -306,6 +307,7 @@ func (a *Auth) CreateToken(username string, remember bool) (accessToken string, 
 		"sub":  username,
 		"exp":  time.Now().Add(7 * 24 * time.Hour).Unix(),
 		"iat":  time.Now().Unix(),
+		"iss":  "openmodelpool",
 		"type": "refresh",
 	}
 	refreshTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
@@ -348,6 +350,10 @@ func (a *Auth) RefreshAccessToken(refreshTokenStr string) (string, error) {
 	if tokenType != "refresh" {
 		return "", errors.New("not a refresh token")
 	}
+	// B111: Validate issuer
+	if iss, _ := claims["iss"].(string); iss != "openmodelpool" {
+		return "", errors.New("invalid token issuer")
+	}
 	sub, _ := claims["sub"].(string)
 	if sub == "" {
 		return "", errors.New("missing subject")
@@ -358,6 +364,7 @@ func (a *Auth) RefreshAccessToken(refreshTokenStr string) (string, error) {
 		"sub":  sub,
 		"exp":  time.Now().Add(24 * time.Hour).Unix(),
 		"iat":  time.Now().Unix(),
+		"iss":  "openmodelpool",
 		"type": "access",
 	}
 	newAccessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, newAccessClaims)
@@ -386,6 +393,14 @@ func (a *Auth) VerifyToken(tokenStr string) (string, error) {
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return "", errors.New("invalid claims")
+	}
+	// B111: Validate issuer
+	if iss, _ := claims["iss"].(string); iss != "openmodelpool" {
+		return "", errors.New("invalid token issuer")
+	}
+	// B109: Reject refresh tokens used as access tokens
+	if tokenType, _ := claims["type"].(string); tokenType == "refresh" {
+		return "", errors.New("refresh token cannot be used for authentication")
 	}
 	sub, _ := claims["sub"].(string)
 	return sub, nil
