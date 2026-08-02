@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -412,9 +411,7 @@ func wafMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		if !allowed {
 			slog.Warn("WAF blocked request",
 				"type", v.Type, "ip", v.ClientIP, "path", v.Path, "reason", v.Reason)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			_ = json.NewEncoder(w).Encode(ErrorResponse{Error: ErrorDetail{
+			writeJSON(w, http.StatusForbidden, ErrorResponse{Error: ErrorDetail{
 				Message: "request blocked by WAF: " + v.Reason,
 				Type:    "waf_blocked",
 				Code:    string(v.Type),

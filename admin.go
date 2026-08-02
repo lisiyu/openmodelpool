@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/smtp"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -524,6 +525,15 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		p.Models = models
 	}
 
+	// B25: Validate BaseURL format to prevent SSRF
+	if p.BaseURL != "" {
+		u, err := url.Parse(p.BaseURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+			writeError(w, 400, "invalid BaseURL: must be a valid http/https URL")
+			return
+		}
+	}
+
 	// Set owner
 	owner := getRequestOwner(r)
 	p.Owner = owner
@@ -659,6 +669,15 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			slog.Info("VMess proxy link saved, will start on first use", "provider", id)
+		}
+	}
+
+	// B25: Validate BaseURL format to prevent SSRF
+	if merged.BaseURL != "" {
+		u, err := url.Parse(merged.BaseURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+			writeError(w, 400, "invalid BaseURL: must be a valid http/https URL")
+			return
 		}
 	}
 

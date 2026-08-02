@@ -73,7 +73,7 @@ func handleSeedPeers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	if routeTable == nil {
-		json.NewEncoder(w).Encode(SeedPeersResponse{
+		writeJSON(w, 200, SeedPeersResponse{
 			Peers:    []SeedPeerInfo{},
 			Total:    0,
 			Online:   0,
@@ -133,7 +133,7 @@ func handleSeedPeers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	json.NewEncoder(w).Encode(SeedPeersResponse{
+	writeJSON(w, 200, SeedPeersResponse{
 		Peers:    peers,
 		Self:     self,
 		Total:    len(peers),
@@ -193,7 +193,7 @@ func handleSeedRegister(w http.ResponseWriter, r *http.Request) {
 		"is_gateway", req.IsGateway,
 	)
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, 200, map[string]interface{}{
 		"status":  "ok",
 		"node_id": req.NodeID,
 		"message": "registered successfully",
@@ -202,12 +202,11 @@ func handleSeedRegister(w http.ResponseWriter, r *http.Request) {
 
 // handleSeedHealth returns seed endpoint health status
 func handleSeedHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	selfNodeID := ""
 	if netMgr != nil {
 		selfNodeID = netMgr.GetNodeID()
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, 200, map[string]interface{}{
 		"status":  "ok",
 		"version": AppVersion,
 		"node_id": selfNodeID,

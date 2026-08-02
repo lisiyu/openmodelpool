@@ -148,6 +148,8 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		// Check global limit first
 		if !rateLimiter.global.Allow() {
 			slog.Warn("global rate limit exceeded", "remote", r.RemoteAddr)
+			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", rateLimiter.globalQPS))
+			w.Header().Set("Retry-After", "1")
 			writeJSON(w, http.StatusTooManyRequests, ErrorResponse{Error: ErrorDetail{
 				Message: "global rate limit exceeded",
 				Type:    "rate_limit_error",
@@ -165,6 +167,8 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		limiter := rateLimiter.getConsumerLimiter(consumerID)
 		if !limiter.Allow() {
 			slog.Warn("consumer rate limit exceeded", "consumer", consumerID, "remote", r.RemoteAddr)
+			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", rateLimiter.consumerQPS))
+			w.Header().Set("Retry-After", "1")
 			writeJSON(w, http.StatusTooManyRequests, ErrorResponse{Error: ErrorDetail{
 				Message: fmt.Sprintf("per-consumer rate limit exceeded (%.0f req/s)", rateLimiter.consumerQPS),
 				Type:    "rate_limit_error",
@@ -249,6 +253,8 @@ func rateLimitByIP(maxRequestsPerMinute float64, endpointName string) func(http.
 			entry.lastSeen = time.Now()
 			if !entry.limiter.Allow() {
 				slog.Warn("IP rate limit exceeded", "ip", ip, "endpoint", endpointName, "remote", r.RemoteAddr)
+				w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", maxRequestsPerMinute))
+				w.Header().Set("Retry-After", "60")
 				writeJSON(w, http.StatusTooManyRequests, ErrorResponse{Error: ErrorDetail{
 					Message: "rate limit exceeded, please try again later",
 					Type:    "rate_limit_error",

@@ -236,6 +236,8 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(sw, r)
 
 		latency := time.Since(start)
+		// F6: Server-Timing header for client-side latency observability
+		w.Header().Set("Server-Timing", fmt.Sprintf("total;dur=%d", latency.Milliseconds()))
 		consumer := getRequestOwner(r)
 		if consumer == "" {
 			consumer = "admin"
