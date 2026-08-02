@@ -1211,3 +1211,14 @@ func handleSecurityCheck(w http.ResponseWriter, r *http.Request) {
 		"timestamp":    time.Now().Format(time.RFC3339),
 	})
 }
+
+// handleGoroutineDump returns goroutine stack traces for debugging.
+// F28: Debug endpoint for diagnosing goroutine leaks.
+func handleGoroutineDump(w http.ResponseWriter, r *http.Request) {
+	buf := make([]byte, 1<<20) // 1MB buffer
+	n := runtime.Stack(buf, true)
+	writeJSON(w, 200, map[string]any{
+		"count":      runtime.NumGoroutine(),
+		"stack_dump": string(buf[:n]),
+	})
+}
