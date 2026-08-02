@@ -16,7 +16,7 @@ import (
 func requireHTTPS(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
-			http.Error(w, "HTTPS required", http.StatusForbidden)
+			writeError(w, http.StatusForbidden, "HTTPS required")
 			return
 		}
 		h(w, r)

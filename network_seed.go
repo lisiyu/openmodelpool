@@ -144,21 +144,28 @@ func handleSeedPeers(w http.ResponseWriter, r *http.Request) {
 
 // handleSeedRegister handles POST /api/register — node self-registration
 func handleSeedRegister(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	var req SeedRegisterRequest
 	if err := readJSON(w, r, &req); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	if req.NodeID == "" {
-		http.Error(w, `{"error":"node_id required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "node_id required")
+		return
+	}
+	if len(req.NodeID) > 128 || len(req.NodeName) > 256 {
+		writeError(w, http.StatusBadRequest, "node_id or node_name too long")
+		return
+	}
+	if len(req.Addresses) > 20 {
+		writeError(w, http.StatusBadRequest, "too many addresses")
 		return
 	}
 
@@ -168,7 +175,7 @@ func handleSeedRegister(w http.ResponseWriter, r *http.Request) {
 		expectedSecret = cfg.Get("seed_secret", "")
 	}
 	if expectedSecret != "" && req.Secret != expectedSecret {
-		http.Error(w, `{"error":"invalid secret"}`, http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "invalid secret")
 		return
 	}
 

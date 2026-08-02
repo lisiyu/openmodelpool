@@ -623,6 +623,11 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	if rawModel, ok := bodyMap["model"]; ok {
 		json.Unmarshal(rawModel, &model)
 	}
+	// B57: Validate model name format
+	if model != "" && len(model) > 256 {
+		writeError(w, 400, "model name too long")
+		return
+	}
 
 	stream := false
 	if rawStream, ok := bodyMap["stream"]; ok {
