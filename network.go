@@ -473,7 +473,9 @@ func (nm *NetworkManager) save() {
 }
 
 func (nm *NetworkManager) doSave() {
-	os.MkdirAll(filepath.Dir(nm.dataPath), 0755)
+	if err := os.MkdirAll(filepath.Dir(nm.dataPath), 0700); err != nil {
+		slog.Error("failed to create data directory", "error", err)
+	}
 	b, _ := json.MarshalIndent(nm.config, "", "  ")
 	atomicWriteFile(nm.dataPath, b, 0600)
 }

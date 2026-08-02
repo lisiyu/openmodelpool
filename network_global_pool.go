@@ -160,7 +160,9 @@ func (gp *GlobalPool) doSave() {
 		LastUpdated:       gp.LastUpdated,
 	}
 	b, _ := json.MarshalIndent(store, "", "  ")
-	os.MkdirAll(filepath.Dir(gp.dataPath), 0755)
+	if err := os.MkdirAll(filepath.Dir(gp.dataPath), 0700); err != nil {
+		slog.Error("failed to create data directory", "error", err)
+	}
 	atomicWriteFile(gp.dataPath, b, 0600)
 }
 

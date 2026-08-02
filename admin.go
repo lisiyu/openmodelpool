@@ -1046,16 +1046,16 @@ func handleUsageSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleUsageProviders(w http.ResponseWriter, r *http.Request) {
-	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
-	if days <= 0 || days > 365 {
+	days, err := strconv.Atoi(r.URL.Query().Get("days"))
+	if err != nil || days <= 0 || days > 365 {
 		days = 30
 	}
 	writeJSON(w, 200, tracker.ProviderStats(days))
 }
 
 func handleUsageRecords(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit == 0 || limit > 500 {
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || limit == 0 || limit > 500 {
 		limit = 100
 	}
 	tracker.mu.Lock()
@@ -1173,8 +1173,8 @@ func handleSaveSMTPConfig(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func handleRequestLogs(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit <= 0 || limit > 500 {
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || limit <= 0 || limit > 500 {
 		limit = 100
 	}
 	logs := tracker.GetRequestLog(limit)

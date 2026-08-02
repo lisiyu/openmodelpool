@@ -126,7 +126,9 @@ func (c *Config) saveSync() {
 	c.dirty = false
 	c.mu.Unlock()
 
-	os.MkdirAll(filepath.Dir(c.path), 0700)
+	if err := os.MkdirAll(filepath.Dir(c.path), 0700); err != nil {
+		slog.Error("failed to create config directory", "error", err)
+	}
 	if err := saveWithIntegrity(c.path, safe); err != nil {
 		slog.Error("failed to save config with integrity", "error", err)
 	}

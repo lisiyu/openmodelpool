@@ -108,7 +108,9 @@ func (m *MultiUserManager) load() {
 }
 
 func (m *MultiUserManager) save() {
-	os.MkdirAll(filepath.Dir(m.dataPath), 0700)
+	if err := os.MkdirAll(filepath.Dir(m.dataPath), 0700); err != nil {
+		slog.Error("failed to create data directory", "error", err)
+	}
 	data := struct {
 		Invites   map[string]*InviteCode `json:"invites"`
 		Consumers map[string]*Consumer   `json:"consumers"`

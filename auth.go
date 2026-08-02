@@ -68,7 +68,9 @@ func (a *Auth) save() {
 	b, _ := json.MarshalIndent(safe, "", "  ")
 	a.mu.Unlock()
 
-	os.MkdirAll("data", 0700)
+	if err := os.MkdirAll("data", 0700); err != nil {
+		slog.Error("failed to create data directory", "error", err)
+	}
 	atomicWriteFile(a.path, b, 0600)
 }
 
