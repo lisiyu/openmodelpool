@@ -303,5 +303,3 @@ func CloseAccessLog() {
 	}
 }
 
-// Ensure fmt is used (for potential future formatting)
-var _ = fmt.Sprintf

@@ -54,7 +54,7 @@ func saveWithIntegrity(path string, v any) error {
 	mac := computeHMAC(data)
 	if mac == nil {
 		// Encryption not ready, save without integrity check (backward compat)
-		return os.WriteFile(path, data, 0600)
+		return atomicWriteFile(path, data, 0600)
 	}
 
 	// Prepend HMAC to data
@@ -62,7 +62,7 @@ func saveWithIntegrity(path string, v any) error {
 	copy(full[:hmacSize], mac)
 	copy(full[hmacSize:], data)
 
-	return os.WriteFile(path, full, 0600)
+	return atomicWriteFile(path, full, 0600)
 }
 
 // loadWithIntegrity reads a file, verifies HMAC, and deserializes JSON into v.

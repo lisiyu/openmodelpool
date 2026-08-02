@@ -63,7 +63,7 @@ func NewEncryptor() (*Encryptor, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll("data", 0o700); err == nil {
-		if werr := os.WriteFile(keyFile, key, 0o600); werr != nil {
+		if werr := atomicWriteFile(keyFile, key, 0o600); werr != nil {
 			slog.Warn("could not persist encryption key; using ephemeral key", "err", werr)
 		}
 	}
