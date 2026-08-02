@@ -239,7 +239,11 @@ func (m *inviteManager) signPayload(payload FederationInvitePayload) ([]byte, er
 	if sigB64 == "" {
 		return nil, fmt.Errorf("signing failed")
 	}
-	return base64.StdEncoding.DecodeString(sigB64)
+	decoded, err := base64.StdEncoding.DecodeString(sigB64)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decode failed: %w", err)
+	}
+	return decoded, nil
 }
 
 func verifyPayloadSignature(payload FederationInvitePayload, sig, pubKeyBytes []byte) bool {
