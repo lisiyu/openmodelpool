@@ -42,6 +42,7 @@ func (a *Auth) load() {
 	}
 	json.Unmarshal(b, &a.data)
 	if a.data.JWTSecret == "" {
+		slog.Warn("auth data: JWTSecret missing, generating new one")
 		a.data.JWTSecret = randomString(64)
 		a.save()
 	}
@@ -149,7 +150,10 @@ func (a *Auth) SetupAdmin(username, password, email string) error {
 	if err := validatePasswordStrength(password); err != nil {
 		return err
 	}
-	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
 	a.data.Admin = AdminData{
 		Username:     username,
 		PasswordHash: string(hash),
@@ -194,7 +198,10 @@ func (a *Auth) RegisterCollaborator(username, password, guestKey string) error {
 	if err := validatePasswordStrength(password); err != nil {
 		return err
 	}
-	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
 	a.data.Collaborators = append(a.data.Collaborators, Collaborator{
 		Username:     username,
 		PasswordHash: string(hash),
@@ -252,7 +259,10 @@ func (a *Auth) ChangePassword(oldPass, newPass string) error {
 	if err := validatePasswordStrength(newPass); err != nil {
 		return err
 	}
-	hash, _ := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
 	a.data.Admin.PasswordHash = string(hash)
 	a.saveLocked()
 	return nil
@@ -466,7 +476,10 @@ func (a *Auth) ResetPassword(tok, newPass string) error {
 	if err := validatePasswordStrength(newPass); err != nil {
 		return err
 	}
-	hash, _ := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
 	a.data.Admin.PasswordHash = string(hash)
 	a.data.Reset.Used = true
 	a.saveLocked()

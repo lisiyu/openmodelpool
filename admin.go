@@ -2097,7 +2097,12 @@ func handleResetWithCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reset password
-	hash, _ := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		slog.Error("failed to hash password", "error", err)
+		writeError(w, 500, "internal error")
+		return
+	}
 	auth.mu.Lock()
 	auth.data.Admin.PasswordHash = string(hash)
 	auth.data.Reset = nil
