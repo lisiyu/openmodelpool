@@ -120,7 +120,9 @@ func (l *Logger) rotate() {
 	// Rename current file with timestamp
 	timestamp := time.Now().Format("20060102-150405")
 	rotatedPath := fmt.Sprintf("%s.%s", l.logPath, timestamp)
-	os.Rename(l.logPath, rotatedPath)
+	if err := os.Rename(l.logPath, rotatedPath); err != nil {
+		slog.Error("failed to rotate log file", "error", err)
+	}
 
 	// Keep only the last 5 rotated files (cleanup old ones)
 	l.cleanupOldLogs(5)
