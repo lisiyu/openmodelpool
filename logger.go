@@ -33,7 +33,7 @@ func initLogger(dataDir string) {
 	level := parseLogLevel(cfg.Get("log_level", "info"))
 
 	// Ensure data directory exists
-	os.MkdirAll(dataDir, 0755)
+	os.MkdirAll(dataDir, 0700)
 
 	logPath := filepath.Join(dataDir, "access.log")
 	// V-7: Use 0600 permissions for log files (owner read/write only)

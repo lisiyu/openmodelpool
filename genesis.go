@@ -70,7 +70,7 @@ func SaveGenesisConfig(dataDir string, config GenesisBlock) error {
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(dataDir+"/genesis.json", b, 0644)
+	return atomicWriteFile(dataDir+"/genesis.json", b, 0600)
 }
 
 // LoadGenesisConfig loads a custom genesis config from disk.

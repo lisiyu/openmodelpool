@@ -824,8 +824,11 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 		lbInstance.RecordRequest(entry.NodeID, time.Since(relayStart), success)
 	}
 
-	// Copy response headers
+	// Copy response headers, filtering out hop-internal headers
 	for key, vals := range resp.Header {
+		if strings.HasPrefix(key, "X-OpenModelPool-Agent-") {
+			continue // B13: don't leak internal headers to client
+		}
 		for _, val := range vals {
 			w.Header().Add(key, val)
 		}

@@ -344,7 +344,7 @@ func (t *Tracker) archiveUsage() {
 	archivePath := fmt.Sprintf("data/usage_%s.json", archiveMonth)
 	b, _ := json.MarshalIndent(toArchive, "", "  ")
 	os.MkdirAll("data", 0755)
-	if err := atomicWriteFile(archivePath, b, 0644); err != nil {
+	if err := atomicWriteFile(archivePath, b, 0600); err != nil {
 		slog.Error("failed to archive usage", "error", err)
 		return
 	}

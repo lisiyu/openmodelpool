@@ -108,7 +108,7 @@ func (m *MultiUserManager) load() {
 }
 
 func (m *MultiUserManager) save() {
-	os.MkdirAll(filepath.Dir(m.dataPath), 0755)
+	os.MkdirAll(filepath.Dir(m.dataPath), 0700)
 	data := struct {
 		Invites   map[string]*InviteCode `json:"invites"`
 		Consumers map[string]*Consumer   `json:"consumers"`

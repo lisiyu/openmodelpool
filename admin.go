@@ -1981,7 +1981,7 @@ func handleSMTPTest(w http.ResponseWriter, r *http.Request) {
 
 // sendMailTLS sends email using implicit TLS (for port 465).
 func sendMailTLS(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
-	tlsConfig := &tls.Config{ServerName: strings.Split(addr, ":")[0]}
+	tlsConfig := &tls.Config{ServerName: strings.Split(addr, ":")[0], MinVersion: tls.VersionTLS12} // B14
 	conn, err := tls.Dial("tcp", addr, tlsConfig)
 	if err != nil {
 		return err

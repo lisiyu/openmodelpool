@@ -114,7 +114,7 @@ func (am *AllocationManager) save() {
 		slog.Error("failed to marshal quota allocation", "error", err)
 		return
 	}
-	if err := atomicWriteFile(path, data, 0644); err != nil {
+	if err := atomicWriteFile(path, data, 0600); err != nil {
 		slog.Error("failed to write quota allocation", "error", err)
 	}
 }

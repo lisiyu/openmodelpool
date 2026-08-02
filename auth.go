@@ -68,7 +68,7 @@ func (a *Auth) save() {
 	b, _ := json.MarshalIndent(safe, "", "  ")
 	a.mu.Unlock()
 
-	os.MkdirAll("data", 0755)
+	os.MkdirAll("data", 0700)
 	atomicWriteFile(a.path, b, 0600)
 }
 
@@ -81,7 +81,7 @@ func (a *Auth) saveLocked() {
 		safe.SMTP.Password = encryptField(safe.SMTP.Password)
 	}
 	b, _ := json.MarshalIndent(safe, "", "  ")
-	os.MkdirAll("data", 0755)
+	os.MkdirAll("data", 0700)
 	atomicWriteFile(a.path, b, 0600)
 }
 

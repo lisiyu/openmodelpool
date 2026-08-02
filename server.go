@@ -387,6 +387,7 @@ func setupHTTPS(server *http.Server, handler http.Handler) {
 		Handler: handler,
 		TLSConfig: &tls.Config{
 			GetCertificate: certManager.GetCertificate,
+			MinVersion:     tls.VersionTLS12, // B14: reject TLS 1.0/1.1
 		},
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 300 * time.Second,

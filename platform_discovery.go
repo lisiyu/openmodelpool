@@ -49,7 +49,7 @@ func loadDiscoveredPlatforms() []DiscoveredPlatform {
 		discoveredMu.Lock()
 		discoveredPlatforms = []DiscoveredPlatform{}
 		discoveredMu.Unlock()
-		atomicWriteFile(discoveredPlatformsFile, []byte("[]"), 0644)
+		atomicWriteFile(discoveredPlatformsFile, []byte("[]"), 0600)
 		return []DiscoveredPlatform{}
 	}
 
@@ -78,7 +78,7 @@ func saveDiscoveredPlatforms() error {
 
 	dir := filepath.Dir(discoveredPlatformsFile)
 	os.MkdirAll(dir, 0755)
-	return atomicWriteFile(discoveredPlatformsFile, data, 0644)
+	return atomicWriteFile(discoveredPlatformsFile, data, 0600)
 }
 
 // handleGetDiscoveredPlatforms returns all discovered platforms.

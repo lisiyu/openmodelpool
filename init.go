@@ -10,7 +10,7 @@ import (
 
 // initCore initializes core components: encryption, config, logging, providers, auth, multi-user.
 func initCore() {
-	os.MkdirAll("data", 0755)
+	os.MkdirAll("data", 0700)
 
 	// Core infrastructure
 	initEncryptor("data/.key")

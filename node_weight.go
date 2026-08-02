@@ -255,7 +255,7 @@ func (m *nodeWeightManager) save() {
 	if err != nil {
 		return
 	}
-	atomicWriteFile(m.dataDir+"/node_weights.json", b, 0644)
+	atomicWriteFile(m.dataDir+"/node_weights.json", b, 0600)
 }
 
 func (m *nodeWeightManager) load() error {
