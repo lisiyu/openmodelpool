@@ -1222,3 +1222,61 @@ func handleGoroutineDump(w http.ResponseWriter, r *http.Request) {
 		"stack_dump": string(buf[:n]),
 	})
 }
+
+// handleAuditLog returns recent audit log entries.
+// F29: Admin endpoint for viewing audit trail.
+func handleAuditLog(w http.ResponseWriter, r *http.Request) {
+	if auditLog == nil || !auditLog.enabled {
+		writeJSON(w, 200, map[string]any{"entries": []string{}, "enabled": false})
+		return
+	}
+	limitStr := r.URL.Query().Get("limit")
+	limit := 100
+	if v, err := strconv.Atoi(limitStr); err == nil && v > 0 && v <= 1000 {
+		limit = v
+	}
+
+	auditLog.mu.Lock()
+	defer auditLog.mu.Unlock()
+	if auditLog.file == nil {
+		writeJSON(w, 200, map[string]any{"entries": []string{}, "enabled": false})
+		return
+	}
+
+	// Seek to end and read backwards
+	info, err := auditLog.file.Stat()
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": "failed to stat audit log"})
+		return
+	}
+
+	// Read last 64KB of the file
+	readSize := int64(64 * 1024)
+	if info.Size() < readSize {
+		readSize = info.Size()
+	}
+	buf := make([]byte, readSize)
+	if _, err := auditLog.file.ReadAt(buf, info.Size()-readSize); err != nil {
+		writeJSON(w, 500, map[string]any{"error": "failed to read audit log"})
+		return
+	}
+
+	lines := strings.Split(string(buf), "\n")
+	// Take last `limit` non-empty lines
+	var entries []string
+	for i := len(lines) - 1; i >= 0 && len(entries) < limit; i-- {
+		if lines[i] != "" {
+			entries = append(entries, lines[i])
+		}
+	}
+	// Reverse to chronological order
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"entries": entries,
+		"enabled": true,
+		"total":   len(entries),
+	})
+}

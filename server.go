@@ -105,6 +105,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/diagnostics", rateLimitByIP(10, "diagnostics")(withAuth(handleDiagnostics)))
 	mux.HandleFunc("GET /api/admin/security/check", rateLimitByIP(10, "security_check")(withAuth(handleSecurityCheck)))
 	mux.HandleFunc("GET /api/admin/goroutines", rateLimitByIP(5, "goroutines")(withAuth(handleGoroutineDump)))
+	mux.HandleFunc("GET /api/admin/audit", rateLimitByIP(10, "audit")(withAuth(handleAuditLog)))
 	mux.HandleFunc("POST /api/admin/change-password", rateLimitByIP(3, "change_password")(withAuth(handleChangePassword)))
 	mux.HandleFunc("POST /api/admin/update-email", rateLimitByIP(5, "update_email")(withAuth(handleUpdateEmail)))
 	// One-click version update (incremental)
