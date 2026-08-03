@@ -446,6 +446,7 @@ func gracefulShutdown(server *http.Server) {
 			}
 			healthChecker.stop()
 			CloseAccessLog()
+			CloseAuditLog()
 			if tunnel != nil {
 				tunnel.stop()
 			}
