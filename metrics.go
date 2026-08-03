@@ -98,6 +98,7 @@ func (m *Metrics) RecordRequest(model, providerID string, latencyMS int64, succe
 // handleMetrics serves the /metrics endpoint in Prometheus text format.
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if metrics == nil {
+		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
