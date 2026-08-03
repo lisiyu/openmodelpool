@@ -144,9 +144,14 @@ func startBackgroundTasks() {
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-			if guestKeyStore != nil {
-				guestKeyStore.save()
+		for {
+			select {
+			case <-ticker.C:
+				if guestKeyStore != nil {
+					guestKeyStore.save()
+				}
+			case <-globalStopCh:
+				return
 			}
 		}
 	}()
@@ -155,8 +160,13 @@ func startBackgroundTasks() {
 	go func() {
 		ticker := time.NewTicker(30 * time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-			cleanupIPRateLimiters(1 * time.Hour)
+		for {
+			select {
+			case <-ticker.C:
+				cleanupIPRateLimiters(1 * time.Hour)
+			case <-globalStopCh:
+				return
+			}
 		}
 	}()
 

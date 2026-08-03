@@ -436,6 +436,7 @@ func gracefulShutdown(server *http.Server) {
 
 		case syscall.SIGINT, syscall.SIGTERM:
 			slog.Info("shutting down...")
+			close(globalStopCh) // signal all background goroutines
 			cfg.stop()
 			cfg.saveSync()
 			tracker.Stop()
