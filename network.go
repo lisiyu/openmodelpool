@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -1513,7 +1512,7 @@ func resolvePublicEndpoint(host string) string {
 	}
 	hostname, _ := os.Hostname()
 	port := cfg.Get("service_port", "8000")
-	log.Println("[WARN] resolvePublicEndpoint fell back to LAN address")
+	slog.Warn("resolvePublicEndpoint fell back to LAN address")
 	return fmt.Sprintf("http://%s:%s", hostname, port)
 }
 
