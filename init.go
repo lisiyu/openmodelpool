@@ -5,11 +5,18 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
 // globalStopCh is closed during graceful shutdown to signal all background goroutines.
 var globalStopCh = make(chan struct{})
+var globalStopOnce sync.Once
+
+// closeGlobalStopCh safely closes globalStopCh (idempotent via sync.Once).
+func closeGlobalStopCh() {
+	globalStopOnce.Do(func() { close(globalStopCh) })
+}
 
 // initCore initializes core components: encryption, config, logging, providers, auth, multi-user.
 func initCore() {
