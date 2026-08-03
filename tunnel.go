@@ -435,7 +435,9 @@ func (b *DomainBinder) configureTunnel(ctx context.Context, tunnelID, localAddr 
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode API response: %w", err)
+	}
 	if !result.Success {
 		msg := "unknown error"
 		if len(result.Errors) > 0 {
@@ -477,7 +479,9 @@ func (b *DomainBinder) createDNSRecord(ctx context.Context, zoneID, domain, tunn
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode API response: %w", err)
+	}
 	if !result.Success {
 		msg := "unknown error"
 		if len(result.Errors) > 0 {
