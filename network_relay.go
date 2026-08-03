@@ -120,7 +120,7 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 			// Key is not for this node
 			if accessPublicPool {
 				// Guest key with public pool access — allow relay to proceed (treat like public key)
-				r.Header.Set("X-MK-KeyType", "public")
+				r.Header.Set("X-OMP-KeyType", "public")
 				r.Header.Set("X-MK-GuestPublicPool", "true")
 			} else {
 				// Guest key without public pool access — only valid at issuing node
@@ -179,7 +179,7 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 	case KeyTypePublic:
 		// sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1 — public key validated; always routes to shared pool.
 		// No additional validation needed at relay level.
-		r.Header.Set("X-MK-KeyType", "public")
+		r.Header.Set("X-OMP-KeyType", "public")
 
 	case KeyTypeGuest:
 		// sk-guest-{node_id}-{random}
@@ -191,19 +191,19 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 		r.Header.Del("Authorization")
 		if accessPublicPool {
 			// Guest key with public pool access — treat like public key
-			r.Header.Set("X-MK-KeyType", "public")
+			r.Header.Set("X-OMP-KeyType", "public")
 			r.Header.Set("X-MK-GuestPublicPool", "true")
 			slog.Info("guest key with public pool access, routing as public", "node_id", nodeID)
 		} else {
 			// Regular guest key — local resources only
-			r.Header.Set("X-MK-KeyType", "guest")
+			r.Header.Set("X-OMP-KeyType", "guest")
 			r.Header.Set("X-MK-Guest-Node", nodeID)
 			slog.Info("guest key validated for local relay", "node_id", nodeID)
 		}
 
 	case KeyTypeProxy:
 		// sk-{random} — proxy API key, pass through
-		r.Header.Set("X-MK-KeyType", "proxy")
+		r.Header.Set("X-OMP-KeyType", "proxy")
 
 	default:
 		// Unknown key — pass through, let the local handler validate

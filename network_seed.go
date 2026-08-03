@@ -69,7 +69,12 @@ type SeedPeersResponse struct {
 // handleSeedPeers returns all known nodes for peer discovery
 func handleSeedPeers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// P2-2: Use configured CORS origin instead of wildcard
+	origin := r.Header.Get("Origin")
+	if origin != "" && isOriginAllowed(origin, cfg.Get("cors_allowed_origins", "")) {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+	}
 
 	if routeTable == nil {
 		writeJSON(w, 200, SeedPeersResponse{

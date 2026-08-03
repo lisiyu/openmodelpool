@@ -147,7 +147,7 @@ async function importConfig(input) {
           el.innerHTML = '✅ Token 有效，Account ID: ' + escapeHtml(d.account_id);
           el.style.color = 'var(--success-color, #10b981)';
         } else {
-          el.innerHTML = '❌ Token 无效: ' + (extractError(d) || '未知错误');
+          el.innerHTML = '❌ Token 无效: ' + escapeHtml(extractError(d) || '未知错误');
           el.style.color = 'var(--danger-color, #ef4444)';
         }
       } catch(e) {

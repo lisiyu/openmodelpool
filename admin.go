@@ -592,6 +592,11 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "invalid BaseURL: must be a valid http/https URL")
 			return
 		}
+		// P2-3: Block private/loopback IPs to prevent SSRF
+		if isLocalOrPrivateIP(u.Hostname()) {
+			writeError(w, 400, "invalid BaseURL: must not point to a private or loopback address")
+			return
+		}
 	}
 
 	// Set owner

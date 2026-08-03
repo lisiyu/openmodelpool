@@ -1,5 +1,46 @@
 # Changelog
 
+## [4.2.3] - 2026-08-02
+
+### 🔴 P0 Security Fixes (Critical)
+
+- **P0-1**: Self-update binary now verifies SHA-256 checksum before replacing the running executable. Downloads a `.sha256` checksum file from GitHub Release assets and compares against the computed hash. If checksum is unavailable, a warning is logged but update proceeds (backward-compatible). If checksum mismatches, the downloaded file is deleted and update is aborted — preventing potential RCE via tampered releases or MITM.
+- **P0-CI**: CI workflow now has a `build-gate` job that runs `go build ./...` + `go vet ./...` as a hard gate. All other jobs (lint, test, build, cross-build, security) depend on this gate. This prevents broken code from ever merging into `main`.
+
+### 🟠 P1 Security Fixes (High)
+
+- **P1-1**: Access control header spoofing fixed:
+  - `RequestKeyType()` no longer trusts client-supplied `X-MK-KeyType` header. Renamed internal header to `X-OMP-KeyType` (only set by our own relay code).
+  - `FilterByAccessControl()` default branch changed from fail-open (allow all) to fail-closed (deny all) for unknown key types.
+  - `relayToRemote()` now strips `X-OMP-KeyType` from forwarded requests to prevent header injection across nodes.
+
+### 🟡 P2 Security Fixes (Medium)
+
+- **P2-1**: Frontend XSS — `admin-settings.js` now escapes `extractError()` output with `escapeHtml()` before inserting into innerHTML.
+- **P2-2**: CORS hardcoded `*` replaced with configured origin check in `eventbus.go` (SSE endpoint) and `network_seed.go` (seed peers endpoint). Both now use `isOriginAllowed()` with `cors_allowed_origins` config.
+- **P2-3**: SSRF private IP blocking added to provider BaseURL validation in both `handleCreateProvider` and `handleUpdateProvider`. Previously only checked scheme (http/https); now also blocks private/loopback addresses via `isLocalOrPrivateIP()`.
+
+### 🐛 Bug Fixes (from rounds 38-43)
+
+- **B171**: Added `context.WithTimeout(15s)` to remaining HTTP request in `discovery.go` pool fetch loop.
+- **B172**: Added error handling for `json.NewDecoder.Decode` in `tunnel.go` Cloudflare API response decoding (2 locations).
+- **B173**: Added `TLSClientConfig{MinVersion: tls.VersionTLS12}` to `sharedTransport` in `client.go`.
+- **B174**: Added TLS 1.2 minimum to SOCKS5 proxy transport and HTTP proxy transport in `client.go`.
+- **B175**: Added `sync.Once` protection for `globalStopCh` close — `closeGlobalStopCh()` is now idempotent, preventing panic from double-close.
+- **B176**: Added `Content-Type: text/plain` header to 503 response when metrics endpoint is unavailable.
+
+### 🔧 Compilation Fix (Critical)
+
+- Fixed all compilation errors introduced in rounds 2-37 that left `main` branch unable to compile:
+  - `audit.go`: `extractClientIP` takes `string` (r.RemoteAddr), not `*http.Request`
+  - `auth.go`: `AuthData` → `AdminStore` (correct type name)
+  - `conn_tracker.go`: `GetConnStats` rewritten with proper `sync.Map.Range` + `atomic.LoadInt64`
+  - `encryptor.go`: Added missing `IsReady()` method
+  - `handlers.go`: Fixed `connTracker` undefined, `wafInstance` → `wafEngine`, added `strconv` import
+  - `init.go`: Added missing `globalStopCh` declaration
+  - `types.go`: Added missing `log/slog` import
+  - `network_seed.go`: Removed unused `encoding/json` import
+
 ## [4.2.1] - 2025-08-03
 
 ### 🔒 Security Fixes (Critical)

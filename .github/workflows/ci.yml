@@ -16,8 +16,10 @@ permissions:
   contents: read
 
 jobs:
-  lint:
-    name: Lint (go vet)
+  # P0: Build gate — MUST pass before any other job runs.
+  # This is the hard gate that prevents broken code from merging.
+  build-gate:
+    name: Build gate (go build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -25,11 +27,28 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: go build ./...
+        run: go build ./...
       - name: go vet
         run: go vet ./...
 
+  lint:
+    name: Lint (golangci-lint)
+    needs: build-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
   test:
     name: Test (with coverage)
+    needs: build-gate
     # NOTE: the root package has several pre-existing, failing tests
     # (geo-IP ranges, rate limiter, auth, file-integrity). They are run and
     # reported, but do not block merges until they are fixed.
@@ -52,6 +71,7 @@ jobs:
 
   build:
     name: Build (linux/amd64)
+    needs: build-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -70,6 +90,7 @@ jobs:
 
   cross-build:
     name: Cross-compile (${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.goarm && format('-{0}', matrix.goarm) }})
+    needs: build-gate
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -101,6 +122,7 @@ jobs:
 
   security:
     name: Security scan
+    needs: build-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read

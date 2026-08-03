@@ -405,8 +405,9 @@ type candidate struct {
 // RequestKeyType classifies the request key type for access control (v2.0).
 // Returns "admin", "guest", "public", or "proxy".
 func RequestKeyType(r *http.Request) string {
-	// Priority 1: If relay already classified the key type, use it
-	if mkType := r.Header.Get("X-MK-KeyType"); mkType != "" {
+	// P1-1: Only trust X-MK-KeyType if set by our own relay (prefixed with internal marker).
+	// Client-supplied X-MK-KeyType is ignored to prevent header spoofing.
+	if mkType := r.Header.Get("X-OMP-KeyType"); mkType != "" {
 		return mkType
 	}
 
@@ -475,7 +476,8 @@ func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 				filtered = append(filtered, c)
 			}
 		default:
-			filtered = append(filtered, c) // unknown type → allow
+			// P1-1: fail-closed — unknown key types get no access
+			// (previously fail-open which allowed all providers)
 		}
 	}
 	return filtered

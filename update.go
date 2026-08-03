@@ -21,6 +21,8 @@ package main
 import (
 	"context"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -142,8 +144,9 @@ type UpdateManager struct {
 	cache      *versionCache
 	reportBack *UpdateSignal // signal we must report success to after our own self-update
 
-	dataDir   string
-	githubURL string
+	dataDir      string
+	githubURL    string
+	downloadHash string
 }
 
 // Global singleton, initialized in initAllFederation().
@@ -479,6 +482,19 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 		return
 	}
 
+	// P0-1: Verify SHA-256 checksum from GitHub release assets.
+	checksumURL := downloadURL + ".sha256"
+	expectedHash, err := um.fetchChecksum(checksumURL)
+	if err != nil {
+		slog.Warn("checksum unavailable, skipping verification", "error", err)
+	} else if um.downloadHash != expectedHash {
+		_ = os.Remove(tmpPath)
+		um.setLocalFailed(fmt.Sprintf("SHA-256 校验失败: 期望 %s, 实际 %s", expectedHash, um.downloadHash))
+		return
+	} else {
+		slog.Info("SHA-256 checksum verified", "hash", expectedHash)
+	}
+
 	// Atomic replace.
 	um.setLocalPhase(PhaseReplacing, 80, "正在替换二进制文件…", "")
 	if err := atomicReplace(exePath, tmpPath); err != nil {
@@ -533,18 +549,50 @@ func (um *UpdateManager) downloadFile(url, dest string) error {
 	}
 	defer out.Close()
 
-	written, err := io.Copy(out, resp.Body)
+	h := sha256.New()
+	written, err := io.Copy(io.MultiWriter(out, h), resp.Body)
 	if err != nil {
 		return err
 	}
 	if written == 0 {
 		return fmt.Errorf("下载文件为空")
 	}
+	um.downloadHash = hex.EncodeToString(h.Sum(nil))
 	if runtime.GOOS != "windows" {
 		_ = os.Chmod(dest, 0755)
 	}
 	um.setLocalPhase(PhaseDownloading, 70, fmt.Sprintf("下载完成（%d 字节）", written), "")
 	return nil
+}
+
+// fetchChecksum downloads a .sha256 checksum file and returns the hex hash.
+func (um *UpdateManager) fetchChecksum(url string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "OpenModelPool/"+AppVersion)
+	client := GetSharedHTTPClient()
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("checksum HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 256))
+	if err != nil {
+		return "", err
+	}
+	// SHA-256 checksum files typically: "<hash>  <filename>" or just "<hash>"
+	parts := strings.Fields(strings.TrimSpace(string(data)))
+	if len(parts) == 0 || len(parts[0]) != 64 {
+		return "", fmt.Errorf("invalid checksum format")
+	}
+	return parts[0], nil
 }
 
 // atomicReplace atomically replaces the running binary with the downloaded
