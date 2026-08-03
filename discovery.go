@@ -91,7 +91,9 @@ func (f *FederationManager) fetchFromPeers() {
 		}
 
 		url := fmt.Sprintf("%s/api/federation/pool", peer.Endpoint)
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+		p3Ctx, p3Cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer p3Cancel()
+		req, err := http.NewRequestWithContext(p3Ctx, http.MethodGet, url, nil)
 		if err != nil {
 			slog.Debug("failed to build pool request",
 				"peer_id", peer.NodeID, "error", err)
