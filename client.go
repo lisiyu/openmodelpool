@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"crypto/tls"
 	socksproxy "golang.org/x/net/proxy"
 )
 
@@ -28,6 +29,7 @@ var sharedTransport = &http.Transport{
 	MaxIdleConnsPerHost: 10,
 	IdleConnTimeout:     90 * time.Second,
 	DisableCompression:  false,
+	TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12},
 }
 
 // sharedHTTPClient reuses connections across requests.
