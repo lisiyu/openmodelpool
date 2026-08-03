@@ -559,7 +559,11 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	delete(body, "models")
 
 	// Unmarshal remaining fields into Provider
-	bodyJSON, _ := json.Marshal(body)
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		writeError(w, 400, "invalid provider data: cannot marshal request body")
+		return
+	}
 	var p Provider
 	if err := json.Unmarshal(bodyJSON, &p); err != nil {
 		writeError(w, 400, "invalid provider data: "+err.Error())
@@ -703,11 +707,19 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	b, _ := json.Marshal(existing)
+	b, err := json.Marshal(existing)
+	if err != nil {
+		writeError(w, 500, "failed to marshal provider")
+		return
+	}
 	var merged Provider
 	json.Unmarshal(b, &merged)
 	// Apply updates via re-serialization
-	b2, _ := json.Marshal(updates)
+	b2, err2 := json.Marshal(updates)
+	if err2 != nil {
+		writeError(w, 400, "invalid update data")
+		return
+	}
 	json.Unmarshal(b2, &merged)
 	merged.ID = id
 	// Preserve ownership — consumer cannot change owner
@@ -1163,7 +1175,11 @@ func handleSetRoutingWeights(w http.ResponseWriter, r *http.Request) {
 		"latency":  clamp(body["latency"], 0, 1),
 		"tokens":   clamp(body["tokens"], 0, 1),
 	}
-	b, _ := json.Marshal(weights)
+	b, err := json.Marshal(weights)
+	if err != nil {
+		writeError(w, 500, "failed to marshal weights")
+		return
+	}
 	cfg.Set("routing_weights", string(b))
 	writeJSON(w, 200, map[string]any{"success": true, "weights": weights})
 }
