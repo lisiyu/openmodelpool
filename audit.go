@@ -51,7 +51,7 @@ func auditRecord(r *http.Request, action, target, detail string, success bool) {
 	if u, ok := r.Context().Value("username").(string); ok && u != "" {
 		username = u
 	}
-	clientIP := extractClientIP(r)
+	clientIP := extractClientIP(r.RemoteAddr)
 	status := "success"
 	if !success {
 		status = "failure"

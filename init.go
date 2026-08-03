@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+// globalStopCh is closed during graceful shutdown to signal all background goroutines.
+var globalStopCh = make(chan struct{})
+
 // initCore initializes core components: encryption, config, logging, providers, auth, multi-user.
 func initCore() {
 	if err := os.MkdirAll("data", 0700); err != nil {

@@ -42,7 +42,7 @@ func (a *Auth) load() {
 	}
 	if err := json.Unmarshal(b, &a.data); err != nil {
 		slog.Error("failed to parse auth data, resetting to defaults", "error", err)
-		a.data = AuthData{
+		a.data = AdminStore{
 			JWTSecret:       randomString(64),
 			JWTRefreshSecret: randomString(64),
 			SMTP:            SMTPConfig{Port: 587, UseTLS: true},

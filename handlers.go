@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -1083,9 +1084,7 @@ func handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Connection tracker
-	if connTracker != nil {
-		diag["connections"] = GetConnStats()
-	}
+	diag["connections"] = GetConnStats()
 
 	writeJSON(w, 200, diag)
 }
@@ -1144,7 +1143,7 @@ func handleSecurityCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check 5: WAF
-	if wafInstance == nil {
+	if wafEngine == nil {
 		findings = append(findings, map[string]any{
 			"severity": "low",
 			"category": "waf",

@@ -37,6 +37,11 @@ func (e *Encryptor) IsEphemeral() bool {
 	return e.ephemeral
 }
 
+// IsReady returns whether the encryptor has a valid key.
+func (e *Encryptor) IsReady() bool {
+	return e.ready
+}
+
 // NewEncryptor resolves the 32-byte AES key with the following precedence:
 //  1. OPENMODELPOOL_ENC_KEY env var (raw 32 bytes or base64-encoded)
 //  2. data/.enc_key on disk (auto-generated and persisted on first run)
