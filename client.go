@@ -105,7 +105,8 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 
 	// For http:// and https:// proxies, use standard http.Transport
 	transport := &http.Transport{
-		Proxy: http.ProxyURL(mustParseURL(proxy)),
+		Proxy:             http.ProxyURL(mustParseURL(proxy)),
+		TLSClientConfig:   &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 	return &http.Client{Timeout: timeout, Transport: transport}
 }
