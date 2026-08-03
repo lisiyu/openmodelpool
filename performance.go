@@ -271,8 +271,13 @@ func startCleanupLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
 	go func() {
 		defer ticker.Stop()
-		for range ticker.C {
-			runCleanup()
+		for {
+			select {
+			case <-ticker.C:
+				runCleanup()
+			case <-globalStopCh:
+				return
+			}
 		}
 	}()
 	slog.Info("cleanup loop started", "interval", "5m")

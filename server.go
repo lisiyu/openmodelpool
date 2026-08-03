@@ -30,7 +30,7 @@ func runServer() {
 	}
 	initTunnel(portNum)
 
-	handler := requestIDMiddleware(corsMiddleware(requestLogMiddleware(concurrencyMiddleware(mux))))
+	handler := requestIDMiddleware(corsMiddleware(requestLogMiddleware(concurrencyMiddleware(adminTimeoutMiddleware(mux)))))
 
 	server := &http.Server{
 		Addr:         addr,
