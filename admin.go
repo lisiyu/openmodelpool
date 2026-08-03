@@ -227,6 +227,17 @@ func handleAdminInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, auth.AdminInfo())
 }
 
+// isValidID checks if a string is a valid identifier (alphanumeric, dash, underscore).
+// B156: Used for provider ID validation.
+func isValidID(id string) bool {
+	for _, ch := range id {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 // maskKey masks an API key: shows first 4 and last 4 chars.
 func maskKey(key string) string {
 	if len(key) <= 8 {
@@ -508,6 +519,16 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "provider ID required")
 		return
 	}
+	// B156: Validate provider ID length and format
+	if len(id) > 64 || !isValidID(id) {
+		writeError(w, 400, "provider ID must be 1-64 chars, alphanumeric/dash/underscore only")
+		return
+	}
+	// B151: Limit provider count to prevent memory exhaustion
+	if len(pm.GetAll()) >= 100 {
+		writeError(w, 429, "maximum provider count (100) reached")
+		return
+	}
 
 	// Extract models before unmarshaling (accept both string[] and ModelDef[])
 	var models []ModelDef
@@ -547,6 +568,17 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	p.ID = id
 	if len(models) > 0 {
 		p.Models = models
+	}
+
+	// B157: Validate provider name length
+	if len(p.Name) > 128 {
+		writeError(w, 400, "provider name must be at most 128 characters")
+		return
+	}
+	// B157: Validate provider type length
+	if len(p.Type) > 64 {
+		writeError(w, 400, "provider type must be at most 64 characters")
+		return
 	}
 
 	// B25: Validate BaseURL format to prevent SSRF

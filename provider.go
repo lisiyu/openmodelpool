@@ -1221,6 +1221,11 @@ func (m *ProviderManager) AddAPIKey(providerID string, key APIKeyConfig) error {
 		return fmt.Errorf("provider '%s' not found", providerID)
 	}
 
+	// B154: Limit API keys per provider
+	if len(p.APIKeys) >= 10 {
+		return fmt.Errorf("maximum API key count (10) per provider reached")
+	}
+
 	if key.ID == "" {
 		key.ID = generateKeyID()
 	}

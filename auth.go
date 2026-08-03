@@ -127,6 +127,10 @@ func validatePasswordStrength(password string) error {
 	if len(password) < 12 {
 		return errors.New("password must be at least 12 characters")
 	}
+	// B150: Limit password length to prevent bcrypt DoS (bcrypt processes up to 72 bytes)
+	if len(password) > 128 {
+		return errors.New("password must be at most 128 characters")
+	}
 	var hasUpper, hasLower, hasDigit, hasSpecial bool
 	for _, ch := range password {
 		switch {
@@ -191,6 +195,10 @@ func (a *Auth) RegisterCollaborator(username, password, guestKey string) error {
 	defer a.mu.Unlock()
 	if username == "" || password == "" || guestKey == "" {
 		return errors.New("username, password and guest_key are required")
+	}
+	// B153: Limit collaborator count
+	if len(a.data.Collaborators) >= 20 {
+		return errors.New("maximum collaborator count (20) reached")
 	}
 	// Check if username already taken (admin or collaborator)
 	if a.data.Admin.Username == username {

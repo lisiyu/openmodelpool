@@ -130,6 +130,14 @@ func (m *MultiUserManager) CreateInviteCode(maxUses int, role string) string {
 	if role == "" {
 		role = "consumer"
 	}
+	// B155: Limit invite code count
+	if len(m.invites) >= 100 {
+		slog.Warn("invite code limit reached, cleaning up expired codes")
+		m.cleanupExpiredInvitesLocked()
+		if len(m.invites) >= 100 {
+			return ""
+		}
+	}
 	code := randomString(12)
 	m.invites[code] = &InviteCode{
 		Code:      code,
@@ -140,6 +148,15 @@ func (m *MultiUserManager) CreateInviteCode(maxUses int, role string) string {
 	m.save()
 	slog.Info("invite code created", "code", code, "max_uses", maxUses, "role", role)
 	return code
+}
+
+// cleanupExpiredInvitesLocked removes fully-used invite codes. Must be called with m.mu held.
+func (m *MultiUserManager) cleanupExpiredInvitesLocked() {
+	for code, inv := range m.invites {
+		if inv.MaxUses > 0 && inv.UseCount >= inv.MaxUses {
+			delete(m.invites, code)
+		}
+	}
 }
 
 // ValidateInviteCode checks if an invite code is valid and can be used.
@@ -187,6 +204,11 @@ func (m *MultiUserManager) UseInviteCode(code, consumerID string) bool {
 func (m *MultiUserManager) CreateConsumer(name, inviteCode string) (*Consumer, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// B152: Limit consumer count to prevent memory exhaustion
+	if len(m.consumers) >= 500 {
+		return nil, fmt.Errorf("maximum consumer count (500) reached")
+	}
 
 	// Validate invite code
 	inv, ok := m.invites[inviteCode]
