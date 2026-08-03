@@ -217,7 +217,9 @@ func (g *GossipManager) exchange(peer NodeInfo, msg GossipMessage) (*GossipMessa
 
 	for _, addr := range endpoints {
 		gossipURL := fmt.Sprintf("%s/api/federation/gossip", addr)
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, gossipURL, bytes.NewReader(body))
+		gCtx, gCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer gCancel()
+	req, err := http.NewRequestWithContext(gCtx, http.MethodPost, gossipURL, bytes.NewReader(body))
 		if err != nil {
 			lastErr = fmt.Errorf("build request for %s: %w", addr, err)
 			continue
@@ -373,7 +375,9 @@ func (g *GossipManager) fetchFullPoolFromPeer(peer NodeInfo) {
 
 	for _, addr := range endpoints {
 		poolURL := fmt.Sprintf("%s/api/federation/pool", addr)
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, poolURL, nil)
+		g2Ctx, g2Cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer g2Cancel()
+	req, err := http.NewRequestWithContext(g2Ctx, http.MethodGet, poolURL, nil)
 		if err != nil {
 			slog.Debug("failed to build pool request",
 				"peer_id", peer.NodeID, "addr", addr, "error", err)
@@ -635,7 +639,9 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 			endpoints := peerEndpoints(p)
 			for _, addr := range endpoints {
 				announceURL := fmt.Sprintf("%s/api/federation/announce", addr)
-				req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, announceURL, bytes.NewReader(body))
+				aCtx, aCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer aCancel()
+			req, err := http.NewRequestWithContext(aCtx, http.MethodPost, announceURL, bytes.NewReader(body))
 				if err != nil {
 					continue // try next address
 				}
