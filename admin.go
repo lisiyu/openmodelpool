@@ -713,14 +713,20 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var merged Provider
-	json.Unmarshal(b, &merged)
+	if err := json.Unmarshal(b, &merged); err != nil {
+		writeError(w, 500, "failed to unmarshal provider")
+		return
+	}
 	// Apply updates via re-serialization
 	b2, err2 := json.Marshal(updates)
 	if err2 != nil {
 		writeError(w, 400, "invalid update data")
 		return
 	}
-	json.Unmarshal(b2, &merged)
+	if err := json.Unmarshal(b2, &merged); err != nil {
+		writeError(w, 400, "invalid update data: "+err.Error())
+		return
+	}
 	merged.ID = id
 	// Preserve ownership — consumer cannot change owner
 	merged.Owner = existing.Owner
