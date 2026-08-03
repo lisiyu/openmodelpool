@@ -153,7 +153,9 @@ func (m *MessageManager) SendMessage(toNodeID, subject, body, msgType string) er
 		return fmt.Errorf("marshal message: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, strings.NewReader(string(msgJSON)))
+	msgCtx, msgCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer msgCancel()
+	httpReq, err := http.NewRequestWithContext(msgCtx, http.MethodPost, url, strings.NewReader(string(msgJSON)))
 	if err != nil {
 		return fmt.Errorf("create http request: %w", err)
 	}

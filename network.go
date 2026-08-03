@@ -1806,7 +1806,9 @@ func sendNotifyToPeer(peer PeerInfo) {
 		return
 	}
 	notifyURL := strings.TrimRight(peer.Addresses[0], "/") + "/api/network/peers/notify"
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, notifyURL, bytes.NewReader(body))
+	nCtx, nCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer nCancel()
+	req, err := http.NewRequestWithContext(nCtx, http.MethodPost, notifyURL, bytes.NewReader(body))
 	if err != nil {
 		slog.Warn("sendNotifyToPeer: build request failed", "peer", peer.NodeID, "error", err)
 		return
