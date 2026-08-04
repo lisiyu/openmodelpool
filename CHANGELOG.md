@@ -1,5 +1,29 @@
 # Changelog
 
+## [4.2.4] - 2026-08-04
+
+### 🔧 Code Review Fixes (P1-P3)
+
+#### P1: Critical Bug Fixes
+- **P1-Q1**: Fixed defer-in-loop resource leaks in `discovery.go` (2 instances: `fetchFromPeers`, `fetchFromSeedNodes`) and `gossip.go` (3 instances: `exchange`, `fetchFullPoolFromPeer`, `broadcastAnnouncement`). All loop bodies with `context.WithTimeout` + `defer cancel()` are now wrapped in anonymous functions so `defer` executes per-iteration instead of at function return.
+
+#### P2: Security & Quality Improvements
+- **P2-Transport**: Migrated transport encryption from self-rolled SHA-256 KDF to proper **X25519 ECDH** key agreement with **HKDF-SHA256** key derivation. Ed25519 keys are converted to X25519 via the birational map (RFC 7748). Eliminates the "simple KDF" technical debt identified in the security audit.
+- **P2-Update**: Added **Ed25519 signature verification** for self-update binaries. The updater now downloads a `.sig` file from release assets and verifies the binary against an embedded Ed25519 public key. Fail-closed if signature verification fails; falls back to SHA-256 only if `.sig` is not present (backward compatible).
+- **P2-WAF**: Enhanced WAF content scanning with **40+ built-in attack pattern detectors** covering SQL injection, XSS, path traversal, command injection, and SSRF. Patterns are checked in addition to user-configured content keywords.
+- **P2-CI**: Split CI test job into **unit tests** (hard gate, `go test -race -short`) and **integration tests** (soft gate with `continue-on-error`, Chrome pre-installed for chromedp tests). Test timeout increased to 30 minutes.
+
+#### P3: Code Cleanup & Maintenance
+- **P3-Ledger**: Removed orphan `ledger/` package (~2,000 lines of dead code not imported by the main package). Reduces audit surface and repository size.
+- **P3-Audit**: Added **audit log rotation** — logs rotate at 10 MB, keeping up to 5 rotated files (`audit.log.1` through `audit.log.5`). Prevents unbounded log growth.
+- **P3-Stubs**: Updated `stubs.go` comments to accurately reflect that most functions now have real implementations. Only `registerWithBootstraps` remains as a documented TODO.
+
+### Deferred to Future Iterations
+- **P3**: Split `admin.go` (2,553 lines) into domain-specific modules — requires dedicated refactoring sprint
+- **P3**: Split monolithic main package (~84 package-level vars, ~59 goroutine launches) — requires architectural planning
+- **P2**: Ed25519 release signing in CI/CD (signing infrastructure not yet in place)
+- **P2**: WAF deep content inspection (body parsing beyond pattern matching)
+
 ## [4.2.3] - 2026-08-02
 
 ### 🔴 P0 Security Fixes (Critical)
