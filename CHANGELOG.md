@@ -1,5 +1,30 @@
 # Changelog
 
+## [4.2.5] - 2026-08-04
+
+### 🔧 Code Review Fixes (P2-P3 Continued)
+
+#### P2: Security & Quality Improvements
+- **P2-Signing**: Added **Ed25519 binary signing** step to release CI/CD workflow. Release binaries are now signed with an Ed25519 private key (stored as GitHub secret `ED25519_SIGNING_KEY`). The `.sig` files are uploaded alongside binaries and checksums, enabling the update.go signature verification (added in v4.2.4) to function end-to-end.
+
+#### P3: Code Cleanup & Maintenance
+- **P3-AdminSplit**: Split `admin.go` (2,559 lines) into **14 domain-specific files**:
+  - `admin.go` (~260 lines): Core config & gateway handlers
+  - `admin_auth.go` (~210 lines): Authentication, login, password reset
+  - `admin_providers.go` (~525 lines): Provider CRUD, testing, models
+  - `admin_health.go` (~656 lines): Health status & enriched metrics (previously 640-line monolith)
+  - `admin_usage.go` (~136 lines): Usage statistics & routing
+  - `admin_smtp.go` (~32 lines): SMTP configuration
+  - `admin_status.go` (~116 lines): Status, SMTP test, mail sending
+  - `admin_config_io.go` (~198 lines): Config export/import, reset
+  - `admin_apikeys.go` (~110 lines): API key management
+  - `admin_restart.go` (~75 lines): Restart & token refresh
+  - `admin_pages.go` (~81 lines): Page handlers & utilities
+  - `admin_models.go` (~98 lines): Model sync, access control, Sider
+  - `admin_url_sync.go` (~73 lines): Provider URL synchronization
+  - `admin_collab.go` (~76 lines): Collaborator & JS handlers
+- **P3-AuditWebhook**: Added **remote webhook reporting** to audit logger. Audit records can now be forwarded to an external endpoint via `audit_webhook_url` config. Webhook calls are asynchronous (non-blocking) with a 10-second timeout, ensuring local audit logging is never delayed by remote availability.
+
 ## [4.2.4] - 2026-08-04
 
 ### 🔧 Code Review Fixes (P1-P3)
