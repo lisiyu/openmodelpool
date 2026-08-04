@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,10 +20,11 @@ const (
 )
 
 type AuditLogger struct {
-	mu      sync.Mutex
-	file    *os.File
-	enabled bool
-	path    string
+	mu         sync.Mutex
+	file       *os.File
+	enabled    bool
+	path       string
+	webhookURL string // optional remote webhook for real-time audit forwarding
 }
 
 var auditLog *AuditLogger
@@ -44,7 +47,28 @@ func initAuditLog() {
 		enabled: true,
 		path:    auditPath,
 	}
+	// Load webhook URL from config if available
+	if cfg != nil {
+		webhookURL := cfg.Get("audit_webhook_url", "")
+		if webhookURL != "" {
+			auditLog.webhookURL = webhookURL
+			slog.Info("audit webhook configured", "url", webhookURL)
+		}
+	}
 	slog.Info("audit logging enabled", "path", auditPath)
+}
+
+// SetAuditWebhook configures a remote webhook URL for real-time audit forwarding.
+func SetAuditWebhook(url string) {
+	if auditLog == nil {
+		return
+	}
+	auditLog.mu.Lock()
+	defer auditLog.mu.Unlock()
+	auditLog.webhookURL = url
+	if url != "" {
+		slog.Info("audit webhook updated", "url", url)
+	}
 }
 
 // auditRecord writes an audit record for an admin action.
@@ -65,7 +89,7 @@ func auditRecord(r *http.Request, action, target, detail string, success bool) {
 	line := ts + " | " + username + " | " + clientIP + " | " + action + " | " + target + " | " + detail + " | " + status + "\n"
 
 	auditLog.mu.Lock()
-	defer auditLog.mu.Unlock()
+	webhookURL := auditLog.webhookURL
 
 	// Check if rotation is needed before writing
 	if auditLog.file != nil {
@@ -79,6 +103,37 @@ func auditRecord(r *http.Request, action, target, detail string, success bool) {
 			slog.Error("audit log write failed", "error", err)
 		}
 	}
+	auditLog.mu.Unlock()
+
+	// Forward to remote webhook asynchronously (non-blocking)
+	if webhookURL != "" {
+		go forwardAuditWebhook(webhookURL, ts, username, clientIP, action, target, detail, status)
+	}
+}
+
+// forwardAuditWebhook sends an audit record to a remote webhook endpoint.
+func forwardAuditWebhook(webhookURL, ts, username, clientIP, action, target, detail, status string) {
+	payload := map[string]string{
+		"timestamp": ts,
+		"username":  username,
+		"client_ip": clientIP,
+		"action":    action,
+		"target":    target,
+		"detail":    detail,
+		"status":    status,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		slog.Error("audit webhook marshal failed", "error", err)
+		return
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(webhookURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		slog.Error("audit webhook send failed", "error", err)
+		return
+	}
+	resp.Body.Close()
 }
 
 // rotateLocked rotates the audit log file. Caller must hold auditLog.mu.
