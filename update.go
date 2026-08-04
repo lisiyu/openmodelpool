@@ -21,7 +21,9 @@ package main
 import (
 	"context"
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -42,6 +44,17 @@ import (
 // A peer running an older version must reject the signal (and be marked
 // "unsupported" rather than stalling the broadcast).
 const MinSupportedUpdateVersion = "4.1.7"
+
+// releaseSigningPubKey is the Ed25519 public key used to verify release binary
+// signatures. The corresponding private key is stored securely and used by
+// CI/CD to sign release artifacts. If a .sig file is present in a release,
+// the signature is verified against this key (fail-closed). If no .sig file
+// is present, verification falls back to SHA-256 checksum only (backward compat).
+var releaseSigningPubKey = ed25519.PublicKey{
+	202, 42, 33, 116, 183, 71, 73, 158, 75, 169, 126, 30,
+	134, 159, 90, 55, 108, 17, 137, 106, 151, 31, 42, 19,
+	132, 172, 139, 186, 201, 136, 170, 246,
+}
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -493,6 +506,29 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 		return
 	} else {
 		slog.Info("SHA-256 checksum verified", "hash", expectedHash)
+	}
+
+	// P2: Verify Ed25519 signature if a .sig file is available in the release.
+	// This provides cryptographic integrity verification beyond SHA-256,
+	// protecting against scenarios where the GitHub repository is compromised.
+	sigURL := downloadURL + ".sig"
+	sigBytes, err := um.fetchSignature(sigURL)
+	if err != nil {
+		slog.Warn("Ed25519 signature unavailable, falling back to SHA-256 only", "error", err)
+	} else {
+		// Read the downloaded binary for signature verification
+		binaryData, err := os.ReadFile(tmpPath)
+		if err != nil {
+			_ = os.Remove(tmpPath)
+			um.setLocalFailed("无法读取已下载的二进制文件: " + err.Error())
+			return
+		}
+		if !ed25519.Verify(releaseSigningPubKey, binaryData, sigBytes) {
+			_ = os.Remove(tmpPath)
+			um.setLocalFailed("Ed25519 签名验证失败: 二进制文件可能被篡改")
+			return
+		}
+		slog.Info("Ed25519 signature verified", "version", target)
 	}
 
 	// Atomic replace.
