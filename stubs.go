@@ -12,10 +12,9 @@ import (
 	"time"
 )
 
-// This file collects initialization/helper functions that the wiring in
-// init.go / handlers.go references but whose real implementations were missing
-// from the tree (lost or never committed). They are intentionally minimal
-// placeholders so the project compiles; each is marked for follow-up work.
+// This file collects initialization/helper functions that were originally
+// missing from the tree. Most functions now have real implementations;
+// the remaining placeholder (registerWithBootstraps) is marked with TODO.
 
 // initEncryptor is a no-op: encryption is initialized via encryptor.go's init().
 func initEncryptor(keyPath string) {}
@@ -214,7 +213,10 @@ func startRegionSyncLoop() {
 	}()
 }
 
-// registerWithBootstraps registers this node with bootstrap/seed nodes. Placeholder.
+// registerWithBootstraps registers this node with bootstrap/seed nodes.
+// TODO: implement federation bootstrap registration when the federation
+// handshake protocol is finalized. Currently a no-op; federation join is
+// handled via the trust pool refresh loop in discovery.go.
 func registerWithBootstraps() {}
 
 // GetDHTStats returns DHT routing-table statistics. DHT (Kademlia) is not yet
