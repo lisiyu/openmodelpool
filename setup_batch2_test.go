@@ -150,9 +150,7 @@ func TestBatch2_Tracker_EWMAUpdate(t *testing.T) {
 // ============================================================
 
 func TestBatch2_IncrProviderConn_FromZero(t *testing.T) {
-	origPC := providerConns
-	providerConns = sync.Map{}
-	t.Cleanup(func() { providerConns = origPC })
+	providerConns.Range(func(k, v any) bool { providerConns.Delete(k); return true })
 
 	IncrProviderConn("test-p1")
 	if got := GetProviderConns("test-p1"); got != 1 {
@@ -161,9 +159,7 @@ func TestBatch2_IncrProviderConn_FromZero(t *testing.T) {
 }
 
 func TestBatch2_IncrDecrProviderConn(t *testing.T) {
-	origPC := providerConns
-	providerConns = sync.Map{}
-	t.Cleanup(func() { providerConns = origPC })
+	providerConns.Range(func(k, v any) bool { providerConns.Delete(k); return true })
 
 	IncrProviderConn("test-p2")
 	IncrProviderConn("test-p2")
@@ -178,9 +174,7 @@ func TestBatch2_IncrDecrProviderConn(t *testing.T) {
 }
 
 func TestBatch2_GetProviderConns_UnknownProvider(t *testing.T) {
-	origPC := providerConns
-	providerConns = sync.Map{}
-	t.Cleanup(func() { providerConns = origPC })
+	providerConns.Range(func(k, v any) bool { providerConns.Delete(k); return true })
 
 	if got := GetProviderConns("nonexistent"); got != 0 {
 		t.Errorf("GetProviderConns for unknown = %d, want 0", got)
@@ -188,9 +182,7 @@ func TestBatch2_GetProviderConns_UnknownProvider(t *testing.T) {
 }
 
 func TestBatch2_IncrGuestConn_FromZero(t *testing.T) {
-	origGC := guestConns
-	guestConns = sync.Map{}
-	t.Cleanup(func() { guestConns = origGC })
+	guestConns.Range(func(k, v any) bool { guestConns.Delete(k); return true })
 
 	IncrGuestConn()
 	if got := GetGuestConns(); got != 1 {
@@ -199,9 +191,7 @@ func TestBatch2_IncrGuestConn_FromZero(t *testing.T) {
 }
 
 func TestBatch2_IncrDecrGuestConn(t *testing.T) {
-	origGC := guestConns
-	guestConns = sync.Map{}
-	t.Cleanup(func() { guestConns = origGC })
+	guestConns.Range(func(k, v any) bool { guestConns.Delete(k); return true })
 
 	IncrGuestConn()
 	IncrGuestConn()
@@ -216,11 +206,8 @@ func TestBatch2_IncrDecrGuestConn(t *testing.T) {
 }
 
 func TestBatch2_IncrConn_GuestType(t *testing.T) {
-	origPC := providerConns
-	origGC := guestConns
-	providerConns = sync.Map{}
-	guestConns = sync.Map{}
-	t.Cleanup(func() { providerConns = origPC; guestConns = origGC })
+	providerConns.Range(func(k, v any) bool { providerConns.Delete(k); return true })
+	guestConns.Range(func(k, v any) bool { guestConns.Delete(k); return true })
 
 	IncrConn("p1", "guest")
 	if got := GetProviderConns("p1"); got != 1 {
@@ -232,11 +219,8 @@ func TestBatch2_IncrConn_GuestType(t *testing.T) {
 }
 
 func TestBatch2_IncrConn_PrivateType(t *testing.T) {
-	origPC := providerConns
-	origGC := guestConns
-	providerConns = sync.Map{}
-	guestConns = sync.Map{}
-	t.Cleanup(func() { providerConns = origPC; guestConns = origGC })
+	providerConns.Range(func(k, v any) bool { providerConns.Delete(k); return true })
+	guestConns.Range(func(k, v any) bool { guestConns.Delete(k); return true })
 
 	IncrConn("p1", "private")
 	if got := GetProviderConns("p1"); got != 1 {
@@ -248,11 +232,8 @@ func TestBatch2_IncrConn_PrivateType(t *testing.T) {
 }
 
 func TestBatch2_DecrConn_GuestType(t *testing.T) {
-	origPC := providerConns
-	origGC := guestConns
-	providerConns = sync.Map{}
-	guestConns = sync.Map{}
-	t.Cleanup(func() { providerConns = origPC; guestConns = origGC })
+	providerConns.Range(func(k, v any) bool { providerConns.Delete(k); return true })
+	guestConns.Range(func(k, v any) bool { guestConns.Delete(k); return true })
 
 	IncrConn("p1", "guest")
 	DecrConn("p1", "guest")
