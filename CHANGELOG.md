@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.2.9] - 2026-08-05
+
+### ✨ New Feature: Kilo Gateway Free Model Preset
+
+- **Added Kilo Gateway as preset provider**: 12 free models from [Kilo Gateway](https://kilo.ai/) (api.kilo.ai) preconfigured and enabled out-of-the-box, no API Key required.
+- **Models include**: Auto Free (smart routing), StepFun Step 3.7 Flash, Ling-3.0-flash, Laguna S/XS 2.1, North Mini Code, Nemotron 3 Ultra (1M context), Nemotron 3 Super/Nano Omni, OpenRouter Free Router, Tencent Hy3.
+- **Anonymous access**: Uses `free-anonymous` API key marker, no user configuration needed — provider is `Enabled: true` by default.
+- **API endpoint**: `https://api.kilo.ai/api/gateway` (OpenAI-compatible)
+- **Model list auto-verified**: Fetched live from Kilo Gateway API on 2026-08-05, all 12 free models confirmed working.
+- **Test updated**: `TestProviderManager_EnabledRaw` made resilient to enabled presets.
+- Build: ✅ | Vet: ✅ | Tests: no new failures (pre-existing unchanged)
+
 ## [4.2.6] - 2026-08-04
 
 ### 🏗️ P3: Main Package Refactoring

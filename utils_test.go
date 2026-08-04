@@ -2639,11 +2639,18 @@ func TestProviderManager_EnabledRaw(t *testing.T) {
 	pm.Add(Provider{ID: "p2", Name: "P2", Enabled: false, APIKey: "sk-2"})
 
 	enabled := pm.EnabledRaw()
-	if len(enabled) != 1 {
-		t.Errorf("enabled count = %d, want 1", len(enabled))
+	// Count should include p1 plus any enabled presets (e.g. kilo-gateway)
+	foundP1 := false
+	for _, p := range enabled {
+		if p.ID == "p1" {
+			foundP1 = true
+		}
+		if p.ID == "p2" {
+			t.Error("p2 should not be enabled")
+		}
 	}
-	if enabled[0].ID != "p1" {
-		t.Errorf("enabled provider = %q, want 'p1'", enabled[0].ID)
+	if !foundP1 {
+		t.Error("p1 should be in enabled list")
 	}
 }
 
