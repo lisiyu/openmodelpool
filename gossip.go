@@ -216,48 +216,50 @@ func (g *GossipManager) exchange(peer NodeInfo, msg GossipMessage) (*GossipMessa
 	var lastErr error
 
 	for _, addr := range endpoints {
-		gossipURL := fmt.Sprintf("%s/api/federation/gossip", addr)
-		gCtx, gCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer gCancel()
-	req, err := http.NewRequestWithContext(gCtx, http.MethodPost, gossipURL, bytes.NewReader(body))
-		if err != nil {
-			lastErr = fmt.Errorf("build request for %s: %w", addr, err)
-			continue
-		}
-		req.Header.Set("Content-Type", "application/json")
-		// R5: identify ourselves via X-Node-ID so the receiver's
-		// withFederationAuth path-1 (X-Node-ID in trust pool) can admit us
-		// (we are bridged into the peer's trust pool by P0-2 on first contact).
-		if node != nil {
-			req.Header.Set("X-Node-ID", node.NodeID())
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("POST to %s: %w", addr, err)
-			continue // try next address
-		}
+		// P1 fix: wrap loop body in anonymous function so defer runs per-iteration
+		respMsg, done, err := func() (*GossipMessage, bool, error) {
+			gossipURL := fmt.Sprintf("%s/api/federation/gossip", addr)
+			gCtx, gCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer gCancel()
+			req, err := http.NewRequestWithContext(gCtx, http.MethodPost, gossipURL, bytes.NewReader(body))
+			if err != nil {
+				return nil, false, fmt.Errorf("build request for %s: %w", addr, err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			// R5: identify ourselves via X-Node-ID so the receiver's
+			// withFederationAuth path-1 (X-Node-ID in trust pool) can admit us
+			// (we are bridged into the peer's trust pool by P0-2 on first contact).
+			if node != nil {
+				req.Header.Set("X-Node-ID", node.NodeID())
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				return nil, false, fmt.Errorf("POST to %s: %w", addr, err)
+			}
 
-		if resp.StatusCode != http.StatusOK {
-			respBody, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				respBody, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				return nil, false, fmt.Errorf("peer returned HTTP %d from %s: %s", resp.StatusCode, addr, string(respBody))
+			}
+
+			respBody, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			lastErr = fmt.Errorf("peer returned HTTP %d from %s: %s", resp.StatusCode, addr, string(respBody))
-			continue // try next address
-		}
+			if err != nil {
+				return nil, false, fmt.Errorf("read response from %s: %w", addr, err)
+			}
 
-		respBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = fmt.Errorf("read response from %s: %w", addr, err)
-			continue
-		}
+			var respMsg GossipMessage
+			if err := json.Unmarshal(respBody, &respMsg); err != nil {
+				return nil, false, fmt.Errorf("parse response from %s: %w", addr, err)
+			}
 
-		var respMsg GossipMessage
-		if err := json.Unmarshal(respBody, &respMsg); err != nil {
-			lastErr = fmt.Errorf("parse response from %s: %w", addr, err)
-			continue
+			return &respMsg, true, nil
+		}()
+		if done {
+			return respMsg, nil
 		}
-
-		return &respMsg, nil
+		lastErr = err
 	}
 
 	return nil, fmt.Errorf("all addresses failed for peer %s: %v", peer.NodeID, lastErr)
@@ -374,49 +376,55 @@ func (g *GossipManager) fetchFullPoolFromPeer(peer NodeInfo) {
 	endpoints := peerEndpoints(peer)
 
 	for _, addr := range endpoints {
-		poolURL := fmt.Sprintf("%s/api/federation/pool", addr)
-		g2Ctx, g2Cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer g2Cancel()
-	req, err := http.NewRequestWithContext(g2Ctx, http.MethodGet, poolURL, nil)
-		if err != nil {
-			slog.Debug("failed to build pool request",
-				"peer_id", peer.NodeID, "addr", addr, "error", err)
-			continue
-		}
-		// R5: identify ourselves via X-Node-ID (see exchange for rationale).
-		if node != nil {
-			req.Header.Set("X-Node-ID", node.NodeID())
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			slog.Debug("failed to fetch pool from peer address",
-				"peer_id", peer.NodeID, "addr", addr, "error", err)
-			continue
-		}
+		// P1 fix: wrap loop body in anonymous function so defer runs per-iteration
+		done := func() bool {
+			poolURL := fmt.Sprintf("%s/api/federation/pool", addr)
+			g2Ctx, g2Cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer g2Cancel()
+			req, err := http.NewRequestWithContext(g2Ctx, http.MethodGet, poolURL, nil)
+			if err != nil {
+				slog.Debug("failed to build pool request",
+					"peer_id", peer.NodeID, "addr", addr, "error", err)
+				return false
+			}
+			// R5: identify ourselves via X-Node-ID (see exchange for rationale).
+			if node != nil {
+				req.Header.Set("X-Node-ID", node.NodeID())
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				slog.Debug("failed to fetch pool from peer address",
+					"peer_id", peer.NodeID, "addr", addr, "error", err)
+				return false
+			}
 
-		if resp.StatusCode != http.StatusOK {
-			io.Copy(io.Discard, resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				return false
+			}
+
+			body, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			continue
-		}
+			if err != nil {
+				return false
+			}
 
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			continue
-		}
+			var pool TrustPool
+			if err := json.Unmarshal(body, &pool); err != nil {
+				slog.Debug("failed to parse pool from peer",
+					"peer_id", peer.NodeID, "addr", addr, "error", err)
+				return false
+			}
 
-		var pool TrustPool
-		if err := json.Unmarshal(body, &pool); err != nil {
-			slog.Debug("failed to parse pool from peer",
-				"peer_id", peer.NodeID, "addr", addr, "error", err)
-			continue
+			fed.UpdateTrustPool(pool)
+			slog.Info("fetched full trust pool from peer",
+				"peer_id", peer.NodeID, "version", pool.Version, "addr", addr)
+			return true
+		}()
+		if done {
+			return
 		}
-
-		fed.UpdateTrustPool(pool)
-		slog.Info("fetched full trust pool from peer",
-			"peer_id", peer.NodeID, "version", pool.Version, "addr", addr)
-		return
 	}
 
 	slog.Debug("failed to fetch pool from all peer addresses",
@@ -638,32 +646,38 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 
 			endpoints := peerEndpoints(p)
 			for _, addr := range endpoints {
-				announceURL := fmt.Sprintf("%s/api/federation/announce", addr)
-				aCtx, aCancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer aCancel()
-			req, err := http.NewRequestWithContext(aCtx, http.MethodPost, announceURL, bytes.NewReader(body))
-				if err != nil {
-					continue // try next address
-				}
-				req.Header.Set("Content-Type", "application/json")
-				// R5: identify ourselves via X-Node-ID so the receiver's
-				// withFederationAuth admits us (we are in its trust pool via P0-2).
-				if node != nil {
-					req.Header.Set("X-Node-ID", node.NodeID())
-				}
-				resp, err := client.Do(req)
-				if err != nil {
-					continue
-				}
-				io.Copy(io.Discard, resp.Body)
-				resp.Body.Close()
+				// P1 fix: wrap loop body so defer runs per-iteration
+				delivered := func() bool {
+					announceURL := fmt.Sprintf("%s/api/federation/announce", addr)
+					aCtx, aCancel := context.WithTimeout(context.Background(), 15*time.Second)
+					defer aCancel()
+					req, err := http.NewRequestWithContext(aCtx, http.MethodPost, announceURL, bytes.NewReader(body))
+					if err != nil {
+						return false
+					}
+					req.Header.Set("Content-Type", "application/json")
+					// R5: identify ourselves via X-Node-ID so the receiver's
+					// withFederationAuth admits us (we are in its trust pool via P0-2).
+					if node != nil {
+						req.Header.Set("X-Node-ID", node.NodeID())
+					}
+					resp, err := client.Do(req)
+					if err != nil {
+						return false
+					}
+					io.Copy(io.Discard, resp.Body)
+					resp.Body.Close()
 
-				if resp.StatusCode != http.StatusOK {
-					continue
-				}
+					if resp.StatusCode != http.StatusOK {
+						return false
+					}
 
-				slog.Debug("announcement delivered to peer", "peer_id", p.NodeID, "addr", addr)
-				return
+					slog.Debug("announcement delivered to peer", "peer_id", p.NodeID, "addr", addr)
+					return true
+				}()
+				if delivered {
+					return
+				}
 			}
 			slog.Debug("failed to deliver announcement to peer on all addresses",
 				"peer_id", p.NodeID)
