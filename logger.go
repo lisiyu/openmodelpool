@@ -22,8 +22,6 @@ type Logger struct {
 	maxSize    int64 // max file size in bytes before rotation
 }
 
-var appLogger *Logger
-
 // Default max log file size: 50MB
 const defaultMaxLogSize int64 = 50 * 1024 * 1024
 
@@ -305,4 +303,3 @@ func CloseAccessLog() {
 		appLogger.accessFile.Close()
 	}
 }
-

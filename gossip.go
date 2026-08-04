@@ -1,8 +1,8 @@
 package main
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -23,8 +23,6 @@ type GossipManager struct {
 	seen   map[string]time.Time // message hash -> first seen time (for dedup)
 	stopCh chan struct{}
 }
-
-var gossip *GossipManager
 
 // initGossip creates the GossipManager and starts the gossip and cleanup loops.
 // Should be called after initFederation.

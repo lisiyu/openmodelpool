@@ -23,8 +23,6 @@ type Auth struct {
 	path string
 }
 
-var auth *Auth
-
 func initAuth(path string) {
 	auth = &Auth{path: path}
 	auth.load()
@@ -34,18 +32,18 @@ func (a *Auth) load() {
 	b, err := os.ReadFile(a.path)
 	if err != nil {
 		a.data = AdminStore{
-			JWTSecret:       randomString(64),
+			JWTSecret:        randomString(64),
 			JWTRefreshSecret: randomString(64),
-			SMTP:            SMTPConfig{Port: 587, UseTLS: true},
+			SMTP:             SMTPConfig{Port: 587, UseTLS: true},
 		}
 		return
 	}
 	if err := json.Unmarshal(b, &a.data); err != nil {
 		slog.Error("failed to parse auth data, resetting to defaults", "error", err)
 		a.data = AdminStore{
-			JWTSecret:       randomString(64),
+			JWTSecret:        randomString(64),
 			JWTRefreshSecret: randomString(64),
-			SMTP:            SMTPConfig{Port: 587, UseTLS: true},
+			SMTP:             SMTPConfig{Port: 587, UseTLS: true},
 		}
 		a.save()
 		return

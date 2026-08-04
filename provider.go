@@ -29,8 +29,6 @@ type ProviderManager struct {
 	saveMu sync.Mutex
 }
 
-var pm *ProviderManager
-
 func initProviderManager(path string) {
 	pm = &ProviderManager{
 		providers: make(map[string]Provider),
@@ -143,7 +141,7 @@ func (m *ProviderManager) makeProviderListLocked() []Provider {
 			copy(keysCopy, p.APIKeys)
 			p.APIKeys = keysCopy
 		}
-		
+
 		if p.APIKey != "" && !IsEncrypted(p.APIKey) {
 			p.APIKey = encryptField(p.APIKey)
 		}
@@ -577,16 +575,24 @@ func (m *ProviderManager) sortCandidates(cands *[]candidate, mode string) {
 			pj := getPricing(cj.Model, cj.Provider.ID)
 			si := pi.Input + pi.Output
 			sj := pj.Input + pj.Output
-			if si == 0 { si = 0.001 }
-			if sj == 0 { sj = 0.001 }
+			if si == 0 {
+				si = 0.001
+			}
+			if sj == 0 {
+				sj = 0.001
+			}
 			return si < sj
 		})
 	case "fastest":
 		sort.SliceStable(*cands, func(i, j int) bool {
 			ei := tracker.GetEWMA((*cands)[i].Provider.ID)
 			ej := tracker.GetEWMA((*cands)[j].Provider.ID)
-			if ei == 0 { ei = 5000 }
-			if ej == 0 { ej = 5000 }
+			if ei == 0 {
+				ei = 5000
+			}
+			if ej == 0 {
+				ej = 5000
+			}
 			return ei < ej
 		})
 	case "auto":
@@ -705,8 +711,12 @@ func minMax(a []float64) (min, max float64) {
 	}
 	min, max = a[0], a[0]
 	for _, v := range a[1:] {
-		if v < min { min = v }
-		if v > max { max = v }
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
 	}
 	return
 }
@@ -870,16 +880,16 @@ func (m *ProviderManager) RoutingAdvice(model string) []map[string]any {
 		}
 
 		out = append(out, map[string]any{
-			"provider_id":     pid,
-			"provider_name":   p.Name,
-			"priority":        p.Priority,
-			"input_price":     pricing.Input,
-			"output_price":    pricing.Output,
-			"ewma_latency_ms": ewma,
+			"provider_id":      pid,
+			"provider_name":    p.Name,
+			"priority":         p.Priority,
+			"input_price":      pricing.Input,
+			"output_price":     pricing.Output,
+			"ewma_latency_ms":  ewma,
 			"request_count_7d": s["request_count"],
-			"success_rate":    s["success_rate"],
-			"total_cost_usd":  s["total_cost_usd"],
-			"token_status":    tokenStatus,
+			"success_rate":     s["success_rate"],
+			"total_cost_usd":   s["total_cost_usd"],
+			"token_status":     tokenStatus,
 		})
 	}
 
@@ -917,7 +927,7 @@ func (m *ProviderManager) SyncModels(providerID string) (int, error) {
 
 	// Build per-key model availability
 	type keyModels struct {
-		keyID   string
+		keyID    string
 		modelIDs []string
 	}
 	var keyResults []keyModels

@@ -122,10 +122,6 @@ func (e *Encryptor) Decrypt(ciphertext string) (string, error) {
 	}
 	return string(pt), nil
 }
-
-// enc is the package-level encryptor used by config/auth/multiuser code.
-var enc *Encryptor
-
 func init() {
 	var err error
 	enc, err = NewEncryptor()

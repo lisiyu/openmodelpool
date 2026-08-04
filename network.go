@@ -1,8 +1,8 @@
 package main
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -162,8 +162,6 @@ type RouteTable struct {
 	mu      sync.RWMutex
 	entries map[string]*RouteEntry
 }
-
-var routeTable *RouteTable
 
 func initRouteTable() *RouteTable {
 	return &RouteTable{entries: make(map[string]*RouteEntry)}
@@ -380,8 +378,6 @@ type NetworkManager struct {
 	startTime   time.Time
 	stopRefresh chan struct{}
 }
-
-var netMgr *NetworkManager
 
 func initNetworkManager(dataDir string) {
 	netMgr = &NetworkManager{
@@ -924,13 +920,13 @@ func (nm *NetworkManager) AddPeer(peer PeerInfo) error {
 			peer.Unlocked = p.Unlocked
 			nm.config.Peers[i] = peer
 			nm.doSave()
-		if len(peer.Addresses) > 0 {
-			routeTable.Put(peer.NodeID, peer.Name, peer.Addresses)
-			if nodeRegistry != nil {
-				nodeRegistry.SavePeer(peer)
+			if len(peer.Addresses) > 0 {
+				routeTable.Put(peer.NodeID, peer.Name, peer.Addresses)
+				if nodeRegistry != nil {
+					nodeRegistry.SavePeer(peer)
+				}
 			}
-		}
-		// P0-2: keep the federation trust pool in sync with manual peers so
+			// P0-2: keep the federation trust pool in sync with manual peers so
 			// that gossip can see and propagate them (bridge into fed).
 			bridgePeerToFederation(peer)
 			return nil

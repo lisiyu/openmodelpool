@@ -42,8 +42,6 @@ type NodeIdentity struct {
 	needsMigration  bool   // true if loaded from legacy mm- format, needs migration to mmx- format
 }
 
-var node *NodeIdentity
-
 // NodeKeyStore is the on-disk format for the node's keys.
 type NodeKeyStore struct {
 	NodeID          string `json:"node_id"`

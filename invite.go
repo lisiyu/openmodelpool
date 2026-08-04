@@ -62,8 +62,6 @@ type inviteManager struct {
 	dataDir string
 }
 
-var invMgr *inviteManager
-
 func initInviteManager(dataDir string) {
 	invMgr = &inviteManager{
 		issued:  make(map[string]*FederationInvite),

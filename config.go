@@ -12,16 +12,14 @@ import (
 
 // Config manages persistent JSON config with env var fallback.
 type Config struct {
-	mu       sync.RWMutex
-	data     map[string]any
-	path     string
-	dirty    bool
-	dirtyCh  chan struct{}
-	stopCh   chan struct{}
-	done     chan struct{} // closed when debounceWriter exits
+	mu      sync.RWMutex
+	data    map[string]any
+	path    string
+	dirty   bool
+	dirtyCh chan struct{}
+	stopCh  chan struct{}
+	done    chan struct{} // closed when debounceWriter exits
 }
-
-var cfg *Config
 
 // envMap maps config keys to environment variable names.
 var envMap = map[string]string{

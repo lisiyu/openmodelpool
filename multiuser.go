@@ -16,18 +16,16 @@ import (
 
 // MultiUserManager handles invite codes and consumer (API key) management.
 type MultiUserManager struct {
-	mu         sync.RWMutex
-	invites    map[string]*InviteCode // code -> InviteCode
-	consumers  map[string]*Consumer   // id -> Consumer
-	apiKeyMap  map[string]string      // sha256(api_key) -> consumer_id (hashed for security)
-	dataPath   string
+	mu        sync.RWMutex
+	invites   map[string]*InviteCode // code -> InviteCode
+	consumers map[string]*Consumer   // id -> Consumer
+	apiKeyMap map[string]string      // sha256(api_key) -> consumer_id (hashed for security)
+	dataPath  string
 
 	// Batch save fields (P-3)
 	dirtyCount atomic.Int64
 	saveStopCh chan struct{}
 }
-
-var multiUser *MultiUserManager
 
 func initMultiUser(dataDir string) {
 	multiUser = &MultiUserManager{
@@ -640,4 +638,3 @@ func (m *MultiUserManager) HasConsumers() bool {
 	defer m.mu.RUnlock()
 	return len(m.consumers) > 0
 }
-

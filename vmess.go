@@ -32,21 +32,19 @@ type VMessConfig struct {
 
 // VMessProxy manages a local Xray instance for a VMess proxy
 type VMessProxy struct {
-	mu        sync.Mutex
-	proxies   map[string]*vmessInstance // key: provider ID
-	xrayPath  string
-	basePort  int // starting port for SOCKS5 proxies
-	nextPort  int
+	mu       sync.Mutex
+	proxies  map[string]*vmessInstance // key: provider ID
+	xrayPath string
+	basePort int // starting port for SOCKS5 proxies
+	nextPort int
 }
 
 type vmessInstance struct {
 	cmd      *exec.Cmd
-	port     int       // local SOCKS5 proxy port
-	provider string    // provider ID
+	port     int    // local SOCKS5 proxy port
+	provider string // provider ID
 	config   VMessConfig
 }
-
-var vmessManager *VMessProxy
 
 func initVMessManager(dataDir string) {
 	xrayPath := filepath.Join(dataDir, "..", "xray", "xray")
@@ -287,8 +285,8 @@ func (m *VMessProxy) generateConfig(vmess *VMessConfig, localPort int) map[strin
 				"port":     localPort,
 				"protocol": "socks",
 				"settings": map[string]any{
-					"auth":      "noauth",
-					"udp":       true,
+					"auth": "noauth",
+					"udp":  true,
 				},
 			},
 		},

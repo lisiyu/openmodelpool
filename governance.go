@@ -22,14 +22,14 @@ const (
 
 // NetworkGovernanceEvent represents a governance action in the three-layer model.
 type NetworkGovernanceEvent struct {
-	ID        string                    `json:"id"`
+	ID        string                     `json:"id"`
 	Type      NetworkGovernanceEventType `json:"type"`
-	Proposer  string                    `json:"proposer"`
-	Subject   string                    `json:"subject"`
-	Reason    string                    `json:"reason"`
-	Timestamp time.Time                 `json:"timestamp"`
-	Signers   []string                  `json:"signers"`
-	Data      any                       `json:"data,omitempty"`
+	Proposer  string                     `json:"proposer"`
+	Subject   string                     `json:"subject"`
+	Reason    string                     `json:"reason"`
+	Timestamp time.Time                  `json:"timestamp"`
+	Signers   []string                   `json:"signers"`
+	Data      any                        `json:"data,omitempty"`
 }
 
 // MultiSigThreshold returns the minimum number of distinct node signatures
@@ -47,8 +47,6 @@ type GovernanceManager struct {
 	mu     sync.RWMutex
 	events map[string]*NetworkGovernanceEvent
 }
-
-var governanceMgr *GovernanceManager
 
 func initGovernanceManager() {
 	governanceMgr = &GovernanceManager{

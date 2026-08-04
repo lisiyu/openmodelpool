@@ -87,8 +87,6 @@ type GlobalRateLimiter struct {
 	consumerQPS float64
 }
 
-var rateLimiter *GlobalRateLimiter
-
 func initRateLimiter() {
 	globalQPS := parseFloat64(cfg.Get("rate_limit_global", "100"), 100)
 	consumerQPS := parseFloat64(cfg.Get("rate_limit_per_consumer", "20"), 20)

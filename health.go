@@ -21,8 +21,6 @@ type HealthChecker struct {
 	stopCh   chan struct{}
 }
 
-var healthChecker *HealthChecker
-
 func initHealthChecker(interval time.Duration) {
 	healthChecker = &HealthChecker{
 		statuses: make(map[string]*ProviderHealth),
@@ -253,7 +251,7 @@ func (h *HealthChecker) checkProvider(p Provider) {
 		for _, ke := range keysToTry {
 			keysTested++
 			keyOK := false
-			
+
 			for _, model := range probeModels {
 				reqStart := time.Now()
 				probeBody, _ := json.Marshal(map[string]any{
@@ -271,7 +269,7 @@ func (h *HealthChecker) checkProvider(p Provider) {
 				io.Copy(io.Discard, probeResp.Body)
 				probeResp.Body.Close()
 				latencyMS = float64(time.Since(reqStart).Milliseconds())
-				
+
 				if probeResp.StatusCode == 200 {
 					healthy = true
 					failReason = ""
@@ -282,7 +280,7 @@ func (h *HealthChecker) checkProvider(p Provider) {
 					break // key is invalid, stop trying models for this key
 				}
 			}
-			
+
 			if !keyOK {
 				failReason = ke.alias + ": all models failed"
 				keysFailed++

@@ -21,41 +21,39 @@ import (
 // NodeWeightOverride stores a per-node weight multiplier set by the local admin.
 type NodeWeightOverride struct {
 	NodeID    string  `json:"node_id"`
-	Weight    float64 `json:"weight"`     // multiplier: 1.0 = normal, 2.0 = double priority, 0 = excluded
-	Approved  bool    `json:"approved"`   // whether the node owner approved this priority
+	Weight    float64 `json:"weight"`   // multiplier: 1.0 = normal, 2.0 = double priority, 0 = excluded
+	Approved  bool    `json:"approved"` // whether the node owner approved this priority
 	UpdatedAt string  `json:"updated_at"`
 }
 
 // ApprovalRequest represents a pending approval from consumer → node owner.
 type ApprovalRequest struct {
-	ID          string `json:"id"`
-	FromNodeID  string `json:"from_node_id"`
-	ToNodeID    string `json:"to_node_id"`
-	Weight      float64 `json:"weight"`
-	Status      string  `json:"status"` // pending, approved, rejected
-	CreatedAt   string `json:"created_at"`
-	ResolvedAt  string `json:"resolved_at,omitempty"`
+	ID         string  `json:"id"`
+	FromNodeID string  `json:"from_node_id"`
+	ToNodeID   string  `json:"to_node_id"`
+	Weight     float64 `json:"weight"`
+	Status     string  `json:"status"` // pending, approved, rejected
+	CreatedAt  string  `json:"created_at"`
+	ResolvedAt string  `json:"resolved_at,omitempty"`
 }
 
 // nodeWeightManager handles per-node weights and approvals.
 type nodeWeightManager struct {
-	mu           sync.RWMutex
-	overrides    map[string]*NodeWeightOverride   // nodeID → override
-	pending      map[string]*ApprovalRequest       // requestID → request
-	approvalMode string                            // "auto" or "manual"
-	ownTokenBudget int64                           // this node's declared monthly token budget
-	dataDir      string
+	mu             sync.RWMutex
+	overrides      map[string]*NodeWeightOverride // nodeID → override
+	pending        map[string]*ApprovalRequest    // requestID → request
+	approvalMode   string                         // "auto" or "manual"
+	ownTokenBudget int64                          // this node's declared monthly token budget
+	dataDir        string
 }
-
-var nwm *nodeWeightManager
 
 func initNodeWeightManager(dataDir string) {
 	m := &nodeWeightManager{
-		overrides:    make(map[string]*NodeWeightOverride),
-		pending:      make(map[string]*ApprovalRequest),
-		approvalMode: cfg.Get("node_approval_mode", "auto"),
+		overrides:      make(map[string]*NodeWeightOverride),
+		pending:        make(map[string]*ApprovalRequest),
+		approvalMode:   cfg.Get("node_approval_mode", "auto"),
 		ownTokenBudget: 0,
-		dataDir:      dataDir,
+		dataDir:        dataDir,
 	}
 
 	// Load token budget

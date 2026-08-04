@@ -1,19 +1,19 @@
 package main
 
 import (
-	"os"
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"net/http"
-	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"os"
 	"os/exec"
-	"strconv"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -38,8 +38,6 @@ type TunnelManager struct {
 	token    string // connector token for named tunnel mode
 	tunnelID string // Cloudflare tunnel ID for named mode
 }
-
-var tunnel *TunnelManager
 
 func getListenPort() int {
 	portStr := "8000"
@@ -67,24 +65,23 @@ func newTunnelManager(domain, tunnelID, token string) *TunnelManager {
 	return t
 }
 
-
 // initTunnel creates the tunnel manager and starts the tunnel if enabled.
 func initTunnel(port int) {
 	tunnel = &TunnelManager{port: port}
-	
+
 	enabled := cfg.Get("tunnel_enabled", "false") == "true"
 	mode := cfg.Get("tunnel_mode", "quick")
 	domain := cfg.Get("tunnel_domain", "")
-	
+
 	tunnel.mode = mode
 	tunnel.domain = domain
-	
+
 	// Restore named tunnel token for restart
 	if mode == "named" {
 		tunnel.token = cfg.Get("cf_tunnel_token", "")
 		tunnel.tunnelID = cfg.Get("cf_tunnel_id", "")
 	}
-	
+
 	if enabled {
 		go tunnel.start()
 	}
@@ -93,19 +90,19 @@ func initTunnel(port int) {
 // start begins the cloudflared tunnel process.
 func (t *TunnelManager) start() {
 	t.mu.Lock()
-	
+
 	if t.running {
 		t.mu.Unlock()
 		slog.Warn("tunnel already running")
 		return
 	}
-	
+
 	if _, err := exec.LookPath("cloudflared"); err != nil {
 		t.mu.Unlock()
 		slog.Error("cloudflared not found in PATH", "error", err)
 		return
 	}
-	
+
 	var args []string
 	if t.mode == "named" && t.token != "" {
 		args = []string{"tunnel", "run", "--token", t.token}
@@ -120,10 +117,10 @@ func (t *TunnelManager) start() {
 		args = []string{"tunnel", "--url", fmt.Sprintf("http://localhost:%d", t.port)}
 		slog.Info("starting quick tunnel", "port", t.port)
 	}
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "cloudflared", args...)
-	
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.mu.Unlock()
@@ -131,7 +128,7 @@ func (t *TunnelManager) start() {
 		cancel()
 		return
 	}
-	
+
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		t.mu.Unlock()
@@ -139,21 +136,21 @@ func (t *TunnelManager) start() {
 		cancel()
 		return
 	}
-	
+
 	if err := cmd.Start(); err != nil {
 		t.mu.Unlock()
 		slog.Error("failed to start cloudflared", "error", err)
 		cancel()
 		return
 	}
-	
+
 	t.cmd = cmd
 	t.cancel = cancel
 	t.running = true
 	t.mu.Unlock()
-	
+
 	urlPattern := regexp.MustCompile(`https://[a-z0-9-]+\.trycloudflare\.com`)
-	
+
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
@@ -167,7 +164,7 @@ func (t *TunnelManager) start() {
 			}
 		}
 	}()
-	
+
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
@@ -181,7 +178,7 @@ func (t *TunnelManager) start() {
 			}
 		}
 	}()
-	
+
 	go func() {
 		err := cmd.Wait()
 		t.mu.Lock()
@@ -193,7 +190,7 @@ func (t *TunnelManager) start() {
 			slog.Info("cloudflared exited normally")
 		}
 	}()
-	
+
 	time.Sleep(5 * time.Second)
 }
 
@@ -201,19 +198,19 @@ func (t *TunnelManager) start() {
 func (t *TunnelManager) stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if !t.running {
 		return
 	}
-	
+
 	if t.cancel != nil {
 		t.cancel()
 	}
-	
+
 	if t.cmd != nil && t.cmd.Process != nil {
 		t.cmd.Process.Kill()
 	}
-	
+
 	t.running = false
 	t.url = ""
 	cfg.Set("tunnel_url", "")
@@ -224,10 +221,10 @@ func (t *TunnelManager) stop() {
 func (t *TunnelManager) restart() {
 	t.stop()
 	time.Sleep(500 * time.Millisecond)
-	
+
 	t.mode = cfg.Get("tunnel_mode", "quick")
 	t.domain = cfg.Get("tunnel_domain", "")
-	
+
 	enabled := cfg.Get("tunnel_enabled", "false") == "true"
 	if enabled {
 		go t.start()
@@ -267,9 +264,9 @@ func applyTunnelConfig() {
 	if tunnel == nil {
 		return
 	}
-	
+
 	enabled := cfg.Get("tunnel_enabled", "false") == "true"
-	
+
 	if !enabled && tunnel.IsRunning() {
 		slog.Info("tunnel disabled via config, stopping")
 		go tunnel.stop()
@@ -280,12 +277,12 @@ func applyTunnelConfig() {
 		// Check if mode or domain changed
 		newMode := cfg.Get("tunnel_mode", "quick")
 		newDomain := cfg.Get("tunnel_domain", "")
-		
+
 		tunnel.mu.Lock()
 		modeChanged := tunnel.mode != newMode
 		domainChanged := tunnel.domain != newDomain
 		tunnel.mu.Unlock()
-		
+
 		if modeChanged || domainChanged {
 			slog.Info("tunnel config changed, restarting", "mode", newMode, "domain", newDomain)
 			go tunnel.restart()
@@ -344,7 +341,7 @@ func (b *DomainBinder) createTunnelViaAPI(ctx context.Context, tunnelName string
 	// P0-5: include account_id in API URL
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/tunnels", b.accountID)
 	body := map[string]string{"name": tunnelName, "tunnel_secret": ""}
-	
+
 	// Generate a random tunnel secret
 	secret := make([]byte, 32)
 	rand.Read(secret)
@@ -402,7 +399,7 @@ func (b *DomainBinder) configureTunnel(ctx context.Context, tunnelID, localAddr 
 	}
 	// P0-5: include account_id in API URL
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/tunnels/%s/configurations", b.accountID, tunnelID)
-	
+
 	config := map[string]any{
 		"ingress": []map[string]string{
 			{
@@ -451,7 +448,7 @@ func (b *DomainBinder) configureTunnel(ctx context.Context, tunnelID, localAddr 
 // createDNSRecord creates a CNAME record pointing to the tunnel
 func (b *DomainBinder) createDNSRecord(ctx context.Context, zoneID, domain, tunnelID string) error {
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records", zoneID)
-	
+
 	body := map[string]string{
 		"type":    "CNAME",
 		"name":    domain,
@@ -680,10 +677,10 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	slog.Info("domain binding complete", "domain", body.Domain, "tunnel_id", tunnelInfo.ID, "account_id", accountID)
 
 	writeJSON(w, 200, map[string]any{
-		"success":   true,
-		"domain":    body.Domain,
+		"success":    true,
+		"domain":     body.Domain,
 		"public_url": publicURL,
-		"tunnel_id": tunnelInfo.ID,
+		"tunnel_id":  tunnelInfo.ID,
 		"account_id": accountID,
 	})
 }
@@ -726,7 +723,6 @@ func handleUnbindDomain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"success": true, "message": "domain unbound, switched to quick tunnel"})
 }
 
-
 func sanitizeDomain(d string) string {
 	d = strings.ToLower(d)
 	d = strings.ReplaceAll(d, ".", "-")
@@ -747,26 +743,26 @@ func handleBindIP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid request")
 		return
 	}
-	
+
 	if body.IP == "" {
 		writeError(w, 400, "IP is required")
 		return
 	}
-	
+
 	// Validate IP format (simple IPv4 check)
 	ipRegex := regexp.MustCompile(`^(\d{1,3}\.){3}\d{1,3}$`)
 	if !ipRegex.MatchString(body.IP) {
 		writeError(w, 400, "invalid IP format")
 		return
 	}
-	
+
 	if body.Port == "" {
 		body.Port = "8000"
 	}
-	
+
 	// Construct the URL
 	url := fmt.Sprintf("http://%s:%s/v1", body.IP, body.Port)
-	
+
 	// Save to config (only bound_ip, don't touch tunnel_domain)
 	cfg.Set("bound_ip", body.IP)
 	cfg.Set("bound_port", body.Port)
@@ -774,22 +770,22 @@ func handleBindIP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "failed to save config")
 		return
 	}
-	
+
 	// Update network addresses
 	if netMgr != nil {
 		netMgr.mu.Lock()
 		netMgr.config.Addresses = []string{url}
 		netMgr.config.LastAddressUpdate = time.Now().Format(time.RFC3339)
 		netMgr.mu.Unlock()
-		
+
 		// Re-register in route table
 		if netMgr.config.NodeID != "" {
 			routeTable.Put(netMgr.config.NodeID, netMgr.config.NodeName, []string{url})
 		}
 	}
-	
+
 	slog.Info("IP bound successfully", "ip", body.IP, "port", body.Port, "url", url)
-	
+
 	writeJSON(w, 200, map[string]interface{}{
 		"success": true,
 		"url":     url,
@@ -804,14 +800,13 @@ func handleUnbindIP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "failed to save config")
 		return
 	}
-	
+
 	slog.Info("IP unbound successfully")
-	
+
 	writeJSON(w, 200, map[string]interface{}{
 		"success": true,
 	})
 }
-
 
 // detectExternalSSHTunnel detects running SSH tunnels and returns the URL
 func detectExternalSSHTunnel() string {
@@ -867,13 +862,13 @@ func detectExternalSSHTunnel() string {
 // handleGetAddresses returns all available addresses for the node
 func handleGetAddresses(w http.ResponseWriter, r *http.Request) {
 	port := cfg.Get("service_port", "8000")
-	
+
 	result := map[string]interface{}{
 		"tunnel_url":    "",
 		"public_ip_url": "",
 		"lan_url":       "",
 	}
-	
+
 	// 1. 随机隧道地址 - 优先从 config 获取，其次检测外部 SSH 隧道
 	tunnelURL := cfg.Get("tunnel_url", "")
 	if tunnelURL == "" {
@@ -891,13 +886,13 @@ func handleGetAddresses(w http.ResponseWriter, r *http.Request) {
 		}
 		result["tunnel_url"] = tunnelURL
 	}
-	
+
 	// 2. 固定公网IP地址
 	publicIP := detectPublicIP()
 	if publicIP != "" {
 		result["public_ip_url"] = fmt.Sprintf("http://%s:%s/v1", publicIP, port)
 	}
-	
+
 	// 3. 局域网地址
 	lanIP := cfg.Get("lan_ip", "")
 	if lanIP == "" {
@@ -907,7 +902,7 @@ func handleGetAddresses(w http.ResponseWriter, r *http.Request) {
 	if lanIP != "" {
 		result["lan_url"] = fmt.Sprintf("http://%s:%s/v1", lanIP, port)
 	}
-	
+
 	writeJSON(w, 200, result)
 }
 

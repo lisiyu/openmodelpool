@@ -26,12 +26,12 @@ type ReputationManager struct {
 
 type NodeReputation struct {
 	NodeID         string      `json:"node_id"`
-	Availability   float64     `json:"availability"`   // 0-100, EWMA
-	Latency        float64     `json:"latency"`        // 0-100, EWMA
-	Accuracy       float64     `json:"accuracy"`       // 0-100, EWMA
-	PeerScores     []PeerScore `json:"peer_scores"`    // scores from other nodes
-	OverallScore   float64     `json:"overall_score"`  // weighted composite
-	Grade          string      `json:"grade"`          // S/A/B/C/D
+	Availability   float64     `json:"availability"`  // 0-100, EWMA
+	Latency        float64     `json:"latency"`       // 0-100, EWMA
+	Accuracy       float64     `json:"accuracy"`      // 0-100, EWMA
+	PeerScores     []PeerScore `json:"peer_scores"`   // scores from other nodes
+	OverallScore   float64     `json:"overall_score"` // weighted composite
+	Grade          string      `json:"grade"`         // S/A/B/C/D
 	LastUpdated    string      `json:"last_updated"`
 	TotalRequests  int64       `json:"total_requests"`
 	FailedRequests int64       `json:"failed_requests"`
@@ -39,8 +39,6 @@ type NodeReputation struct {
 }
 
 const repEwmaAlpha = 0.3
-
-var repMgr *ReputationManager
 
 func initReputation(dataDir string) {
 	repMgr = &ReputationManager{

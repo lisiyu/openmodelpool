@@ -70,12 +70,6 @@ type HeartbeatRegionInfo struct {
 	Longitude float64
 }
 
-// regionManager is the process-wide RegionManager instance. It is wired up by
-// initRegionManager() (see stubs.go) during startup. Every access site must
-// nil-check it, because it stays nil in personal mode or if initialization
-// failed — the region endpoints then degrade to safe empty responses.
-var regionManager *RegionManager
-
 // RegionManager tracks node regions and provides region-based selection.
 type RegionManager struct {
 	mu     sync.RWMutex

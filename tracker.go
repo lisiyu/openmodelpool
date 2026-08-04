@@ -12,17 +12,17 @@ import (
 
 // Tracker records API usage with batched disk writes and EWMA latency cache.
 type Tracker struct {
-	mu           sync.RWMutex
-	records      []UsageRecord
-	dirtyCount   int
-	lastFlush    time.Time
-	ewmaCache    map[string]float64
-	dataPath     string
-	stopCh       chan struct{}
+	mu         sync.RWMutex
+	records    []UsageRecord
+	dirtyCount int
+	lastFlush  time.Time
+	ewmaCache  map[string]float64
+	dataPath   string
+	stopCh     chan struct{}
 
-	reqLogMu     sync.RWMutex
-	reqLog       []RequestLogEntry
-	reqLogMax    int
+	reqLogMu  sync.RWMutex
+	reqLog    []RequestLogEntry
+	reqLogMax int
 
 	alertThresholds []float64
 	alertedTokens   map[string]map[float64]bool
@@ -31,23 +31,21 @@ type Tracker struct {
 }
 
 const (
-	trackerFlushInterval = 3 * time.Second
+	trackerFlushInterval  = 3 * time.Second
 	trackerFlushThreshold = 50
-	trackerMaxRecords    = 5000
-	ewmaAlpha            = 0.3
+	trackerMaxRecords     = 5000
+	ewmaAlpha             = 0.3
 )
-
-var tracker *Tracker
 
 func initTracker(path string) {
 	tracker = &Tracker{
-		dataPath:            path,
-		ewmaCache:           make(map[string]float64),
-		lastFlush:           time.Now(),
-		stopCh:              make(chan struct{}),
-		reqLogMax:           1000,
-		alertThresholds:     []float64{0.8, 0.9, 1.0},
-		alertedTokens:       make(map[string]map[float64]bool),
+		dataPath:             path,
+		ewmaCache:            make(map[string]float64),
+		lastFlush:            time.Now(),
+		stopCh:               make(chan struct{}),
+		reqLogMax:            1000,
+		alertThresholds:      []float64{0.8, 0.9, 1.0},
+		alertedTokens:        make(map[string]map[float64]bool),
 		tokenUsageByProvider: make(map[string]int64),
 	}
 	tracker.load()
@@ -158,7 +156,7 @@ func (t *Tracker) RecordWithRetry(providerID, providerName, model string, prompt
 		LatencyMS:        round1(latencyMS),
 		Success:          success,
 		Error:            errMsg,
-		AccessType:        accessType,
+		AccessType:       accessType,
 	}
 
 	t.mu.Lock()
@@ -391,8 +389,8 @@ func (t *Tracker) ProviderStats(days int) map[string]map[string]any {
 		lastReq                                      string
 		providerName                                 string
 		// Per access type
-		privReqs, pubReqs, guestReqs                int
-		privTokens, pubTokens, guestTokens           int
+		privReqs, pubReqs, guestReqs       int
+		privTokens, pubTokens, guestTokens int
 	}
 	stats := make(map[string]*agg)
 
@@ -410,7 +408,9 @@ func (t *Tracker) ProviderStats(days int) map[string]map[string]any {
 			s.providerName = r.ProviderName
 		}
 		s.count++
-		if r.Success { s.success++ }
+		if r.Success {
+			s.success++
+		}
 		s.promptTok += r.PromptTokens
 		s.compTok += r.CompletionTokens
 		s.totalTok += r.TotalTokens
@@ -418,8 +418,12 @@ func (t *Tracker) ProviderStats(days int) map[string]map[string]any {
 		if r.LatencyMS > 0 {
 			s.latSum += r.LatencyMS
 			s.latCount++
-			if r.LatencyMS < s.minLat { s.minLat = r.LatencyMS }
-			if r.LatencyMS > s.maxLat { s.maxLat = r.LatencyMS }
+			if r.LatencyMS < s.minLat {
+				s.minLat = r.LatencyMS
+			}
+			if r.LatencyMS > s.maxLat {
+				s.maxLat = r.LatencyMS
+			}
 		}
 		s.lastReq = r.Timestamp
 		// Per access type
@@ -439,11 +443,17 @@ func (t *Tracker) ProviderStats(days int) map[string]map[string]any {
 	out := make(map[string]map[string]any)
 	for pid, s := range stats {
 		avgLat := 0.0
-		if s.latCount > 0 { avgLat = s.latSum / float64(s.latCount) }
+		if s.latCount > 0 {
+			avgLat = s.latSum / float64(s.latCount)
+		}
 		minLat := s.minLat
-		if minLat == 1e18 { minLat = 0 }
+		if minLat == 1e18 {
+			minLat = 0
+		}
 		succRate := 0.0
-		if s.count > 0 { succRate = float64(s.success) / float64(s.count) * 100 }
+		if s.count > 0 {
+			succRate = float64(s.success) / float64(s.count) * 100
+		}
 
 		out[pid] = map[string]any{
 			"provider_id":     pid,
@@ -492,10 +502,14 @@ func (t *Tracker) Reset() {
 }
 
 func round1(f float64) float64 {
-	if f < 0 { return 0 }
+	if f < 0 {
+		return 0
+	}
 	return float64(int(f*10+0.5)) / 10
 }
 func round4(f float64) float64 {
-	if f < 0 { return 0 }
+	if f < 0 {
+		return 0
+	}
 	return float64(int(f*10000+0.5)) / 10000
 }

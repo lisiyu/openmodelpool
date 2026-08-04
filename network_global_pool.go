@@ -63,8 +63,6 @@ type GlobalPool struct {
 	dataPath    string
 }
 
-var globalPool *GlobalPool
-
 // ============================================================
 // Global Pool Configuration
 // ============================================================
@@ -695,9 +693,6 @@ type IPUsageTracker struct {
 	HourlyUsed int64     `json:"hourly_used"`
 	LastReset  time.Time `json:"last_reset"`
 }
-
-// publicQuota is the global instance for public key quota tracking.
-var publicQuota *PublicKeyQuota
 
 // initPublicKeyQuota initializes the four-layer quota system.
 func initPublicKeyQuota() {

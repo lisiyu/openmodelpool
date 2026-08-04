@@ -82,9 +82,6 @@ type WAFEngine struct {
 const wafDefaultMaxViolations = 1000
 const wafIPLimitersMaxEntries = 10000
 
-// wafEngine is the package-global singleton, initialized by initWAF.
-var wafEngine *WAFEngine
-
 // initWAF creates the engine and loads configuration. It replaces the previous
 // no-op stub so WAF is actually wired into the proxy path.
 func initWAF(dataDir string) {

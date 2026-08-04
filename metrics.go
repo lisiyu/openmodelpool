@@ -14,18 +14,16 @@ import (
 // Metrics collects and exposes Prometheus-compatible metrics.
 // Uses a lightweight implementation without the prometheus client library.
 type Metrics struct {
-	mu             sync.RWMutex
-	requestTotal   atomic.Int64
-	requestErrors  atomic.Int64
-	requestByModel map[string]*atomic.Int64
+	mu                sync.RWMutex
+	requestTotal      atomic.Int64
+	requestErrors     atomic.Int64
+	requestByModel    map[string]*atomic.Int64
 	requestByProvider map[string]*atomic.Int64
-	latencySum     map[string]*atomic.Int64 // provider -> sum of latencies in ms
-	latencyCount   map[string]*atomic.Int64 // provider -> count
-	tokenUsage     atomic.Int64
-	startTime      time.Time
+	latencySum        map[string]*atomic.Int64 // provider -> sum of latencies in ms
+	latencyCount      map[string]*atomic.Int64 // provider -> count
+	tokenUsage        atomic.Int64
+	startTime         time.Time
 }
-
-var metrics *Metrics
 
 func initMetrics() {
 	metrics = &Metrics{

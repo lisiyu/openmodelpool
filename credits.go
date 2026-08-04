@@ -21,14 +21,14 @@ import (
 // QuotaAllocation defines how a node splits its resources.
 type QuotaAllocation struct {
 	GuestKeyPercent  int `json:"guest_key_percent"`  // 0-100, 贡献给 Guest Key Pool 的比例
-	PublicKeyPercent   int `json:"public_key_percent"` // 100 - GuestKeyPercent, 贡献给 Public Key Pool 的比例
+	PublicKeyPercent int `json:"public_key_percent"` // 100 - GuestKeyPercent, 贡献给 Public Key Pool 的比例
 }
 
 // DefaultQuotaAllocation returns the default allocation (50/50).
 func DefaultQuotaAllocation() QuotaAllocation {
 	return QuotaAllocation{
-		GuestKeyPercent: 50,
-		PublicKeyPercent:  50,
+		GuestKeyPercent:  50,
+		PublicKeyPercent: 50,
 	}
 }
 
@@ -37,14 +37,12 @@ func DefaultQuotaAllocation() QuotaAllocation {
 // ============================================================
 
 type AllocationManager struct {
-	mu          sync.RWMutex
-	config      QuotaAllocation
-	dataDir     string
-	usedGuest   int64 // tokens used via Guest Keys this period
-	usedPublic  int64 // tokens used via Public Keys this period
+	mu         sync.RWMutex
+	config     QuotaAllocation
+	dataDir    string
+	usedGuest  int64 // tokens used via Guest Keys this period
+	usedPublic int64 // tokens used via Public Keys this period
 }
-
-var allocMgr *AllocationManager
 
 func initAllocationManager(dataDir string) {
 	allocMgr = &AllocationManager{
@@ -123,8 +121,8 @@ func (am *AllocationManager) save() {
 type rawQuotaAllocation struct {
 	GuestKeyPercent     *int `json:"guest_key_percent"`
 	PublicKeyPercent    *int `json:"public_key_percent"`
-	FreeConsumerPercent *int `json:"free_consumer_percent"`     // v3 legacy
-	NetworkNodePercent  *int `json:"network_node_percent"`      // v3 legacy
+	FreeConsumerPercent *int `json:"free_consumer_percent"` // v3 legacy
+	NetworkNodePercent  *int `json:"network_node_percent"`  // v3 legacy
 }
 
 func (am *AllocationManager) load() {

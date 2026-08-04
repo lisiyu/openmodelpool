@@ -19,8 +19,8 @@ package main
 // library and existing internal helpers are used.
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -161,9 +161,6 @@ type UpdateManager struct {
 	githubURL    string
 	downloadHash string
 }
-
-// Global singleton, initialized in initAllFederation().
-var updateManager *UpdateManager
 
 const (
 	updateStatusFile  = "update_status.json"

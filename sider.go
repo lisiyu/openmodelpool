@@ -15,8 +15,6 @@ type SiderMonitor struct {
 	filePath string
 }
 
-var siderMon *SiderMonitor
-
 func initSiderMonitor(path string) {
 	siderMon = &SiderMonitor{filePath: path}
 	siderMon.load()

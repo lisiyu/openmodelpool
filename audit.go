@@ -15,8 +15,8 @@ import (
 // B161: Audit trail for all administrative operations.
 
 const (
-	auditMaxFileSize  = 10 * 1024 * 1024 // 10 MB max per log file
-	auditMaxRotated   = 5                 // keep at most 5 rotated files
+	auditMaxFileSize = 10 * 1024 * 1024 // 10 MB max per log file
+	auditMaxRotated  = 5                // keep at most 5 rotated files
 )
 
 type AuditLogger struct {
@@ -26,8 +26,6 @@ type AuditLogger struct {
 	path       string
 	webhookURL string // optional remote webhook for real-time audit forwarding
 }
-
-var auditLog *AuditLogger
 
 func initAuditLog() {
 	dataDir := "data"

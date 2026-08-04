@@ -135,9 +135,6 @@ type AlgorithmGovernor struct {
 	dataDir   string
 }
 
-// governor is the package-level governance store, wired in initCore().
-var governor *AlgorithmGovernor
-
 const algorithmGovernanceFile = "algorithm_proposals.json"
 
 // initAlgorithmGovernance creates the global governor, restores any persisted

@@ -20,23 +20,21 @@ import (
 
 // OpenKeyQuotaManager handles dynamic quota calculation.
 type OpenKeyQuotaManager struct {
-	mu            sync.RWMutex
-	chain         *AlgorithmChain
-	quotaCache    map[string]*QuotaInfo // nodeID -> cached quota
-	lastRefresh   time.Time
+	mu          sync.RWMutex
+	chain       *AlgorithmChain
+	quotaCache  map[string]*QuotaInfo // nodeID -> cached quota
+	lastRefresh time.Time
 }
 
 // QuotaInfo holds the computed quota for a node.
 type QuotaInfo struct {
-	NodeID           string  `json:"node_id"`
-	GlobalQuota      int64   `json:"global_quota"`
-	UserQuota        int64   `json:"user_quota"`
-	ReputationShare  float64 `json:"reputation_share"`
+	NodeID            string  `json:"node_id"`
+	GlobalQuota       int64   `json:"global_quota"`
+	UserQuota         int64   `json:"user_quota"`
+	ReputationShare   float64 `json:"reputation_share"`
 	ContributionShare float64 `json:"contribution_share"`
-	LastUpdated      string  `json:"last_updated"`
+	LastUpdated       string  `json:"last_updated"`
 }
-
-var quotaMgr *OpenKeyQuotaManager
 
 // initQuotaManager creates the quota manager and starts auto-refresh.
 func initQuotaManager(chain *AlgorithmChain) {
@@ -207,7 +205,6 @@ func (m *OpenKeyQuotaManager) RefreshAllQuotas() {
 	}
 	netMgr.mu.RUnlock()
 
-
 	for _, nodeID := range nodes {
 		m.CalculateUserQuota(nodeID)
 	}
@@ -311,13 +308,13 @@ func handleOpenKeyQuota(w http.ResponseWriter, r *http.Request) {
 	globalQuota := quotaMgr.CalculateGlobalQuota()
 
 	writeJSON(w, 200, map[string]any{
-		"node_id":             quotaInfo.NodeID,
-		"global_quota":        globalQuota,
-		"user_quota":          quotaInfo.UserQuota,
-		"reputation_share":    quotaInfo.ReputationShare,
-		"contribution_share":  quotaInfo.ContributionShare,
-		"algorithm_params":    algoChain.GetCurrentParams(),
-		"last_updated":        quotaInfo.LastUpdated,
+		"node_id":            quotaInfo.NodeID,
+		"global_quota":       globalQuota,
+		"user_quota":         quotaInfo.UserQuota,
+		"reputation_share":   quotaInfo.ReputationShare,
+		"contribution_share": quotaInfo.ContributionShare,
+		"algorithm_params":   algoChain.GetCurrentParams(),
+		"last_updated":       quotaInfo.LastUpdated,
 	})
 }
 

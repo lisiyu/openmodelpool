@@ -27,9 +27,9 @@ import (
 type KeyType string
 
 const (
-	KeyTypeProxy   KeyType = "proxy"   // sk-{random} — node operator's key
-	KeyTypeGuest   KeyType = "guest"   // sk-guest-{node_id}-{random}
-	KeyTypePublic  KeyType = "public"  // sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1 — fixed global constant
+	KeyTypeProxy   KeyType = "proxy"  // sk-{random} — node operator's key
+	KeyTypeGuest   KeyType = "guest"  // sk-guest-{node_id}-{random}
+	KeyTypePublic  KeyType = "public" // sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1 — fixed global constant
 	KeyTypeUnknown KeyType = "unknown"
 )
 
@@ -60,19 +60,19 @@ func ClassifyKey(key string) KeyType {
 
 // GuestKeyRecord stores information about an issued guest key.
 type GuestKeyRecord struct {
-	Key        string `json:"key"`
-	NodeID     string `json:"node_id"`     // issuer node ID
-	RandomPart string `json:"random_part"` // the random portion after node_id
-	IssuedAt   string `json:"issued_at"`
-	Revoked    bool   `json:"revoked"`
+	Key             string `json:"key"`
+	NodeID          string `json:"node_id"`     // issuer node ID
+	RandomPart      string `json:"random_part"` // the random portion after node_id
+	IssuedAt        string `json:"issued_at"`
+	Revoked         bool   `json:"revoked"`
 	Quota           int64  `json:"quota,omitempty"`             // 每日额度上限 (0=不限，仅约束访问本节点自身资源)
 	QuotaHourly     int64  `json:"quota_hourly,omitempty"`      // 每小时额度上限 (0=不限)
 	QuotaPerRequest int64  `json:"quota_per_request,omitempty"` // 单次请求上限 (0=不限)
 	RPM             int    `json:"rpm,omitempty"`               // 每分钟请求数限制 (0=不限)
-	ExpDays    int    `json:"exp_days,omitempty"`    // validity in days (0=never expires)
-	ExpiresAt  string `json:"expires_at,omitempty"`  // expiry timestamp
-	Note       string `json:"note,omitempty"`        // optional note/label
-	ShareType  string `json:"share_type,omitempty"`  // consumer, collaborator, or empty (unlocked)
+	ExpDays         int    `json:"exp_days,omitempty"`          // validity in days (0=never expires)
+	ExpiresAt       string `json:"expires_at,omitempty"`        // expiry timestamp
+	Note            string `json:"note,omitempty"`              // optional note/label
+	ShareType       string `json:"share_type,omitempty"`        // consumer, collaborator, or empty (unlocked)
 }
 
 // GuestKeyStore manages all guest keys issued by this node.
@@ -81,8 +81,6 @@ type GuestKeyStore struct {
 	keys     []*GuestKeyRecord
 	dataPath string
 }
-
-var guestKeyStore *GuestKeyStore
 
 func initGuestKeyStore(dataDir string) {
 	guestKeyStore = &GuestKeyStore{
@@ -127,12 +125,12 @@ func (gks *GuestKeyStore) save() {
 
 // GuestKeyOptions contains optional parameters for generating a guest key.
 type GuestKeyOptions struct {
-	Quota           int64 // 每日额度上限 (0=不限)
-	QuotaHourly     int64 // 每小时额度上限 (0=不限)
-	QuotaPerRequest int64 // 单次请求上限 (0=不限)
-	RPM             int   // 每分钟请求数限制 (0=不限)
-	ExpDays int    // validity in days (0=never expires)
-	Note    string // optional note/label
+	Quota           int64  // 每日额度上限 (0=不限)
+	QuotaHourly     int64  // 每小时额度上限 (0=不限)
+	QuotaPerRequest int64  // 单次请求上限 (0=不限)
+	RPM             int    // 每分钟请求数限制 (0=不限)
+	ExpDays         int    // validity in days (0=never expires)
+	Note            string // optional note/label
 }
 
 // GenerateGuestKey creates a new guest key for the given node.
@@ -242,7 +240,6 @@ func ValidateGuestKey(key string) (nodeID string, valid bool) {
 	return "", false
 }
 
-
 // GetGuestKeyAccessPublicPool checks if a guest key can access the public pool.
 // Returns: nodeID, accessPublicPool flag, and whether the key is valid.
 //
@@ -273,12 +270,13 @@ func GetGuestKeyAccessPublicPool(key string) (nodeID string, accessPublicPool bo
 				if netMgr != nil && netMgr.IsSharedMode() {
 					return rec.NodeID, true, true
 				}
-				return rec.NodeID, false, true  // personal mode: guest keys cannot access public pool
+				return rec.NodeID, false, true // personal mode: guest keys cannot access public pool
 			}
 		}
 	}
 	return "", false, false
 }
+
 // RevokeGuestKey marks a guest key as revoked.
 func (gks *GuestKeyStore) RevokeGuestKey(key string) error {
 	gks.mu.Lock()
@@ -405,10 +403,18 @@ func (gks *GuestKeyStore) UpdateGuestKeyQuotaMulti(key string, quota *int64, quo
 	defer gks.mu.Unlock()
 	for _, rec := range gks.keys {
 		if rec.Key == key {
-			if quota != nil { rec.Quota = *quota }
-			if quotaHourly != nil { rec.QuotaHourly = *quotaHourly }
-			if quotaPerRequest != nil { rec.QuotaPerRequest = *quotaPerRequest }
-			if rpm != nil { rec.RPM = *rpm }
+			if quota != nil {
+				rec.Quota = *quota
+			}
+			if quotaHourly != nil {
+				rec.QuotaHourly = *quotaHourly
+			}
+			if quotaPerRequest != nil {
+				rec.QuotaPerRequest = *quotaPerRequest
+			}
+			if rpm != nil {
+				rec.RPM = *rpm
+			}
 			gks.doSaveLocked()
 			slog.Info("updated guest key quota dimensions", "key_prefix", key[:min(len(key), 30)]+"...")
 			return nil
@@ -426,8 +432,6 @@ type guestKeyUsageTracker struct {
 	mu    sync.Mutex
 	usage map[string]int64 // key -> tokens used
 }
-
-var guestKeyUsage *guestKeyUsageTracker
 
 func initGuestKeyUsageTracker() {
 	guestKeyUsage = &guestKeyUsageTracker{
@@ -696,10 +700,18 @@ func handleGuestKeyUpdateQuota(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := map[string]any{"status": "updated"}
-	if body.Quota != nil { result["quota"] = *body.Quota }
-	if body.QuotaHourly != nil { result["quota_hourly"] = *body.QuotaHourly }
-	if body.QuotaPerRequest != nil { result["quota_per_request"] = *body.QuotaPerRequest }
-	if body.RPM != nil { result["rpm"] = *body.RPM }
+	if body.Quota != nil {
+		result["quota"] = *body.Quota
+	}
+	if body.QuotaHourly != nil {
+		result["quota_hourly"] = *body.QuotaHourly
+	}
+	if body.QuotaPerRequest != nil {
+		result["quota_per_request"] = *body.QuotaPerRequest
+	}
+	if body.RPM != nil {
+		result["rpm"] = *body.RPM
+	}
 	writeJSON(w, 200, result)
 }
 
@@ -754,8 +766,8 @@ func handleNetworkKeyValidate(w http.ResponseWriter, r *http.Request) {
 func handleGetQuotaAllocation(w http.ResponseWriter, r *http.Request) {
 	if netMgr == nil {
 		writeJSON(w, 200, map[string]any{
-			"guest_key_percent": 50,
-			"public_key_percent":  50,
+			"guest_key_percent":  50,
+			"public_key_percent": 50,
 		})
 		return
 	}
@@ -765,8 +777,8 @@ func handleGetQuotaAllocation(w http.ResponseWriter, r *http.Request) {
 	netMgr.mu.RUnlock()
 
 	writeJSON(w, 200, map[string]any{
-		"guest_key_percent": alloc.GuestKeyPercent,
-		"public_key_percent":  alloc.PublicKeyPercent,
+		"guest_key_percent":  alloc.GuestKeyPercent,
+		"public_key_percent": alloc.PublicKeyPercent,
 	})
 }
 
@@ -797,8 +809,7 @@ func handleUpdateQuotaAllocation(w http.ResponseWriter, r *http.Request) {
 	netMgr.doSave()
 
 	writeJSON(w, 200, map[string]any{
-		"guest_key_percent": body.GuestKeyPercent,
-		"public_key_percent":  100 - body.GuestKeyPercent,
+		"guest_key_percent":  body.GuestKeyPercent,
+		"public_key_percent": 100 - body.GuestKeyPercent,
 	})
 }
-

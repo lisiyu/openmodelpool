@@ -176,8 +176,6 @@ type quotaPriorityManager struct {
 	remoteLimit  int64
 }
 
-var quotaPriorityMgr *quotaPriorityManager
-
 // initQuotaPriority initializes the cross-pool priority manager from config.
 // Safe to call at any time: it only reads cfg when present.
 func initQuotaPriority() {

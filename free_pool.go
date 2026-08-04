@@ -34,13 +34,13 @@ type FreePoolManager struct {
 
 // FreePoolStats holds sync status information for the admin UI.
 type FreePoolStats struct {
-	LastSync        string                `json:"last_sync"`
-	SourceURL       string                `json:"source_url"`
-	SourceUpdated   string                `json:"source_updated"`
-	TotalProviders  int                   `json:"total_providers"`
-	TotalModels     int                   `json:"total_models"`
-	ActiveProviders int                   `json:"active_providers"`
-	AutoSync        bool                  `json:"auto_sync"`
+	LastSync        string                 `json:"last_sync"`
+	SourceURL       string                 `json:"source_url"`
+	SourceUpdated   string                 `json:"source_updated"`
+	TotalProviders  int                    `json:"total_providers"`
+	TotalModels     int                    `json:"total_models"`
+	ActiveProviders int                    `json:"active_providers"`
+	AutoSync        bool                   `json:"auto_sync"`
 	Providers       []FreePoolProviderInfo `json:"providers"`
 }
 
@@ -55,8 +55,6 @@ type FreePoolProviderInfo struct {
 	APIKeyURL  string `json:"api_key_url,omitempty"`
 	Country    string `json:"country,omitempty"`
 }
-
-var freePool *FreePoolManager
 
 // ---- data.json structs (awesome-free-llm-apis) ----
 
@@ -187,16 +185,16 @@ func (f *FreePoolManager) Sync() error {
 
 		// Build provider
 		provider := Provider{
-			ID:       providerID,
-			Name:     fmt.Sprintf("%s %s (免费)", ap.Flag, ap.Name),
-			Type:     "openai_compatible",
-			BaseURL:  baseURL,
-			Enabled:  enabled,
-			Models:   models,
-			Priority: freePoolPriority,
+			ID:          providerID,
+			Name:        fmt.Sprintf("%s %s (免费)", ap.Flag, ap.Name),
+			Type:        "openai_compatible",
+			BaseURL:     baseURL,
+			Enabled:     enabled,
+			Models:      models,
+			Priority:    freePoolPriority,
 			Description: ap.Description,
-			Icon:     "free",
-			APIKeyURL: ap.URL,
+			Icon:        "free",
+			APIKeyURL:   ap.URL,
 			AccessControl: ProviderAccessControl{
 				ShareToPool: true,
 			},

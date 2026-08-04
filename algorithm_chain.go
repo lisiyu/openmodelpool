@@ -50,9 +50,6 @@ func (c *AlgorithmChain) UpdateParams(p AlgorithmParams) {
 	c.params = p
 }
 
-// algoChain is the package-level chain used by the quota/balance engines.
-var algoChain *AlgorithmChain
-
 // initAlgorithmChain initializes the global algoChain. The dataDir argument is
 // accepted for forward compatibility (future on-disk persistence of params).
 func initAlgorithmChain(dataDir string) {

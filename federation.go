@@ -111,11 +111,11 @@ func isTrustedSeed(r *http.Request) bool {
 
 // FederationManager manages this node's participation in the federation.
 type FederationManager struct {
-	mu         sync.RWMutex
-	trustPool  TrustPool
-	localPeers map[string]*NodeInfo
+	mu             sync.RWMutex
+	trustPool      TrustPool
+	localPeers     map[string]*NodeInfo
 	discoveryHints map[string][]string
-	dht        *DHT
+	dht            *DHT
 	enabled        bool
 	relayEnabled   bool
 	loopRunning    bool
@@ -123,8 +123,6 @@ type FederationManager struct {
 	stopCh         chan struct{}
 	lastETag       string
 }
-
-var fed *FederationManager
 
 // initFederation loads federation config from cfg, loads cached trust pool from
 // dataDir/federation_pool.json, and prepares the manager. It does NOT start the

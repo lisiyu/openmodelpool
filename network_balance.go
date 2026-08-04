@@ -36,20 +36,20 @@ type NodeBalance struct {
 type GlobalBalance struct {
 	TotalNetworkContribution int64   `json:"total_network_contribution"`
 	TotalNetworkConsumption  int64   `json:"total_network_consumption"`
-	NetworkBalanceRatio      float64 `json:"network_balance_ratio"`  // total contrib / total consumed
+	NetworkBalanceRatio      float64 `json:"network_balance_ratio"` // total contrib / total consumed
 	AverageNodeBalance       float64 `json:"average_node_balance"`
-	ImbalanceNodes           int     `json:"imbalance_nodes"`        // count of nodes with ratio < 0.5 or > 3.0
+	ImbalanceNodes           int     `json:"imbalance_nodes"` // count of nodes with ratio < 0.5 or > 3.0
 }
 
 // BalanceConfig controls the balance engine behavior.
 type BalanceConfig struct {
-	TargetRatio              float64 `json:"target_ratio"`                // target contrib/consumed ratio (default 1.0)
-	UnderConsumerThreshold   float64 `json:"under_consumer_threshold"`    // below this = over-consumer (0.5)
-	OverContributorThreshold float64 `json:"over_contributor_threshold"`  // above this = over-contributor (3.0)
-	AdjustmentStrength       float64 `json:"adjustment_strength"`         // 0-1, how aggressively to adjust (0.3)
-	QuotaAdjustment          bool    `json:"quota_adjustment"`            // enable quota modulation
-	PriorityAdjustment       bool    `json:"priority_adjustment"`         // enable priority modulation
-	RoutingPreference        bool    `json:"routing_preference"`          // enable routing weight modulation
+	TargetRatio              float64 `json:"target_ratio"`               // target contrib/consumed ratio (default 1.0)
+	UnderConsumerThreshold   float64 `json:"under_consumer_threshold"`   // below this = over-consumer (0.5)
+	OverContributorThreshold float64 `json:"over_contributor_threshold"` // above this = over-contributor (3.0)
+	AdjustmentStrength       float64 `json:"adjustment_strength"`        // 0-1, how aggressively to adjust (0.3)
+	QuotaAdjustment          bool    `json:"quota_adjustment"`           // enable quota modulation
+	PriorityAdjustment       bool    `json:"priority_adjustment"`        // enable priority modulation
+	RoutingPreference        bool    `json:"routing_preference"`         // enable routing weight modulation
 }
 
 // DefaultBalanceConfig returns sensible defaults.
@@ -68,7 +68,7 @@ func DefaultBalanceConfig() BalanceConfig {
 // BalanceAdjustment is the computed adjustment for a node.
 type BalanceAdjustment struct {
 	NodeID                  string  `json:"node_id"`
-	Type                    string  `json:"type"`                       // "reduce_priority", "boost_priority", "balanced"
+	Type                    string  `json:"type"` // "reduce_priority", "boost_priority", "balanced"
 	PriorityDelta           int     `json:"priority_delta"`
 	RoutingWeightMultiplier float64 `json:"routing_weight_multiplier"`
 	QuotaMultiplier         float64 `json:"quota_multiplier"`
@@ -78,10 +78,10 @@ type BalanceAdjustment struct {
 
 // BalanceHistory records a past balance cycle for audit.
 type BalanceHistory struct {
-	Timestamp    string                `json:"timestamp"`
-	GlobalSnap   GlobalBalance         `json:"global"`
-	Adjustments  []*BalanceAdjustment  `json:"adjustments"`
-	CycleDurationMS int64             `json:"cycle_duration_ms"`
+	Timestamp       string               `json:"timestamp"`
+	GlobalSnap      GlobalBalance        `json:"global"`
+	Adjustments     []*BalanceAdjustment `json:"adjustments"`
+	CycleDurationMS int64                `json:"cycle_duration_ms"`
 }
 
 // BalanceEngine is the main dynamic balance controller.
@@ -94,8 +94,6 @@ type BalanceEngine struct {
 	history     []BalanceHistory              // recent cycle history
 	stopCh      chan struct{}
 }
-
-var balanceEngine *BalanceEngine
 
 // initBalanceEngine creates and starts the balance engine.
 func initBalanceEngine() {

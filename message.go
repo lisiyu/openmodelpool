@@ -50,8 +50,6 @@ type MessageManager struct {
 	dataDir string
 }
 
-var msgMgr *MessageManager
-
 // initMessages creates the MessageManager and loads persisted messages from disk.
 func initMessages(dataDir string) {
 	msgMgr = &MessageManager{

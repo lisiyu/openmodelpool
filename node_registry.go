@@ -30,12 +30,6 @@ import (
 	"time"
 )
 
-// nodeRegistry is the package-level on-disk node registry. It is initialized in
-// initNetworkManager (via initNodeRegistry) right after the in-memory route table
-// is created. Every persistence helper below nil-checks it, so it is safe to call
-// before initialization (e.g. from unit tests that build a bare RouteTable).
-var nodeRegistry *NodeRegistry
-
 // safeNodeIDPattern matches Node IDs that are safe to use verbatim as a file name
 // component. Anything else is hashed (see registryFileName) to guarantee we never
 // write outside dir, preventing path traversal.
@@ -45,16 +39,16 @@ var safeNodeIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // mappable fields from RouteEntry / PeerInfo plus a persistence timestamp so the
 // cold-start loader can reconstruct a usable RouteEntry.
 type persistedNode struct {
-	NodeID         string   `json:"node_id"`
-	NodeName       string   `json:"node_name"`
-	Addresses      []string `json:"addresses"`
-	IsGateway      bool     `json:"is_gateway"`
-	IsSeed         bool     `json:"is_seed"`
-	Models         []string `json:"models"`
-	Status         string   `json:"status"`
-	LastSeenUnix   int64    `json:"last_seen_unix"`
-	LatencyMS      float64  `json:"latency_ms"`
-	PersistedAtUnix int64   `json:"persisted_at_unix"`
+	NodeID          string   `json:"node_id"`
+	NodeName        string   `json:"node_name"`
+	Addresses       []string `json:"addresses"`
+	IsGateway       bool     `json:"is_gateway"`
+	IsSeed          bool     `json:"is_seed"`
+	Models          []string `json:"models"`
+	Status          string   `json:"status"`
+	LastSeenUnix    int64    `json:"last_seen_unix"`
+	LatencyMS       float64  `json:"latency_ms"`
+	PersistedAtUnix int64    `json:"persisted_at_unix"`
 }
 
 // NodeRegistry manages per-node JSON files under a directory (.nodes/ by default).

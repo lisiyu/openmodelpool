@@ -24,8 +24,6 @@ type SSEEvent struct {
 	Time string `json:"time"`
 }
 
-var eventBus *EventBus
-
 func initEventBus() {
 	eventBus = &EventBus{
 		clients: make(map[string]chan SSEEvent),
@@ -180,7 +178,7 @@ func GetEventBusStats() map[string]any {
 	eventBus.mu.RLock()
 	defer eventBus.mu.RUnlock()
 	return map[string]any{
-		"enabled":        true,
+		"enabled":           true,
 		"connected_clients": len(eventBus.clients),
 	}
 }

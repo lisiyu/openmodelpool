@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-
 // ============================================================
 // Phase 4 — Dynamic Load Balancer with Health-Aware Routing
 // ============================================================
@@ -64,9 +63,9 @@ type LBConfig struct {
 	ContributionWeight float64 `json:"contribution_weight"`
 
 	// Legacy field names (backward compat — mapped in handler)
-	LoadWeight       float64 `json:"load_weight,omitempty"`
-	ErrorRateWeight  float64 `json:"error_rate_weight,omitempty"`
-	FairnessWeight   float64 `json:"fairness_weight,omitempty"`
+	LoadWeight      float64 `json:"load_weight,omitempty"`
+	ErrorRateWeight float64 `json:"error_rate_weight,omitempty"`
+	FairnessWeight  float64 `json:"fairness_weight,omitempty"`
 
 	// Operational parameters
 	HealthCheckInterval time.Duration `json:"health_check_interval"`
@@ -86,15 +85,12 @@ type RouteRequirements struct {
 type LoadBalancer struct {
 	mu sync.RWMutex
 
-	nodeMetrics map[string]*NodeMetrics
+	nodeMetrics  map[string]*NodeMetrics
 	routeHistory map[string]int64
-	config LBConfig
-	selfNodeID string
-	cancel context.CancelFunc
+	config       LBConfig
+	selfNodeID   string
+	cancel       context.CancelFunc
 }
-
-// lbInstance is the package-level singleton.
-var lbInstance *LoadBalancer
 
 // DefaultLBConfig returns sensible defaults.
 func DefaultLBConfig() LBConfig {
@@ -350,7 +346,6 @@ func (lb *LoadBalancer) getReputationScore(nodeID string) float64 {
 		}
 	}
 
-
 	// Unknown node — neutral
 	return 50.0
 }
@@ -596,11 +591,11 @@ func handleLBStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, 200, map[string]any{
-		"enabled":        true,
-		"total_nodes":    total,
-		"healthy_nodes":  healthy,
-		"config":         lbInstance.config,
-		"route_history":  len(lbInstance.routeHistory),
+		"enabled":       true,
+		"total_nodes":   total,
+		"healthy_nodes": healthy,
+		"config":        lbInstance.config,
+		"route_history": len(lbInstance.routeHistory),
 	})
 }
 
