@@ -631,6 +631,47 @@ func (um *UpdateManager) fetchChecksum(url string) (string, error) {
 	return parts[0], nil
 }
 
+// fetchSignature downloads a .sig file containing the Ed25519 signature of
+// the release binary. The signature file is a base64-encoded raw Ed25519
+// signature (64 bytes). Returns an error if the .sig file is not available
+// (for backward compatibility with releases that don't include signatures).
+func (um *UpdateManager) fetchSignature(url string) ([]byte, error) {
+	client := GetSharedHTTPClient()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create signature request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch signature: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("signature file not found (release may predate Ed25519 signing)")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("signature HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256))
+	if err != nil {
+		return nil, fmt.Errorf("read signature response: %w", err)
+	}
+
+	// Signature is base64-encoded raw Ed25519 signature
+	sig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(body)))
+	if err != nil {
+		// Try raw bytes if not base64
+		sig = body
+	}
+	if len(sig) != ed25519.SignatureSize {
+		return nil, fmt.Errorf("invalid signature size: got %d, want %d", len(sig), ed25519.SignatureSize)
+	}
+
+	return sig, nil
+}
+
 // atomicReplace atomically replaces the running binary with the downloaded
 // temp file. On Windows the running .exe cannot be renamed in place, so it
 // is backed up to <exe>.bak first.
