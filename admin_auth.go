@@ -135,12 +135,18 @@ func handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	s := auth.GetSMTP()
 	adminEmail := auth.GetEmail()
 
-	// Build reset URL from request
-	scheme := "https"
-	if r.TLS == nil {
-		scheme = "http"
+	// Build reset URL from configured public_url (trusted) or request Host.
+	// Prefer public_url to prevent Host header injection in password reset links.
+	resetURL := ""
+	if pubURL := cfg.Get("public_url", ""); pubURL != "" {
+		resetURL = pubURL + "/forgot-password"
+	} else {
+		scheme := "https"
+		if r.TLS == nil {
+			scheme = "http"
+		}
+		resetURL = fmt.Sprintf("%s://%s/forgot-password", scheme, r.Host)
 	}
-	resetURL := fmt.Sprintf("%s://%s/forgot-password", scheme, r.Host)
 
 	subject := "OpenModelPool Agent 密码重置"
 	// S-6: Token is included in email body, NOT in URL. User copies token to reset page.

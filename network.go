@@ -1585,8 +1585,15 @@ func resolvePeerNodeID(addr string) (string, error) {
 	}
 	pingURL := strings.TrimRight(addr, "/") + "/api/network/heartbeat/ping"
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(pingURL)
+	client := internalHTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, pingURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to build ping request: %w", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to reach peer %s: %w", addr, err)
 	}

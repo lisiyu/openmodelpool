@@ -39,9 +39,12 @@ func maskKey(key string) string {
 
 // handleShareInfo returns all data needed for the Share Center UI.
 func handleShareInfo(w http.ResponseWriter, r *http.Request) {
-	proxyURL := cfg.Get("service_host", "")
+	proxyURL := cfg.Get("public_url", "")
 	if proxyURL == "" {
-		// Build from request
+		proxyURL = cfg.Get("service_host", "")
+	}
+	if proxyURL == "" {
+		// Fallback to request Host (less trusted — potential Host header injection)
 		scheme := "http"
 		if r.TLS != nil {
 			scheme = "https"
