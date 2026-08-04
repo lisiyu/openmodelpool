@@ -10,11 +10,9 @@ import (
 var providerConns sync.Map
 
 func IncrProviderConn(providerID string) {
-	if v, ok := providerConns.Load(providerID); ok {
-		atomic.AddInt64(v.(*int64), 1)
-	} else {
-		var n int64 = 1
-		providerConns.Store(providerID, &n)
+	var n int64 = 1
+	if actual, loaded := providerConns.LoadOrStore(providerID, &n); loaded {
+		atomic.AddInt64(actual.(*int64), 1)
 	}
 }
 
@@ -86,11 +84,9 @@ var guestConns sync.Map
 
 // IncrGuestConn increments the active guest connection count.
 func IncrGuestConn() {
-	if v, ok := guestConns.Load("g"); ok {
-		atomic.AddInt64(v.(*int64), 1)
-	} else {
-		var n int64 = 1
-		guestConns.Store("g", &n)
+	var n int64 = 1
+	if actual, loaded := guestConns.LoadOrStore("g", &n); loaded {
+		atomic.AddInt64(actual.(*int64), 1)
 	}
 }
 

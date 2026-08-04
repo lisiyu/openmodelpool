@@ -209,7 +209,7 @@ func (r *NodeRegistry) writeLocked(pn persistedNode) {
 		slog.Error("failed to marshal node", "node_id", pn.NodeID, "error", err)
 		return
 	}
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		slog.Error("failed to write node temp file", "node_id", pn.NodeID, "error", err)
 		return
 	}

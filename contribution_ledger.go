@@ -462,7 +462,7 @@ func (g *GossipLedger) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0600)
+	return atomicWriteFile(path, raw, 0600)
 }
 
 func LoadGossipLedger(path string) (*GossipLedger, error) {
