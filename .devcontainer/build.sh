@@ -28,8 +28,14 @@ fi
 echo "$(date) [build] \xe2\x9c\x85 go build OK" | tee -a "$PROG"
 
 # 用 setsid 常驻拉起（已验证 setsid 子进程在 postCreateCommand 退出后仍存活）
-echo "$(date) [build] launching openmodelpool via setsid ..." | tee -a "$PROG"
-setsid "$BIN" >>"$LOG" 2>&1 &
+# 注意：start-omp.sh 也会通过 run-omp.sh 拉起 openmodelpool，
+# 这里仅在 start-omp.sh 尚未运行时才启动，避免双实例抢 :8000
+if pgrep -x openmodelpool >/dev/null 2>&1; then
+  echo "$(date) [build] openmodelpool already running (started by start-omp.sh), skip" | tee -a "$PROG"
+else
+  echo "$(date) [build] launching openmodelpool via setsid ..." | tee -a "$PROG"
+  setsid "$BIN" >>"$LOG" 2>&1 &
+fi
 
 # 给一点时间绑定端口，并回报状态
 sleep 6

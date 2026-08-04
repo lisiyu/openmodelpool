@@ -10,6 +10,21 @@ LOG="/tmp/openmodelpool-start.log"
 
 echo "$(date) [start-omp] === postStartCommand start ===" >> "$LOG"
 
+# 0) Cloudflare Tunnel token 持久化：从 Codespaces Secret 注入到文件
+#    设置方法：gh secret set -c <codespace-name> CLOUDFLARE_TUNNEL_TOKEN < token.txt
+#    这样 codespace 重建后 token 不会丢失
+CFD_TOKEN="$HOME/.cloudflared/tunnel-token"
+mkdir -p "$HOME/.cloudflared"
+if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ] && [ ! -r "$CFD_TOKEN" -o "$(wc -c < "$CFD_TOKEN" 2>/dev/null)" -lt 100 ]; then
+  echo -n "$CLOUDFLARE_TUNNEL_TOKEN" > "$CFD_TOKEN"
+  chmod 600 "$CFD_TOKEN"
+  echo "$(date) [start-omp] tunnel token injected from Codespaces Secret" >> "$LOG"
+elif [ -r "$CFD_TOKEN" ] && [ "$(wc -c < "$CFD_TOKEN")" -ge 100 ]; then
+  echo "$(date) [start-omp] tunnel token file OK ($(wc -c < "$CFD_TOKEN") bytes)" >> "$LOG"
+else
+  echo "$(date) [start-omp] WARN: no tunnel token available (neither Secret nor file)" >> "$LOG"
+fi
+
 # 1) 启动 cron（端口 watchdog 依赖它；devcontainer 镜像常未预装 cron，缺失时自动安装）
 if ! command -v cron >/dev/null 2>&1; then
   echo "$(date) [start-omp] cron not found, installing ..." >> "$LOG"
