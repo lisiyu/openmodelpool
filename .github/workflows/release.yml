@@ -61,6 +61,48 @@ jobs:
       - name: Generate aggregate checksums
         run: ( cd dist && sha256sum * > SHA256SUMS )
 
+      - name: Sign release binaries (Ed25519)
+        env:
+          ED25519_SIGNING_KEY: ${{ secrets.ED25519_SIGNING_KEY }}
+        run: |
+          if [ -z "$ED25519_SIGNING_KEY" ]; then
+            echo "No signing key configured, skipping"
+            exit 0
+          fi
+          cat > /tmp/sign.go << 'GOEOF'
+          package main
+          import (
+            "crypto/ed25519"
+            "encoding/base64"
+            "fmt"
+            "os"
+            "path/filepath"
+            "strings"
+          )
+          func main() {
+            seed, err := base64.StdEncoding.DecodeString(os.Getenv("ED25519_SIGNING_KEY"))
+            if err != nil { panic(err) }
+            privKey := ed25519.NewKeyFromSeed(seed)
+            matches, _ := filepath.Glob("dist/openmodelpool-*")
+            for _, path := range matches {
+              base := filepath.Base(path)
+              if strings.HasSuffix(base, ".sha256") || strings.HasSuffix(base, ".sig") || base == "SHA256SUMS" {
+                continue
+              }
+              data, err := os.ReadFile(path)
+              if err != nil { panic(err) }
+              sig := ed25519.Sign(privKey, data)
+              if err := os.WriteFile(path+".sig", sig, 0644); err != nil { panic(err) }
+              fmt.Printf("Signed %s\n", base)
+            }
+          }
+          GOEOF
+          go run /tmp/sign.go
+          rm /tmp/sign.go
+
+      - name: Update checksums with signatures
+        run: ( cd dist && sha256sum * > SHA256SUMS )
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
