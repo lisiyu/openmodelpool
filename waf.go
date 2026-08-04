@@ -259,21 +259,95 @@ func (e *WAFEngine) Check(r *http.Request) (bool, *WAFViolation) {
 	return true, nil
 }
 
+// wafAttackPatterns contains built-in patterns for common web attacks.
+// These are checked in addition to user-configured content keywords.
+var wafAttackPatterns = []struct {
+	name    string
+	pattern string
+}{
+	// SQL injection
+	{"sqli_union_select", "union select"},
+	{"sqli_union_all", "union all select"},
+	{"sqli_or_1_1", "or 1=1"},
+	{"sqli_or_true", "or true"},
+	{"sqli_and_1_1", "and 1=1"},
+	{"sqli_drop_table", "drop table"},
+	{"sqli_insert_into", "insert into"},
+	{"sqli_delete_from", "delete from"},
+	{"sqli_update_set", "update set"},
+	{"sqli_sleep", "sleep("},
+	{"sqli_benchmark", "benchmark("},
+	{"sqli_waitfor", "waitfor delay"},
+	{"sqli_information_schema", "information_schema"},
+	{"sqli_load_file", "load_file("},
+	{"sqli_into_outfile", "into outfile"},
+	{"sqli_hex_0x", "0x41414141"}, // common hex injection probe
+	// XSS
+	{"xss_script_tag", "<script"},
+	{"xss_script_close", "</script>"},
+	{"xss_javascript_uri", "javascript:"},
+	{"xss_onerror", "onerror="},
+	{"xss_onload", "onload="},
+	{"xss_onclick", "onclick="},
+	{"xss_onmouseover", "onmouseover="},
+	{"xss_img_tag", "<img"},
+	{"xss_svg_tag", "<svg"},
+	{"xss_iframe_tag", "<iframe"},
+	{"xss_eval", "eval("},
+	{"xss_expression", "expression("},
+	{"xss_document_cookie", "document.cookie"},
+	{"xss_document_write", "document.write"},
+	// Path traversal
+	{"path_traversal_dotdot", ".."},
+	{"path_traversal_dotdot_slash", "../"},
+	{"path_traversal_dotdot_backslash", "..\\\"},
+	{"path_traversal_etc_passwd", "/etc/passwd"},
+	{"path_traversal_etc_shadow", "/etc/shadow"},
+	// Command injection
+	{"cmd_inject_semicolon", "; ls"},
+	{"cmd_inject_pipe", "| ls"},
+	{"cmd_inject_and", "&& ls"},
+	{"cmd_inject_or", "|| ls"},
+	{"cmd_inject_backtick", "` ls"},
+	{"cmd_inject_dollar", "$("},
+	{"cmd_inject_whoami", "whoami"},
+	{"cmd_inject_wget", "wget "},
+	{"cmd_inject_curl", "curl "},
+	{"cmd_inject_nc_", "nc "},
+	// SSRF
+	{"ssrf_localhost", "http://localhost"},
+	{"ssrf_127_0_0_1", "http://127.0.0.1"},
+	{"ssrf_169_254", "169.254.169.254"}, // AWS metadata
+	{"ssrf_metadata", "metadata.google.internal"},
+}
+
 // CheckContent scans a text payload (e.g. a request body) for blacklisted
-// content keywords. It is exposed for handlers that can safely inspect payloads
-// (gateway request bodies) without disturbing streaming responses.
+// content keywords and built-in attack patterns. It is exposed for handlers
+// that can safely inspect payloads (gateway request bodies) without disturbing
+// streaming responses.
 func (e *WAFEngine) CheckContent(text string) (bool, string) {
 	if !e.Enabled() {
 		return true, ""
 	}
 	lower := strings.ToLower(text)
+
+	// Check user-configured keywords
 	e.mu.RLock()
-	defer e.mu.RUnlock()
 	for _, kw := range e.contentKw {
 		if strings.Contains(lower, strings.ToLower(kw)) {
+			e.mu.RUnlock()
 			return false, kw
 		}
 	}
+	e.mu.RUnlock()
+
+	// Check built-in attack patterns
+	for _, p := range wafAttackPatterns {
+		if strings.Contains(lower, p.pattern) {
+			return false, "attack_pattern:" + p.name
+		}
+	}
+
 	return true, ""
 }
 
