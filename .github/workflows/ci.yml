@@ -46,12 +46,33 @@ jobs:
         with:
           version: latest
 
-  test:
-    name: Test (with coverage)
+  # P2: Unit tests — hard gate (no continue-on-error).
+  # Runs only short tests (excludes integration tests tagged with //go:build integration).
+  test-unit:
+    name: Unit tests (with coverage)
     needs: build-gate
-    # NOTE: the root package has several pre-existing, failing tests
-    # (geo-IP ranges, rate limiter, auth, file-integrity). They are run and
-    # reported, but do not block merges until they are fixed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run unit tests
+        run: go test -race -short -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+  # P2: Integration tests — soft gate (continue-on-error).
+  # Runs full test suite including chromedp and network-dependent tests.
+  # These may fail due to environment issues and should not block merges.
+  test-integration:
+    name: Integration tests
+    needs: build-gate
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
@@ -60,14 +81,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Run tests
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage
-          path: coverage.out
-          retention-days: 7
+      - name: Install Chrome for chromedp tests
+        run: |
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update && sudo apt-get install -y google-chrome-stable
+      - name: Run integration tests
+        run: go test -race -timeout 30m ./...
+        env:
+          OMP_TEST_INTEGRATION: "1"
 
   build:
     name: Build (linux/amd64)
