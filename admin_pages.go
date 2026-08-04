@@ -11,7 +11,7 @@ func handleAdminPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
-	serveEmbeddedHTML(w, r, "admin.html")
+	serveEmbeddedHTML(w, r, "admin.html", false)
 }
 
 func handleSetupPage(w http.ResponseWriter, r *http.Request) {
@@ -19,7 +19,7 @@ func handleSetupPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
-	serveEmbeddedHTML(w, r, "setup.html")
+	serveEmbeddedHTML(w, r, "setup.html", false)
 }
 
 func handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +27,7 @@ func handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
-	serveEmbeddedHTML(w, r, "login.html")
+	serveEmbeddedHTML(w, r, "login.html", false)
 }
 
 func handleProviderPage(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +35,7 @@ func handleProviderPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
-	serveEmbeddedHTML(w, r, "admin-provider.html")
+	serveEmbeddedHTML(w, r, "admin-provider.html", true)
 }
 
 func handleModelsPage(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +43,7 @@ func handleModelsPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
-	serveEmbeddedHTML(w, r, "admin-models.html")
+	serveEmbeddedHTML(w, r, "admin-models.html", true)
 }
 
 func handleBrowserLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +51,7 @@ func handleBrowserLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
-	serveEmbeddedHTML(w, r, "admin-browser-login.html")
+	serveEmbeddedHTML(w, r, "admin-browser-login.html", true)
 }
 
 func handleFreePoolPage(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +59,7 @@ func handleFreePoolPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
-	serveEmbeddedHTML(w, r, "admin-free-pool.html")
+	serveEmbeddedHTML(w, r, "admin-free-pool.html", true)
 }
 
 func handleAdminCommonJS(w http.ResponseWriter, r *http.Request) {
