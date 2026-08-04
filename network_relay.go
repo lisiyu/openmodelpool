@@ -51,14 +51,15 @@ const (
 // signature plus an RFC3339 timestamp; the receiving node cryptographically
 // verifies the forwarding node's identity before serving the request.
 const (
-	// headerRelaySig carries the base64 ed25519 signature of the relay auth
-	// envelope (see RelayAuthEnvelope).
 	headerRelaySig = "X-OpenModelPool-Relay-Sig"
 	// headerRelayTs carries the RFC3339 timestamp used for replay protection.
 	headerRelayTs = "X-OpenModelPool-Relay-Ts"
 	// relaySigMaxAge is the allowed clock-skew / replay window for a relay
 	// forward signature (consistent with federation gossip/update anti-replay).
 	relaySigMaxAge = 5 * time.Minute
+	// maxGatewayBodySize is the maximum request body size for gateway/relay
+	// endpoints (10MB — AI model requests may include large conversations + images).
+	maxGatewayBodySize = 10 << 20
 )
 
 // handleNetworkRelay handles relay requests: /network/{node_id}/{rest...}
@@ -296,9 +297,13 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 	// G1 hardening (design §18.3 P1-5): buffer the request body once so we can
 	// sign the forward. The reverse proxy would otherwise consume the stream; we
 	// restore it after signing so the proxy forwards the original payload.
-	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxGatewayBodySize+1))
 	if err != nil {
 		writeError(w, 400, "failed to read request body")
+		return
+	}
+	if len(bodyBytes) > maxGatewayBodySize {
+		writeError(w, 413, "request body too large (max 10MB)")
 		return
 	}
 	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
@@ -601,10 +606,15 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read and buffer the body so we can parse model and re-send
-	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
+	// Read and buffer the body so we can parse model and re-send.
+	// 10MB limit for AI model requests (large conversations + images).
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxGatewayBodySize+1))
 	if err != nil {
 		writeError(w, 400, "failed to read request body")
+		return
+	}
+	if len(bodyBytes) > maxGatewayBodySize {
+		writeError(w, 413, "request body too large (max 10MB)")
 		return
 	}
 	r.Body.Close()

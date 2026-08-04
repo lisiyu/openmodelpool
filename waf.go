@@ -322,6 +322,12 @@ var wafAttackPatterns = []struct {
 // content keywords and built-in attack patterns. It is exposed for handlers
 // that can safely inspect payloads (gateway request bodies) without disturbing
 // streaming responses.
+//
+// NOTE: This is NOT called automatically by wafMiddleware (which only checks
+// request metadata: IP, UA, path, rate). Content inspection is intentionally
+// opt-in because AI proxy payloads frequently contain legitimate mentions of
+// SQL/XSS/path-traversal patterns in user conversations. Call this explicitly
+// only on non-conversation endpoints where content scanning is appropriate.
 func (e *WAFEngine) CheckContent(text string) (bool, string) {
 	if !e.Enabled() {
 		return true, ""

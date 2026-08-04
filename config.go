@@ -136,7 +136,10 @@ func (c *Config) saveSync() {
 }
 
 func (c *Config) doSave() {
-	os.MkdirAll(filepath.Dir(c.path), 0700)
+	if err := os.MkdirAll(filepath.Dir(c.path), 0700); err != nil {
+		slog.Error("failed to create config directory", "error", err)
+		return
+	}
 	safe := make(map[string]any, len(c.data))
 	for k, v := range c.data {
 		safe[k] = v
