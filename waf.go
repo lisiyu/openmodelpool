@@ -300,7 +300,7 @@ var wafAttackPatterns = []struct {
 	// Path traversal
 	{"path_traversal_dotdot", ".."},
 	{"path_traversal_dotdot_slash", "../"},
-	{"path_traversal_dotdot_backslash", "..\\\"},
+	// path_traversal_dotdot_backslash removed: ".." already covered above
 	{"path_traversal_etc_passwd", "/etc/passwd"},
 	{"path_traversal_etc_shadow", "/etc/shadow"},
 	// Command injection
