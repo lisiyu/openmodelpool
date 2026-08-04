@@ -184,7 +184,7 @@ func TestGatewayForwardToRemoteSignsRequest(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	entry := &RouteEntry{NodeID: "mmx-remote", Addresses: []string{srv.URL}}
-	gatewayForwardToRemote(rec, inReq, entry, body, 0, false)
+	gatewayForwardToRemote(rec, inReq, entry, body, 0, false, "test-model")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("gateway forward returned %d (body=%s)", rec.Code, rec.Body.String())

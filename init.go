@@ -88,7 +88,7 @@ func initCore() {
 // initAllFederation initializes all federation-related components (v3.0).
 func initAllFederation() {
 	initNode("data")
-	LoadGenesisConfig("data") // Load custom genesis or use compiled-in default
+	LoadGenesisConfig("data")
 	initFederation("data")
 	initGossip()
 	initReputation("data")
@@ -97,6 +97,7 @@ func initAllFederation() {
 	initNodeWeightManager("data")
 	initInviteManager("data")
 	initUpdateManager("data")
+	initContributionLedger("data")
 }
 
 // initAllNetwork initializes P2P networking, event bus, metrics, rate limiting, and load balancing.

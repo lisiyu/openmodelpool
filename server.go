@@ -153,6 +153,7 @@ func gracefulShutdown(server *http.Server) {
 			if gossip != nil {
 				gossip.stop()
 			}
+			saveContributionLedger()
 			if netMgr != nil {
 				netMgr.stopRefreshLoop()
 			}

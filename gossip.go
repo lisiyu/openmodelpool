@@ -87,6 +87,20 @@ func (g *GossipManager) doGossipRound() {
 	// P1-1: attach PEX endpoint hints so receivers learn peer addresses even
 	// when trust-pool endpoints are missing. Must be set BEFORE signing.
 	msg.KnownPeers = buildKnownPeers()
+
+	if contributionLedger != nil {
+		ledgerPayload := struct {
+			Contributions []*ContributionRecord `json:"contributions,omitempty"`
+			Claims        []*CapabilityClaim     `json:"claims,omitempty"`
+		}{
+			Contributions: contributionLedger.GetAllContributions(),
+			Claims:        contributionLedger.GetAllClaims(),
+		}
+		if payloadBytes, err := json.Marshal(ledgerPayload); err == nil {
+			msg.Payload = payloadBytes
+		}
+	}
+
 	msg.Signature = node.SignJSON(msg)
 
 	for _, peer := range peers {
@@ -354,6 +368,20 @@ func (g *GossipManager) processGossipResponse(msg *GossipMessage, peer NodeInfo)
 	// trust-pool endpoint is missing (address-reachability fallback).
 	if len(msg.KnownPeers) > 0 && fed != nil {
 		fed.MergePeerHints(msg.KnownPeers)
+	}
+
+	if len(msg.Payload) > 0 && contributionLedger != nil {
+		var ledgerPayload struct {
+			Contributions []*ContributionRecord `json:"contributions,omitempty"`
+			Claims        []*CapabilityClaim     `json:"claims,omitempty"`
+		}
+		if err := json.Unmarshal(msg.Payload, &ledgerPayload); err == nil {
+			added := contributionLedger.GossipSync(ledgerPayload.Contributions, nil, ledgerPayload.Claims, nil)
+			if added > 0 {
+				slog.Info("gossip: merged ledger records from peer", "peer_id", peer.NodeID, "added", added)
+				saveContributionLedger()
+			}
+		}
 	}
 
 	// If peer reports a newer trust pool version, fetch the full pool

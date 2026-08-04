@@ -1222,8 +1222,6 @@ func handleGoroutineDump(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleAuditLog returns recent audit log entries.
-// F29: Admin endpoint for viewing audit trail.
 func handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	if auditLog == nil || !auditLog.enabled {
 		writeJSON(w, 200, map[string]any{"entries": []string{}, "enabled": false})
@@ -1242,14 +1240,12 @@ func handleAuditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Seek to end and read backwards
 	info, err := auditLog.file.Stat()
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": "failed to stat audit log"})
 		return
 	}
 
-	// Read last 64KB of the file
 	readSize := int64(64 * 1024)
 	if info.Size() < readSize {
 		readSize = info.Size()
@@ -1261,14 +1257,12 @@ func handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lines := strings.Split(string(buf), "\n")
-	// Take last `limit` non-empty lines
 	var entries []string
 	for i := len(lines) - 1; i >= 0 && len(entries) < limit; i-- {
 		if lines[i] != "" {
 			entries = append(entries, lines[i])
 		}
 	}
-	// Reverse to chronological order
 	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
 		entries[i], entries[j] = entries[j], entries[i]
 	}
@@ -1277,5 +1271,134 @@ func handleAuditLog(w http.ResponseWriter, r *http.Request) {
 		"entries": entries,
 		"enabled": true,
 		"total":   len(entries),
+	})
+}
+
+func handleCapabilityClaim(w http.ResponseWriter, r *http.Request) {
+	if contributionLedger == nil {
+		writeError(w, 503, "contribution ledger not initialized")
+		return
+	}
+	var claim CapabilityClaim
+	if err := readJSON(w, r, &claim); err != nil {
+		return
+	}
+	if claim.PeerID == "" {
+		writeError(w, 400, "peer_id is required")
+		return
+	}
+	if len(claim.Models) == 0 {
+		writeError(w, 400, "at least one model is required")
+		return
+	}
+	id := contributionLedger.RecordClaim(&claim)
+	saveContributionLedger()
+	writeJSON(w, 201, map[string]any{"id": id, "status": "recorded"})
+}
+
+func handleCapabilityClaims(w http.ResponseWriter, r *http.Request) {
+	if contributionLedger == nil {
+		writeError(w, 503, "contribution ledger not initialized")
+		return
+	}
+	claims := contributionLedger.GetAllClaims()
+	if claims == nil {
+		claims = []*CapabilityClaim{}
+	}
+	writeJSON(w, 200, map[string]any{"claims": claims, "total": len(claims)})
+}
+
+func handleCapabilityVerify(w http.ResponseWriter, r *http.Request) {
+	if capabilityVerifier == nil || contributionLedger == nil {
+		writeError(w, 503, "capability verifier not initialized")
+		return
+	}
+	peerID := r.PathValue("peer_id")
+	if peerID == "" {
+		writeError(w, 400, "peer_id is required")
+		return
+	}
+	claims := contributionLedger.GetAllClaims()
+	var target *CapabilityClaim
+	for _, c := range claims {
+		if c.PeerID == peerID {
+			target = c
+			break
+		}
+	}
+	if target == nil {
+		writeError(w, 404, "no capability claim found for peer")
+		return
+	}
+	results, allOK := capabilityVerifier.VerifyClaim(target)
+	var probeResults []map[string]any
+	for _, r := range results {
+		probeResults = append(probeResults, map[string]any{
+			"model_id":   r.ModelID,
+			"success":    r.Success,
+			"latency_ms": r.LatencyMS,
+			"error":      r.Error,
+		})
+	}
+	status := "verified"
+	if !allOK {
+		status = "partial"
+	}
+	writeJSON(w, 200, map[string]any{
+		"peer_id": peerID,
+		"status":  status,
+		"results": probeResults,
+	})
+}
+
+func handleLedgerContributions(w http.ResponseWriter, r *http.Request) {
+	if contributionLedger == nil {
+		writeError(w, 503, "contribution ledger not initialized")
+		return
+	}
+	contribs := contributionLedger.GetAllContributions()
+	if contribs == nil {
+		contribs = []*ContributionRecord{}
+	}
+	writeJSON(w, 200, map[string]any{"contributions": contribs, "total": len(contribs)})
+}
+
+func handleLedgerBalance(w http.ResponseWriter, r *http.Request) {
+	if contributionLedger == nil {
+		writeError(w, 503, "contribution ledger not initialized")
+		return
+	}
+	nodeID := r.PathValue("node_id")
+	if nodeID == "" {
+		if node != nil {
+			nodeID = node.NodeID()
+		} else {
+			writeError(w, 400, "node_id is required")
+			return
+		}
+	}
+	balance := contributionLedger.DeriveBalance(nodeID)
+	chain := contributionLedger.GetTransactionChain(nodeID)
+	writeJSON(w, 200, map[string]any{
+		"node_id":      nodeID,
+		"balance":      balance,
+		"transactions": len(chain),
+		"chain_valid":  contributionLedger.VerifyChain(),
+	})
+}
+
+func handleLedgerTransactions(w http.ResponseWriter, r *http.Request) {
+	if contributionLedger == nil {
+		writeError(w, 503, "contribution ledger not initialized")
+		return
+	}
+	txs := contributionLedger.GetAllTransactions()
+	if txs == nil {
+		txs = []*SignedTransaction{}
+	}
+	writeJSON(w, 200, map[string]any{
+		"transactions": txs,
+		"total":        len(txs),
+		"chain_valid":  contributionLedger.VerifyChain(),
 	})
 }

@@ -641,6 +641,20 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal(rawStream, &stream)
 	}
 
+	if netMgr != nil && netMgr.IsSharedMode() {
+		estimatedTokens := int64(4096)
+		if mt, ok := bodyMap["max_tokens"]; ok {
+			var mtVal int64
+			if json.Unmarshal(mt, &mtVal) == nil && mtVal > 0 {
+				estimatedTokens = mtVal
+			}
+		}
+		if ok, reason := netMgr.CheckShareBoundary(model, estimatedTokens); !ok {
+			writeError(w, 429, "share boundary: "+reason)
+			return
+		}
+	}
+
 	// D-5/S-5: Public key four-layer quota check
 	authHeader := r.Header.Get("Authorization")
 	bearerKey := strings.TrimPrefix(authHeader, "Bearer ")
@@ -718,7 +732,7 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 		defer publicQuota.AdjustQuota(clientIP, model, reservedQuota, reservedQuota/2)
 	}
 
-	gatewayForwardToRemote(w, r, bestNode, bodyBytes, hopCount, stream)
+	gatewayForwardToRemote(w, r, bestNode, bodyBytes, hopCount, stream, model)
 }
 
 // handleGatewayFallback handles the request locally when no remote node is suitable.
@@ -748,7 +762,7 @@ func handleGatewayFallback(w http.ResponseWriter, r *http.Request, bodyBytes []b
 
 // gatewayForwardToRemote forwards the gateway request to a remote node.
 // Supports both streaming (SSE) and non-streaming responses.
-func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, bodyBytes []byte, hopCount int, stream bool) {
+func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, bodyBytes []byte, hopCount int, stream bool, model string) {
 	// Pick the best address
 	targetAddr := pickBestAddress(entry.Addresses)
 	if targetAddr == "" {
@@ -841,6 +855,22 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	}
 	if lbInstance != nil {
 		lbInstance.RecordRequest(entry.NodeID, time.Since(relayStart), success)
+	}
+
+	if success && contributionLedger != nil {
+		go func() {
+			selfID := ""
+			if netMgr != nil {
+				selfID = netMgr.GetNodeID()
+			}
+			contributionLedger.RecordContribution(&ContributionRecord{
+				PeerID:   entry.NodeID,
+				ModelID:  model,
+				Provider: "gateway-relay",
+			})
+			contributionLedger.AppendTransaction("contribution", selfID, 0, model, "")
+			saveContributionLedger()
+		}()
 	}
 
 	// Copy response headers, filtering out hop-internal headers

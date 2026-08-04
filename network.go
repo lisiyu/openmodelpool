@@ -1063,7 +1063,62 @@ func (nm *NetworkManager) UpdateConfig(nodeName string, sharedModels []string, m
 	return nil
 }
 
-// SetShareToPool updates the share_to_pool toggle.
+func (nm *NetworkManager) UpdateShareBoundary(boundary *ShareBoundaryConfig) error {
+	if boundary == nil {
+		return nil
+	}
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+	if boundary.DailyContribCap >= 0 {
+		nm.config.ShareBoundary.DailyContribCap = boundary.DailyContribCap
+	}
+	nm.config.ShareBoundary.ShareIdleOnly = boundary.ShareIdleOnly
+	if boundary.ModelWhitelist != nil {
+		nm.config.ShareBoundary.ModelWhitelist = boundary.ModelWhitelist
+	}
+	nm.doSave()
+	slog.Info("share boundary updated",
+		"daily_cap", nm.config.ShareBoundary.DailyContribCap,
+		"idle_only", nm.config.ShareBoundary.ShareIdleOnly,
+		"whitelist", nm.config.ShareBoundary.ModelWhitelist)
+	return nil
+}
+
+func (nm *NetworkManager) CheckShareBoundary(model string, estimatedTokens int64) (bool, string) {
+	nm.mu.RLock()
+	defer nm.mu.RLock()
+	b := nm.config.ShareBoundary
+
+	if b.DailyContribCap > 0 {
+		var todayContributed int64
+		if contributionLedger != nil {
+			selfID := nm.GetNodeID()
+			for _, tx := range contributionLedger.GetAllTransactions() {
+				if tx.NodeID == selfID && tx.Type == "contribution" {
+					todayContributed += tx.Amount
+				}
+			}
+		}
+		if todayContributed+estimatedTokens > b.DailyContribCap {
+			return false, "daily contribution cap exceeded"
+		}
+	}
+
+	if len(b.ModelWhitelist) > 0 {
+		found := false
+		for _, m := range b.ModelWhitelist {
+			if m == model {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false, "model not in whitelist"
+		}
+	}
+
+	return true, ""
+}
 // v3.1: This controls whether the node contributes its providers to the shared pool.
 // Independent from network participation — a node can be in the network without sharing.
 // If enabling share_to_pool auto-activates the network, the full activation path runs.
@@ -1465,10 +1520,11 @@ func handleNetworkConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		NodeName     string   `json:"node_name"`
-		SharedModels []string `json:"shared_models"`
-		MaxDaily     int      `json:"max_daily_requests"`
-		RelayEnabled *bool    `json:"relay_enabled,omitempty"`
+		NodeName      string              `json:"node_name"`
+		SharedModels  []string            `json:"shared_models"`
+		MaxDaily      int                 `json:"max_daily_requests"`
+		RelayEnabled  *bool               `json:"relay_enabled,omitempty"`
+		ShareBoundary *ShareBoundaryConfig `json:"share_boundary,omitempty"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
@@ -1477,6 +1533,12 @@ func handleNetworkConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := netMgr.UpdateConfig(body.NodeName, body.SharedModels, body.MaxDaily, body.RelayEnabled); err != nil {
 		writeError(w, 400, err.Error())
 		return
+	}
+	if body.ShareBoundary != nil {
+		if err := netMgr.UpdateShareBoundary(body.ShareBoundary); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
 	}
 	writeJSON(w, 200, map[string]any{"status": "updated"})
 }
@@ -1611,10 +1673,13 @@ type PeerNotifyPayload struct {
 	PubKey    string   `json:"pub_key"`
 	Timestamp string   `json:"timestamp"`
 	Signature string   `json:"signature"`
-	// Propagated is always true for notify-originated additions. The receiver
-	// uses the call-site separation (not this flag) to guarantee no re-notify,
-	// but the flag documents intent and is echoed for clarity/auditing.
 	Propagated bool `json:"propagated"`
+	Claims    []CapabilityClaimEntry `json:"claims,omitempty"`
+}
+
+type CapabilityClaimEntry struct {
+	Models    []string `json:"models"`
+	Providers []string `json:"providers"`
 }
 
 // handleNetworkPeersNotify implements POST /api/network/peers/notify — the P0-1
@@ -1696,6 +1761,20 @@ func handleNetworkPeersNotify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	if len(p.Claims) > 0 && contributionLedger != nil {
+		for _, c := range p.Claims {
+			claim := &CapabilityClaim{
+				PeerID:    p.NodeID,
+				Models:    c.Models,
+				Providers: c.Providers,
+			}
+			contributionLedger.RecordClaim(claim)
+		}
+		saveContributionLedger()
+		slog.Info("peers/notify: recorded capability claims", "peer", p.NodeID, "count", len(p.Claims))
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"status": "notified", "node_id": p.NodeID})
 }
 
@@ -1790,6 +1869,18 @@ func sendNotifyToPeer(peer PeerInfo) {
 		Timestamp:  ts,
 		Signature:  sig,
 		Propagated: true,
+	}
+
+	if contributionLedger != nil {
+		localClaims := contributionLedger.GetAllClaims()
+		for _, c := range localClaims {
+			if c.PeerID == myID {
+				payload.Claims = append(payload.Claims, CapabilityClaimEntry{
+					Models:    c.Models,
+					Providers: c.Providers,
+				})
+			}
+		}
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

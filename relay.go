@@ -159,6 +159,14 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if netMgr != nil && netMgr.IsSharedMode() {
+		estimatedTokens := int64(4096)
+		if ok, reason := netMgr.CheckShareBoundary(relayReq.Model, estimatedTokens); !ok {
+			writeError(w, 429, "share boundary: "+reason)
+			return
+		}
+	}
+
 	// Find local provider for the model
 	routingMode := cfg.Get("routing_mode", "priority")
 	candidates := pm.OrderedCandidates(relayReq.Model, routingMode)
@@ -216,6 +224,7 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 			}
 			tracker.RecordWithAccessType(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, true, "", false, 0, "relay")
 			slog.Info("relay stream completed", "provider", p.Name, "from", nodeID, "latency_ms", latencyMS)
+			recordContributionToLedger(nodeID, relayReq.Model, p.ID, 0, relayReq.Extra)
 			return
 		}
 		// All providers failed
@@ -258,6 +267,8 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 
 		totalTokens := promptTok + compTok
 		slog.Info("relay request completed", "provider", p.Name, "from", nodeID, "tokens", totalTokens, "latency_ms", latencyMS)
+
+		recordContributionToLedger(nodeID, relayReq.Model, p.ID, int64(totalTokens), relayReq.Extra)
 
 		writeJSON(w, 200, RelayResponse{
 			Success:   true,
@@ -352,6 +363,8 @@ func (f *FederationManager) RelayToRemote(ctx context.Context, nodeInfo NodeInfo
 		return nil, fmt.Errorf("unmarshal relay data: %w", err)
 	}
 
+	recordConsumptionToLedger(model, int64(relayResp.Tokens), "")
+
 	return &chatResp, nil
 }
 
@@ -436,5 +449,35 @@ func (f *FederationManager) RelayStreamToRemote(ctx context.Context, nodeInfo No
 	slog.Info("relay stream from remote completed", "remote_node", nodeInfo.NodeID, "latency_ms", latencyMS)
 	tracker.RecordWithAccessType("relay:"+nodeInfo.NodeID, "relay:"+nodeInfo.NodeID, origModel, 0, 0, latencyMS, true, "", false, 0, "relay")
 
+	if dataSent {
+		recordConsumptionToLedger(origModel, 0, "")
+	}
+
 	return dataSent, nil
+}
+
+func recordContributionToLedger(fromNodeID, model, providerID string, tokens int64, extra map[string]any) {
+	if contributionLedger == nil {
+		return
+	}
+	requestID := ""
+	if extra != nil {
+		if rid, ok := extra["request_id"].(string); ok {
+			requestID = rid
+		}
+	}
+	contributionLedger.RecordContribution(&ContributionRecord{
+		PeerID:   fromNodeID,
+		ModelID:  model,
+		Provider: providerID,
+		Tokens:   tokens,
+	})
+	contributionLedger.AppendTransaction("contribution", fromNodeID, tokens, model, requestID)
+}
+
+func recordConsumptionToLedger(model string, tokens int64, requestID string) {
+	if contributionLedger == nil || node == nil {
+		return
+	}
+	contributionLedger.AppendTransaction("consumption", node.NodeID(), tokens, model, requestID)
 }

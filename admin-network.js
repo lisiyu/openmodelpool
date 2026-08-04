@@ -209,6 +209,9 @@ let _shareFilter = 'all';
         loadNetworkPeers();
         loadNetworkDashboard();
         loadInvites();
+        loadCapabilityClaims();
+        loadContributionLedger();
+        loadShareBoundary();
       } else {
         if (panel) panel.style.display = 'none';
       }
@@ -939,4 +942,160 @@ async function redeemInvite() {
     }
   } catch(e) { toast('加入失败: ' + e.message, 'error'); }
 }
+
+// ============================================================
+// Capability Claims Panel (REQ-9)
+// ============================================================
+
+async function loadCapabilityClaims() {
+  const el = document.getElementById('capabilityClaimsPanel');
+  if (!el) return;
+  try {
+    const r = await authFetch('/api/network/capability/claims');
+    const d = await r.json();
+    const claims = d.claims || [];
+    if (claims.length === 0) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px">暂无能力声明</div>';
+      return;
+    }
+    let html = '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+    html += '<tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:4px 8px">节点</th><th style="text-align:left;padding:4px 8px">模型</th><th style="text-align:left;padding:4px 8px">Provider</th><th style="text-align:left;padding:4px 8px">时间</th></tr>';
+    for (const c of claims) {
+      const shortId = c.peer_id ? (c.peer_id.length > 16 ? c.peer_id.slice(0, 16) + '...' : c.peer_id) : '-';
+      const models = (c.models || []).slice(0, 3).join(', ') + ((c.models || []).length > 3 ? '...' : '');
+      const providers = (c.providers || []).slice(0, 2).join(', ') + ((c.providers || []).length > 2 ? '...' : '');
+      const ts = c.timestamp ? new Date(c.timestamp).toLocaleDateString() : '-';
+      html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:4px 8px" title="' + (c.peer_id||'') + '">' + shortId + '</td><td style="padding:4px 8px">' + models + '</td><td style="padding:4px 8px">' + providers + '</td><td style="padding:4px 8px">' + ts + '</td></tr>';
+    }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px">加载失败</div>';
+  }
+}
+
+async function submitCapabilityClaim() {
+  const modelsEl = document.getElementById('claimModelsInput');
+  const providersEl = document.getElementById('claimProvidersInput');
+  if (!modelsEl || !modelsEl.value.trim()) {
+    toast('请输入至少一个模型名称', 'warning');
+    return;
+  }
+  const models = modelsEl.value.trim().split(/[,，\s]+/).filter(Boolean);
+  const providers = providersEl ? providersEl.value.trim().split(/[,，\s]+/).filter(Boolean) : [];
+  try {
+    const r = await authFetch('/api/network/capability/claim', {
+      method: 'POST',
+      body: JSON.stringify({ peer_id: '', models, providers })
+    });
+    const d = await r.json();
+    if (r.ok) {
+      toast('能力声明已提交', 'success');
+      modelsEl.value = '';
+      if (providersEl) providersEl.value = '';
+      loadCapabilityClaims();
+    } else {
+      toast('提交失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) {
+    toast('提交失败: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
+// Contribution Ledger Panel (REQ-11)
+// ============================================================
+
+async function loadContributionLedger() {
+  const el = document.getElementById('contributionLedgerPanel');
+  if (!el) return;
+  try {
+    const nodeId = (typeof networkStatus !== 'undefined' && networkStatus && networkStatus.node_id) || '';
+    const [balanceR, txsR] = await Promise.all([
+      authFetch('/api/network/ledger/balance/' + (nodeId || 'self')),
+      authFetch('/api/network/ledger/transactions')
+    ]);
+    const balance = await balanceR.json();
+    const txs = await txsR.json();
+
+    const bal = balance.balance || 0;
+    const chainValid = txs.chain_valid !== false;
+    const totalTxs = txs.total || 0;
+
+    let html = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px">';
+    html += '<div style="font-size:12px">积分余额: <strong>' + bal.toLocaleString() + '</strong></div>';
+    html += '<div style="font-size:12px">交易笔数: ' + totalTxs + '</div>';
+    html += '<div style="font-size:12px">链完整性: ' + (chainValid ? '<span style="color:var(--success)">有效</span>' : '<span style="color:var(--danger)">异常</span>') + '</div>';
+    html += '</div>';
+
+    const recentTxs = (txs.transactions || []).slice(-5).reverse();
+    if (recentTxs.length > 0) {
+      html += '<table style="width:100%;font-size:11px;border-collapse:collapse">';
+      html += '<tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:3px 6px">类型</th><th style="text-align:left;padding:3px 6px">模型</th><th style="text-align:left;padding:3px 6px">数量</th><th style="text-align:left;padding:3px 6px">时间</th></tr>';
+      for (const tx of recentTxs) {
+        const typeLabel = tx.type === 'contribution' ? '贡献' : '消费';
+        const typeColor = tx.type === 'contribution' ? 'var(--success)' : 'var(--warning)';
+        html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:3px 6px;color:' + typeColor + '">' + typeLabel + '</td><td style="padding:3px 6px">' + (tx.model_id || '-') + '</td><td style="padding:3px 6px">' + (tx.amount || 0).toLocaleString() + '</td><td style="padding:3px 6px">' + (tx.timestamp ? new Date(tx.timestamp).toLocaleString() : '-') + '</td></tr>';
+      }
+      html += '</table>';
+    } else {
+      html += '<div style="color:var(--text-muted);font-size:12px">暂无交易记录</div>';
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:12px">加载失败</div>';
+  }
+}
+
+// ============================================================
+// Share Boundary Config (REQ-12)
+// ============================================================
+
+async function loadShareBoundary() {
+  try {
+    const r = await authFetch('/api/network/status');
+    const d = await r.json();
+    const b = d.share_boundary || {};
+    const capEl = document.getElementById('dailyContribCap');
+    const idleEl = document.getElementById('shareIdleOnlyToggle');
+    const wlEl = document.getElementById('modelWhitelistInput');
+    if (capEl) capEl.value = b.daily_contrib_cap || 0;
+    if (idleEl) {
+      idleEl.checked = !!b.share_idle_only;
+      updateToggleSlider('shareIdleOnlyToggle', 'shareIdleOnlyToggleSlider', !!b.share_idle_only);
+    }
+    if (wlEl && b.model_whitelist) wlEl.value = b.model_whitelist.join(', ');
+  } catch(e) {
+    console.warn('load share boundary failed', e);
+  }
+}
+
+async function saveShareBoundary() {
+  const cap = parseInt(document.getElementById('dailyContribCap')?.value || '0');
+  const idleOnly = document.getElementById('shareIdleOnlyToggle')?.checked || false;
+  const wlStr = document.getElementById('modelWhitelistInput')?.value || '';
+  const whitelist = wlStr.trim() ? wlStr.trim().split(/[,，\s]+/).filter(Boolean) : [];
+  try {
+    const r = await authFetch('/api/network/config', {
+      method: 'PUT',
+      body: JSON.stringify({
+        share_boundary: {
+          daily_contrib_cap: cap,
+          share_idle_only: idleOnly,
+          model_whitelist: whitelist
+        }
+      })
+    });
+    if (r.ok) {
+      toast('共享边界已保存', 'success');
+    } else {
+      const d = await r.json();
+      toast('保存失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) {
+    toast('保存失败: ' + e.message, 'error');
+  }
+}
+
+}}
 

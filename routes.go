@@ -277,6 +277,14 @@ func setupRoutes() *http.ServeMux {
 	// §3.2.3: Public key quota status
 	mux.HandleFunc("GET /api/network/public-key-quota", withAuth(handlePublicKeyQuotaStatus))
 
+	mux.HandleFunc("POST /api/network/capability/claim", withAuth(handleCapabilityClaim))
+	mux.HandleFunc("GET /api/network/capability/claims", withAuth(handleCapabilityClaims))
+	mux.HandleFunc("GET /api/network/capability/verify/{peer_id}", withAuth(handleCapabilityVerify))
+
+	mux.HandleFunc("GET /api/network/ledger/contributions", withAuth(handleLedgerContributions))
+	mux.HandleFunc("GET /api/network/ledger/balance/{node_id}", withAuth(handleLedgerBalance))
+	mux.HandleFunc("GET /api/network/ledger/transactions", withAuth(handleLedgerTransactions))
+
 	// Dynamic Load Balancer (Phase 4)
 	mux.HandleFunc("GET /api/network/loadbalancer/status", withAuth(handleLBStatus))
 	mux.HandleFunc("GET /api/network/loadbalancer/nodes", withAuth(handleLBNodes))
