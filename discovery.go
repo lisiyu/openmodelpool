@@ -90,54 +90,60 @@ func (f *FederationManager) fetchFromPeers() {
 			continue
 		}
 
-		url := fmt.Sprintf("%s/api/federation/pool", peer.Endpoint)
-		p3Ctx, p3Cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer p3Cancel()
-		req, err := http.NewRequestWithContext(p3Ctx, http.MethodGet, url, nil)
-		if err != nil {
-			slog.Debug("failed to build pool request",
-				"peer_id", peer.NodeID, "error", err)
-			continue
-		}
-		// R5: identify ourselves via X-Node-ID so the peer's withFederationAuth
-		// admits us (we are in its trust pool via P0-2 on first contact).
-		if node != nil {
-			req.Header.Set("X-Node-ID", node.NodeID())
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			slog.Debug("failed to fetch pool from peer",
-				"peer_id", peer.NodeID, "error", err)
-			continue
-		}
+		// P1 fix: wrap loop body in anonymous function so defer runs per-iteration
+		done := func() bool {
+			url := fmt.Sprintf("%s/api/federation/pool", peer.Endpoint)
+			p3Ctx, p3Cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer p3Cancel()
+			req, err := http.NewRequestWithContext(p3Ctx, http.MethodGet, url, nil)
+			if err != nil {
+				slog.Debug("failed to build pool request",
+					"peer_id", peer.NodeID, "error", err)
+				return false
+			}
+			// R5: identify ourselves via X-Node-ID so the peer's withFederationAuth
+			// admits us (we are in its trust pool via P0-2 on first contact).
+			if node != nil {
+				req.Header.Set("X-Node-ID", node.NodeID())
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				slog.Debug("failed to fetch pool from peer",
+					"peer_id", peer.NodeID, "error", err)
+				return false
+			}
 
-		if resp.StatusCode != http.StatusOK {
-			io.Copy(io.Discard, resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				return false
+			}
+
+			body, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			continue
-		}
+			if err != nil {
+				slog.Debug("failed to read pool response from peer",
+					"peer_id", peer.NodeID, "error", err)
+				return false
+			}
 
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			slog.Debug("failed to read pool response from peer",
-				"peer_id", peer.NodeID, "error", err)
-			continue
-		}
+			var pool TrustPool
+			if err := json.Unmarshal(body, &pool); err != nil {
+				slog.Debug("failed to parse pool JSON from peer",
+					"peer_id", peer.NodeID, "error", err)
+				return false
+			}
 
-		var pool TrustPool
-		if err := json.Unmarshal(body, &pool); err != nil {
-			slog.Debug("failed to parse pool JSON from peer",
-				"peer_id", peer.NodeID, "error", err)
-			continue
+			slog.Info("fetched trust pool from peer via P2P fallback",
+				"peer_id", peer.NodeID,
+				"version", pool.Version,
+				"nodes", len(pool.Nodes))
+			f.UpdateTrustPool(pool)
+			return true
+		}()
+		if done {
+			return
 		}
-
-		slog.Info("fetched trust pool from peer via P2P fallback",
-			"peer_id", peer.NodeID,
-			"version", pool.Version,
-			"nodes", len(pool.Nodes))
-		f.UpdateTrustPool(pool)
-		return
 	}
 
 	slog.Warn("failed to fetch trust pool from any peer")
@@ -161,46 +167,53 @@ func (f *FederationManager) fetchFromSeedNodes() (*TrustPool, error) {
 
 	client := GetSharedHTTPClient()
 	for _, bootstrapURL := range bootstrapNodes {
-		poolURL := fmt.Sprintf("%s/api/federation/pool", strings.TrimRight(bootstrapURL, "/"))
-		p2Ctx, p2Cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer p2Cancel()
-	req, err := http.NewRequestWithContext(p2Ctx, http.MethodGet, poolURL, nil)
-		if err != nil {
-			slog.Debug("seed node request build failed", "url", bootstrapURL, "error", err)
-			continue
-		}
-		// R5: identify ourselves via X-Node-ID (see fetchFromPeers for rationale).
-		if node != nil {
-			req.Header.Set("X-Node-ID", node.NodeID())
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			slog.Debug("seed node unreachable", "url", bootstrapURL, "error", err)
-			continue
-		}
+		// P1 fix: wrap loop body in anonymous function so defer runs per-iteration
+		pool, found := func() (*TrustPool, bool) {
+			poolURL := fmt.Sprintf("%s/api/federation/pool", strings.TrimRight(bootstrapURL, "/"))
+			p2Ctx, p2Cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer p2Cancel()
+			req, err := http.NewRequestWithContext(p2Ctx, http.MethodGet, poolURL, nil)
+			if err != nil {
+				slog.Debug("seed node request build failed", "url", bootstrapURL, "error", err)
+				return nil, false
+			}
+			// R5: identify ourselves via X-Node-ID (see fetchFromPeers for rationale).
+			if node != nil {
+				req.Header.Set("X-Node-ID", node.NodeID())
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				slog.Debug("seed node unreachable", "url", bootstrapURL, "error", err)
+				return nil, false
+			}
 
-		if resp.StatusCode != http.StatusOK {
-			io.Copy(io.Discard, resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				return nil, false
+			}
+
+			body, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			continue
-		}
+			if err != nil {
+				return nil, false
+			}
 
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			continue
-		}
+			var pool TrustPool
+			if err := json.Unmarshal(body, &pool); err != nil {
+				slog.Debug("invalid trust pool from seed", "url", bootstrapURL, "error", err)
+				return nil, false
+			}
 
-		var pool TrustPool
-		if err := json.Unmarshal(body, &pool); err != nil {
-			slog.Debug("invalid trust pool from seed", "url", bootstrapURL, "error", err)
-			continue
-		}
-
-		if len(pool.Nodes) > 0 {
-			slog.Info("fetched trust pool from seed node",
-				"url", bootstrapURL, "version", pool.Version, "nodes", len(pool.Nodes))
-			return &pool, nil
+			if len(pool.Nodes) > 0 {
+				slog.Info("fetched trust pool from seed node",
+					"url", bootstrapURL, "version", pool.Version, "nodes", len(pool.Nodes))
+				return &pool, true
+			}
+			return nil, false
+		}()
+		if found {
+			return pool, nil
 		}
 	}
 
