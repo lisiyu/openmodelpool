@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.2.6] - 2026-08-04
+
+### 🏗️ P3: Main Package Refactoring
+
+- **Extract `routes.go`**: Moved `setupRoutes()` (304 lines, ~120 HTTP route registrations) from `server.go` into dedicated `routes.go`. `server.go` reduced from 469→165 lines, now focused on server lifecycle (runServer, setupHTTPS, gracefulShutdown).
+- **Consolidate global state into `globals_core.go`**: 16 core infrastructure singleton pointers (cfg, enc, auth, pm, tracker, siderMon, appLogger, multiUser, auditLog, eventBus, metrics, rateLimiter, healthChecker, wafEngine, freePool, vmessManager) moved from 16 scattered files into one documented file.
+- **Consolidate global state into `globals_network.go`**: 25 federation/network singleton pointers (node, fed, gossip, repMgr, allocMgr, msgMgr, nwm, invMgr, updateManager, netMgr, routeTable, guestKeyStore, guestKeyUsage, lbInstance, quotaMgr, regionManager, balanceEngine, globalPool, publicQuota, algoChain, governor, governanceMgr, quotaPriorityMgr, tunnel, nodeRegistry) moved from 23 scattered files into one documented file.
+- **41 source files updated**: Removed relocated `var` declarations, reducing per-file noise and making global state ownership explicit.
+- **Go environment upgraded**: Cloud development environment upgraded from Go 1.18.1 to Go 1.26.5 for local compilation and testing.
+- Build: ✅ | Vet: ✅ | Tests: no new failures (pre-existing unchanged)
+
 ## [4.2.5] - 2026-08-04
 
 ### 🔧 Code Review Fixes (P2-P3 Continued)
