@@ -1,5 +1,31 @@
 # Changelog
 
+## [4.3.9] - 2026-08-06
+
+### 🐛 Fix: shared-network card initialization regressions introduced in 4.3.8
+- `admin-network.js` `renderNetworkUI()`: derive `window._networkMode` from the
+  authoritative server status. 4.3.8 replaced the manual `/api/network/status`
+  fetch in `admin.html` with `loadNetworkStatus()`, which never assigned
+  `_networkMode` — it stayed `undefined` on page load, so the `=== 'shared'`
+  guard never passed and `loadShareInfo()` / `loadGuestKeys()` never ran
+- `admin.html`: restore the `loadFederationConfig()` call in the page-init block.
+  It is the only code that reads `/api/federation/config` and sets the relay
+  toggle state, so 「开启中继」 always rendered OFF on load even when relay was
+  enabled server-side
+- Bump `admin-network.js` cache-buster to `v=347`
+- `main.go`: bump `AppVersion` to 4.3.9 so source-built deploys (which build
+  without the release ldflags) report the real version instead of a stale 4.3.7
+
+## [4.3.8] - 2026-08-06
+
+### 🐛 Fix: all three shared-network toggles were completely dead (P0)
+- `admin-network.js` ended with a stray `}}` (introduced in 8945306), turning the
+  entire file into a SyntaxError. Browsers discarded the whole script, so
+  `toggleNetworkEnabled` / `toggleShareToPool` / `saveRelayToggle` were never
+  defined and 「加入共享网络」/「共享剩余额度」/「开启中继」 all silently did nothing
+- `admin.html`: page init now calls `loadNetworkStatus()` so `renderNetworkUI()`
+  initializes the toggle states on load
+
 ## [4.3.7] - 2026-08-05
 
 ### 🐛 Fix: Kilo Gateway / Ollama preset forces API Key in admin UI
