@@ -486,7 +486,7 @@ type InviteCode struct {
 type Consumer struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
-	APIKey        string `json:"api_key"`
+	APIKey        string `json:"api_key,omitempty"`
 	InviteCode    string `json:"invite_code"`
 	CreatedAt     string `json:"created_at"`
 	TotalTokens   int64  `json:"total_tokens"`

@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.3.2] - 2026-08-05
+
+### 🔒 Security: Fix API Key exposure in consumer register response
+- `multiuser.go`: handleConsumerRegister 不再返回完整 Consumer 对象，仅返回 id/name/api_key
+- `types.go`: Consumer.APIKey 字段添加 `json:"api_key,omitempty"` 标签，防止序列化泄露
+
 ## [4.3.1] - 2026-08-05
 
 ### 🔒 Security: Fix context.Background() residual — add timeouts to outbound requests

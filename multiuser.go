@@ -601,9 +601,11 @@ func handleConsumerRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{
-		"success":  true,
-		"consumer": consumer,
-		"message":  "注册成功，请保存你的 API Key，后续请求需要携带",
+		"success": true,
+		"id":      consumer.ID,
+		"name":    consumer.Name,
+		"api_key": consumer.APIKey,
+		"message": "注册成功，请保存你的 API Key，后续请求需要携带",
 	})
 }
 
