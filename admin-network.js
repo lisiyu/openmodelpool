@@ -342,12 +342,107 @@ let _shareFilter = 'all';
     let _wizardMnemonic = '';   // 仅驻前端内存的助记词明文
     let _wizardTimer = null;
     let _wizardRestored = false; // 本次向导是否走恢复路径
+    let _onboardingStep = 1;    // 当前向导步骤 (1-4)
 
-    function _showWizardStep(step) {
-      ['wizardStepDisclaimer', 'wizardStepMnemonic', 'wizardStepBackup', 'wizardStepDone'].forEach(id => {
+    // ============================================================
+    // 4 步入网向导核心逻辑
+    // ============================================================
+
+    function renderOnboardingWizard() {
+      _onboardingStep = 1;
+      _showOnboardingStep(1);
+      _updateProgressBar(1);
+    }
+
+    function _showOnboardingStep(step) {
+      ['onboardingStep1', 'onboardingStep2', 'onboardingStep3', 'onboardingStep4'].forEach((id, i) => {
         const el = document.getElementById(id);
-        if (el) el.style.display = (id === step) ? '' : 'none';
+        if (el) el.style.display = ((i + 1) === step) ? '' : 'none';
       });
+      _updateProgressBar(step);
+      const titleEl = document.getElementById('onboardingWizardTitle');
+      const titles = ['🌐 加入共享网络', '🌐 加入共享网络 · 助记词备份', '🌐 加入共享网络 · 共享边界', '🌐 加入共享网络 · 完成'];
+      if (titleEl && titles[step - 1]) titleEl.textContent = titles[step - 1];
+    }
+
+    function _updateProgressBar(step) {
+      const dots = document.querySelectorAll('#onboardingProgressBar .ob-step-dot');
+      const lines = document.querySelectorAll('#onboardingProgressBar .ob-step-line');
+      dots.forEach((dot, i) => {
+        const s = i + 1;
+        dot.classList.remove('active', 'completed');
+        if (s < step) dot.classList.add('completed');
+        else if (s === step) dot.classList.add('active');
+      });
+      lines.forEach((line, i) => {
+        const s = i + 1;
+        line.classList.remove('active', 'completed');
+        if (s < step) line.classList.add('completed');
+        else if (s === step) line.classList.add('active');
+      });
+    }
+
+    async function onboardingGoStep(step) {
+      if (step === 2) {
+        if (!_wizardMnemonic && !_wizardRestored) {
+          _showOnboardingStep(2);
+          const rp = document.getElementById('restorePanel');
+          if (rp) rp.style.display = 'none';
+          generateIdentity();
+        } else {
+          _showOnboardingStep(2);
+        }
+      } else if (step === 3) {
+        if (!_wizardMnemonic && !_wizardRestored) {
+          toast('请先生成助记词并确认备份', 'warning');
+          return;
+        }
+        const bc = document.getElementById('backupConfirmCheck');
+        if (bc && !bc.checked) {
+          toast('请先勾选「我已安全抄写」', 'warning');
+          return;
+        }
+        await loadShareBoundary();
+        _showOnboardingStep(3);
+      } else if (step === 4) {
+        await saveShareBoundary();
+        try {
+          const r = await authFetch('/api/network/status');
+          const d = await r.json();
+          const doneId = document.getElementById('doneNodeId');
+          if (doneId) doneId.textContent = 'Node ID: ' + (d.node_id || '生成中...');
+        } catch(e) {
+          const doneId = document.getElementById('doneNodeId');
+          if (doneId) doneId.textContent = 'Node ID: 将在启用后生成';
+        }
+        _showOnboardingStep(4);
+      } else {
+        _showOnboardingStep(step);
+      }
+    }
+
+    async function onboardingFinish() {
+      const btn = document.getElementById('onboardingFinishBtn');
+      if (btn) { btn.disabled = true; btn.textContent = '正在启用...'; btn.style.opacity = '0.5'; }
+      try {
+        await completeJoin(_wizardRestored);
+      } catch(e) {
+        toast('启用失败: ' + e.message, 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '完成'; btn.style.opacity = '1'; }
+      }
+    }
+
+    // Legacy step IDs kept for backward compat with restore flow
+    function _showWizardStep(step) {
+      const stepMap = {
+        'wizardStepDisclaimer': 1,
+        'wizardStepMnemonic': 2,
+        'wizardStepBackup': 2,
+        'wizardStepDone': 4
+      };
+      const mapped = stepMap[step];
+      if (mapped) _showOnboardingStep(mapped);
     }
 
     // 清空内存助记词并复位 S2 步骤（reason 非空时给出提示）
@@ -360,6 +455,8 @@ let _shareFilter = 'all';
       if (nextBtn) { nextBtn.disabled = true; nextBtn.style.opacity = '0.5'; }
       const expBtn = document.getElementById('mnemonicExportBtn');
       if (expBtn) expBtn.style.display = 'none';
+      const bc = document.getElementById('backupConfirmCheck');
+      if (bc) { bc.checked = false; toggleBackupConfirmBtn(); }
       if (reason) toast(reason, 'warning');
     }
 
@@ -385,29 +482,24 @@ let _shareFilter = 'all';
       if (!modal) return;
       modal.classList.add('open');
       _wizardRestored = false;
-      _showWizardStep('wizardStepDisclaimer');
-      const cc = document.getElementById('networkConsentCheck');
-      if (cc) cc.checked = false;
-      toggleNetworkConsentBtn();
+      _onboardingStep = 1;
+      renderOnboardingWizard();
       _clearWizardMnemonic('');
       try {
         const r = await fetch('/api/network/disclaimer');
         const d = await r.json();
-        renderDisclaimer(d);
+        // Keep renderDisclaimer for legacy compat, but onboarding step 1 has static content
       } catch(e) {
-        toast('加载免责声明失败', 'error');
+        // Non-blocking: onboarding step 1 has static content already
       }
     }
 
     function closeNetworkWizard() {
       const modal = document.getElementById('networkDisclaimerModal');
       if (modal) modal.classList.remove('open');
-      // 复位所有向导状态，清空任何内存中的助记词明文
       _clearWizardMnemonic('');
       _wizardRestored = false;
-      const cc = document.getElementById('networkConsentCheck');
-      if (cc) cc.checked = false;
-      toggleNetworkConsentBtn();
+      _onboardingStep = 1;
       const bc = document.getElementById('backupConfirmCheck');
       if (bc) { bc.checked = false; toggleBackupConfirmBtn(); }
       const rp = document.getElementById('restorePanel');
@@ -422,12 +514,25 @@ let _shareFilter = 'all';
       btn.style.opacity = checked ? '1' : '0.5';
     }
 
-    // S1 → S2：进入助记词步骤并生成
+    // S1 → S2：进入助记词步骤并生成（legacy compat, now delegates to onboardingGoStep）
     function wizardGoMnemonic() {
-      _showWizardStep('wizardStepMnemonic');
-      const rp = document.getElementById('restorePanel');
-      if (rp) rp.style.display = 'none';
-      generateIdentity();
+      onboardingGoStep(2);
+    }
+
+    // S2 → 返回 S1（legacy compat）
+    function wizardBackToConsent() {
+      _clearWizardMnemonic('');
+      onboardingGoStep(1);
+    }
+
+    // S2 → S3（legacy compat, now handled by onboardingGoStep(3)）
+    function wizardGoBackup() {
+      onboardingGoStep(3);
+    }
+
+    // S3 → 返回 S2（legacy compat）
+    function wizardBackToMnemonic() {
+      onboardingGoStep(2);
     }
 
     // S2 → 返回 S1
@@ -480,6 +585,7 @@ let _shareFilter = 'all';
       if (nextBtn) { nextBtn.disabled = false; nextBtn.style.opacity = '1'; }
       const expBtn = document.getElementById('mnemonicExportBtn');
       if (expBtn) expBtn.style.display = '';
+      toggleBackupConfirmBtn();
     }
 
     // 加密导出（浏览器端包装为 .json 下载，明文不留盘）
@@ -523,10 +629,10 @@ let _shareFilter = 'all';
 
     function toggleBackupConfirmBtn() {
       const checked = document.getElementById('backupConfirmCheck').checked;
-      const btn = document.getElementById('backupConfirmBtn');
+      const btn = document.getElementById('mnemonicNextBtn');
       if (!btn) return;
-      btn.disabled = !checked;
-      btn.style.opacity = checked ? '1' : '0.5';
+      btn.disabled = !checked || !_wizardMnemonic;
+      btn.style.opacity = (checked && _wizardMnemonic) ? '1' : '0.5';
     }
 
     // 恢复入口（S0/S5）：进入 S2 的恢复面板
@@ -608,8 +714,8 @@ let _shareFilter = 'all';
         // 3) 成功：展示完成态并复位内存助记词
         _clearWizardMnemonic('');
         const doneId = document.getElementById('doneNodeId');
-        if (doneId) doneId.textContent = 'NodeID: ' + (d.node_id || '');
-        _showWizardStep('wizardStepDone');
+        if (doneId) doneId.textContent = 'Node ID: ' + (d.node_id || '');
+        _showOnboardingStep(4);
 
         // 更新开关与 UI
         const tog = document.getElementById('networkEnabledToggle');
@@ -624,6 +730,29 @@ let _shareFilter = 'all';
         await loadNetworkStatus();
         const msg = _wizardRestored ? '🎉 已从助记词恢复并加入共享网络！' : '🎉 已加入共享网络！';
         toast(msg, 'success');
+      } catch(e) {
+        toast('加入失败: ' + e.message, 'error');
+      }
+    }
+
+    // Fallback: confirmNetworkJoin (legacy single-step confirm, kept for backward compat)
+    async function confirmNetworkJoin() {
+      try {
+        const rc = await authFetch('/api/network/consent', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ accepted: true })
+        });
+        if (!rc.ok) {
+          const cd = await rc.json().catch(() => ({}));
+          toast(extractError(cd) || '记录同意失败', 'error');
+          return;
+        }
+        const r2 = await authFetch('/api/network/enable', { method: 'POST' });
+        const d = await r2.json();
+        if (!r2.ok) { toast(extractError(d) || '启用失败', 'error'); return; }
+        toast('已加入共享网络', 'success');
+        await loadNetworkStatus();
       } catch(e) {
         toast('加入失败: ' + e.message, 'error');
       }

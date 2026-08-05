@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.3.5] - 2026-08-05
+
+### ✨ Feature: 4-step onboarding wizard (REQ-5/6/12)
+- Replace single-step disclaimer modal with 4-step wizard
+- Step 1: Network须知说明 (公益共享、Key 本地保存、积分不可交易、随时退出)
+- Step 2: 助记词生成与强制备份 (复用现有 BIP39 逻辑)
+- Step 3: 共享边界配置 (DailyContribCap/ShareIdleOnly/ModelWhitelist)
+- Step 4: 完成确认 (显示 Node ID，启用网络)
+- Progress bar with step indicators
+
 ## [4.3.4] - 2026-08-05
 
 ### 🔒 Security: Fix hopCount strconv.Atoi error ignored
