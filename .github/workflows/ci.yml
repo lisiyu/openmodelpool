@@ -69,7 +69,8 @@ jobs:
 
   # P2: Integration tests — soft gate (continue-on-error).
   # Runs full test suite including chromedp and network-dependent tests.
-  # These may fail due to environment issues and should not block merges.
+  # Chrome/Chromium install is now fixed; continue-on-error retained for
+  # network-dependent tests that may fail due to external service unavailability.
   test-integration:
     name: Integration tests
     needs: build-gate
@@ -83,9 +84,16 @@ jobs:
           cache: true
       - name: Install Chrome for chromedp tests
         run: |
-          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+          # Install Chrome (or fall back to Chromium) for integration tests.
+          # --batch --yes prevents gpg from trying to open /dev/tty (absent in CI).
+          set -e
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/google-chrome.gpg
           echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
-          sudo apt-get update && sudo apt-get install -y google-chrome-stable
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable || {
+            echo "Chrome install failed; falling back to Chromium"
+            sudo apt-get install -y chromium-browser || sudo apt-get install -y chromium
+          }
       - name: Run integration tests
         run: go test -race -timeout 30m ./...
         env:
