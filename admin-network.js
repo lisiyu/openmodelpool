@@ -163,6 +163,7 @@ let _shareFilter = 'all';
       if (!networkStatus) return;
       const s = networkStatus;
       const isShared = s.mode === 'shared' || s.network_enabled;
+      window._networkMode = isShared ? 'shared' : 'personal';
       const panel = document.getElementById('networkActivePanel');
 
       // Status badge reflects the real shared-network state (not federation).

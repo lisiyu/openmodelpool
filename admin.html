@@ -1209,7 +1209,7 @@ select.form-input{appearance:none;cursor:pointer}
 <!-- 添加/编辑平台模态框 -->
 <script src="/admin-common.js?v=344"></script>
 <script src="/admin-settings.js?v=344"></script>
-<script src="/admin-network.js?v=344"></script>
+<script src="/admin-network.js?v=347"></script>
 <script src="/admin-share.js?v=344"></script>
 <script src="/admin-update.js?v=345"></script>
 <script src="/admin-logs.js?v=344"></script>
@@ -2624,6 +2624,7 @@ if (authToken) {
         await loadNetworkStatus();
         // loadNetworkStatus() → renderNetworkUI() initializes all toggle states
         if (window._networkMode === 'shared') {
+          try { loadFederationConfig(); } catch(e) {}
           try { loadShareInfo(); } catch(e) {}
           try { loadGuestKeys(); } catch(e) {}
         }
