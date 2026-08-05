@@ -2618,18 +2618,14 @@ if (authToken) {
       try { refreshSiderStatus(); } catch(e) {}
       try { refreshLogs(); } catch(e) {}
     }, 500);
-    // P3: Network mode check (defer 800ms)
+    // P3: Network mode check & toggle initialization (defer 800ms)
     setTimeout(async () => {
       try {
-        const nr = await authFetch('/api/network/status');
-        const nd = await nr.json();
-        window._networkMode = nd.mode || 'personal';
+        await loadNetworkStatus();
+        // loadNetworkStatus() → renderNetworkUI() initializes all toggle states
         if (window._networkMode === 'shared') {
-          try { loadFederationConfig(); } catch(e) {}
           try { loadShareInfo(); } catch(e) {}
           try { loadGuestKeys(); } catch(e) {}
-        } else {
-          console.log('[CHAIN] Personal mode: skipping federation/share/guestKeys');
         }
       } catch(e) { console.warn('network mode check failed', e); }
     }, 800);

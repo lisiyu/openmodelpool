@@ -1226,5 +1226,3 @@ async function saveShareBoundary() {
   }
 }
 
-}}
-
