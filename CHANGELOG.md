@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.3.6] - 2026-08-05
+
+### 🔒 Fix: gateway hop count variable shadowing bug (P0)
+- `network_relay.go`: `handleGatewayRequest` used `:=` instead of `=`, creating a local
+  `hopCount` that shadowed the outer variable — relay loop prevention was completely
+  broken for gateway requests
+### 🧹 Cleanup
+- Remove accidentally committed `openmodelpool` binary (18MB) from repo
+- Remove `.monkeycode/` planning directory from repo
+- Update `.gitignore` to include `openmodelpool` and `.monkeycode/`
+
+
 ## [4.3.5] - 2026-08-05
 
 ### ✨ Feature: 4-step onboarding wizard (REQ-5/6/12)

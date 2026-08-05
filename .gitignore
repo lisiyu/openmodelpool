@@ -17,3 +17,10 @@ scripts/omp-tunnel-reset.ps1
 # OS files
 .DS_Store
 
+
+# Binary (renamed from modelmux to openmodelpool)
+openmodelpool
+openmodelpool.bak
+
+# Monkeycode AI planning files
+.monkeycode/

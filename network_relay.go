@@ -604,7 +604,8 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	// Check hop count to prevent loops
 	hopCount := 0
 	if hopStr := r.Header.Get(headerRelayHop); hopStr != "" {
-		hopCount, err := strconv.Atoi(hopStr)
+		var err error
+		hopCount, err = strconv.Atoi(hopStr)
 		if err != nil {
 			writeError(w, 400, "invalid hop count header")
 			return
