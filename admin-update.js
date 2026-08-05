@@ -132,6 +132,16 @@
       detail = (detail ? detail + ' · ' : '') + '错误：' + escapeHtml(s.error);
     }
 
+    // If the local node's recorded target version disagrees with the version
+    // the server is actually running, surface it instead of silently trusting
+    // a stale "updated to vX" record (e.g. after an external deploy).
+    var mismatchWarn = '';
+    if (s.is_local && s.target_version && _currentVersion && s.target_version !== _currentVersion) {
+      mismatchWarn = '<div style="margin-top:6px;font-size:11px;color:var(--warning,#f5a623)">⚠️ 记录的更新目标 v' +
+        escapeHtml(s.target_version) + ' 与当前运行 v' + escapeHtml(_currentVersion) +
+        ' 不一致（可能经外部部署）</div>';
+    }
+
     return '' +
       '<div style="border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-bottom:8px">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
@@ -143,6 +153,7 @@
           '<div style="height:100%;width:' + pct + '%;background:' + st.bar + ';transition:width .4s"></div>' +
         '</div>' +
         (detail ? '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);line-height:1.5">' + detail + '</div>' : '') +
+        mismatchWarn +
       '</div>';
   }
 

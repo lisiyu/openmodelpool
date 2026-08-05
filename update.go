@@ -346,6 +346,7 @@ func (um *UpdateManager) reconcilePending() {
 			um.local.Progress = 0
 			um.local.Log = ""
 		}
+		um.reconcileLocalStaleSuccessLocked()
 		um.mu.Unlock()
 		return
 	}
@@ -360,6 +361,7 @@ func (um *UpdateManager) reconcilePending() {
 			um.local.Progress = 0
 			um.local.Log = ""
 		}
+		um.reconcileLocalStaleSuccessLocked()
 		um.mu.Unlock()
 		return
 	}
@@ -379,6 +381,25 @@ func (um *UpdateManager) reconcilePending() {
 		um.local.Phase = PhaseIdle
 		um.local.Progress = 0
 		um.local.Log = ""
+	}
+	// Even when a pending marker exists, the running binary may have been
+	// changed by an external deploy (git pull + go build, Codespace rebuild).
+	um.reconcileLocalStaleSuccessLocked()
+}
+
+// reconcileLocalStaleSuccessLocked corrects the local status when it claims a
+// successful update to a version that no longer matches the running binary.
+// This happens after an external deploy changes AppVersion without going
+// through the in-place self-update flow, leaving a stale "updated to vX" record
+// in the admin card. Caller must hold um.mu (write lock).
+func (um *UpdateManager) reconcileLocalStaleSuccessLocked() {
+	if um.local.Phase == PhaseSuccess && compareVersion(um.local.TargetVersion, AppVersion) != 0 {
+		um.local.TargetVersion = AppVersion
+		um.local.Progress = 100
+		um.local.Error = ""
+		um.local.Log = fmt.Sprintf("当前运行 v%s（外部部署）", AppVersion)
+		um.local.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		um.persistLocked()
 	}
 }
 
