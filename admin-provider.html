@@ -757,13 +757,14 @@ function selectPreset(pid) {
   const p = presets.find(x => x.id === pid);
   if (!p) return;
   editingId = null;
+  selectedPresetKeyOptional = !!(p.key_optional);
   document.getElementById('editKeysSection').style.display = 'none';
   document.getElementById('modalStep1').style.display = 'none';
   document.getElementById('modalStep2').style.display = '';
   // Show registration link if available
   const regLinkEl = document.getElementById('presetRegLink');
   if (regLinkEl) {
-    if (p.api_key_url) {
+    if (p.api_key_url && !p.key_optional) {
       regLinkEl.innerHTML = `<a href="${escapeAttr(p.api_key_url)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:13px">📝 还没有 API Key？前往官网注册 →</a>`;
       regLinkEl.style.display = '';
     } else {
@@ -775,7 +776,7 @@ function selectPreset(pid) {
   document.getElementById('pName').value = p.name;
   document.getElementById('pUrl').value = p.base_url;
   document.getElementById('pKey').value = '';
-  document.getElementById('pKey').placeholder = '输入 API Key';
+  document.getElementById('pKey').placeholder = p.key_optional ? 'API Key（可选，此平台无需 Key）' : '输入 API Key';
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.id === 'openai' ? 10 : p.id === 'openrouter' ? 20 : p.id === 'ollama' ? 50 : 5;
   document.getElementById('pEnabled').checked = true;

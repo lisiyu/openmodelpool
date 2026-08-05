@@ -228,6 +228,8 @@ type Provider struct {
 	// Model-to-bot mapping for Coze (model ID -> Coze bot_id)
 	ModelBotMap map[string]string `json:"model_bot_map,omitempty"`
 
+	KeyOptional bool `json:"key_optional,omitempty"` // preset: true = API Key not required (e.g. free anonymous providers)
+
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }

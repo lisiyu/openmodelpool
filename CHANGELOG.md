@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.3.7] - 2026-08-05
+
+### 🐛 Fix: Kilo Gateway / Ollama preset forces API Key in admin UI
+- Add `KeyOptional` field to Provider struct (types.go)
+- Mark `kilo-gateway` and `ollama` presets as `KeyOptional: true`
+- `handleGetPresets` now returns `key_optional` in API response
+- admin-provider.html: `selectPreset` sets `selectedPresetKeyOptional` based on
+  `key_optional`, skips Key validation and hides registration link
+- Key placeholder shows "API Key（可选，此平台无需 Key）" for optional providers
+
 ## [4.3.6] - 2026-08-05
 
 ### 🔒 Fix: gateway hop count variable shadowing bug (P0)
