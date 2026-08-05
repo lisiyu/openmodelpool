@@ -1095,9 +1095,29 @@ func (p *Provider) SelectAPIKey(accessType string) (*APIKeyConfig, error) {
 			continue
 		}
 
-		// Check quota
+		// Check quota — total
 		if key.Quota > 0 && key.Used >= key.Quota {
 			continue
+		}
+
+		// Check quota — daily
+		if key.QuotaDaily > 0 {
+			todayStr := time.Now().Format("2006-01-02")
+			if key.LastDailyReset != todayStr {
+				// counter will be reset on next RecordKeyUsage; treat as 0 used
+			} else if key.UsedDaily >= key.QuotaDaily {
+				continue
+			}
+		}
+
+		// Check quota — monthly
+		if key.QuotaMonthly > 0 {
+			monthStr := time.Now().Format("2006-01")
+			if key.LastMonthlyReset != monthStr {
+				// counter will be reset on next RecordKeyUsage; treat as 0 used
+			} else if key.UsedMonthly >= key.QuotaMonthly {
+				continue
+			}
 		}
 
 		// Check expiration

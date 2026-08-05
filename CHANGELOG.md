@@ -1,5 +1,24 @@
 # Changelog
 
+## [4.3.10] - 2026-08-06
+
+### ✨ Feature: Idle quota prompt UI (REQ-13)
+- Replace session-only toast with persistent banner using `/api/network/idle-quota` endpoint
+- Banner shows usage percentage and remaining tokens from backend `ShouldNotify` logic
+- "暂不" button dismisses with localStorage per-month persistence (no re-prompt within same month)
+- "了解/加入" button opens the 4-step onboarding wizard directly
+- Reuses existing `slideIn` animation from toast system
+
+### ✨ Feature: Provider Key-level fine-grained quota control (§8.3)
+- `provider.go`: `SelectAPIKey` now checks `QuotaDaily`/`QuotaMonthly` in addition to total `Quota`
+  - Stale daily/monthly counters (date mismatch) are treated as 0 used, not as exceeded
+  - Key is skipped when any active quota limit is reached
+- `admin-provider.html`: Fix `showAddApiKey` — `quotaDaily`/`quotaMonthly` were undefined (bug), now prompted
+- `admin-provider.html`: Key list shows used/limit for daily, monthly, and total quotas (e.g. "日: 50/100")
+- `admin-provider.html`: Add "编辑额度" button per key with `editKeyQuota()` function
+- `admin-provider.html`: Remove duplicate total quota display in key list
+- Tests: 5 new `TestHB5_SelectAPIKey_*` cases (daily exceeded, monthly exceeded, stale daily, stale monthly, daily-ok-monthly-exceeded)
+
 ## [4.3.9] - 2026-08-06
 
 ### 🐛 Fix: shared-network card initialization regressions introduced in 4.3.8
@@ -38,15 +57,22 @@
 
 ## [4.3.6] - 2026-08-05
 
+### ✨ Feature: Idle quota prompt UI (REQ-13)
+- Replace session-only toast with persistent banner using `/api/network/idle-quota` endpoint
+- Banner shows usage percentage and remaining tokens from backend `ShouldNotify` logic
+- "暂不" button dismisses with localStorage per-month persistence (no re-prompt within same month)
+- "了解/加入" button opens the 4-step onboarding wizard directly
+- Reuses existing `slideIn` animation from toast system
+
 ### 🔒 Fix: gateway hop count variable shadowing bug (P0)
 - `network_relay.go`: `handleGatewayRequest` used `:=` instead of `=`, creating a local
   `hopCount` that shadowed the outer variable — relay loop prevention was completely
   broken for gateway requests
+
 ### 🧹 Cleanup
 - Remove accidentally committed `openmodelpool` binary (18MB) from repo
 - Remove `.monkeycode/` planning directory from repo
 - Update `.gitignore` to include `openmodelpool` and `.monkeycode/`
-
 
 ## [4.3.5] - 2026-08-05
 

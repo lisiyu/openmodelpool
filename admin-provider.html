@@ -1153,11 +1153,10 @@ async function loadApiKeys(pid) {
       let html = '<table class="usage-table" ><thead><tr><th>别名/Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>可用</th><th>操作</th><th>测试</th></tr></thead><tbody>';
       for (const k of keys) {
         var qParts = [];
-        if (k.quota_daily > 0) qParts.push('日:' + k.quota_daily.toLocaleString());
-        if (k.quota_monthly > 0) qParts.push('月:' + k.quota_monthly.toLocaleString());
-        if (k.quota > 0) qParts.push('总:' + k.quota.toLocaleString());
-        if (k.quota > 0) qParts.push('总:' + k.quota.toLocaleString());
-        const quotaText = qParts.length > 0 ? qParts.join('/') : '无限';
+        if (k.quota_daily > 0) qParts.push('日:' + k.used_daily.toLocaleString() + '/' + k.quota_daily.toLocaleString());
+        if (k.quota_monthly > 0) qParts.push('月:' + k.used_monthly.toLocaleString() + '/' + k.quota_monthly.toLocaleString());
+        if (k.quota > 0) qParts.push('总:' + k.used.toLocaleString() + '/' + k.quota.toLocaleString());
+        const quotaText = qParts.length > 0 ? qParts.join('<br>') : '无限';
         const hourlyText = k.quota_hourly > 0 ? k.quota_hourly.toLocaleString() + '/h' : '';
         const rpmText = k.rpm > 0 ? k.rpm + ' RPM' : '';
         const extraLimits = [hourlyText, rpmText].filter(Boolean).join(' · ');
@@ -1174,6 +1173,7 @@ async function loadApiKeys(pid) {
         const tableKeyStatusId = 'table-keystatus-' + k.id;
         html += '<td><span id="' + tableKeyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试按钮检测">⏳</span></td>';
         html += '<td>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="editKeyQuota(\'' + pid + '\',\'' + k.id + '\',' + (k.quota||0) + ',' + (k.quota_daily||0) + ',' + (k.quota_monthly||0) + ')">编辑额度</button> ';
         html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="editKeyAccessControl(\'' + pid + '\',\'' + k.id + '\',\'' + k.access_control + '\')">编辑权限</button> ';
         html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
         html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteApiKey(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
@@ -1192,17 +1192,19 @@ async function loadApiKeys(pid) {
 }
 
 async function showAddApiKey(pid) {
-  const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
-  const key = prompt('请输入 API Key:');
-  if (!key) return;
-  const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
-  const access = prompt('访问权限 (private/shared):', 'private') || 'private';
-  const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
-  try {
-    const r = await authFetch('/api/providers/' + pid + '/keys', {
-      method: 'POST',
-      body: JSON.stringify({ key: key, alias: alias, quota: quota, quota_daily: quotaDaily, quota_monthly: quotaMonthly, access_control: access, priority: priority, enabled: true })
-    });
+   const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
+   const key = prompt('请输入 API Key:');
+   if (!key) return;
+   const quota = parseInt(prompt('总额度限制 (tokens, 0=无限):', '0'), 10) || 0;
+   const quotaDaily = parseInt(prompt('日额度限制 (tokens, 0=无限):', '0'), 10) || 0;
+   const quotaMonthly = parseInt(prompt('月额度限制 (tokens, 0=无限):', '0'), 10) || 0;
+   const access = prompt('访问权限 (private/shared):', 'private') || 'private';
+   const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
+   try {
+     const r = await authFetch('/api/providers/' + pid + '/keys', {
+       method: 'POST',
+       body: JSON.stringify({ key: key, alias: alias, quota: quota, quota_daily: quotaDaily, quota_monthly: quotaMonthly, access_control: access, priority: priority, enabled: true })
+     });
     const d = await r.json();
     if (d.success) {
       toast('✅ API Key 已添加', 'success');
@@ -1231,27 +1233,49 @@ async function toggleKeyEnabled(pid, keyId, enabled) {
 }
 
 async function editKeyAccessControl(pid, keyId, currentAccess) {
-  const newAccess = prompt('修改 Key 访问权限\n\n当前: ' + currentAccess + '\n\n可选值:\n- private: 私有（额度仅自用）\n- shared: 共享（额度贡献到共享池）', currentAccess);
-  if (!newAccess || newAccess === currentAccess) return;
-  if (!['private', 'shared'].includes(newAccess)) {
-    toast('无效权限值，请输入 private/shared', 'error');
-    return;
-  }
-  try {
-    const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
-      method: 'PUT',
-      body: JSON.stringify({ access_control: newAccess })
-    });
-    const d = await r.json();
-    if (d.success) {
-      toast('✅ 权限已更新为: ' + newAccess, 'success');
-      await loadApiKeys(pid);
-      await loadProviders();
-    } else {
-      toast('更新失败: ' + (d.error || '未知错误'), 'error');
-    }
-  } catch(e) { toast('更新失败: ' + e.message, 'error'); }
-}
+   const newAccess = prompt('修改 Key 访问权限\n\n当前: ' + currentAccess + '\n\n可选值:\n- private: 私有（额度仅自用）\n- shared: 共享（额度贡献到共享池）', currentAccess);
+   if (!newAccess || newAccess === currentAccess) return;
+   if (!['private', 'shared'].includes(newAccess)) {
+     toast('无效权限值，请输入 private/shared', 'error');
+     return;
+   }
+   try {
+     const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+       method: 'PUT',
+       body: JSON.stringify({ access_control: newAccess })
+     });
+     const d = await r.json();
+     if (d.success) {
+       toast('权限已更新为: ' + newAccess, 'success');
+       await loadApiKeys(pid);
+       await loadProviders();
+     } else {
+       toast('更新失败: ' + (d.error || '未知错误'), 'error');
+     }
+   } catch(e) { toast('更新失败: ' + e.message, 'error'); }
+ }
+
+async function editKeyQuota(pid, keyId, currentQuota, currentDaily, currentMonthly) {
+   const quota = parseInt(prompt('总额度限制 (tokens, 0=无限):', currentQuota || 0), 10);
+   if (isNaN(quota)) return;
+   const quotaDaily = parseInt(prompt('日额度限制 (tokens, 0=无限):', currentDaily || 0), 10);
+   if (isNaN(quotaDaily)) return;
+   const quotaMonthly = parseInt(prompt('月额度限制 (tokens, 0=无限):', currentMonthly || 0), 10);
+   if (isNaN(quotaMonthly)) return;
+   try {
+     const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+       method: 'PUT',
+       body: JSON.stringify({ quota: quota, quota_daily: quotaDaily, quota_monthly: quotaMonthly })
+     });
+     const d = await r.json();
+     if (d.success) {
+       toast('额度已更新', 'success');
+       await loadApiKeys(pid);
+     } else {
+       toast('更新失败: ' + (d.error || '未知错误'), 'error');
+     }
+   } catch(e) { toast('更新失败: ' + e.message, 'error'); }
+ }
 
 async function deleteApiKey(pid, keyId) {
   if (!confirm('确定删除此 API Key？')) return;

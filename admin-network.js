@@ -924,22 +924,41 @@ NodeID: ${nodeId}
     // 闲置额度提醒（非阻塞）：尚未加入网络、但本月仍有剩余额度时，温和提示一次。
     // 通过会话级标志位避免每次刷新都弹窗骚扰（对应 PRD REQ-13「dismiss 后不骚扰」）。
     function maybeShowIdleCapacityHint() {
-      if (window.__idleQuotaHinted) return;
+      if (localStorage.getItem('idle_quota_dismissed_' + new Date().toISOString().slice(0,7))) return;
       const s = networkStatus;
-      if (!s || s.network_enabled) return; // 仅当节点尚未加入共享网络时
+      if (!s || s.network_enabled) return;
       try {
-        authFetch('/api/network/join-conditions')
+        authFetch('/api/network/idle-quota')
           .then((r) => r.json())
           .then((d) => {
-            if (d && d.has_remaining && !s.network_enabled) {
-              window.__idleQuotaHinted = true;
-              toast('💡 你本月还有闲置额度，可以考虑加入共享网络，将闲置额度贡献给他人。', 'info');
+            if (d && d.should_notify && !s.network_enabled) {
+              showIdleQuotaBanner(d.message);
             }
           })
           .catch(() => {});
-      } catch (e) {
-        // 非阻塞：提醒失败不影响主流程
-      }
+      } catch (e) {}
+    }
+
+    function showIdleQuotaBanner(message) {
+      let existing = document.getElementById('idleQuotaBanner');
+      if (existing) return;
+      const banner = document.createElement('div');
+      banner.id = 'idleQuotaBanner';
+      banner.style.cssText = 'position:fixed;top:16px;right:16px;z-index:10000;max-width:420px;padding:16px 20px;background:linear-gradient(135deg,#6c63ff,#48c6ef);color:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.25);font-size:14px;line-height:1.5;animation:slideIn .3s ease';
+      banner.innerHTML = '<div style="margin-bottom:10px">' + (message || '你本月还有闲置额度，可以考虑加入共享网络。') + '</div>'
+        + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+        + '<button id="idleQuotaDismiss" style="padding:6px 14px;border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:6px;cursor:pointer;font-size:13px">暂不</button>'
+        + '<button id="idleQuotaJoin" style="padding:6px 14px;border:none;background:#fff;color:#6c63ff;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">了解/加入</button>'
+        + '</div>';
+      document.body.appendChild(banner);
+      document.getElementById('idleQuotaDismiss').onclick = function() {
+        banner.remove();
+        localStorage.setItem('idle_quota_dismissed_' + new Date().toISOString().slice(0,7), '1');
+      };
+      document.getElementById('idleQuotaJoin').onclick = function() {
+        banner.remove();
+        showNetworkDisclaimer();
+      };
     }
 
 async function saveQuotaAllocation() {

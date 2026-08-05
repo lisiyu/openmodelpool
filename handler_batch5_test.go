@@ -314,6 +314,75 @@ func TestHB5_SelectAPIKey_WrongAccess(t *testing.T) {
 	}
 }
 
+func TestHB5_SelectAPIKey_DailyQuotaExceeded(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	p := Provider{
+		APIKeys: []APIKeyConfig{
+			{ID: "k1", Key: "sk-1", QuotaDaily: 100, UsedDaily: 100, LastDailyReset: today, Enabled: true, AccessControl: "private", Priority: 1},
+		},
+	}
+	_, err := p.SelectAPIKey("private")
+	if err == nil {
+		t.Fatal("expected error for daily quota exceeded")
+	}
+}
+
+func TestHB5_SelectAPIKey_MonthlyQuotaExceeded(t *testing.T) {
+	month := time.Now().Format("2006-01")
+	p := Provider{
+		APIKeys: []APIKeyConfig{
+			{ID: "k1", Key: "sk-1", QuotaMonthly: 500, UsedMonthly: 500, LastMonthlyReset: month, Enabled: true, AccessControl: "private", Priority: 1},
+		},
+	}
+	_, err := p.SelectAPIKey("private")
+	if err == nil {
+		t.Fatal("expected error for monthly quota exceeded")
+	}
+}
+
+func TestHB5_SelectAPIKey_DailyQuotaNotReset(t *testing.T) {
+	p := Provider{
+		APIKeys: []APIKeyConfig{
+			{ID: "k1", Key: "sk-1", QuotaDaily: 100, UsedDaily: 100, LastDailyReset: "2000-01-01", Enabled: true, AccessControl: "private", Priority: 1},
+		},
+	}
+	k, err := p.SelectAPIKey("private")
+	if err != nil {
+		t.Fatalf("expected key available when daily counter stale, got error: %v", err)
+	}
+	if k.ID != "k1" {
+		t.Fatalf("expected k1, got %s", k.ID)
+	}
+}
+
+func TestHB5_SelectAPIKey_MonthlyQuotaNotReset(t *testing.T) {
+	p := Provider{
+		APIKeys: []APIKeyConfig{
+			{ID: "k1", Key: "sk-1", QuotaMonthly: 500, UsedMonthly: 500, LastMonthlyReset: "2000-01", Enabled: true, AccessControl: "private", Priority: 1},
+		},
+	}
+	k, err := p.SelectAPIKey("private")
+	if err != nil {
+		t.Fatalf("expected key available when monthly counter stale, got error: %v", err)
+	}
+	if k.ID != "k1" {
+		t.Fatalf("expected k1, got %s", k.ID)
+	}
+}
+
+func TestHB5_SelectAPIKey_DailyOkMonthlyExceeded(t *testing.T) {
+	month := time.Now().Format("2006-01")
+	p := Provider{
+		APIKeys: []APIKeyConfig{
+			{ID: "k1", Key: "sk-1", QuotaDaily: 100, UsedDaily: 10, QuotaMonthly: 500, UsedMonthly: 500, LastDailyReset: time.Now().Format("2006-01-02"), LastMonthlyReset: month, Enabled: true, AccessControl: "private", Priority: 1},
+		},
+	}
+	_, err := p.SelectAPIKey("private")
+	if err == nil {
+		t.Fatal("expected error when monthly quota exceeded even if daily ok")
+	}
+}
+
 func TestHB5_keyAllowedForAccess(t *testing.T) {
 	tests := []struct {
 		keyAccess  string
