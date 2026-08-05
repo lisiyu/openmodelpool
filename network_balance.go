@@ -629,7 +629,8 @@ func handleBalanceRecalculate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	balanceEngine.RunBalanceCycle(ctx)
 
 	writeJSON(w, 200, map[string]any{

@@ -315,13 +315,15 @@ func getKnownFreePlatforms() []DiscoveredPlatform {
 func fetchGitHubLists() []DiscoveredPlatform {
 	var platforms []DiscoveredPlatform
 	client := GetSharedHTTPClient()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 
 	sources := []string{
 		"https://raw.githubusercontent.com/zukixa/cool-ai-stuff/main/README.md",
 	}
 
 	for _, srcURL := range sources {
-		req, err := http.NewRequestWithContext(context.Background(), "GET", srcURL, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", srcURL, nil)
 		if err != nil {
 			continue
 		}

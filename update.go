@@ -260,8 +260,11 @@ func (um *UpdateManager) fetchLatestVersionLocked() VersionInfo {
 		CurrentVersion: AppVersion,
 		CheckedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, um.githubURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, um.githubURL, nil)
 	if err != nil {
+		cancel()
 		info.Error = err.Error()
 		return info
 	}
@@ -564,7 +567,9 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 // downloadFile fetches url into dest, validating a non-empty result.
 // It updates local progress along the way. Caller must NOT hold um.mu.
 func (um *UpdateManager) downloadFile(url, dest string) error {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
@@ -637,8 +642,10 @@ func (um *UpdateManager) fetchChecksum(url string) (string, error) {
 // signature (64 bytes). Returns an error if the .sig file is not available
 // (for backward compatibility with releases that don't include signatures).
 func (um *UpdateManager) fetchSignature(url string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	client := GetSharedHTTPClient()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create signature request: %w", err)
 	}
@@ -791,9 +798,11 @@ func (um *UpdateManager) BroadcastUpdateSignal(target string) {
 // known address. A 404 means an old peer without this endpoint → mark
 // "unsupported".
 func (um *UpdateManager) sendUpdateSignalToPeer(peer NodeInfo, body []byte, client *http.Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	for _, addr := range peerEndpoints(peer) {
 		url := fmt.Sprintf("%s/api/federation/update-signal", strings.TrimRight(addr, "/"))
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			continue
 		}
@@ -910,9 +919,11 @@ func (um *UpdateManager) reportToOrigin(sig UpdateSignal, phase UpdatePhase, pro
 		return
 	}
 	client := GetSharedHTTPClientWithTimeout(8 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	for _, addr := range addrs {
 		url := fmt.Sprintf("%s/api/federation/update-report", strings.TrimRight(addr, "/"))
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			continue
 		}

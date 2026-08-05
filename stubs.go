@@ -162,16 +162,19 @@ func collectPeerEndpoints(selfEndpoint string) []string {
 // X-Node-ID / X-Federation-Secret auth headers, and returns any transport or
 // non-2xx error. It does NOT log or retry — callers decide how to handle errors.
 func postHeartbeatToPeer(client *http.Client, peerURL, selfNodeID, selfEndpoint, secret string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 	body := map[string]string{
 		"node_id":  selfNodeID,
 		"endpoint": selfEndpoint,
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
+		cancel()
 		return fmt.Errorf("marshal heartbeat body: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, peerURL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, peerURL, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("build heartbeat request: %w", err)
 	}

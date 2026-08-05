@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.3.1] - 2026-08-05
+
+### 🔒 Security: Fix context.Background() residual — add timeouts to outbound requests
+- `update.go`: 5处 `context.Background()` 添加 30s 超时
+- `stubs.go`: 1处添加 15s 超时
+- `platform_discovery.go`: 1处添加 15s 超时
+- `network_balance.go`: 1处添加 30s 超时
+
+## [4.3.0] - 2026-08-05
+
+### 🔒 Security: Fix IncrProviderConn/IncrGuestConn race condition
+- `conn_tracker.go`: Load+Store 改为 LoadOrStore + atomic.AddInt64 (已由远程修复)
+
 ## [4.2.9] - 2026-08-05
 
 ### ✨ New Feature: Kilo Gateway Free Model Preset
