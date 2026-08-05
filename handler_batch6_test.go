@@ -1317,8 +1317,19 @@ func TestHB6_ProviderManager_EnabledRaw_Empty(t *testing.T) {
 	te := setupTestEnv(t)
 	_ = te
 	result := pm.EnabledRaw()
-	if len(result) != 0 {
-		t.Errorf("expected 0, got %d", len(result))
+	// Preset providers with Enabled=true (e.g. kilo-gateway) are included by design.
+	// Verify that no user-added providers are in the list.
+	for _, p := range result {
+		isPreset := false
+		for _, pp := range presetProviders {
+			if pp.ID == p.ID {
+				isPreset = true
+				break
+			}
+		}
+		if !isPreset {
+			t.Errorf("expected only preset providers, found non-preset provider %s", p.ID)
+		}
 	}
 }
 

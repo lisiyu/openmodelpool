@@ -134,3 +134,10 @@
 - **m4**: Fixed `Provider.Safe()` shallow copy — previously, `WebSession`, `ModelBotMap`, `ExtraHeaders`, and other map/slice fields were shared references. Callers modifying the returned value could corrupt the original. Now performs deep copies of all reference-type fields.
 - **m6**: Fixed `readJSON()` `MaxBytesReader` using `nil` ResponseWriter — now passes `w` so HTTP 413 is automatically sent on body size overflow. Updated all 65+ call sites across the codebase.
 - **A3**: Unified error response format in `withAuth()` middleware — previously used `map[string]string{"error": "..."}` inconsistent with the rest of the codebase. Now uses `ErrorResponse{Error: ErrorDetail{...}}` format.
+
+## v4.2.10 (2026-08-05)
+
+### Bug Fixes
+- **Fix nil pointer panic in /health endpoint**: `handleHealth` and `handleDiagnostics` accessed `metrics.startTime` without nil check, causing SIGSEGV when `metrics` was uninitialized (e.g. in test environments). Added nil guard.
+- **Remove wildcard origin matching for security**: `isOriginAllowed` previously supported `*.example.com` wildcard patterns, which could be exploited for origin spoofing. Removed wildcard matching; only exact origin matches are now accepted.
+- **Fix TestHB6_ProviderManager_EnabledRaw_Empty**: Test expected 0 enabled providers but Kilo Gateway preset (Enabled:true) is included by design. Updated test to verify only preset providers are returned, not user-added ones.

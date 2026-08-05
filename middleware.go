@@ -58,14 +58,8 @@ func isOriginAllowed(origin, whitelist string) bool {
 		if allowed == origin {
 			return true
 		}
-		// M1-fix: Support wildcard subdomain matching (e.g. *.example.com)
-		if strings.HasPrefix(allowed, "*.") {
-			suffix := allowed[1:] // ".example.com"
-			// origin must end with the suffix and have at least one char before it
-			if strings.HasSuffix(origin, suffix) && len(origin) > len(suffix) {
-				return true
-			}
-		}
+		// Security: wildcard subdomain matching removed to prevent origin spoofing.
+		// Only exact origin matches are allowed.
 	}
 	return false
 }

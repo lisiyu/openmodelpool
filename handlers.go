@@ -103,7 +103,9 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Uptime
-	status["uptime_seconds"] = time.Since(metrics.startTime).Seconds()
+	if metrics != nil {
+		status["uptime_seconds"] = time.Since(metrics.startTime).Seconds()
+	}
 	writeJSON(w, 200, status)
 }
 
@@ -1040,7 +1042,9 @@ func handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	diag["version"] = AppVersion
 	diag["go_version"] = runtime.Version()
 	diag["goroutines"] = runtime.NumGoroutine()
-	diag["uptime_seconds"] = time.Since(metrics.startTime).Seconds()
+	if metrics != nil {
+		diag["uptime_seconds"] = time.Since(metrics.startTime).Seconds()
+	}
 
 	// Memory stats
 	var m runtime.MemStats
