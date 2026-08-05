@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.3.3] - 2026-08-05
+
+### 🔒 Security: Fix vmess.go TOCTOU race condition
+- Remove `os.CreateTemp` + `atomicWriteFile` double-write on same file
+- Use `atomicWriteFile` directly to write xray config to `data/xray-{id}.json`
+- Eliminates TOCTOU window between CreateTemp and atomicWriteFile
+
 ## [4.3.2] - 2026-08-05
 
 ### 🔒 Security: Fix API Key exposure in consumer register response

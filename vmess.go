@@ -132,16 +132,9 @@ func (m *VMessProxy) StartProxy(providerID string, config *VMessConfig) (string,
 	if sanitized != providerID || sanitized == "." || sanitized == ".." {
 		return "", fmt.Errorf("invalid provider ID: %q", providerID)
 	}
-	// B130: Use secure temp file to prevent symlink race attacks
-	f, err := os.CreateTemp("", "xray-*.json")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp config: %w", err)
-	}
-	configFile := f.Name()
-	f.Close()
+	configFile := "data/xray-" + sanitized + ".json"
 	b, _ := json.MarshalIndent(xrayConfig, "", "  ")
 	if err := atomicWriteFile(configFile, b, 0600); err != nil {
-		os.Remove(configFile)
 		return "", fmt.Errorf("failed to write xray config: %w", err)
 	}
 
