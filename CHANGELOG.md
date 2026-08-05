@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.3.4] - 2026-08-05
+
+### 🔒 Security: Fix hopCount strconv.Atoi error ignored
+- `network_relay.go`: 2处 hopCount Atoi 失败时返回 400 Bad Request
+- 非数字 hop 头不再被默认当 0 处理
+
 ## [4.3.3] - 2026-08-05
 
 ### 🔒 Security: Fix vmess.go TOCTOU race condition

@@ -92,9 +92,14 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 	// Check hop count to prevent loops
 	hopCount := 0
 	if hopStr := r.Header.Get(headerRelayHop); hopStr != "" {
-		hopCount, _ = strconv.Atoi(hopStr)
+		var err error
+		hopCount, err = strconv.Atoi(hopStr)
+		if err != nil {
+			writeError(w, 400, "invalid hop count header")
+			return
+		}
 		if hopCount < 0 {
-			hopCount = 0 // B2: sanitize negative hop count
+			hopCount = 0
 		}
 	}
 	if hopCount >= maxRelayHops {
@@ -599,9 +604,13 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	// Check hop count to prevent loops
 	hopCount := 0
 	if hopStr := r.Header.Get(headerRelayHop); hopStr != "" {
-		hopCount, _ = strconv.Atoi(hopStr)
+		hopCount, err := strconv.Atoi(hopStr)
+		if err != nil {
+			writeError(w, 400, "invalid hop count header")
+			return
+		}
 		if hopCount < 0 {
-			hopCount = 0 // B2: sanitize negative hop count
+			hopCount = 0
 		}
 	}
 	if hopCount >= maxRelayHops {
