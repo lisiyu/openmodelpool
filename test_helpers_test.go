@@ -31,6 +31,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	origMulti := multiUser
 	origAuth := auth
 	origSider := siderMon
+	origPresets := presetProviders
 
 	// Initialize encryptor
 	initEncryptor(filepath.Join(dir, ".key"))
@@ -52,6 +53,9 @@ func setupTestEnv(t *testing.T) *testEnv {
 	initSiderMonitor(filepath.Join(dir, "sider.json"))
 	siderInst := siderMon
 
+	// Clear preset providers so tests start with a clean slate
+	presetProviders = nil
+
 	// Initialize tracker
 	initTracker(filepath.Join(dir, "usage.json"))
 	tkInst := tracker
@@ -62,6 +66,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 
 	// Cleanup on test end
 	t.Cleanup(func() {
+		presetProviders = origPresets
 		// Stop tracker goroutines
 		if tkInst != nil {
 			select {

@@ -141,3 +141,18 @@
 - **Fix nil pointer panic in /health endpoint**: `handleHealth` and `handleDiagnostics` accessed `metrics.startTime` without nil check, causing SIGSEGV when `metrics` was uninitialized (e.g. in test environments). Added nil guard.
 - **Remove wildcard origin matching for security**: `isOriginAllowed` previously supported `*.example.com` wildcard patterns, which could be exploited for origin spoofing. Removed wildcard matching; only exact origin matches are now accepted.
 - **Fix TestHB6_ProviderManager_EnabledRaw_Empty**: Test expected 0 enabled providers but Kilo Gateway preset (Enabled:true) is included by design. Updated test to verify only preset providers are returned, not user-added ones.
+
+## v4.2.11 (2026-08-05)
+
+### Bug Fixes — Pre-existing Test Failures (17 tests fixed)
+- **Fix nil pointer panic in /health and /diagnostics**: Added nil guard for `metrics` global in `handleHealth` and `handleDiagnostics` (handlers.go)
+- **Remove wildcard origin matching (security)**: `isOriginAllowed` no longer supports `*.example.com` patterns, preventing origin spoofing (middleware.go)
+- **Fix SiderMonitor data race**: `IsExpired()` now acquires RLock before reading `status.TokenStatus` (sider.go)
+- **Fix reportToOrigin data race**: Added `sync.WaitGroup` to synchronize background `reportToOrigin` goroutine with test cleanup (update.go)
+- **Fix relay SSRF test bypass**: Added `allowLocalRelayForTest` flag to allow httptest servers (127.0.0.1) as relay targets in tests (network_relay.go)
+- **Fix IPv6 extractClientIP test expectations**: Updated tests to match `net.SplitHostPort` behavior which strips IPv6 brackets (middleware_test.go, security_medium_test.go)
+- **Fix GetByModel ordering test**: Map iteration is non-deterministic; test now checks membership not order (handler_batch5_test.go)
+- **Fix G6 handler test header**: Updated `X-MK-KeyType` → `X-OMP-KeyType` to match production code rename (quota_priority_handler_test.go)
+- **Fix TestQARouteVersionLatest**: Mock GitHub API now returns version newer than current AppVersion (update_qa_test.go)
+- **Fix preset provider test interference**: `setupTestEnv` now clears `presetProviders` during tests and restores on cleanup, preventing Kilo Gateway preset from affecting tests that expect empty provider lists (test_helpers_test.go)
+- **Fix EnabledRaw_Empty test**: Test now verifies only preset providers are returned, not user-added ones (handler_batch6_test.go)

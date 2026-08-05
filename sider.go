@@ -64,8 +64,10 @@ func (s *SiderMonitor) RecordFailure(httpStatus int, msg string) {
 	slog.Warn("sider token expired", "http_status", httpStatus, "msg", msg)
 }
 
-// IsExpired returns whether the token is expired (lock-free fast path).
+// IsExpired returns whether the token is expired.
 func (s *SiderMonitor) IsExpired() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.status.TokenStatus == "expired"
 }
 

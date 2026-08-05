@@ -17,6 +17,10 @@ import (
 	"time"
 )
 
+// allowLocalRelayForTest disables SSRF protection for relay targets in tests.
+// This allows httptest servers (127.0.0.1) to be used as relay targets.
+var allowLocalRelayForTest = false
+
 // ============================================================
 // Decentralized Relay Handler
 // ============================================================
@@ -276,8 +280,8 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 	}
 
 	// B119: Block relay to private/internal IPs to prevent SSRF
-	if host := target.Hostname(); isLocalOrPrivateIP(host) {
-		slog.Warn("relay target is private IP, rejecting", "host", host)
+	if !allowLocalRelayForTest && isLocalOrPrivateIP(target.Hostname()) {
+		slog.Warn("relay target is private IP, rejecting", "host", target.Hostname())
 		writeError(w, 502, "relay target must be a public address")
 		return
 	}
@@ -794,8 +798,8 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	}
 
 	// B119: Block relay to private/internal IPs to prevent SSRF
-	if host := target.Hostname(); isLocalOrPrivateIP(host) {
-		slog.Warn("relay target is private IP, rejecting", "host", host)
+	if !allowLocalRelayForTest && isLocalOrPrivateIP(target.Hostname()) {
+		slog.Warn("relay target is private IP, rejecting", "host", target.Hostname())
 		writeError(w, 502, "relay target must be a public address")
 		return
 	}

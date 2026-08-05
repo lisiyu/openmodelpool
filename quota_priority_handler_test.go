@@ -8,7 +8,7 @@ import (
 )
 
 // g6Post drives handleChatCompletions with a minimal chat body and a forced key
-// type. RequestKeyType honors the X-MK-KeyType header at Priority 1, so we can
+// type. RequestKeyType honors the X-OMP-KeyType header at Priority 1, so we can
 // exercise the guest / admin(proxy) branches without real key crypto. The
 // handler reaches the G6 block before any provider selection, so with the empty
 // provider manager from setupTestEnv it returns a clean 404 and leaves the
@@ -21,7 +21,7 @@ func g6Post(t *testing.T, keyType string, maxTokens int) *httptest.ResponseRecor
 	body := fmt.Sprintf(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}],"max_tokens":%d}`, maxTokens)
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
 	if keyType != "" {
-		req.Header.Set("X-MK-KeyType", keyType)
+		req.Header.Set("X-OMP-KeyType", keyType)
 	}
 	w := httptest.NewRecorder()
 	handleChatCompletions(w, req)

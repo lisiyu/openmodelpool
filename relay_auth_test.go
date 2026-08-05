@@ -26,6 +26,9 @@ import (
 func relayTestEnv(t *testing.T) {
 	t.Helper()
 	setupDiscoveryTestEnv(t)
+	// Allow relay to localhost for test servers
+	allowLocalRelayForTest = true
+	t.Cleanup(func() { allowLocalRelayForTest = false })
 	// Make the network manager report this node's id (as it would be once the
 	// network is fully initialized), so the forward senders sign as this node.
 	netMgr.config.NodeID = node.NodeID()

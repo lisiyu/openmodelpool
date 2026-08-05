@@ -126,11 +126,10 @@ func TestExtractClientIP(t *testing.T) {
 		expected   string
 	}{
 		{"ipv4 with port", "192.168.1.1:54321", "192.168.1.1"},
-		// extractClientIP uses strings.LastIndex(":") which retains IPv6 brackets
-		{"ipv6 with port", "[::1]:54321", "[::1]"},
-		// IPv6 without port: LastIndex(":") finds the last colon in "::1",
-		// so remoteAddr[:idx] = ":"
-		{"ipv6 no port", "::1", ":"},
+		// extractClientIP uses net.SplitHostPort which strips IPv6 brackets
+		{"ipv6 with port", "[::1]:54321", "::1"},
+		// IPv6 without port: SplitHostPort fails, returns as-is
+		{"ipv6 no port", "::1", "::1"},
 		{"ipv4 no port", "192.168.1.1", "192.168.1.1"},
 		{"empty", "", ""},
 	}

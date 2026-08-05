@@ -39,6 +39,10 @@ import (
 	"time"
 )
 
+// reportToOriginWG tracks background reportToOrigin goroutines so tests can
+// wait for them to complete before cleaning up global state.
+var reportToOriginWG sync.WaitGroup
+
 // MinSupportedUpdateVersion is the lowest node version that understands the
 // /api/federation/update-signal protocol (Q4 capability negotiation).
 // A peer running an older version must reject the signal (and be marked
@@ -1009,7 +1013,11 @@ func handleFederationUpdateSignal(w http.ResponseWriter, r *http.Request) {
 	// and report "unsupported" back to the origin.
 	if compareVersion(AppVersion, sig.MinSupportedVersion) < 0 {
 		writeJSON(w, 200, map[string]any{"accepted": false, "unsupported": true, "reason": "node version too old"})
-		go updateManager.reportToOrigin(sig, PhaseUnsupported, 0, "本节点版本过低，不支持自更新", "")
+		reportToOriginWG.Add(1)
+		go func() {
+			defer reportToOriginWG.Done()
+			updateManager.reportToOrigin(sig, PhaseUnsupported, 0, "本节点版本过低，不支持自更新", "")
+		}()
 		return
 	}
 	// Accept and start our own self-update in the background.

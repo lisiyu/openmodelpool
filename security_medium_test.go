@@ -100,7 +100,7 @@ func TestSA10_ExtractClientIP(t *testing.T) {
 	}{
 		{"192.168.1.1:8080", "192.168.1.1"},
 		{"10.0.0.1:12345", "10.0.0.1"},
-		{"[::1]:8080", "[::1]"},
+		{"[::1]:8080", "::1"},
 	}
 	for _, tt := range tests {
 		got := extractClientIP(tt.input)

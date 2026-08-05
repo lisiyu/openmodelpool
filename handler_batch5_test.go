@@ -117,8 +117,16 @@ func TestHB5_RouteTable_GetByModel(t *testing.T) {
 	if len(results) != 2 {
 		t.Fatalf("expected 2 (n1 explicit + n2 any-model), got %d", len(results))
 	}
-	if results[0].NodeID != "n1" {
-		t.Fatalf("expected n1, got %s", results[0].NodeID)
+	// Map iteration is non-deterministic; check membership not order
+	found := false
+	for _, r := range results {
+		if r.NodeID == "n1" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected n1 in results, got %v", results)
 	}
 }
 

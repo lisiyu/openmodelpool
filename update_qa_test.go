@@ -254,14 +254,13 @@ func TestQARecPendingCorruptMarker(t *testing.T) {
 func TestQACapabilityNegotiationUnsupported(t *testing.T) {
 	qaFedEnv(t)
 
-	orig := AppVersion
-	AppVersion = "4.0.0" // older than MinSupportedUpdateVersion (4.1.7)
-	defer func() { AppVersion = orig }()
+	// Use MinSupportedVersion higher than current AppVersion to trigger unsupported path
+	// without modifying the global AppVersion (avoids race with background goroutines)
 
 	sig := UpdateSignal{
 		BroadcastBy:         node.NodeID(),
 		TargetVersion:       "4.2.0",
-		MinSupportedVersion: MinSupportedUpdateVersion,
+		MinSupportedVersion: "99.0.0", // higher than current AppVersion
 		Timestamp:           time.Now().UTC().Format(time.RFC3339),
 		OriginAddresses:     []string{"http://origin.local"},
 	}
@@ -274,6 +273,8 @@ func TestQACapabilityNegotiationUnsupported(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handleFederationUpdateSignal(rec, req)
+	// Wait for background reportToOrigin goroutine to complete
+	reportToOriginWG.Wait()
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%s)", rec.Code, rec.Body.String())
@@ -390,7 +391,7 @@ func TestQASignatureRoundTrip(t *testing.T) {
 func TestQARouteVersionLatest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"tag_name":"v4.2.0"}`))
+		_, _ = w.Write([]byte(`{"tag_name":"v99.0.0"}`))
 	}))
 	defer srv.Close()
 
@@ -412,7 +413,7 @@ func TestQARouteVersionLatest(t *testing.T) {
 			t.Errorf("response missing field %q (body=%s)", key, rec.Body.String())
 		}
 	}
-	if m["latest_version"] != "v4.2.0" {
+	if m["latest_version"] != "v99.0.0" {
 		t.Errorf("latest_version = %v, want v4.2.0", m["latest_version"])
 	}
 	if hasUpdate, ok := m["has_update"].(bool); !ok || !hasUpdate {
