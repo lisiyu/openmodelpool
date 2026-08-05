@@ -481,14 +481,13 @@ func TestQARouteUpdateStartNoUpdate(t *testing.T) {
 func TestQARouteSignalValidSignature(t *testing.T) {
 	qaFedEnv(t)
 
-	orig := AppVersion
-	AppVersion = "4.0.0" // force the unsupported branch (no TriggerSelfUpdate/exit)
-	defer func() { AppVersion = orig }()
+	// Use high MinSupportedVersion to trigger unsupported branch without
+	// modifying global AppVersion (avoids race with background goroutines).
 
 	sig := UpdateSignal{
 		BroadcastBy:         node.NodeID(),
 		TargetVersion:       "4.2.0",
-		MinSupportedVersion: MinSupportedUpdateVersion,
+		MinSupportedVersion: "99.0.0",
 		Timestamp:           time.Now().UTC().Format(time.RFC3339),
 		OriginAddresses:     []string{"http://origin.local"},
 	}
@@ -501,6 +500,7 @@ func TestQARouteSignalValidSignature(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handleFederationUpdateSignal(rec, req)
+	reportToOriginWG.Wait()
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("valid signature wrongly rejected: got %d (body=%s)", rec.Code, rec.Body.String())

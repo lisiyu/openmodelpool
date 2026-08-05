@@ -53,8 +53,13 @@ func setupTestEnv(t *testing.T) *testEnv {
 	initSiderMonitor(filepath.Join(dir, "sider.json"))
 	siderInst := siderMon
 
-	// Clear preset providers so tests start with a clean slate
-	presetProviders = nil
+	// Disable all preset providers so tests start with a clean enabled slate.
+	// Presets are still visible (GetRaw/GetPresets work) but not enabled (EnabledRaw skips them).
+	presetProviders = make([]Provider, len(origPresets))
+	copy(presetProviders, origPresets)
+	for i := range presetProviders {
+		presetProviders[i].Enabled = false
+	}
 
 	// Initialize tracker
 	initTracker(filepath.Join(dir, "usage.json"))

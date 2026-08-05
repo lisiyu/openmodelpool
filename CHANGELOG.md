@@ -156,3 +156,9 @@
 - **Fix TestQARouteVersionLatest**: Mock GitHub API now returns version newer than current AppVersion (update_qa_test.go)
 - **Fix preset provider test interference**: `setupTestEnv` now clears `presetProviders` during tests and restores on cleanup, preventing Kilo Gateway preset from affecting tests that expect empty provider lists (test_helpers_test.go)
 - **Fix EnabledRaw_Empty test**: Test now verifies only preset providers are returned, not user-added ones (handler_batch6_test.go)
+
+## v4.2.12 (2026-08-05)
+
+### Bug Fixes — Additional Pre-existing Test Failures (4 tests fixed)
+- **Fix preset provider clearing**: Changed from `presetProviders = nil` to disabling `Enabled` on all presets, preserving `GetRaw`/`GetPresets` functionality (test_helpers_test.go)
+- **Fix TestQARouteSignalValidSignature race**: Use `MinSupportedVersion` instead of modifying `AppVersion`; add `reportToOriginWG.Wait()` (update_qa_test.go)
