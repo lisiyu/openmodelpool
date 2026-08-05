@@ -292,7 +292,7 @@ func (g *AlgorithmGovernor) CastVote(proposalID, voter, voterName, choice, comme
 				ProposalID: p.ID,
 				Actor:      voter,
 				ActorName:  voterName,
-				Detail:     string(choice),
+				Detail:     choice,
 				At:         p.Votes[i].VotedAt,
 			})
 			g.persistLocked()
@@ -314,7 +314,7 @@ func (g *AlgorithmGovernor) CastVote(proposalID, voter, voterName, choice, comme
 		ProposalID: p.ID,
 		Actor:      voter,
 		ActorName:  voterName,
-		Detail:     string(choice),
+		Detail:     choice,
 		At:         v.VotedAt,
 	})
 	g.persistLocked()

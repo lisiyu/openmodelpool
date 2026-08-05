@@ -677,7 +677,6 @@ func handleBrowserLoginLogin(w http.ResponseWriter, r *http.Request) {
 		if !submitClicked {
 			for _, text := range []string{"Sign in", "Sign In", "Log in", "登录", "Continue", "继续"} {
 				if clickByText(sess.ctx, text) {
-					submitClicked = true
 					break
 				}
 			}
