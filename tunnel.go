@@ -676,6 +676,10 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	publicURL := "https://" + body.Domain
 	slog.Info("domain binding complete", "domain", body.Domain, "tunnel_id", tunnelInfo.ID, "account_id", accountID)
 
+	cfg.Set("is_gateway", "true")
+	cfg.saveSync()
+	slog.Info("auto-registered as Gateway after domain binding", "domain", body.Domain)
+
 	writeJSON(w, 200, map[string]any{
 		"success":    true,
 		"domain":     body.Domain,
@@ -939,6 +943,11 @@ func handleManualDomainBind(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("manual domain binding", "domain", body.Domain)
+
+	cfg.Set("is_gateway", "true")
+	cfg.saveSync()
+	slog.Info("auto-registered as Gateway after manual domain binding", "domain", body.Domain)
+
 	writeJSON(w, 200, map[string]any{
 		"success":    true,
 		"domain":     body.Domain,

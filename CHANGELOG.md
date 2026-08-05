@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.3.11] - 2026-08-06
+
+### ✨ Feature: Auto-register as Gateway after domain binding (§7.10)
+- `tunnel.go`: `handleBindDomain` (Cloudflare API bind) now auto-sets `is_gateway=true` and persists on success
+- `tunnel.go`: `handleManualDomainBind` (manual bind) now auto-sets `is_gateway=true` and persists on success
+- Gateway status propagates to peers via existing Gossip heartbeat — no extra broadcast needed
+
 ## [4.3.10] - 2026-08-06
 
 ### ✨ Feature: Idle quota prompt UI (REQ-13)
