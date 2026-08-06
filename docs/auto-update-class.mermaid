@@ -1,0 +1,75 @@
+classDiagram
+    class UpdateManager {
+        +local UpdateStatus
+        +peers map~string,UpdateStatus~
+        +cache *versionCache
+        +GetLatestVersion() VersionInfo
+        +TriggerSelfUpdate(target string)
+        +BroadcastUpdateSignal(sig UpdateSignal)
+        +OnSignalReceived(sig UpdateSignal)
+        +OnReportReceived(r UpdateReport)
+        +Snapshot() / Load()
+    }
+    class versionCache {
+        +latest VersionInfo
+        +expireAt time.Time
+        +Get() VersionInfo
+        +Refresh() error
+    }
+    class VersionInfo {
+        +CurrentVersion string
+        +LatestVersion string
+        +HasUpdate bool
+        +CheckedAt string
+        +Error string
+    }
+    class UpdateStatus {
+        +Env string
+        +Name string
+        +NodeID string
+        +IsLocal bool
+        +Role string
+        +TargetVersion string
+        +Phase UpdatePhase
+        +Progress int
+        +Log string
+        +Error string
+        +UpdatedAt string
+    }
+    class UpdateSignal {
+        +BroadcastBy string
+        +OriginAddresses string[]
+        +TargetVersion string
+        +MinSupportedVersion string
+        +AssetHint string
+        +Timestamp string
+        +Signature string
+    }
+    class UpdateReport {
+        +NodeID string
+        +Name string
+        +TargetVersion string
+        +Phase UpdatePhase
+        +Progress int
+        +Log string
+        +Error string
+        +UpdatedAt string
+        +Signature string
+    }
+    class FederationManager {
+        +GetActiveNodes() []NodeInfo
+        +GetNode(id string) (*NodeInfo, bool)
+    }
+    class NodeIdentity {
+        +NodeID() string
+        +SignJSON(v any) string
+    }
+
+    UpdateManager "1" *-- "1" versionCache : 缓存GitHub
+    UpdateManager "1" *-- "1" UpdateStatus : local
+    UpdateManager "1" *-- "0..*" UpdateStatus : peers
+    UpdateManager ..> FederationManager : 广播/查节点
+    UpdateManager ..> NodeIdentity : 签名/验签
+    UpdateSignal ..> UpdateStatus : 触发
+    UpdateReport ..> UpdateStatus : 回写
+    VersionInfo ..> UpdateManager : 检测输入

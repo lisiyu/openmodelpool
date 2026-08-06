@@ -1,0 +1,29 @@
+# Binary
+modelmux
+modelmux.bak
+*.exe
+# Distribution
+dist/
+# Data (sensitive)
+data/
+# Node registry (per-node JSON cache, local only)
+.nodes/
+# Xray
+xray/
+# Uploaded images
+image_*.png
+# Scripts (local)
+scripts/omp-tunnel-reset.ps1
+# OS files
+.DS_Store
+
+
+# Binary (renamed from modelmux to openmodelpool)
+openmodelpool
+openmodelpool.bak
+
+# Monkeycode AI planning files
+.monkeycode/
+
+# WorkBuddy local agent state / memory (operational notes, not for public repo)
+.workbuddy/

@@ -1,0 +1,2853 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+
+<meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenModelPool Agent - 管理面板</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg-primary:#0f0f23;--bg-secondary:#1a1a2e;--bg-card:#16213e;--bg-input:#1a1a3e;--border-color:#2a2a4a;--border-focus:#6c63ff;--text-primary:#e8e8f0;--text-secondary:#a0a0b8;--text-muted:#6a6a8a;--accent-start:#6c63ff;--accent-end:#b24bf3;--success:#22c55e;--error:#ef4444;--warning:#f59e0b;--info:#3b82f6;--radius:12px;--shadow:0 4px 24px rgba(0,0,0,.3)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;min-height:100vh}
+.container{max-width:960px;margin:0 auto;padding:24px 20px 60px}
+.header{text-align:center;padding:32px 0 28px;position:relative}
+.header::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:120px;height:3px;background:linear-gradient(90deg,var(--accent-start),var(--accent-end));border-radius:2px}
+.logo{font-size:28px;font-weight:700;background:linear-gradient(135deg,var(--accent-start),var(--accent-end));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:6px}
+.logo-sub{font-size:14px;color:var(--text-muted);letter-spacing:1px}
+.header-actions{display:flex;justify-content:center;gap:12px;margin-top:12px}
+.btn-logout{padding:6px 16px;font-size:12px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:var(--error);border-radius:6px;cursor:pointer;transition:all .2s}
+.btn-logout:hover{background:rgba(239,68,68,.25)}
+.card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:24px;margin-bottom:20px;box-shadow:var(--shadow);transition:border-color .3s}
+.card:hover{border-color:rgba(108,99,255,.3)}
+.provider-item,.status-item{will-change:transform}
+.card-title{font-size:16px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card-title .icon{font-size:18px}
+.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px}
+.status-item{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius);padding:18px 20px;display:flex;align-items:center;gap:14px;transition:all .3s}
+.status-item:hover{border-color:rgba(108,99,255,.4);transform:translateY(-1px)}
+.status-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.status-dot.green{background:var(--success)}
+.status-dot.red{background:var(--error)}
+.status-label{font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+.status-value{font-size:14px;font-weight:500;margin-top:2px}
+.form-group{margin-bottom:18px}
+.form-label{display:block;font-size:13px;font-weight:500;color:var(--text-secondary);margin-bottom:6px}
+.form-input{width:100%;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none;transition:border-color .3s}
+.form-input:focus{border-color:var(--border-focus)}
+select.form-input{appearance:none;cursor:pointer}
+.btn{padding:10px 24px;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:all .3s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:#fff}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+.btn-secondary{background:rgba(51,65,85,.08);border:1px solid rgba(148,163,184,.25);color:var(--text-primary)}
+.btn-secondary:hover{border-color:var(--border-focus)}
+.btn-sm{padding:6px 14px;font-size:12px;border-radius:8px;border:1px solid rgba(148,163,184,.25);transition:all .2s}
+.btn-danger{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:var(--error)}
+.btn-danger:hover{background:rgba(239,68,68,.25)}
+.btn-success{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:var(--success)}
+.btn-success:hover{background:rgba(34,197,94,.25)}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap}
+.toast{position:fixed;top:20px;right:20px;padding:14px 24px;border-radius:10px;font-size:14px;z-index:10000;animation:slideIn .3s ease;max-width:400px}
+.toast.success{background:rgba(34,197,94,.9);color:#fff}
+.toast.error{background:rgba(239,68,68,.9);color:#fff}
+.toast.info{background:rgba(59,130,246,.9);color:#fff}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap;flex-shrink:0}
+.badge-green{background:rgba(34,197,94,.15);color:var(--success);border:1px solid rgba(34,197,94,.3)}
+.badge-red{background:rgba(239,68,68,.15);color:var(--error);border:1px solid rgba(239,68,68,.3)}
+.badge-blue{background:rgba(59,130,246,.15);color:var(--info);border:1px solid rgba(59,130,246,.3)}
+.badge-yellow{background:rgba(245,158,11,.15);color:var(--warning);border:1px solid rgba(245,158,11,.3)}
+/* Provider List */
+.provider-list{display:flex;flex-direction:column;gap:12px}
+.provider-item{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;overflow:hidden;transition:all .3s}
+.provider-item:hover{border-color:rgba(108,99,255,.3)}
+.provider-header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:12px}
+.provider-info{flex:1;min-width:0}
+.provider-name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.provider-url{font-size:12px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.provider-meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:12px;color:var(--text-secondary)}
+.provider-actions{display:flex;gap:5px;flex-shrink:0}
+.provider-models{padding:0 20px 16px;display:none;border-top:1px solid var(--border-color);margin-top:0}
+.provider-models.open{display:block;padding-top:12px}
+.model-item{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-card);border-radius:6px;margin-bottom:6px;font-size:13px}
+.model-name{color:var(--text-secondary);font-size:12px}
+.toggle{position:relative;width:36px;height:20px;background:var(--border-color);border-radius:10px;cursor:pointer;transition:background .3s}
+.toggle.active{background:var(--success)}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .3s}
+.toggle.active::after{transform:translateX(16px)}
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);width:100%;max-width:600px;max-height:80vh;overflow-y:auto;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal-title{font-size:18px;font-weight:600;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+.modal-close{background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px}
+.modal-close:hover{color:var(--text-primary)}
+/* Preset Grid */
+.preset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+.preset-card{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:14px;cursor:pointer;transition:all .3s;text-align:center}
+.preset-card:hover{border-color:var(--border-focus);transform:translateY(-2px)}
+.preset-card.selected{border-color:var(--accent-start);background:rgba(108,99,255,.1)}
+.preset-card .preset-icon{font-size:24px;margin-bottom:6px}
+.preset-card .preset-name{font-size:13px;font-weight:600}
+.preset-card .preset-desc{font-size:11px;color:var(--text-muted);margin-top:4px}
+.loading{display:inline-block;width:16px;height:16px;border:2px solid var(--border-color);border-top-color:var(--accent-start);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.section-note{font-size:12px;color:var(--text-muted);padding:10px 14px;background:rgba(108,99,255,.08);border-radius:8px;margin-bottom:16px;border-left:3px solid var(--accent-start)}
+.routing-btn{padding:6px 14px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;font-size:12px;transition:all .2s}
+.routing-btn:hover{border-color:var(--accent-start)}
+.routing-btn.active{background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:white;border-color:transparent}
+.usage-table{width:100%;border-collapse:collapse;font-size:12px}
+.usage-table th{text-align:left;padding:8px 6px;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500}
+.usage-table td{padding:8px 6px;border-bottom:1px solid rgba(0,0,0,.04)}
+.usage-table tr:hover{background:rgba(108,99,255,.03)}
+.cost-tag{font-weight:600;color:var(--success)}
+.latency-tag{font-weight:500}
+.latency-tag.slow{color:var(--danger)}
+.latency-tag.medium{color:var(--warning)}
+.latency-tag.fast{color:var(--success)}
+.priority-input{width:42px;padding:2px 4px;border:1px solid var(--border-color);border-radius:4px;font-size:12px;text-align:center;background:rgba(108,99,255,.06);color:var(--text-primary)}
+.priority-input:focus{border-color:var(--accent-start);outline:none;background:white}
+@media(max-width:640px){
+.container{padding:16px 12px 40px}
+.preset-grid{grid-template-columns:repeat(2,1fr)}
+.provider-header{flex-direction:column;align-items:flex-start}
+.provider-actions{margin-top:8px}
+/* Mobile: merged row wraps - action buttons go to next line */
+.v7-merged-row{flex-wrap:wrap!important}
+.v7-merged-row .v7-separator{display:none}
+.v7-merged-row>div:last-child{margin-left:0!important;width:100%;margin-top:8px;justify-content:flex-start}
+/* Mobile: left border already removed globally */
+/* Mobile: quota stacking moved to end of CSS */
+/* Mobile: node stats stack */
+.ns-row{grid-template-columns:repeat(2,1fr)!important}
+.ns-traffic-row{grid-template-columns:1fr!important}
+/* Mobile: stat pills wrap */
+.v7-stats-group{flex-wrap:wrap!important;flex-shrink:1!important}
+.v7-merged-row .v7-stats-group{width:100%}
+}
+
+/* ============ V5 Node Stats ============ */
+.ns-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+.ns-cell{text-align:center;padding:12px 8px;border-right:1px solid rgba(51,65,85,.35)}
+.ns-cell:last-child{border-right:none}
+.ns-cell .ns-value{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:4px}
+.ns-cell .ns-value.white{color:var(--text-primary)}
+.ns-cell .ns-value.green{color:var(--success)}
+.ns-cell .ns-label{font-size:11px;color:var(--text-muted);letter-spacing:.3px}
+.ns-traffic-row{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:12px;padding-top:12px;border-top:1px solid rgba(51,65,85,.35)}
+.ns-traffic-cell{padding:10px 14px;border-right:1px solid rgba(51,65,85,.3);text-align:center}
+.ns-traffic-cell:last-child{border-right:none}
+.ns-traffic-cell .ntc-header{font-size:12px;color:var(--text-secondary);margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:600}
+.ns-traffic-cell .ntc-header .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dot-yellow{background:#fbbf24}
+.dot-blue{background:#3b82f6}
+.dot-purple{background:#a855f7}
+.dot-green{background:#22c55e}
+.dot-gray{background:#475569}
+.ns-traffic-cell .ntc-stats{display:flex;gap:16px;justify-content:center}
+.ns-traffic-cell .ntc-stat .ntc-num{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.ns-traffic-cell .ntc-stat .ntc-num.yellow-text{color:#fbbf24}
+.ns-traffic-cell .ntc-stat .ntc-num.blue-text{color:#60a5fa}
+.ns-traffic-cell .ntc-stat .ntc-num.purple-text{color:#c084fc}
+.ns-traffic-cell .ntc-stat .ntc-sublabel{font-size:10px;color:var(--text-muted);margin-top:2px}
+.ns-quota-row{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:12px;padding-top:12px;border-top:1px dashed rgba(51,65,85,.5)}
+.nq-cell{text-align:center;padding:10px 14px;border-right:1px solid rgba(51,65,85,.3)}
+.nq-cell:last-child{border-right:none}
+.nq-cell .nq-header{font-size:12px;color:var(--text-secondary);margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:5px}
+.nq-cell .nq-header .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.nq-cell .nq-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:8px;line-height:1.4}
+.nq-cell .nq-value.yellow-text{color:#fbbf24}
+.nq-cell .nq-value.blue-text{color:#60a5fa}
+.nq-cell .nq-value.purple-text{color:#c084fc}
+.nq-cell .nq-bar-wrap{height:6px;border-radius:3px;background:var(--bg-primary);margin:0 auto 8px;overflow:hidden;max-width:180px}
+.nq-cell .nq-bar-fill{height:100%;border-radius:3px}
+.nq-bar-fill.yellow{background:#f59e0b}
+.nq-bar-fill.blue{background:#3b82f6}
+.nq-bar-fill.purple{background:#a855f7}
+.nq-bar-fill.green{background:#22c55e}
+.nq-row{display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;margin-top:2px;max-width:180px;margin-left:auto;margin-right:auto}
+.nq-row .nq-value{font-size:12px!important;margin-bottom:0!important;font-weight:600;line-height:1.4!important}
+.nq-row .nq-label{font-size:12px!important;line-height:1.4!important;font-weight:600}
+.v5-quota-cell .nq-row{max-width:120px}
+.nq-label{font-weight:600;font-size:12px;line-height:1.4;min-width:14px}
+.ns-traffic-cell .nq-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:8px;line-height:1.4}
+.ns-traffic-cell .nq-value.blue-text{color:#60a5fa}
+.ns-traffic-cell .nq-value.purple-text{color:#c084fc}
+.ns-traffic-cell .nq-value.green-text{color:#22c55e}
+.ns-traffic-cell .nq-bar-wrap{height:6px;border-radius:3px;background:var(--bg-primary);margin:0 auto 8px;overflow:hidden;max-width:180px}
+.ns-traffic-cell .nq-bar-fill{height:100%;border-radius:3px}
+.nq-cell .nq-detail{font-size:11px;color:var(--text-muted)}
+.nq-cell .nq-detail .num{font-weight:600;color:var(--text-secondary)}
+
+/* ============ V5 Provider Cards (V6 Centered Layout) ============ */
+.v5-provider-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;transition:all .3s}
+.v5-provider-card:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(108,99,255,.25),0 0 0 2px rgba(108,99,255,.3);border-color:rgba(108,99,255,.5)}
+.v5-provider-card:focus-within{box-shadow:0 8px 32px rgba(108,99,255,.3),0 0 0 2px rgba(108,99,255,.4);border-color:rgba(108,99,255,.6)}
+.v5-provider-card.disabled{opacity:.5}
+/* Color accent: dim by default, brighten on hover */
+
+
+.v5-row-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;text-align:center}
+.v5-status-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.v5-status-dot.green{background:var(--success);box-shadow:0 0 8px rgba(34,197,94,.5)}
+.v5-status-dot.red{background:var(--error);box-shadow:0 0 8px rgba(239,68,68,.5)}
+.v5-status-dot.yellow{background:var(--warning);box-shadow:0 0 8px rgba(245,158,11,.5)}
+.v5-provider-name{font-size:18px;font-weight:700;white-space:nowrap;letter-spacing:.5px}
+.v5-badge{font-size:11px;padding:2px 8px;border-radius:12px;display:inline-flex;align-items:center;gap:3px;font-weight:500;white-space:nowrap}
+.v5-badge-blue{background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.3)}
+.v5-badge-yellow{background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.3)}
+.v5-badge-red{background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3)}
+.v5-badge-green{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3)}
+.v5-key-badge{font-size:11px;padding:2px 8px;border-radius:12px;display:inline-flex;align-items:center;gap:4px;font-weight:600;white-space:nowrap}
+.v5-key-badge .key-count{font-size:10px;padding:1px 5px;border-radius:8px;font-weight:700;margin-left:2px}
+.v5-key-badge-private{background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.3)}
+.v5-key-badge-private .key-count{background:rgba(245,158,11,.25)}
+.v5-key-badge-shared{background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.3)}
+.v5-key-badge-shared .key-count{background:rgba(59,130,246,.25)}
+.v7-stats-group{display:inline-flex;align-items:center;gap:4px;flex-shrink:0}
+.v7-stat-pill{display:inline-flex;align-items:center;height:28px;padding:0 10px;font-size:12px;font-weight:500;color:var(--text-secondary);background:rgba(51,65,85,.12);border:1px solid rgba(148,163,184,.25);border-radius:8px;white-space:nowrap;line-height:1;transition:all .2s}
+.v7-card-btn{display:inline-flex;align-items:center;height:28px;padding:0 12px;font-size:12px;font-weight:500;border-radius:8px;border:1px solid rgba(148,163,184,.25);background:rgba(51,65,85,.08);color:var(--text-secondary);cursor:pointer;white-space:nowrap;transition:all .2s;gap:4px}
+.v7-card-btn:hover{background:rgba(51,65,85,.18);border-color:rgba(148,163,184,.5);color:var(--text-primary)}
+.v7-card-btn.btn-danger{background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2);color:rgba(239,68,68,.9)}
+.v7-card-btn.btn-danger:hover{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.4)}
+.v7-card-btn.btn-success{background:rgba(34,197,94,.06);border-color:rgba(34,197,94,.2);color:rgba(34,197,94,.9)}
+.v7-card-btn.btn-success:hover{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.4)}
+.v7-stat-pill b{font-weight:600;color:var(--text-primary);margin-left:3px;font-variant-numeric:tabular-nums}
+.v7-stat-pill b.green{color:var(--success)}
+.v7-stat-pill b.yellow{color:#fbbf24}
+.v7-stat-pill b.blue{color:#60a5fa}
+.v5-base-url{font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;font-family:'SF Mono',Monaco,Consolas,monospace}
+.v5-btn-row{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:12px}
+.v7-merged-row{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:nowrap;margin-top:10px}
+.v7-separator{width:1px;height:24px;background:rgba(100,116,139,.4);margin:0 12px;flex-shrink:0}
+.v5-provider-name-link{color:var(--text-primary);text-decoration:none;border-bottom:1px dashed rgba(148,163,184,.4);transition:all .2s}
+.v5-provider-name-link:hover{color:#60a5fa;border-bottom-color:#60a5fa}
+.v5-quota-bar{display:flex;align-items:stretch;margin-top:12px;padding-top:12px;border-top:1px dashed rgba(51,65,85,.5)}
+.v5-quota-cell{flex:1;text-align:center;padding:10px 10px 8px;border-right:1px solid rgba(51,65,85,.3);min-width:0}
+.v5-quota-cell:last-child{border-right:none}
+.v5-quota-cell .qc-header{font-size:12px;color:var(--text-secondary);margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:600}
+.v5-quota-cell .qc-header .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.v5-quota-cell .qc-traffic{display:flex;justify-content:center;gap:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(51,65,85,.2)}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.yellow-text{color:#fbbf24}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.blue-text{color:#60a5fa}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.purple-text{color:#c084fc}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.gray-text{color:#475569}
+.v5-quota-cell .qc-traffic .qt-stat .qt-num.green-text{color:#22c55e}
+.v5-quota-cell .qc-traffic .qt-stat .qt-sublabel{font-size:9px;color:var(--text-muted);margin-top:1px}
+.v5-quota-cell .qc-quota{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:6px}
+.v5-quota-cell .qc-quota.yellow-text{color:#fbbf24}
+.v5-quota-cell .qc-quota.blue-text{color:#60a5fa}
+.v5-quota-cell .qc-quota.purple-text{color:#c084fc}
+.v5-quota-cell .qc-quota.gray-text{color:#475569}
+.v5-quota-cell .qc-quota.red-text{color:#f87171}
+.v5-quota-cell .qc-quota.green-text{color:#22c55e}
+.v5-quota-cell .qc-bar-wrap{height:5px;border-radius:3px;background:var(--bg-primary);margin:0 auto 6px;overflow:hidden;max-width:120px}
+.v5-quota-cell .qc-bar-fill{height:100%;border-radius:3px}
+.qc-bar-fill.yellow{background:#f59e0b}
+.qc-bar-fill.blue{background:#3b82f6}
+.qc-bar-fill.purple{background:#a855f7}
+.qc-bar-fill.gray{background:#475569}
+.qc-bar-fill.red{background:#ef4444}
+.v5-quota-cell .qc-connect{font-size:11px;color:var(--text-muted);padding-top:6px;border-top:1px solid rgba(51,65,85,.25);margin-top:6px}
+.v5-quota-cell .qc-connect .conn-num{font-weight:600;color:var(--text-secondary)}
+
+
+/* ===== V8 CSS OVERRIDES ===== */
+/* Make row-header left-aligned instead of centered */
+.v5-row-header{justify-content:flex-start !important;text-align:left !important}
+/* Make merged-row left-aligned instead of centered */
+.v7-merged-row{justify-content:flex-start !important}
+/* Action buttons push to right */
+.v7-merged-row > div:last-child{margin-left:auto}
+/* Make quota bar use grid layout */
+.v5-quota-bar{display:grid !important;grid-template-columns:repeat(3,1fr) !important;gap:12px;border-top:1px solid rgba(148,163,184,.08)}
+
+/* V8: Model Stats Pills (for provider card row-header) */
+.v8-model-stats{display:inline-flex;align-items:center;gap:3px;flex-shrink:0;margin-left:auto}
+.v8-model-stats .v8-ms-label{font-size:12px;font-weight:500;color:var(--text-muted);margin-right:4px;white-space:nowrap}
+.v8-ms-pill{display:inline-flex;align-items:center;height:22px;padding:0 7px;font-size:11px;font-weight:500;border-radius:6px;white-space:nowrap;line-height:1}
+.v8-ms-pill .v8-ms-val{font-weight:700;font-size:12px;margin-left:3px;font-variant-numeric:tabular-nums}
+.v8-ms-pill.private{background:#3b82f6;color:#fff;border:1px solid rgba(59,130,246,.6)}
+.v8-ms-pill.shared{background:#8b5cf6;color:#fff;border:1px solid rgba(139,92,246,.6)}
+.v8-ms-pill.enabled{background:rgba(34,197,94,.08);color:#22c55e;border:1px solid rgba(34,197,94,.18);cursor:pointer;transition:all .2s}
+.v8-ms-pill.enabled:hover{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.4)}
+.v8-ms-pill.total{background:rgba(148,163,184,.15);color:#e2e8f0;border:1px solid rgba(148,163,184,.25)}
+/* V8: Keys Pill */
+.v8-keys-pill{display:inline-flex;align-items:center;height:28px;padding:0 12px;font-size:12px;font-weight:500;color:var(--text-secondary);background:rgba(51,65,85,.12);border:1px solid rgba(148,163,184,.25);border-radius:8px;white-space:nowrap;line-height:1;gap:8px}
+.v8-keys-pill b{font-weight:600;color:var(--text-primary);margin-left:3px}
+.v8-keys-pill .v8-ksub{font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;margin-left:6px}
+.v8-keys-pill .v8-ksub.private{background:#3b82f6;color:#fff}
+.v8-keys-pill .v8-ksub.shared{background:#8b5cf6;color:#fff}
+/* V8: Model Matrix Modal */
+.v8-modal-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:10000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.v8-modal-backdrop.show{display:flex}
+.v8-modal{background:#1c1c1e;border:1px solid rgba(148,163,184,.15);border-radius:16px;width:90%;max-width:900px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.5)}
+.v8-modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid rgba(148,163,184,.1)}
+.v8-modal-header h2{font-size:18px;font-weight:600;color:#e5e5e5;margin:0}
+.v8-close-btn{width:28px;height:28px;border-radius:50%;border:none;background:rgba(148,163,184,.12);color:#94a3b8;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.v8-close-btn:hover{background:rgba(239,68,68,.2);color:#ef4444}
+.v8-toolbar{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid rgba(148,163,184,.06);gap:12px;flex-wrap:wrap}
+.v8-toolbar-left{display:flex;gap:6px}
+.v8-toolbar-btn{height:26px;padding:0 12px;font-size:11px;font-weight:500;border-radius:6px;border:1px solid rgba(148,163,184,.2);background:rgba(51,65,85,.08);color:#94a3b8;cursor:pointer;transition:all .2s}
+.v8-toolbar-btn:hover{background:rgba(51,65,85,.2);color:#e5e5e5}
+.v8-search-box{height:26px;padding:0 10px;font-size:12px;border-radius:6px;border:1px solid rgba(148,163,184,.2);background:rgba(51,65,85,.08);color:#e5e5e5;outline:none;width:200px}
+.v8-matrix-wrap{padding:0;overflow:hidden}
+.v8-matrix-container{display:flex;flex-direction:column;max-height:100%}
+.v8-matrix-thead{flex-shrink:0;padding:16px 24px 0}
+.v8-matrix-body{flex:1;overflow-y:auto;max-height:360px;padding:0 24px 16px}
+.v8-matrix-table{width:100%;border-collapse:separate;border-spacing:0;margin:0;table-layout:fixed}
+.v8-matrix-table th{padding:8px 12px;font-size:11px;font-weight:600;color:#94a3b8;text-align:left;border-bottom:1px solid rgba(148,163,184,.15);background:#1c1c1e}
+.v8-matrix-table td{padding:6px 12px;border-bottom:1px solid rgba(148,163,184,.06)}
+.v8-section-row td{padding:8px 12px 4px;font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(148,163,184,.08)}
+.v8-key-label{display:flex;flex-direction:column;gap:2px}
+.v8-key-name{font-size:11px;font-weight:600;color:#e5e5e5}
+.v8-key-mask{font-size:9px;color:#64748b;font-family:'SF Mono',Monaco,Consolas,monospace}
+.v8-key-count{font-size:9px;color:#22c55e;font-weight:500}
+.v8-model-name{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:#e5e5e5}
+.v8-model-tag{font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px}
+.v8-model-tag.system{background:rgba(59,130,246,.12);color:#60a5fa}
+.v8-model-tag.synced{background:rgba(34,197,94,.1);color:#22c55e}
+.v8-toggle-wrap{display:flex;justify-content:center}
+.v8-toggle{width:36px;height:20px;border-radius:10px;background:rgba(148,163,184,.2);position:relative;cursor:pointer;transition:all .2s}
+.v8-toggle.on{background:#22c55e}
+.v8-toggle .v8-knob{width:16px;height:16px;border-radius:50%;background:white;position:absolute;top:2px;left:2px;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.v8-toggle.on .v8-knob{left:18px}
+.v8-modal-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-top:1px solid rgba(148,163,184,.1)}
+.v8-footer-stats{font-size:12px;color:#94a3b8}
+.v8-footer-stats b{color:#e5e5e5;font-weight:600}
+.v8-save-btn{height:32px;padding:0 20px;font-size:13px;font-weight:600;border-radius:8px;border:none;background:#3b82f6;color:white;cursor:pointer;transition:all .2s}
+.v8-save-btn:hover{background:#2563eb}
+
+
+/* V8: stat-pill color variants */
+.v7-stat-pill b.blue{color:#60a5fa}
+.v7-stat-pill b.purple{color:#a855f7}
+
+/* ===== Onboarding Wizard Progress Bar ===== */
+.ob-step-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;border:2px solid var(--border-color);color:var(--text-muted);background:var(--bg-secondary);transition:all .3s;flex-shrink:0}
+.ob-step-dot.active{border-color:var(--accent-start);color:#fff;background:linear-gradient(135deg,var(--accent-start),var(--accent-end))}
+.ob-step-dot.completed{border-color:var(--success);color:#fff;background:var(--success)}
+.ob-step-line{flex:1;height:2px;background:var(--border-color);transition:background .3s}
+.ob-step-line.active{background:linear-gradient(90deg,var(--accent-start),var(--accent-end))}
+.ob-step-line.completed{background:var(--success)}
+/* ===== Mobile Responsive (after V8 overrides) ===== */
+@media(max-width:640px){
+.v5-quota-bar{grid-template-columns:1fr!important}
+.v5-quota-cell{border-right:none!important;border-bottom:1px solid rgba(51,65,85,.3)}
+.v5-quota-cell:last-child{border-bottom:none}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo">OpenModelPool</div>
+    <div class="logo-sub">开源 AI 聚合网关 · 共享模型网络</div>
+    <div class="header-actions">
+      <button class="btn-logout" onclick="logout()">退出登录</button>
+    </div>
+  </div>
+  <!-- 诚实状态提示：仅说明当前代码真实完成度，不破坏任何功能/结构 -->
+  <div class="card" style="border-style:dashed;opacity:0.85">
+    <div class="section-note" style="margin:0">
+      <strong style="color:var(--text-muted)">⚠️ 当前构建诚实状态：</strong>
+      DHT 发现层当前<strong>禁用</strong>（GetDHTStats 返回 enabled:false，实际依赖 registry/gossip）；
+      WAF 引擎<strong>尚未激活</strong>（status 返回 disabled）；
+      贡献账本为<strong>本地内存版（GossipLedger 桩，非 IPFS）</strong>；
+      节点 <strong>BIP39 身份未暴露</strong>到 UI（pubkey 接口返回空）。以上均为规划中功能，非故障。
+    </div>
+  </div>
+  <!-- 服务概览 -->
+  <div class="card" id="overviewCard">
+    <div class="card-title"><span class="icon">📊</span> 服务概览</div>
+    <div class="status-grid" id="statusGrid">
+      <div class="status-item"><div class="status-dot green" id="statusDot"></div><div><div class="status-label">服务状态</div><div class="status-value" id="statusText">检测中...</div></div></div>
+      <div class="status-item"><div class="status-dot blue" style="background:var(--info)"></div><div><div class="status-label">已启用平台</div><div class="status-value" id="providerCount">-</div></div></div>
+      <div class="status-item"><div class="status-dot" style="background:var(--accent-start)"></div><div><div class="status-label">可用模型</div><div class="status-value" id="modelCount">-</div></div></div>
+      <div class="status-item"><div class="status-dot" style="background:var(--accent-end)"></div><div><div class="status-label">版本</div><div class="status-value" id="versionText">-</div></div></div>
+    </div>
+  </div>
+  <!-- API Key 认证 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🔑</span> API 访问认证</div>
+    <div class="section-note">设置后，外部应用调用 /v1/* 接口需携带 <code>Authorization: Bearer &lt;your-key&gt;</code>；留空则不校验（仅适合内网使用）</div>
+    <!-- 地址列表 -->
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+      <div>
+        <label class="form-label" style="font-size:12px;margin-bottom:6px">🏠 局域网地址</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="lanApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="copyText(this.value)">
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('lanApiUrl').value)">📋</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px">同一局域网内的设备可直接访问</div>
+      </div>
+      <div>
+        <label class="form-label" style="font-size:12px;margin-bottom:6px">🌍 公网地址 <span id="publicUrlBadge" style="font-size:10px;font-weight:normal"></span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="publicApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted)" onclick="copyText(this.value)" placeholder="未启用公网访问">
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('publicApiUrl').value)">📋</button>
+        </div>
+        <div id="publicUrlHint" style="font-size:11px;color:var(--text-muted);margin-top:3px">未启用公网访问</div>
+      </div>
+      <div>
+        <label class="form-label" style="font-size:12px;margin-bottom:6px">🔗 固定域名地址 <span id="domainUrlBadge" style="font-size:10px;font-weight:normal"></span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="domainApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted)" onclick="copyText(this.value)" placeholder="需先绑定自定义域名">
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('domainApiUrl').value)">📋</button>
+        </div>
+        <div id="domainUrlHint" style="font-size:11px;color:var(--text-muted);margin-top:3px">绑定自己的域名后获得固定不变的公网地址</div>
+      </div>
+    </div>
+    <!-- 域名/IP绑定引导 -->
+    <div id="domainBindingQuickCard" style="display:none;margin-bottom:16px;padding:16px;background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(178,75,243,.06));border:1px solid rgba(108,99,255,.2);border-radius:10px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:6px">🔗 获得固定公网地址</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;line-height:1.7">
+        绑定域名或 IP 后可获得固定地址，方便分享给他人使用。<br>
+        <span style="color:var(--text-muted)">💡 <b>绑定域名</b>：适合有自己域名的用户，通过 CNAME 解析获得固定 HTTPS 地址<br>
+        💡 <b>绑定 IP</b>：适合有固定公网 IP 的用户，直接绑定无需域名。如果服务器没有固定 IP，推荐用绑定域名更简单</span>
+      </div>
+      
+      <!-- 切换标签 -->
+      <div style="display:flex;gap:4px;margin-bottom:10px">
+        <button id="tabDomainBtn" class="btn btn-secondary btn-sm" onclick="switchBindMode('domain')" style="flex:1;font-size:11px;padding:4px 8px">🌐 绑定域名</button>
+        <button id="tabIpBtn" class="btn btn-secondary btn-sm" onclick="switchBindMode('ip')" style="flex:1;font-size:11px;padding:4px 8px">📡 绑定IP</button>
+      </div>
+      
+      <!-- 域名绑定模式 -->
+      <div id="domainBindMode">
+        <div style="padding:10px 12px;background:rgba(108,99,255,.04);border:1px solid var(--border-color);border-radius:8px;margin-bottom:10px">
+          <div style="font-size:12px;font-weight:500;margin-bottom:6px">📋 域名绑定分步指引：</div>
+          <div style="font-size:11px;color:var(--text-secondary);line-height:1.8">
+            <div>1️⃣ 准备一个域名（推荐在 Cloudflare / 阿里云 / 腾讯云购买）</div>
+            <div>2️⃣ <b>先在域名 DNS 管理后台</b>，添加 A 记录，将域名解析指向您服务器的公网 IP</div>
+            <div>3️⃣ <b>等待 DNS 生效</b>（通常几分钟，最长可能 24 小时）</div>
+            <div>4️⃣ DNS 生效后，在下方输入完整域名并点击绑定</div>
+            <div style="color:var(--accent-orange);margin-top:4px">⚠️ 注意：必须先完成 DNS 解析配置，再在此处绑定域名，否则绑定后无法访问</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="quickDomainInput" placeholder="输入完整域名，如 api.yourdomain.com" style="flex:1;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="quickBindDomain()">绑定域名</button>
+        </div>
+      </div>
+      
+      <!-- IP绑定模式 -->
+      <div id="ipBindMode" style="display:none">
+        <div style="padding:10px 12px;background:rgba(108,99,255,.04);border:1px solid var(--border-color);border-radius:8px;margin-bottom:10px">
+          <div style="font-size:12px;font-weight:500;margin-bottom:6px">📋 IP 绑定说明：</div>
+          <div style="font-size:11px;color:var(--text-secondary);line-height:1.8">
+            <div>1️⃣ 确认您的服务器有固定公网 IP（可搜索引擎搜索「我的IP」查看）</div>
+            <div>2️⃣ 确认防火墙已开放对应端口（默认 8000）</div>
+            <div>3️⃣ 输入公网 IP 并绑定，即可获得固定 HTTP 地址</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="quickIpInput" placeholder="输入公网IP，如 58.87.70.231" style="flex:1;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="quickBindIp()">绑定IP</button>
+        </div>
+      </div>
+      
+      <div id="domainBindResult" style="font-size:11px;margin-top:6px"></div>
+    </div>
+    <details style="margin-bottom:12px">
+      <summary style="cursor:pointer;font-size:12px;color:var(--text-secondary);user-select:none;padding:4px 0">🔐 Proxy API Key（节点密钥管理）</summary>
+      <div style="padding:10px 0 4px">
+        <div class="form-group"><label class="form-label">Proxy API Key</label>
+          <div style="display:flex;gap:8px">
+            <input class="form-input" id="proxyApiKey" placeholder="留空表示不启用认证" style="flex:1">
+            <button class="btn btn-secondary btn-sm" onclick="generateApiKey()">🎲 生成</button>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="saveProxyApiKey()">保存</button>
+          <button class="btn btn-danger btn-sm" onclick="clearProxyApiKey()">清除（关闭认证）</button>
+        </div>
+      </div>
+    </details>
+    <!-- 全球公共 Key (试用 Key) -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:500">🌍 全球公共 Key（试用）</span>
+        <span style="font-size:10px;padding:2px 6px;background:rgba(52,199,89,.12);color:var(--accent-green);border-radius:4px">零门槛</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <input class="form-input" value="sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="copyText(this.value)" title="点击复制完整Key">
+        <button class="btn btn-secondary btn-sm" onclick="copyText('sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1')">📋</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted)">无需搭建节点即可使用，访问全网共享的公共模型算力资源（有基础额度上限）</div>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);padding-top:12px;border-top:1px solid var(--border-color);margin-top:12px">
+      🎫 Guest Key 管理已移至下方「分享中心」
+    </div>
+  </div>
+  <!-- 🌐 节点类型 / Gateway 标记（P0：将本节点标记为网络入口节点） -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🌐</span> 节点类型 · Gateway 标记</div>
+    <div class="section-note">将本节点标记为 <b>Gateway（网络入口节点）</b>：其他节点可将其选为网络入口。Seed 节点默认即为 Gateway（设计约束，仅作展示说明，不强制）。</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+      <div style="font-size:13px;font-weight:500">🌐 标记为 Gateway（网络入口节点）</div>
+      <div class="toggle" id="gatewayToggle" onclick="toggleGateway()"></div>
+    </div>
+    <div id="gatewayStatus" style="font-size:12px;color:var(--text-muted);margin-top:10px">检测中...</div>
+  </div>
+  <script>
+  // ============================================================
+  // Gateway 标记（admin.html 内联模块，遵循 admin-update.js 的自初始化约定）
+  // ============================================================
+  // _gatewaySaving 防止重复点击导致重复上报
+  var _gatewaySaving = false;
+
+  async function loadGateway() {
+    var toggleEl = document.getElementById('gatewayToggle');
+    var statusEl = document.getElementById('gatewayStatus');
+    if (!toggleEl || !statusEl) return;
+    try {
+      var r = await authFetch('/api/gateway');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var d = await r.json();
+      setGatewayUI(!!(d && d.is_gateway));
+    } catch (e) {
+      statusEl.textContent = '状态加载失败：' + (e && e.message ? e.message : e);
+      statusEl.style.color = 'var(--error)';
+    }
+  }
+
+  // setGatewayUI 根据 isGateway 设置开关高亮与状态文字
+  function setGatewayUI(isGateway) {
+    var toggleEl = document.getElementById('gatewayToggle');
+    var statusEl = document.getElementById('gatewayStatus');
+    if (!toggleEl || !statusEl) return;
+    if (isGateway) {
+      toggleEl.classList.add('active');
+      statusEl.textContent = '本节点已标记为 Gateway（网络入口，可被其他节点选为入口）';
+      statusEl.style.color = 'var(--success)';
+    } else {
+      toggleEl.classList.remove('active');
+      statusEl.textContent = '本节点为普通节点';
+      statusEl.style.color = 'var(--text-muted)';
+    }
+  }
+
+  async function toggleGateway() {
+    var toggleEl = document.getElementById('gatewayToggle');
+    var statusEl = document.getElementById('gatewayStatus');
+    if (!toggleEl || !statusEl) return;
+    if (_gatewaySaving) return;
+    var next = !toggleEl.classList.contains('active');
+    setGatewayUI(next); // 乐观更新 UI
+    _gatewaySaving = true;
+    statusEl.textContent = next ? '正在标记为 Gateway...' : '正在取消 Gateway 标记...';
+    try {
+      var r = await authFetch('/api/gateway', {
+        method: 'POST',
+        body: JSON.stringify({ is_gateway: next })
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var d = await r.json();
+      setGatewayUI(!!(d && d.is_gateway));
+      toast(next ? '✅ 已标记为 Gateway' : '✅ 已取消 Gateway 标记', 'success');
+    } catch (e) {
+      setGatewayUI(!next); // 回滚
+      statusEl.textContent = '操作失败：' + (e && e.message ? e.message : e);
+      statusEl.style.color = 'var(--error)';
+      toast('操作失败：' + (e && e.message ? e.message : e), 'error');
+    } finally {
+      _gatewaySaving = false;
+    }
+  }
+
+  // 自初始化（与 admin-update.js 约定一致：DOMContentLoaded 触发首次加载）
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadGateway);
+  } else {
+    loadGateway();
+  }
+  </script>
+  <!-- 使用量 & 动态路由 -->
+  <div class="card" id="usageCard">
+    <div class="card-title" style="justify-content:space-between">
+      <span><span class="icon">📈</span> 使用量 & 动态路由</span>
+      <button class="btn btn-secondary btn-sm" id="btnRefreshUsage" onclick="var b=this;b.disabled=true;b.textContent='加载中...';refreshUsage().finally(function(){b.disabled=false;b.textContent='🔄 刷新';toast('✅ 使用量已更新','success')})">🔄 刷新</button>
+    </div>
+    <!-- 路由模式 -->
+    <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:13px;color:var(--text-secondary)">路由模式：</span>
+      <button class="btn btn-sm routing-btn" data-mode="priority" onclick="setRoutingMode('priority')">🎯 优先级优先</button>
+      <button class="btn btn-sm routing-btn" data-mode="cheapest" onclick="setRoutingMode('cheapest')">💰 成本最低</button>
+      <button class="btn btn-sm routing-btn" data-mode="fastest" onclick="setRoutingMode('fastest')">⚡ 速度最快</button>
+      <button class="btn btn-sm routing-btn" data-mode="auto" onclick="setRoutingMode('auto')">🧠 综合权重</button>
+    </div>
+    <!-- 权重滑块（仅 auto 模式显示）-->
+    <div id="weightSliders" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:8px;background:rgba(108,99,255,.03);border:1px solid var(--border-color)">
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">⚖️ 权重分配（拖动调整，其余三项自动联动，总和始终 100%）</div>
+      <div style="display:grid;grid-template-columns:100px 1fr 50px;gap:8px;align-items:center;font-size:13px">
+        <span>🎯 优先级</span>
+        <input type="range" id="wPriority" min="0" max="100" value="40" oninput="rebalanceWeights(this.id)" style="width:100%">
+        <span id="wPriorityVal" style="text-align:right;font-variant-numeric:tabular-nums">40%</span>
+        <span>💰 成本</span>
+        <input type="range" id="wCost" min="0" max="100" value="25" oninput="rebalanceWeights(this.id)" style="width:100%">
+        <span id="wCostVal" style="text-align:right;font-variant-numeric:tabular-nums">25%</span>
+        <span>⚡ 速度</span>
+        <input type="range" id="wLatency" min="0" max="100" value="20" oninput="rebalanceWeights(this.id)" style="width:100%">
+        <span id="wLatencyVal" style="text-align:right;font-variant-numeric:tabular-nums">20%</span>
+        <span>🪙 剩余Token</span>
+        <input type="range" id="wToken" min="0" max="100" value="15" oninput="rebalanceWeights(this.id)" style="width:100%">
+        <span id="wTokenVal" style="text-align:right;font-variant-numeric:tabular-nums">15%</span>
+      </div>
+      <div style="text-align:right;font-size:13px;color:#6c757d;margin-top:4px">
+        总和: <span id="weightTotal" style="font-weight:600;color:#198754">100</span>%
+      </div>
+      <div style="margin-top:8px;text-align:right">
+        <button class="btn btn-sm btn-primary" onclick="saveWeights()" style="font-size:11px;padding:4px 12px">保存权重</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
+        个人模式为 <strong>4 维</strong> 路由（优先级 / 成本 / 速度 / 剩余 Token）。网络模式设计目标为 5 维（含 trust/reputation 等），但当前 UI 仅暴露这 4 个滑块。
+      </div>
+    </div>
+    <!-- 概览统计 -->
+    <div class="status-grid" id="usageGrid" style="margin-bottom:16px">
+      <div class="status-item"><div><div class="status-label">今日请求</div><div class="status-value" id="todayRequests">-</div></div></div>
+      <div class="status-item"><div><div class="status-label">今日 Token</div><div class="status-value" id="todayTokens">-</div></div></div>
+      <div class="status-item"><div><div class="status-label">今日成本</div><div class="status-value" id="todayCost">-</div></div></div>
+      <div class="status-item"><div><div class="status-label">30 天总成本</div><div class="status-value" id="totalCost30d">-</div></div></div>
+    </div>
+    <!-- 各平台使用详情 -->
+    <div id="usageProviderList" style="font-size:13px">
+      <div style="text-align:center;color:var(--text-muted);padding:20px">暂无使用记录</div>
+    </div>
+    <div class="btn-group" style="margin-top:12px">
+      <button class="btn btn-danger btn-sm" onclick="resetUsage()">🗑 清空记录</button>
+    </div>
+  </div>
+  <!-- 请求日志 -->
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span><span class="icon">📋</span> 请求日志</span>
+      <button class="btn btn-secondary btn-sm" id="btnRefreshLogs" onclick="var b=this;b.disabled=true;b.textContent='加载中...';refreshLogs().finally(function(){b.disabled=false;b.textContent='🔄 刷新';toast('✅ 日志已更新','success')})">🔄 刷新</button>
+    </div>
+    <div id="logList" style="font-size:12px;max-height:400px;overflow-y:auto">
+      <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
+    </div>
+  </div>
+  <!-- 节点概览 -->
+  <div class="card" style="background:linear-gradient(135deg,var(--bg-card) 0%,#1a2332 100%);border:1px solid rgba(51,65,85,.6)">
+    <div class="card-title" style="justify-content:space-between;display:none" id="overviewCardTitle">
+      <span><span class="icon">📊</span> 节点概览</span>
+      <button class="btn btn-secondary btn-sm" id="btnRefreshHealth" onclick="var b=this;b.disabled=true;b.textContent='加载中...';refreshHealth().finally(function(){b.disabled=false;b.textContent='🔄 刷新';toast('✅ 已刷新','success')})">🔄 刷新</button>
+    </div>
+    <div id="nodeStatsContainer">
+      <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
+    </div>
+  </div>
+  <!-- 平台管理 -->
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span><span class="icon">🔌</span> 平台管理</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="addAllDiscoveredAsPreset()" style="border-color:rgba(52,211,153,.4);color:#34d399" id="batchAddDiscoveredBtn">📥 一键添加全部发现</button>
+        <button class="btn btn-secondary btn-sm" onclick="syncAllUrls()">🔄 一键同步全部地址</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()" style="border-color:rgba(52,211,153,.4);color:#34d399" id="discoveryToggleBtn">🔍 新发现</button>
+        <button class="btn btn-primary btn-sm" onclick="showAddProvider()">+ 添加平台</button>
+        <button class="btn btn-secondary btn-sm" onclick="openFreePool()" style="border-color:rgba(245,158,11,.4);color:#f59e0b">🎁 免费模型池</button>
+      </div>
+    </div>
+    <div class="section-note">添加 AI 平台并配置 API Key，请求将根据模型名称自动路由到对应平台</div>
+    <!-- Discovery Card (full card style, at top of platform list) -->
+    <div id="discoveryPanel" style="display:none;border:1px solid rgba(52,211,153,.3);background:linear-gradient(135deg,rgba(52,211,153,.04),rgba(108,99,255,.04));border-radius:var(--radius);padding:20px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border-color)">
+        <span style="font-weight:600;font-size:15px"><span style="margin-right:6px">🔍</span>新发现的 AI 平台</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="triggerDiscovery()" id="triggerScanBtn">🔄 扫描新平台</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleDiscoveryPanel()">✕ 收起</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">系统自动发现新的 AI 平台，管理员可审核、忽略或添加。</div>
+      <div id="discoveredList" style="display:grid;gap:10px">
+        <div style="text-align:center;color:var(--text-muted);padding:20px">点击「🔄 扫描新平台」开始发现</div>
+      </div>
+    </div>
+    <div id="providerV5List"></div>
+  </div>
+    <!-- 邮件服务 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">📧</span> 邮件服务配置</div>
+    <div class="form-group"><label class="form-label">SMTP 服务器</label><input class="form-input" id="smtpHost" placeholder="smtp.gmail.com"></div>
+    <div class="form-group"><label class="form-label">端口</label><input class="form-input" id="smtpPort" placeholder="587" type="number"></div>
+    <div class="form-group"><label class="form-label">用户名</label><input class="form-input" id="smtpUser" placeholder="your@email.com"></div>
+    <div class="form-group"><label class="form-label">密码</label><input class="form-input" id="smtpPass" type="password" placeholder="SMTP 密码"></div>
+    <div class="form-group"><label class="form-label">发件人</label><input class="form-input" id="smtpFrom" placeholder="noreply@domain.com"></div>
+    <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="smtpTls" checked> 启用 TLS</label></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="saveSmtp()">保存配置</button>
+      <button class="btn btn-secondary" onclick="testSmtp()">发送测试邮件</button>
+    </div>
+  </div>
+  <!-- 分享中心 -->
+  <div class="card" id="shareCenterCard">
+    <div class="card-title">
+      <span><span class="icon">🔗</span> 分享中心</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="generateGuestKey()">+ 创建 Guest Key</button>
+      </div>
+    </div>
+    <!-- 筛选 tabs -->
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-primary share-filter active" data-filter="all" onclick="filterShareKeys('all')">全部</button>
+      <button class="btn btn-sm btn-secondary share-filter" data-filter="consumer" onclick="filterShareKeys('consumer')">🔑 使用者</button>
+      <button class="btn btn-sm btn-secondary share-filter" data-filter="collaborator" onclick="filterShareKeys('collaborator')">🤝 协作者</button>
+    </div>
+    <!-- 分享面板（创建 Key 后动态显示） -->
+    <div id="sharePanel" style="display:none;margin-bottom:16px"></div>
+    <!-- Key 列表 -->
+    <div id="guestKeysList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
+  </div>
+  <!-- 配置管理 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">💾</span> 配置管理</div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
+      导出所有配置（平台、路由、SMTP 等）为 JSON 文件，或从备份文件导入恢复。
+      <br><span style="color:var(--warning)">⚠️ 导入会覆盖当前所有平台和配置</span>
+    </p>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="exportConfig()">📤 导出配置</button>
+      <label class="btn btn-secondary" style="cursor:pointer;margin:0">
+        📥 导入配置
+        <input type="file" accept=".json" onchange="importConfig(this)" style="display:none">
+      </label>
+    </div>
+  </div>
+  <!-- 账户安全 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🔐</span> 账户安全</div>
+    <div class="form-group"><label class="form-label">管理员邮箱</label><input class="form-input" id="adminEmail" placeholder="admin@email.com"></div>
+    <button class="btn btn-secondary btn-sm" onclick="updateEmail()" style="margin-bottom:20px">更新邮箱</button>
+    <div style="border-top:1px solid var(--border-color);padding-top:16px">
+      <div class="form-group"><label class="form-label">旧密码</label><input class="form-input" id="oldPass" type="password"></div>
+      <div class="form-group"><label class="form-label">新密码</label><input class="form-input" id="newPass" type="password"></div>
+      <button class="btn btn-primary" onclick="changePassword()">修改密码</button>
+    </div>
+  </div>
+  <div class="card" id="federationCard">
+    <div class="card-title"><span class="icon">🌐</span> 共享网络 <span id="fedEnabledStatus" style="font-size:12px;font-weight:normal;margin-left:8px"></span></div>
+    <!-- 两级开关：network_enabled（是否入网）+ share_to_pool（是否共享剩余额度） -->
+    <!-- 开关一：加入共享网络（network_enabled） -->
+    <div style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:var(--bg-secondary);border-radius:10px;margin-bottom:12px">
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:600">🌐 加入共享网络</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">开启后获得入网身份与全网资源访问权；可只入网不共享</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:52px;height:28px;flex-shrink:0">
+        <input type="checkbox" id="networkEnabledToggle" onchange="toggleNetworkEnabled()" style="opacity:0;width:0;height:0">
+        <span id="networkEnabledToggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:28px;transition:.3s">
+          <span style="position:absolute;content:'';height:22px;width:22px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>
+        </span>
+      </label>
+    </div>
+    <!-- 开关二：共享剩余额度（share_to_pool，单向依赖 network_enabled） -->
+    <div id="shareToPoolRow" style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.15);border-radius:10px;margin-bottom:16px">
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:600">🔗 共享剩余额度</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">把剩余额度贡献到共享池（需先加入共享网络）</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:52px;height:28px;flex-shrink:0">
+        <input type="checkbox" id="shareToPoolToggle" onchange="toggleShareToPool()" style="opacity:0;width:0;height:0">
+        <span id="shareToPoolToggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:28px;transition:.3s">
+          <span style="position:absolute;content:'';height:22px;width:22px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>
+        </span>
+      </label>
+    </div>
+    <!-- 中继设置（独立于共享网络） -->
+    <div style="margin-bottom:16px">
+      <div style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:rgba(16,185,129,.04);border:1px solid rgba(16,185,129,.15);border-radius:10px">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600">🔀 开启中继（Relay）</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;line-height:1.5">
+            开启后，您的节点将作为中继帮助其他节点转发请求，增加网络连通性。<br>
+            <span style="color:var(--warning)">⚠️ 会消耗额外带宽。建议在网络条件较好时开启。</span><br>
+            <span style="color:var(--text-muted);font-size:11px">💡 中继可独立于共享网络开启——您可以只做中继而不加入共享网络。</span>
+          </div>
+        </div>
+        <label style="position:relative;display:inline-block;width:52px;height:28px;flex-shrink:0">
+          <input type="checkbox" id="relayToggle" onchange="saveRelayToggle()" style="opacity:0;width:0;height:0">
+          <span id="relayToggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:28px;transition:.3s">
+            <span style="position:absolute;content:'';height:22px;width:22px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>
+          </span>
+        </label>
+      </div>
+    </div>
+    <!-- 额度分配（加入后显示） -->
+    <div id="quotaAllocation" style="display:none;margin-bottom:16px">
+      <div style="padding:12px 16px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.15);border-radius:10px">
+        <div style="font-size:13px;font-weight:500;margin-bottom:10px">📊 额度分配</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">设定您贡献的 Token 额度中，多少比例贡献给 Guest Key Pool，多少比例贡献给 Public Key Pool</div>
+        <div style="display:flex;gap:16px;align-items:center">
+          <div style="flex:1">
+            <label style="font-size:12px;color:var(--text-secondary)">Guest Key / Public Key 分配比例</label>
+            <input type="range" id="guestKeyPercentSlider" min="0" max="100" value="50" oninput="document.getElementById('guestPercentDisplay').textContent=this.value+'%'; document.getElementById('publicPercentDisplay').textContent=(100-this.value)+'%'" style="width:100%">
+          </div>
+          <div style="display:flex;gap:12px;font-size:13px;font-weight:600">
+            <span>Guest Key: <span id="guestPercentDisplay">50%</span></span>
+            <span style="color:var(--text-muted)">|</span>
+            <span>Public Key: <span id="publicPercentDisplay">50%</span></span>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveQuotaAllocation()">保存</button>
+        </div>
+      </div>
+    </div>
+    <!-- 已加入共享网络后显示的面板 -->
+    <div id="networkActivePanel" style="display:none">
+      <!-- 🏆 我的贡献 - 突出显示 -->
+      <div style="background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(16,185,129,.04));border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:20px;margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700;color:var(--success)">🏆 我的贡献</div>
+          <div style="font-size:11px;color:var(--text-muted)">持续贡献，提升信誉等级</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+          <div style="text-align:center;padding:12px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:28px;font-weight:800;color:var(--success);line-height:1" id="netCredits">0</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">贡献积分</div>
+          </div>
+          <div style="text-align:center;padding:12px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:28px;font-weight:800;color:var(--accent-start);line-height:1" id="netRelayRequests">0</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">中继转发</div>
+          </div>
+          <div style="text-align:center;padding:12px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:28px;font-weight:800;color:var(--accent-end);line-height:1" id="netRequestsReceived">0</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">接收请求</div>
+          </div>
+        </div>
+      </div>
+      <!-- 💰 公共池额度 -->
+      <div style="background:linear-gradient(135deg,rgba(108,99,255,.06),rgba(178,75,243,.03));border:1px solid rgba(108,99,255,.2);border-radius:12px;padding:20px;margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700;color:var(--accent-start)">💰 公共池额度</div>
+          <div style="font-size:11px;color:var(--text-muted)">我的节点向公共池贡献的额度</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--success);line-height:1" id="poolDailyContrib">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">每日贡献额度</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">节点总配额</div>
+          </div>
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--accent-end);line-height:1" id="poolPublicShare">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">公共池分配比例</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px" id="poolPublicDaily">-</div>
+          </div>
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--accent-start);line-height:1" id="poolGlobalQuota">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">公共池总额度</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">全网汇总</div>
+          </div>
+          <div style="text-align:center;padding:14px;background:rgba(255,255,255,.04);border-radius:10px">
+            <div style="font-size:26px;font-weight:800;color:var(--warning);line-height:1" id="poolMyQuota">-</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">我的可用额度</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">占池 <span id="poolSharePercent">-</span>%</div>
+          </div>
+        </div>
+      </div>
+      <!-- 📊 网络概览 -->
+      <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">📊 网络概览</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary);border-radius:8px">
+            <span style="font-size:12px;color:var(--text-muted)">节点 ID</span>
+            <span style="font-size:12px;font-family:monospace;font-weight:500" id="netNodeId">-</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary);border-radius:8px">
+            <span style="font-size:12px;color:var(--text-muted)">运行时长</span>
+            <span style="font-size:12px;font-weight:500" id="netUptime">-</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary);border-radius:8px">
+            <span style="font-size:12px;color:var(--text-muted)">连接节点</span>
+            <span style="font-size:12px;font-weight:500" id="netPeers">0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary);border-radius:8px">
+            <span style="font-size:12px;color:var(--text-muted)">网络模式</span>
+            <span style="font-size:12px;font-weight:500;color:var(--success)" id="netMode">共享网络</span>
+          </div>
+        </div>
+      </div>
+      <!-- 🌐 全局网络指标 -->
+      <div id="networkDashboard" style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🌐 全局网络指标</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;text-align:center">
+          <div style="padding:10px 6px;background:var(--bg-secondary);border-radius:8px">
+            <div style="font-size:18px;font-weight:700;color:var(--accent-start)" id="dashTotalNodes">-</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">在线节点</div>
+          </div>
+          <div style="padding:10px 6px;background:var(--bg-secondary);border-radius:8px">
+            <div style="font-size:18px;font-weight:700" id="dashSuccessRate">-</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">成功率</div>
+          </div>
+          <div style="padding:10px 6px;background:var(--bg-secondary);border-radius:8px">
+            <div style="font-size:18px;font-weight:700" id="dashModelsShared">-</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">共享模型</div>
+          </div>
+          <div style="padding:10px 6px;background:var(--bg-secondary);border-radius:8px">
+            <div style="font-size:18px;font-weight:700" id="dashTotalRequests">-</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">总请求数</div>
+          </div>
+        </div>
+      </div>
+      <!-- 👥 已连接节点列表 -->
+      <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">👥 已连接节点</div>
+        <div id="netPeersList" style="font-size:12px;color:var(--text-muted)">暂无连接节点</div>
+      </div>
+      <!-- ➕ 添加节点（手动互连） -->
+      <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">➕ 添加节点（手动互连）</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <input id="peerAddr" class="form-input" placeholder="https://openmodelpool.com" />
+          <input id="peerNodeId" class="form-input" placeholder="节点 ID（可留空，由对端返回）" />
+          <button id="addPeerBtn" class="btn btn-primary" onclick="addNetworkPeer()">添加</button>
+        </div>
+      </div>
+      <!-- 🔑 邀请码（互连对端） -->
+      <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🔑 邀请码（互连对端）</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button id="genInviteBtn" class="btn btn-secondary" onclick="generateFedInvite()">生成邀请码</button>
+          <input id="fedInviteCode" class="form-input" readonly placeholder="生成的邀请码将显示在此" />
+          <input id="redeemCode" class="form-input" placeholder="粘贴对方邀请码" />
+          <button id="redeemBtn" class="btn btn-primary" onclick="redeemInvite()">加入网络</button>
+          <div id="inviteList"></div>
+        </div>
+      </div>
+      <!-- 退出按钮 -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;text-align:center">
+        <button class="btn btn-danger" onclick="disableNetwork()" style="padding:10px 24px">🚪 退出共享网络</button>
+      </div>
+    </div>
+  </div>
+  <!-- 项目介绍 & GitHub -->
+  <div style="margin-top:32px;padding:24px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius);text-align:center">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">🚀 OpenModelPool — 开源 AI 聚合网关</div>
+    <div style="font-size:12px;color:var(--text-muted);line-height:1.8;max-width:600px;margin:0 auto">
+      多模型聚合路由 · 共享剩余AI模型算力 · 一键接入全球 AI 平台<br>
+      支持 OpenAI 兼容 API，多 Key 轮询，故障转移，公共池共享
+    </div>
+    <div style="margin-top:14px;display:flex;justify-content:center;gap:16px;flex-wrap:wrap">
+      <a href="https://github.com/lisiyu/openmodelpool" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(255,255,255,.06);border:1px solid var(--border-color);border-radius:20px;color:var(--text-secondary);text-decoration:none;font-size:12px;transition:all .2s" onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'" onmouseout="this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub 仓库
+      </a>
+      <a href="https://github.com/lisiyu/openmodelpool/issues" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(255,255,255,.06);border:1px solid var(--border-color);border-radius:20px;color:var(--text-secondary);text-decoration:none;font-size:12px;transition:all .2s" onmouseover="this.style.borderColor='var(--warning)';this.style.color='var(--warning)'" onmouseout="this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+        💡 问题反馈
+      </a>
+      <a href="https://github.com/lisiyu/openmodelpool/pulls" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(255,255,255,.06);border:1px solid var(--border-color);border-radius:20px;color:var(--text-secondary);text-decoration:none;font-size:12px;transition:all .2s" onmouseover="this.style.borderColor='var(--success)';this.style.color='var(--success)'" onmouseout="this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+        🔀 提交 PR
+      </a>
+    </div>
+    <div style="margin-top:16px;font-size:11px;color:var(--text-muted);opacity:.6">
+      OpenModelPool v4.1 · Made with ❤️ · 开源协议 MIT
+    </div>
+  </div>
+  <!-- 🔄 版本更新（一键更新 · 增量功能） -->
+  <div id="versionUpdateCard" style="margin-top:16px;padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:12px">🔄 版本更新</div>
+    <div id="versionUpdateBody"><div style="color:var(--text-muted);font-size:13px">正在加载…</div></div>
+    <div id="updateStatusArea" style="margin-top:14px"></div>
+  </div>
+  <!-- 🌐 域名绑定引导（P0：展示当前域名 + 隧道/健康检查 + 绑定步骤引导） -->
+  <div id="domainBindingCard" style="margin-top:16px;padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:14px;font-weight:600">🌐 域名绑定引导</div>
+      <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="refreshDomainBinding()">🔄 刷新状态</button>
+    </div>
+    <div id="domainBindingBody"><div style="color:var(--text-muted);font-size:13px">正在加载…</div></div>
+
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;color:var(--text-secondary);font-size:13px;user-select:none">▸ 如何绑定自定义域名（点击展开）</summary>
+      <div style="margin-top:10px;font-size:13px;color:var(--text-secondary);line-height:1.75">
+        <p style="margin:0 0 8px"><b>① Cloudflared 命名隧道（推荐，codespace / 云主机场景）</b></p>
+        <ol style="margin:0 0 10px;padding-left:20px">
+          <li>安装 cloudflared（如 <code>$HOME/.local/bin/cloudflared</code>）。</li>
+          <li>登录并创建命名隧道：<code>cloudflared tunnel login</code> → <code>cloudflared tunnel create openmodelpool</code>。</li>
+          <li>配置 Ingress，将流量指向本机服务：管理页 <code>http://localhost:8000</code>、网关 <code>http://localhost:8001</code>。</li>
+          <li>添加 DNS：<code>cloudflared tunnel route dns &lt;隧道名&gt; &lt;你的域名&gt;</code>（自动生成 CNAME 指向 <code>*.cfargotunnel.com</code>）。</li>
+          <li>用连接器 token 启动：<code>cloudflared tunnel run --token &lt;token&gt;</code>。</li>
+          <li>若由 supervisor 托管，重启 <code>run-omp.sh</code> 使隧道随实例自启。</li>
+        </ol>
+        <p style="margin:0 0 8px"><b>② 反向代理（Nginx / Caddy）→ :8000</b></p>
+        <p style="margin:0 0 10px">将你的域名通过 Nginx / Caddy 反代到本机 <code>127.0.0.1:8000</code>（管理页）/ <code>:8001</code>（网关），并配置 SSL 证书即可。</p>
+        <p style="margin:0 0 8px"><b>③ DNS 解析说明</b></p>
+        <p style="margin:0">若用 Cloudflare，DNS 记录建议设为 <b>CNAME + 代理（Proxied）</b> 以启用 CDN 与防护；修改 DNS 后通常 1–5 分钟生效。本页仅作引导，不自动调用 Cloudflare API 或修改 DNS。</p>
+      </div>
+    </details>
+  </div>
+  <script>
+  // ============================================================
+  // 域名绑定引导（admin.html 内联模块，遵循 admin-update.js 的自初始化约定）
+  // ============================================================
+  function renderDomainBadge(text, kind) {
+    var map = {
+      ok:      { bg: 'rgba(34,197,94,.14)',   color: '#22c55e' },
+      warn:    { bg: 'rgba(234,179,8,.14)',   color: '#eab308' },
+      error:   { bg: 'rgba(239,68,68,.14)',   color: '#ef4444' },
+      neutral: { bg: 'rgba(148,163,184,.16)', color: '#94a3b8' }
+    };
+    var s = map[kind] || map.neutral;
+    return '<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;background:' + s.bg + ';color:' + s.color + ';border:1px solid ' + s.color + '33">' + escapeHtml(text) + '</span>';
+  }
+
+  async function loadDomainBinding() {
+    var el = document.getElementById('domainBindingBody');
+    if (!el) return;
+    try {
+      var r = await authFetch('/api/domain/binding-status');
+      var d = await r.json();
+      renderDomainBinding(el, d);
+    } catch (e) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px">状态加载失败：' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+    }
+  }
+
+  function refreshDomainBinding() {
+    var el = document.getElementById('domainBindingBody');
+    if (el) el.innerHTML = '<div style="color:var(--text-muted);font-size:13px">正在刷新…</div>';
+    loadDomainBinding();
+  }
+
+  function renderDomainBinding(el, d) {
+    var domain = d.domain || '';
+    var domainText = domain ? escapeHtml(domain) : '未绑定';
+
+    // 隧道状态徽章
+    var tunnelBadge;
+    if (d.tunnel_mode === 'manual') {
+      tunnelBadge = renderDomainBadge('手动绑定（外部隧道/反代）', 'neutral');
+    } else if (d.tunnel_running) {
+      tunnelBadge = renderDomainBadge('运行中', 'ok');
+    } else {
+      tunnelBadge = renderDomainBadge('未运行', 'error');
+    }
+
+    // 健康检查徽章
+    var healthBadge;
+    if (!domain) {
+      healthBadge = renderDomainBadge('未绑定域名', 'neutral');
+    } else if (d.http_reachable === null || d.http_reachable === undefined) {
+      healthBadge = renderDomainBadge('未检测', 'neutral');
+    } else if (d.http_reachable) {
+      healthBadge = renderDomainBadge('可达 ✅', 'ok');
+    } else {
+      healthBadge = renderDomainBadge('不可达 ❌', 'error');
+    }
+
+    var html = '';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">当前域名</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + domainText + '</div></div>';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">隧道状态</div><div style="margin-top:4px">' + tunnelBadge + '</div></div>';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">健康检查</div><div style="margin-top:4px">' + healthBadge + '</div></div>';
+    html += '</div>';
+
+    if (domain && d.http_reachable === false && d.reach_error) {
+      html += '<div style="margin-top:10px;font-size:12px;color:#ef4444">探测失败：' + escapeHtml(d.reach_error) + '</div>';
+    }
+
+    html += '<div style="margin-top:10px;font-size:12px;color:var(--text-muted)">版本 ' + escapeHtml(d.version || '-') + (d.public_url ? ' · 公网地址 ' + escapeHtml(d.public_url) : '') + '</div>';
+
+    if (domain) {
+      html += '<div style="margin-top:8px;font-size:12px;color:#22c55e">✅ 您正通过自定义域名 ' + escapeHtml(domain) + ' 访问</div>';
+    } else {
+      html += '<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">⚪ 尚未绑定自定义域名，按下方步骤绑定</div>';
+    }
+
+    el.innerHTML = html;
+  }
+
+  // 自初始化（与 admin-update.js 约定一致：DOMContentLoaded 触发首次加载）
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadDomainBinding);
+  } else {
+    loadDomainBinding();
+  }
+  </script>
+  <!-- 共享网络 · 4 步入网向导 -->
+  <div class="modal-overlay" id="networkDisclaimerModal">
+    <div class="modal" style="max-width:680px">
+      <div class="modal-title">
+        <span id="onboardingWizardTitle">🌐 加入共享网络</span>
+        <button class="modal-close" onclick="closeNetworkWizard()">✕</button>
+      </div>
+
+      <!-- 进度条 -->
+      <div id="onboardingProgressBar" style="display:flex;align-items:center;gap:0;margin-bottom:20px">
+        <div class="ob-step-dot active" data-step="1"><span>1</span></div>
+        <div class="ob-step-line" data-step="1"></div>
+        <div class="ob-step-dot" data-step="2"><span>2</span></div>
+        <div class="ob-step-line" data-step="2"></div>
+        <div class="ob-step-dot" data-step="3"><span>3</span></div>
+        <div class="ob-step-line" data-step="3"></div>
+        <div class="ob-step-dot" data-step="4"><span>4</span></div>
+      </div>
+      <div id="onboardingProgressLabels" style="display:flex;justify-content:space-between;margin-bottom:18px;font-size:11px;color:var(--text-muted)">
+        <span style="flex:1;text-align:center">须知说明</span>
+        <span style="flex:1;text-align:center">助记词备份</span>
+        <span style="flex:1;text-align:center">共享边界</span>
+        <span style="flex:1;text-align:center">完成</span>
+      </div>
+
+      <!-- Step 1: 须知说明 -->
+      <div id="onboardingStep1">
+        <div style="font-weight:600;font-size:16px;margin-bottom:14px">加入共享网络</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+          <div style="padding:12px 14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;font-size:13px;line-height:1.6">
+            <div style="font-weight:600;margin-bottom:4px">OpenModelPool 是一个公益 AI 算力共享网络</div>
+            <div style="color:var(--text-secondary)">将闲置的 AI 模型算力贡献给需要的人，同时获得全网共享资源的使用权。</div>
+          </div>
+          <div style="padding:12px 14px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:8px;font-size:13px;line-height:1.6">
+            <div style="font-weight:600;color:var(--success);margin-bottom:4px">你的 API Key 永远保存在本地，绝不上传</div>
+            <div style="color:var(--text-secondary)">所有密钥仅存储在你的设备上，网络中传输的请求经过加密通道。</div>
+          </div>
+          <div style="padding:12px 14px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:8px;font-size:13px;line-height:1.6">
+            <div style="font-weight:600;color:var(--warning);margin-bottom:4px">贡献积分不可提现/交易，仅用于网络内权益</div>
+            <div style="color:var(--text-secondary)">积分反映你的贡献程度，决定你在网络中的优先级和额度。</div>
+          </div>
+          <div style="padding:12px 14px;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:8px;font-size:13px;line-height:1.6">
+            <div style="font-weight:600;color:var(--info);margin-bottom:4px">你可以随时退出，退出后个人版功能不受影响</div>
+            <div style="color:var(--text-secondary)">退出共享网络后，所有个人版功能照常使用，无任何影响。</div>
+          </div>
+        </div>
+        <div style="margin-top:16px;text-align:right;display:flex;align-items:center;justify-content:space-between">
+          <button style="background:none;border:none;color:var(--accent-start);cursor:pointer;font-size:12px;padding:4px 6px" onclick="startRestoreFlow()">🔑 使用已有助记词恢复</button>
+          <div>
+            <button class="btn btn-secondary" onclick="closeNetworkWizard()" style="margin-right:8px">取消</button>
+            <button class="btn btn-primary" id="onboardingStep1Next" onclick="onboardingGoStep(2)">下一步</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: 助记词生成与备份 -->
+      <div id="onboardingStep2" style="display:none">
+        <div style="font-weight:600;font-size:14px;margin-bottom:6px">备份您的节点助记词</div>
+        <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;line-height:1.6">这是恢复节点身份与贡献积分的唯一方式。请离线抄写并妥善保存，<b style="color:var(--warning)">此助记词仅显示一次</b>。</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <span style="font-size:12px">词数</span>
+          <select id="mnemonicWordCount" class="form-input" style="width:auto;padding:4px 8px;font-size:12px" onchange="generateIdentity()">
+            <option value="12">12 词</option>
+            <option value="24">24 词</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="generateIdentity()">生成助记词</button>
+          <button class="btn btn-secondary btn-sm" id="mnemonicExportBtn" style="display:none" onclick="exportMnemonic()">加密导出</button>
+        </div>
+        <div id="mnemonicGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
+        <div id="restorePanel" style="display:none;margin-top:14px;padding-top:12px;border-top:1px dashed var(--border-color)">
+          <div style="font-size:12px;font-weight:600;margin-bottom:6px">输入已有助记词（空格分隔）</div>
+          <textarea id="restoreMnemonicInput" class="form-input" rows="3" placeholder="paste your mnemonic here" style="width:100%;font-family:monospace;font-size:12px"></textarea>
+          <div style="margin-top:8px;text-align:right">
+            <button class="btn btn-primary btn-sm" onclick="restoreIdentity()">恢复身份</button>
+          </div>
+        </div>
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-color)">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;margin-bottom:14px;line-height:1.6">
+            <input type="checkbox" id="backupConfirmCheck" onchange="toggleBackupConfirmBtn()" style="margin-top:3px;width:16px;height:16px;flex-shrink:0">
+            <span>我已安全抄写并妥善保管好助记词，理解<b>丢失助记词将导致节点身份与贡献积分无法恢复</b>。</span>
+          </label>
+        </div>
+        <div style="text-align:right">
+          <button class="btn btn-secondary" onclick="onboardingGoStep(1)" style="margin-right:8px">上一步</button>
+          <button class="btn btn-primary" id="mnemonicNextBtn" onclick="onboardingGoStep(3)" disabled style="opacity:0.5">下一步</button>
+        </div>
+      </div>
+
+      <!-- Step 3: 共享边界配置 -->
+      <div id="onboardingStep3" style="display:none">
+        <div style="font-weight:600;font-size:14px;margin-bottom:6px">共享边界配置</div>
+        <p style="font-size:12px;color:var(--text-muted);margin:0 0 16px;line-height:1.6">设定你愿意贡献的算力范围，后续可随时在共享网络面板中调整。</p>
+        <div class="form-group">
+          <label class="form-label">每日贡献上限（0 = 不限制）</label>
+          <input type="number" class="form-input" id="dailyContribCap" value="0" min="0" placeholder="0">
+        </div>
+        <div class="form-group">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <div>
+              <div style="font-size:13px;font-weight:500">仅共享空闲额度</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">开启后仅在你没有主动请求时贡献算力</div>
+            </div>
+            <label style="position:relative;display:inline-block;width:52px;height:28px;flex-shrink:0">
+              <input type="checkbox" id="shareIdleOnlyToggle" onchange="updateToggleSlider('shareIdleOnlyToggle','shareIdleOnlyToggleSlider',this.checked)" style="opacity:0;width:0;height:0">
+              <span id="shareIdleOnlyToggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:28px;transition:.3s">
+                <span style="position:absolute;content:'';height:22px;width:22px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>
+              </span>
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">模型白名单（留空 = 共享全部模型，逗号分隔）</label>
+          <input type="text" class="form-input" id="modelWhitelistInput" placeholder="gpt-4o, claude-3-opus, deepseek-chat">
+        </div>
+        <div style="text-align:right">
+          <button class="btn btn-secondary" onclick="onboardingGoStep(2)" style="margin-right:8px">上一步</button>
+          <button class="btn btn-primary" id="onboardingStep3Next" onclick="onboardingGoStep(4)">下一步</button>
+        </div>
+      </div>
+
+      <!-- Step 4: 完成确认 -->
+      <div id="onboardingStep4" style="display:none">
+        <div style="text-align:center;padding:12px 0">
+          <div style="font-size:40px">🎉</div>
+          <div style="font-weight:600;font-size:16px;margin-top:8px;color:var(--success)">欢迎加入共享网络！</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;line-height:1.6">你的节点身份已创建，助记词请妥善保管。<br>点击「完成」将正式启用共享网络。</div>
+          <div id="doneNodeId" style="margin-top:14px;font-family:monospace;font-size:11px;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:10px"></div>
+        </div>
+        <div style="margin-top:16px;text-align:right">
+          <button class="btn btn-secondary" onclick="onboardingGoStep(3)" style="margin-right:8px">上一步</button>
+          <button class="btn btn-primary" id="onboardingFinishBtn" onclick="onboardingFinish()">完成</button>
+        </div>
+      </div>
+
+      <!-- 迁移提示（REQ-S2-5） -->
+      <div id="migrationHint" style="display:none;margin-top:14px;padding:10px 12px;border-radius:8px;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);font-size:12px;color:#eab308"></div>
+    </div>
+  </div>
+<!-- 添加/编辑平台模态框 -->
+<script src="/admin-common.js?v=344"></script>
+<script src="/admin-settings.js?v=344"></script>
+<script src="/admin-network.js?v=347"></script>
+<script src="/admin-share.js?v=344"></script>
+<script src="/admin-update.js?v=345"></script>
+<script src="/admin-logs.js?v=344"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async></script>
+
+<!-- Sub-page Modal (iframe) -->
+<div id="subPageModal" class="subpage-modal-overlay" style="display:none">
+  <div class="subpage-modal-container">
+    <div class="subpage-modal-header">
+      <span id="subPageModalTitle">页面</span>
+      <button class="subpage-modal-close" onclick="closeSubPage()">✕</button>
+    </div>
+    <iframe id="subPageFrame" src="" scrolling="auto"></iframe>
+  </div>
+</div>
+<style>
+.subpage-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:none;align-items:center;justify-content:center;padding:24px;overflow:hidden;touch-action:none}@media(min-width:769px){.subpage-modal-overlay{backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}}
+.subpage-modal-overlay.open{display:flex;animation:modalFadeIn .15s ease-out}
+@keyframes modalFadeIn{from{opacity:0}to{opacity:1}}
+.subpage-modal-container{animation:modalSlideUp .2s ease-out}
+@keyframes modalSlideUp{from{transform:translateY(12px);opacity:.8}to{transform:translateY(0);opacity:1}}
+.subpage-modal-container{background:var(--bg-card,#fff);border-radius:14px;width:100%;max-width:1100px;height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.25)}
+.subpage-modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border-color,#e5e5e7);flex-shrink:0}
+#subPageModalTitle{font-size:15px;font-weight:600;color:var(--text-primary,#1d1d1f)}
+.subpage-modal-close{background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-secondary,#86868b);padding:4px 8px;border-radius:6px;transition:all .2s}
+.subpage-modal-close:hover{background:rgba(0,0,0,.06);color:var(--text-primary,#1d1d1f)}
+#subPageFrame{flex:1;border:none;width:100%;min-height:0;-webkit-overflow-scrolling:touch;scrollbar-width:none;-ms-overflow-style:none}#subPageFrame::-webkit-scrollbar{display:none}
+@media(max-width:768px){
+  .subpage-modal-overlay{padding:0}
+  .subpage-modal-container{border-radius:0;max-width:100%;height:100vh;height:100dvh}
+}
+</style>
+<script>
+// Sub-page modal navigation
+function openSubPage(url, title) {
+  var modal = document.getElementById('subPageModal');
+  var frame = document.getElementById('subPageFrame');
+  var titleEl = document.getElementById('subPageModalTitle');
+  if (title) titleEl.textContent = title;
+  // Reuse the iframe if the same page is already loaded — avoids a full reload on every open
+  if (frame.getAttribute('data-src') !== url) {
+    frame.src = url;
+    frame.setAttribute('data-src', url);
+  }
+  modal.classList.add('open');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function closeSubPage() {
+  var modal = document.getElementById('subPageModal');
+  var frame = document.getElementById('subPageFrame');
+  // Keep the loaded sub-page in the iframe (do NOT reset to about:blank) so reopening is instant
+  modal.classList.remove('open');
+  modal.style.display = 'none';
+  document.body.style.overflow = '';
+  // Lightweight refresh: only health (renders providers too), skip separate loadProviders
+  setTimeout(function() { try { refreshHealth(); loadStatus(); } catch(e) {} }, 100);
+}
+function showAddProvider() { openSubPage('/admin/provider', '添加平台'); }
+function editProvider(pid) { openSubPage('/admin/provider?id=' + pid, '编辑平台'); }
+function openModelMatrix(pid) { if (!pid) return; openSubPage('/admin/models?id=' + pid, '模型配置'); }
+function openFreePool() { openSubPage("/admin/free-pool", "免费模型池"); }
+function openBrowserLogin() {
+  var pid = (typeof editingId !== 'undefined' && editingId) || '';
+  if (pid) { openSubPage('/admin/browser-login?id=' + pid, '内置浏览器'); }
+  else { openSubPage('/admin/browser-login', '内置浏览器'); }
+}
+
+// ================================================================
+// Module: CoreAuth - Authentication, utilities, and initialization
+// ================================================================
+async function init() {
+  try {
+    await Promise.all([loadStatus(), loadProviders()]);
+  } catch(e) { console.error(e); }
+  // Load presets in background (non-blocking)
+  fetch('/api/providers/presets').then(r => r.json()).then(d => { presets = d.presets || []; }).catch(() => {});
+  // Preload the most-used sub-page (add/edit platform) into the hidden iframe so the first open is instant
+  setTimeout(function() {
+    try {
+      var pf = document.getElementById('subPageFrame');
+      if (pf && pf.getAttribute('data-src') !== '/admin/provider') {
+        pf.src = '/admin/provider';
+        pf.setAttribute('data-src', '/admin/provider');
+      }
+    } catch (e) {}
+  }, 800);
+}
+async function loadStatus() {
+  const r = await authFetch('/api/status');
+  const d = await r.json();
+  document.getElementById('statusText').textContent = d.status === 'running' ? '运行中' : '异常';
+  document.getElementById('statusDot').className = `status-dot ${d.status === 'running' ? 'green' : 'red'}`;
+  document.getElementById('providerCount').textContent = `${d.providers?.enabled || 0} / ${d.providers?.preset_total || d.providers?.total || 0}`;
+  document.getElementById('modelCount').textContent = d.models || 0;
+  document.getElementById('versionText').textContent = d.version || '-';
+}
+// ===== Usage & Routing =====
+async function refreshUsage() {
+  try {
+    const [summaryRes, providersRes, routingRes] = await Promise.all([
+      authFetch('/api/usage/summary'),
+      authFetch('/api/usage/providers?days=30'),
+      authFetch('/api/routing/mode'),
+    ]);
+    const summary = await summaryRes.json();
+    const providers = await providersRes.json();
+    const routing = await routingRes.json();
+    // 更新概览
+    document.getElementById('todayRequests').textContent = summary.today_requests || 0;
+    document.getElementById('todayTokens').textContent = formatTokens(summary.today_tokens || 0);
+    document.getElementById('todayCost').textContent = `$${(summary.today_cost_usd || 0).toFixed(4)}`;
+    document.getElementById('totalCost30d').textContent = `$${(summary.total_cost_usd_30d || 0).toFixed(4)}`;
+    // 更新路由模式按钮
+    const currentMode = routing.current?.id || 'priority';
+    document.querySelectorAll('.routing-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === currentMode);
+    });
+    // 综合权重模式时显示权重滑块（不重载数值，避免轮询覆盖用户操作）
+    const weightBox = document.getElementById('weightSliders');
+    if (weightBox) {
+      if (currentMode === 'auto') {
+        weightBox.style.display = 'block';
+      } else {
+        weightBox.style.display = 'none';
+      }
+    }
+    // 更新平台使用详情表
+    renderUsageTable(providers);
+    // 同时刷新 Sider 状态
+    refreshSiderStatus();
+  } catch (e) {
+    console.error('加载使用量失败:', e);
+  }
+}
+function renderUsageTable(stats) {
+  const container = document.getElementById('usageProviderList');
+  const entries = Object.values(stats || {});
+  if (!entries.length) {
+    container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无使用记录，发起请求后将自动统计</div>';
+    return;
+  }
+  // 按请求数降序排列
+  entries.sort((a, b) => b.request_count - a.request_count);
+  let html = '<table class="usage-table"><thead><tr><th>平台</th><th>请求数</th><th>成功率</th><th>Token</th><th>成本</th><th>平均延迟</th></tr></thead><tbody>';
+  for (const s of entries) {
+    const latencyClass = s.avg_latency_ms < 1000 ? 'fast' : s.avg_latency_ms < 3000 ? 'medium' : 'slow';
+    html += `<tr>
+      <td><strong>${escapeHtml(s.provider_name)}</strong></td>
+      <td>${s.request_count}</td>
+      <td>${s.success_rate}%</td>
+      <td>${formatTokens(s.total_tokens)}</td>
+      <td class="cost-tag">$${s.total_cost_usd.toFixed(4)}</td>
+      <td class="latency-tag ${latencyClass}">${s.avg_latency_ms.toFixed(0)}ms</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+async function setRoutingMode(mode) {
+  try {
+    const r = await authFetch('/api/routing/mode', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ mode }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      document.querySelectorAll('.routing-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+      // 立即显示/隐藏权重滑块
+      const weightBox = document.getElementById('weightSliders');
+      if (weightBox) {
+        if (mode === 'auto') {
+          weightBox.style.display = 'block';
+          loadWeights();
+        } else {
+          weightBox.style.display = 'none';
+        }
+      }
+      toast(`✅ 路由模式已切换为: ${mode === 'priority' ? '优先级优先' : mode === 'cheapest' ? '成本最低' : mode === 'fastest' ? '速度最快' : '综合权重'}`, 'success');
+    }
+  } catch (e) {
+    toast('切换失败: ' + e.message, 'error');
+  }
+}
+async function resetUsage() {
+  if (!confirm('确定要清空所有使用记录吗？此操作不可恢复。')) return;
+  try {
+    const r = await authFetch('/api/usage/reset', { method: 'DELETE' });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ 使用记录已清空', 'success');
+      refreshUsage();
+    }
+  } catch (e) {
+    toast('清空失败: ' + e.message, 'error');
+  }
+}
+// ===== Weight Sliders =====
+const WEIGHT_IDS = ['wPriority', 'wCost', 'wLatency', 'wToken'];
+const WEIGHT_VALS = { wPriority: 'wPriorityVal', wCost: 'wCostVal', wLatency: 'wLatencyVal', wToken: 'wTokenVal' };
+// When user drags one slider, auto-adjust the other 3 proportionally so total = 100%
+function rebalanceWeights(changedId) {
+  const newVal = parseInt(document.getElementById(changedId).value);
+  const remaining = 100 - newVal;
+  const others = WEIGHT_IDS.filter(id => id !== changedId);
+  // Read current values of the 3 other sliders
+  const otherVals = {};
+  let otherSum = 0;
+  others.forEach(id => {
+    otherVals[id] = parseInt(document.getElementById(id).value);
+    otherSum += otherVals[id];
+  });
+  // Distribute remaining budget proportionally to current values
+  let distributed = 0;
+  others.forEach((id, i) => {
+    let v;
+    if (i === others.length - 1) {
+      v = remaining - distributed; // last one gets remainder to ensure exact 100
+    } else if (otherSum > 0) {
+      v = Math.round((otherVals[id] / otherSum) * remaining);
+      distributed += v;
+    } else {
+      // All others at 0, split evenly
+      v = Math.floor(remaining / (others.length - i));
+      distributed += v;
+    }
+    v = Math.max(0, Math.min(100, v));
+    document.getElementById(id).value = v;
+    document.getElementById(WEIGHT_VALS[id]).textContent = v + '%';
+  });
+  // Update the changed slider's label
+  document.getElementById(WEIGHT_VALS[changedId]).textContent = newVal + '%';
+  updateWeightTotal();
+}
+function updateWeightTotal() {
+  let total = 0;
+  WEIGHT_IDS.forEach(id => { total += parseInt(document.getElementById(id).value || 0); });
+  const el = document.getElementById('weightTotal');
+  if (el) {
+    el.textContent = total;
+    el.style.color = total === 100 ? '#198754' : '#dc3545';
+  }
+}
+function updateWeightLabel() {
+  WEIGHT_IDS.forEach(id => {
+    document.getElementById(WEIGHT_VALS[id]).textContent = (parseInt(document.getElementById(id).value) || 0) + '%';
+  });
+  updateWeightTotal();
+}
+async function saveWeights() {
+  const p = parseInt(document.getElementById('wPriority').value) || 0;
+  const c = parseInt(document.getElementById('wCost').value) || 0;
+  const l = parseInt(document.getElementById('wLatency').value) || 0;
+  const t = parseInt(document.getElementById('wToken').value) || 0;
+  try {
+    const r = await authFetch('/api/routing/weights', {
+      method: 'POST',
+      body: JSON.stringify({
+        priority: +(p / 100).toFixed(4),
+        cost: +(c / 100).toFixed(4),
+        latency: +(l / 100).toFixed(4),
+        tokens: +(t / 100).toFixed(4),
+      }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      console.log('[DEBUG] saveWeights success, about to call loadWeights');
+      toast('✅ 权重已保存', 'success');
+      await loadWeights();
+    } else {
+      toast('保存失败: ' + (d.error || JSON.stringify(d)), 'error');
+    }
+  } catch (e) {
+    toast('保存失败: ' + e.message, 'error');
+  }
+}
+async function loadWeights() {
+  console.log('[DEBUG] loadWeights called from:', new Error().stack);
+  try {
+    const r = await authFetch('/api/routing/weights');
+    const w = await r.json();
+    // Direct mapping: stored value * 100 = slider position (no re-normalization)
+    // Use ?? (nullish coalescing) instead of || to handle 0 correctly (0 is falsy in JS)
+    const p = Math.round((w.priority ?? 0.4) * 100);
+    const c = Math.round((w.cost ?? 0.25) * 100);
+    const l = Math.round((w.latency ?? 0.2) * 100);
+    const t = Math.round((w.tokens ?? 0.15) * 100);
+    document.getElementById('wPriority').value = p;
+    document.getElementById('wCost').value = c;
+    document.getElementById('wLatency').value = l;
+    document.getElementById('wToken').value = t;
+    updateWeightLabel();
+  } catch (e) { /* ignore */ }
+}
+// ===== Sider Token Status =====
+// ================================================================
+// Module: SiderMonitor - Sider token status monitoring
+// ================================================================
+async function refreshSiderStatus() {
+  try {
+    const r = await authFetch('/api/providers/sider/status');
+    const d = await r.json();
+    updateSiderStatusUI(d);
+  } catch (e) {
+    updateSiderStatusUI({ token_status: 'unknown', failure_message: '无法获取状态' });
+  }
+}
+function updateSiderStatusUI(status) {
+  const badge = document.getElementById('siderStatusBadge');
+  if (!badge) return;
+  const st = status.token_status || 'unknown';
+  if (st === 'ok') {
+    badge.innerHTML = '✅ Token 正常';
+    badge.style.background = 'rgba(34,197,94,.12)';
+    badge.style.color = '#22c55e';
+    badge.title = 'Sider Token 正常' + (status.last_success_at ? ' · 上次成功: ' + formatTime(status.last_success_at) : '');
+  } else if (st === 'expired') {
+    const failCount = status.consecutive_failures || 0;
+    badge.innerHTML = '🔴 Token 过期';
+    badge.style.background = 'rgba(239,68,68,.12)';
+    badge.style.color = '#ef4444';
+    badge.title = 'Sider Token 已过期！连续失败 ' + failCount + ' 次'
+      + (status.last_failure_at ? ' · 最近: ' + formatTime(status.last_failure_at) : '')
+      + '。请打开浏览器登录 sider.ai，重新获取 Cookie 中的 Token';
+  } else {
+    badge.innerHTML = '⚪ 未检测';
+    badge.style.background = 'rgba(108,99,255,.1)';
+    badge.style.color = 'var(--text-muted)';
+    badge.title = 'Sider Token 状态：未检测（点击刷新）';
+  }
+}
+async function testSiderToken() {
+  const btn = document.getElementById('siderTestBtn');
+  const oldText = btn.textContent;
+  btn.textContent = '检测中...';
+  btn.disabled = true;
+  try {
+    const r = await authFetch('/api/providers/sider/test', { method: 'POST' });
+    const d = await r.json();
+    if (d.valid) {
+      toast('✅ ' + d.message, 'success');
+    } else {
+      toast('❌ ' + d.message, 'error');
+    }
+    refreshSiderStatus();
+  } catch (e) {
+    toast('测试失败: ' + e.message, 'error');
+  } finally {
+    btn.textContent = oldText;
+    btn.disabled = false;
+  }
+}
+// ===== Providers =====
+let allProviders = [];
+// ================================================================
+// Module: ProviderManager - Provider CRUD, testing, and model management
+// ================================================================
+async function loadProviders() {
+  const r = await authFetch('/api/providers');
+  const d = await r.json();
+  allProviders = d.providers || [];
+  renderProviders();
+}
+function renderProviders() { /* V5: rendered by refreshHealth() */
+}
+function toggleModels(pid) { const el = document.getElementById('models-' + pid); el.classList.toggle('open'); }
+function updatePoolRatio(val) {
+  val = parseInt(val);
+  document.getElementById('guestPoolPercent').textContent = val + '%';
+  document.getElementById('publicPoolPercent').textContent = (100 - val) + '%';
+}
+function setAccessControl(mode) {
+  // Legacy compatibility: always set shared mode (access control is now per-key)
+  let hidden = document.getElementById('pAccessControlValue');
+  if (!hidden) return;
+  hidden.value = 'shared';
+}
+async function updatePriority(pid, value) {
+  const priority = parseInt(value, 10);
+  if (isNaN(priority) || priority < 1 || priority > 99) {
+    toast('优先级需为 1-99 的整数', 'error');
+    return;
+  }
+  const p = allProviders.find(x => x.id === pid);
+  if (!p) return;
+  p.priority = priority;
+  try {
+    await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({priority: priority}) });
+    toast(`${p.name} 优先级已设为 ${priority}`);
+  } catch(e) {
+    toast('更新失败: ' + e.message, 'error');
+  }
+}
+async function toggleProvider(pid, enabled) {
+  const p = allProviders.find(x => x.id === pid);
+  if (!p) return;
+  p.enabled = enabled;
+  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({enabled: enabled}) });
+  toast(`${p.name} 已${enabled?'启用':'禁用'}`);
+  await loadProviders(); await loadStatus();
+  // Wait a moment for health checker to update, then refresh cards
+  if (typeof refreshHealth === 'function') {
+    await new Promise(r => setTimeout(r, 800));
+    await refreshHealth();
+  }
+}
+async function toggleModel(pid, mid) {
+  const p = allProviders.find(x => x.id === pid);
+  if (!p) return;
+  const m = (p.models||[]).find(x => x.id === mid);
+  if (!m) return;
+  // Flip locally first for instant visual feedback
+  m.enabled = !m.enabled;
+  // Update toggle visual state without re-rendering the whole list
+  const toggleEl = event.currentTarget;
+  if (toggleEl) {
+    toggleEl.classList.toggle('active', m.enabled);
+  }
+  // Save to server in background
+  await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: p.models}) }).catch(e => {
+    // Revert on failure
+    m.enabled = !m.enabled;
+    if (toggleEl) toggleEl.classList.toggle('active', m.enabled);
+    toast('保存失败: ' + e.message, 'error');
+  });
+}
+async function testProvider(pid) {
+  toast('正在测试所有 Key...', 'info');
+  try {
+    const r = await authFetch(`/api/providers/${pid}/test-all-keys`, { method: 'POST' });
+    const d = await r.json();
+    if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    const successCount = d.results.filter(k => k.success).length;
+    const failCount = d.results.length - successCount;
+    if (failCount === 0) {
+      toast(`✅ 全部 ${successCount} 个 Key 通过`, 'success');
+    } else {
+      const failedKeys = d.results.filter(k => !k.success).map(k => k.alias || ('Key#' + k.index));
+      toast(`⚠️ ${successCount}/${d.results.length} Key 通过，${failCount} 失败: ${failedKeys.join(', ')}`, 'error', 8000);
+    }
+    if (typeof refreshHealth === 'function') await refreshHealth();
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+async function deleteProvider(pid) {
+  if (!confirm('确定删除此平台？')) return;
+  const r = await authFetch(`/api/providers/${pid}`, { method: 'DELETE' });
+  if (!r.ok) {
+    toast('删除失败', 'error');
+    return;
+  }
+  toast('已删除');
+  await loadProviders(); await loadStatus();
+  if (typeof refreshHealth === 'function') await refreshHealth();
+}
+async function fetchRemoteModels(pid) {
+  toast('正在拉取远程模型列表...', 'info');
+  try {
+    const r = await authFetch(`/api/providers/${pid}/models`);
+    const d = await r.json();
+    if (d.models && d.models.length) {
+      const p = allProviders.find(x => x.id === pid);
+      if (p) {
+        const existing = new Set((p.models||[]).map(m=>m.id));
+        let added = 0;
+        d.models.forEach(m => { if (!existing.has(m.id)) { (p.models = p.models||[]).push({id:m.id, name:m.name||m.id, enabled:true}); added++; }});
+        // Only send models update, not the full provider (avoids sending masked API key)
+        await authFetch(`/api/providers/${pid}`, { method: 'PUT', body: JSON.stringify({models: p.models}) });
+        toast(`已添加 ${added} 个新模型（共发现 ${d.count} 个）`);
+        await loadProviders();
+      }
+    } else { toast('远程无可用模型', 'info'); }
+  } catch(e) { toast('拉取失败: ' + e.message, 'error'); }
+}
+async function syncProviderUrl(pid) {
+  toast('正在同步地址...', 'info');
+  try {
+    const r = await authFetch(`/api/providers/${pid}/sync-url`, { method: 'POST' });
+    const d = await r.json();
+    if (d.changed) { toast(`✅ ${d.message}`, 'success'); } else { toast(d.message, 'info'); }
+    await loadProviders();
+    if (typeof refreshHealth === 'function') await refreshHealth();
+  } catch(e) { toast('同步失败: ' + e.message, 'error'); }
+}
+async function syncModels(pid) {
+  toast('正在同步模型列表...', 'info');
+  try {
+    const r = await authFetch(`/api/providers/${pid}/sync-models`, { method: 'POST' });
+    const d = await r.json();
+    if (d.success) { toast(`✅ 已同步 ${d.models_synced} 个模型`, 'success'); } else { var errMsg = extractError(d) || '同步失败'; if (errMsg.indexOf('no API key') >= 0) errMsg = '该平台未配置有效的 API Key，无法同步模型'; toast(errMsg, 'error'); }
+    await loadProviders();
+    if (typeof refreshHealth === 'function') await refreshHealth();
+  } catch(e) { toast('同步失败: ' + e.message, 'error'); }
+}
+async function syncAllUrls() {
+  toast('正在同步所有平台地址...', 'info');
+  try {
+    const r = await authFetch('/api/providers/sync-all-urls', { method: 'POST' });
+    const d = await r.json();
+    if (d.changed > 0) { toast(`✅ 已更新 ${d.changed} 个平台的地址`, 'success'); } else { toast('所有平台地址已是最新，无需更新', 'info'); }
+    await loadProviders();
+    if (typeof refreshHealth === 'function') await refreshHealth();
+  } catch(e) { toast('同步失败: ' + e.message, 'error'); }
+}
+// ===== Add/Edit Provider Modal =====
+let editingId = null;
+let selectedPresetKeyOptional = false; // true when selecting a discovered platform
+// ===== Health Status =====
+function fmtTok(n) {
+  if (!n || n <= 0) return '0';
+  if (n >= 1e9) return (n/1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return String(n);
+}
+function formatQuota(used, total) {
+  if (total == 0) return '— / —';
+  return fmtTok(used) + ' / ' + fmtTok(total);
+}
+function barPercent(used, total) {
+  if (total == 0) return 0;
+  return Math.min((used / total) * 100, 100);
+}
+async function refreshHealth() {
+  try {
+    const r = await authFetch('/api/health');
+    const d = await r.json();
+    const providers = d.providers || [];
+    const ns = d.node_stats || {};
+
+    // V8: Get node info from node_stats (already in /api/health response)
+    var v8NodeInfo = { node_id: ns.node_id || '', version: ns.version || '' };
+
+    // ============ Render Node Stats Overview ============
+    const statsContainer = document.getElementById('nodeStatsContainer');
+    let statsHtml = '';
+
+    // V8: Overview row-header with action buttons
+    var v8Nid = (v8NodeInfo.node_id || '').substring(0, 16);
+    var v8Ver = v8NodeInfo.version || '';
+    statsHtml += '<div class="v5-row-header" style="margin-bottom:8px">';
+    statsHtml += '<span class="v5-status-dot green"></span>';
+    statsHtml += '<span style="font-size:14px;font-weight:700">节点概览</span>';
+    if (v8Nid) statsHtml += '<span style="font-size:10px;color:#64748b;font-family:monospace">' + v8Nid + '</span>';
+    if (v8Ver) statsHtml += '<span style="font-size:10px;color:#64748b;background:rgba(100,116,139,.1);padding:1px 6px;border-radius:4px">' + v8Ver + '</span>';
+
+    statsHtml += '</div>';
+
+    // V8: Model stats row
+    var nsPrivModels = ns.private_models || 0;
+    var nsSharedModels = ns.shared_models || 0;
+    var nsEnabledModels = ns.model_enabled || 0;
+    var nsTotalModels = ns.model_total || 0;
+    var nsPrivKeys = ns.private_key_count || 0;
+    var nsSharedKeys = ns.shared_key_count || 0;
+    var nsTotalKeys = ns.key_total || 0;
+    var nsAvgLatency = ns.avg_latency;
+    var nsSuccessRate = ns.success_rate;
+
+    statsHtml += '<div class="v7-merged-row" style="gap:8px;margin-bottom:10px">';
+    statsHtml += '<div class="v7-stats-group">';
+    statsHtml += '<span class="v7-stat-pill" style="background:transparent;border-color:transparent;color:#94a3b8;font-weight:600">模型:</span>';
+    statsHtml += '<span class="v7-stat-pill">启用 <b class="green">' + nsEnabledModels + '</b></span>';
+    if (nsPrivModels > 0) statsHtml += '<span class="v7-stat-pill">🔒<b class="blue">' + nsPrivModels + '</b></span>';
+    if (nsSharedModels > 0) statsHtml += '<span class="v7-stat-pill">🌐<b class="purple">' + nsSharedModels + '</b></span>';
+    statsHtml += '<span class="v7-stat-pill">总计 <b class="yellow">' + nsTotalModels + '</b></span>';
+    var nsFailedKeys = ns.failed_key_count || 0;
+    statsHtml += '<span class="v7-stat-pill">Keys <b>' + nsTotalKeys + '</b>';
+    if (nsFailedKeys > 0) statsHtml += ' <span style="background:#ef4444;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">失效' + nsFailedKeys + '</span>';
+    if (nsPrivKeys > 0) statsHtml += ' <span style="background:#3b82f6;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">🔒' + nsPrivKeys + '</span>';
+    if (nsSharedKeys > 0) statsHtml += ' <span style="background:#8b5cf6;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">🌐' + nsSharedKeys + '</span>';
+    statsHtml += '</span>';
+    if (nsAvgLatency != null) statsHtml += '<span class="v7-stat-pill">平均延迟 <b class="purple">' + nsAvgLatency.toFixed(0) + 'ms</b></span>';
+    if (nsSuccessRate != null) statsHtml += '<span class="v7-stat-pill">成功率 <b class="green">' + nsSuccessRate.toFixed(1) + '%</b></span>';
+    statsHtml += '</div>';
+    statsHtml += '</div>';
+
+    // V8: Separator line
+    statsHtml += '<div style="border-bottom:1px solid rgba(148,163,184,.12);margin-bottom:12px"></div>';
+
+    // V8: Three pool cards (Private / Public / Guest)
+    statsHtml += '<div class="ns-traffic-row">';
+
+    // Private pool
+    var privReqs = ns.today_reqs_private || 0;
+    var privToks = ns.today_tokens_private || 0;
+    var privUsed = ns.quota_private_used || 0;
+    var privTotal = ns.quota_private_total || 0;
+    statsHtml += '<div class="ns-traffic-cell">';
+    statsHtml += '<div class="ntc-header"><span class="dot dot-blue"></span>私有池</div>';
+    statsHtml += '<div class="ntc-stats">';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num blue-text">' + fmtTok(privReqs) + '</div><div class="ntc-sublabel">今日请求</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num blue-text">' + fmtTok(privToks) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num" style="color:#fff">' + (ns.conns_private || 0) + '</div><div class="ntc-sublabel">连接数</div></div>';
+    statsHtml += '</div>';
+    var privDaily = ns.quota_private_daily || 0;
+    var privMonthly = ns.quota_private_monthly || 0;
+    var privDailyUsed = ns.quota_private_daily_used || 0;
+    var privMonthlyUsed = ns.quota_private_monthly_used || 0;
+    statsHtml += '<div class="nq-row"><span class="nq-label blue-text">日</span><span class="nq-value blue-text" >' + formatQuota(privDailyUsed, privDaily) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill blue" style="width:' + barPercent(privDailyUsed, privDaily) + '%"></div></div>';
+    statsHtml += '<div class="nq-row"><span class="nq-label blue-text">月</span><span class="nq-value blue-text" >' + formatQuota(privMonthlyUsed, privMonthly) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill blue" style="width:' + barPercent(privMonthlyUsed, privMonthly) + '%"></div></div>';
+    statsHtml += '</div>';
+
+    // Public pool (with percentage)
+    var pubReqs = ns.today_reqs_public || 0;
+    var pubToks = ns.today_tokens_public || 0;
+    var pubUsed = ns.quota_public_used || 0;
+    var pubTotal = ns.quota_public_total || 0;
+    var guestPct = ns.guest_pool_percent != null ? ns.guest_pool_percent : 50;
+    var publicPct = 100 - guestPct;
+    statsHtml += '<div class="ns-traffic-cell">';
+    statsHtml += '<div class="ntc-header"><span class="dot dot-purple"></span>公共池 (' + publicPct + '%)</div>';
+    statsHtml += '<div class="ntc-stats">';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num purple-text">' + fmtTok(pubReqs) + '</div><div class="ntc-sublabel">今日请求</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num purple-text">' + fmtTok(pubToks) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num" style="color:#fff">' + (ns.conns_public || 0) + '</div><div class="ntc-sublabel">连接数</div></div>';
+    statsHtml += '</div>';
+    var pubDaily = ns.quota_public_daily || 0;
+    var pubMonthly = ns.quota_public_monthly || 0;
+    var pubDailyUsed = ns.quota_public_daily_used || 0;
+    var pubMonthlyUsed = ns.quota_public_monthly_used || 0;
+    statsHtml += '<div class="nq-row"><span class="nq-label purple-text">日</span><span class="nq-value purple-text" >' + formatQuota(pubDailyUsed, pubDaily) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill purple" style="width:' + barPercent(pubDailyUsed, pubDaily) + '%"></div></div>';
+    statsHtml += '<div class="nq-row"><span class="nq-label purple-text">月</span><span class="nq-value purple-text" >' + formatQuota(pubMonthlyUsed, pubMonthly) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill purple" style="width:' + barPercent(pubMonthlyUsed, pubMonthly) + '%"></div></div>';
+    statsHtml += '</div>';
+
+    // Guest pool (with percentage)
+    var gReqs = ns.today_reqs_guest || 0;
+    var gToks = ns.today_tokens_guest || 0;
+    var gUsed = ns.quota_guest_used || 0;
+    var gTotal = ns.quota_guest_total || 0;
+    statsHtml += '<div class="ns-traffic-cell">';
+    statsHtml += '<div class="ntc-header"><span class="dot dot-green"></span>Guest池 (' + guestPct + '%)</div>';
+    statsHtml += '<div class="ntc-stats">';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num green-text">' + fmtTok(gReqs) + '</div><div class="ntc-sublabel">今日请求</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num green-text">' + fmtTok(gToks) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
+    statsHtml += '<div class="ntc-stat"><div class="ntc-num" style="color:#fff">' + (ns.conns_guest || 0) + '</div><div class="ntc-sublabel">连接数</div></div>';
+    statsHtml += '</div>';
+    var gDaily = ns.quota_guest_daily || 0;
+    var gMonthly = ns.quota_guest_monthly || 0;
+    var gDailyUsed = ns.quota_guest_daily_used || 0;
+    var gMonthlyUsed = ns.quota_guest_monthly_used || 0;
+    statsHtml += '<div class="nq-row"><span class="nq-label green-text">日</span><span class="nq-value green-text" >' + formatQuota(gDailyUsed, gDaily) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill green" style="width:' + barPercent(gDailyUsed, gDaily) + '%"></div></div>';
+    statsHtml += '<div class="nq-row"><span class="nq-label green-text">月</span><span class="nq-value green-text" >' + formatQuota(gMonthlyUsed, gMonthly) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill green" style="width:' + barPercent(gMonthlyUsed, gMonthly) + '%"></div></div>';
+    statsHtml += '</div>';
+
+    statsHtml += '</div>';
+
+    statsContainer.innerHTML = statsHtml;
+
+    // ============ Render V5 Provider Cards ============
+    // Sort by priority (lower number = higher priority = first)
+    // 排序：启用组按优先级排前，禁用组按优先级排后
+    providers.sort(function(a, b) {
+      var aEnabled = a.enabled !== false && a.status !== 'disabled';
+      var bEnabled = b.enabled !== false && b.status !== 'disabled';
+      if (aEnabled && !bEnabled) return -1;
+      if (!aEnabled && bEnabled) return 1;
+      return (a.priority || 5) - (b.priority || 5);
+    });
+    const v5List = document.getElementById('providerV5List');
+    if (!providers.length) {
+      v5List.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无已配置 API Key 的平台</div>';
+      return;
+    }
+
+    let cardsHtml = '';
+    for (const p of providers) {
+      const pid = p.provider_id;
+      const pname = p.provider_name || pid;
+      const enabled = p.enabled !== false;
+      const statusClass = (p.status === 'healthy') ? 'green' : (p.status === 'degraded' ? 'yellow' : 'red');
+      const isShared = p.is_shared === true;
+      const sharedBadge = isShared
+        ? '<span class="v5-badge v5-badge-blue">共享池</span>'
+        : '<span class="v5-badge v5-badge-yellow">私有</span>';
+      const typeBadge = '<span class="v5-badge v5-badge-blue">' + (p.type || 'unknown') + '</span>';
+
+      // Key badges
+      const privateCount = p.private_key_count || 0;
+      const sharedCount = p.shared_key_count || 0;
+      let keyBadges = '';
+      if (privateCount > 0) {
+        keyBadges += '<span class="v5-key-badge v5-key-badge-private">🔒 私有<span class="key-count">' + privateCount + '</span></span>';
+      }
+      if (sharedCount > 0) {
+        keyBadges += '<span class="v5-key-badge v5-key-badge-shared">🌐 共享<span class="key-count">' + sharedCount + '</span></span>';
+      }
+
+      // Inline stats
+      const latency = p.latency_ms ? p.latency_ms.toFixed(0) + 'ms' : '—';
+      const latencyColor = p.latency_ms ? (p.latency_ms < 500 ? 'green' : (p.latency_ms < 1500 ? 'yellow' : '')) : '';
+      const successRate = (p.success_rate != null) ? p.success_rate.toFixed(1) + '%' : '—';
+      const srColor = (p.success_rate != null) ? (p.success_rate >= 95 ? 'green' : (p.success_rate >= 80 ? 'yellow' : '')) : '';
+
+      let inlineStats = '';
+      inlineStats += '<div class="v8-keys-pill">Keys <b>' + (p.key_count || 0) + '</b>';
+      if (privateCount > 0) inlineStats += '<span class="v8-ksub private">🔒' + privateCount + '</span>';
+      if (sharedCount > 0) inlineStats += '<span class="v8-ksub shared">🌐' + sharedCount + '</span>';
+      var failedKeys = p.failed_key_count || 0;
+      if (failedKeys > 0) inlineStats += '<span class="v8-ksub" style="background:#ef4444;color:#fff">⚠' + failedKeys + '</span>';
+      inlineStats += '</div>';
+      inlineStats += '<span class="v7-stat-pill">延迟 <b class="' + latencyColor + '">' + latency + '</b></span>';
+      inlineStats += '<span class="v7-stat-pill">成功率 <b class="' + srColor + '">' + successRate + '</b></span>';
+
+      // Row 1: Title + Status info (same line, flex-wrap for mobile)
+      let row1 = '<div class="v7-stats-group" style="margin-bottom:0;flex-wrap:wrap">';
+      row1 += '<span class="v5-status-dot ' + statusClass + '"></span>';
+      row1 += '<span class="v7-stat-pill" style="font-size:13px">P<b>' + (p.priority || 5) + '</b></span>';
+      // Platform name as clickable link to official website
+      var preset2 = (typeof presets !== 'undefined') ? presets.find(function(x){return x.id===pid}) : null;
+      var officialUrl = preset2 ? preset2.api_key_url : '';
+      if (officialUrl) {
+        row1 += '<a href="' + safeUrl(officialUrl) + '" target="_blank" class="v5-provider-name v5-provider-name-link">' + escapeHtml(pname) + '</a>';
+      } else {
+        row1 += '<span class="v5-provider-name">' + escapeHtml(pname) + '</span>';
+      }
+      row1 += inlineStats;
+      row1 += '</div>';
+
+      // Row 2: base_url (own row)
+      // Row 3: action buttons (own row)
+      let actionBtns = '';
+      // Website link merged into platform name (clickable)
+      // 🔑 Keys button removed - no standalone function
+      // syncProviderUrl button removed per user request
+      actionBtns += '<button class="v7-card-btn" onclick="syncModels(\'' + escapeJS(pid) + '\')">同步</button>';
+      actionBtns += '<button class="v7-card-btn" onclick="editProvider(\'' + escapeJS(pid) + '\')">编辑</button>';
+      actionBtns += '<button class="v7-card-btn btn-success" onclick="testProvider(\'' + escapeJS(pid) + '\')">测试</button>';
+      actionBtns += '<button class="v7-card-btn btn-danger" onclick="toggleProvider(\'' + escapeJS(pid) + '\',' + (!enabled) + ')">' + (enabled ? '禁用' : '启用') + '</button>';
+      actionBtns += '<button class="v7-card-btn btn-danger" onclick="deleteProvider(\'' + escapeJS(pid) + '\')">删除</button>';
+      // URL row removed - too prominent, 官网 button provides the link
+
+      // Row 3: Quota bar (3 columns: private / public / guest)
+      
+      // Guest pool percent from access_control
+      var guestPct = (p.access_control && p.access_control.guest_pool_percent != null) ? p.access_control.guest_pool_percent : 50;
+      var publicPct = 100 - guestPct;
+
+let row3 = '<div class="v5-quota-bar">';
+
+      // Private pool cell (blue)
+      var ppUsed = p.quota_private_used || 0, ppTotal = p.quota_private_total || 0;
+      var ppReqs = p.today_reqs_private || 0, ppTok = p.today_tokens_private || 0;
+      row3 += '<div class="v5-quota-cell">';
+      row3 += '<div class="qc-header"><span class="dot dot-blue"></span>私有池</div>';
+      row3 += '<div class="qc-traffic">';
+      row3 += '<div class="qt-stat"><div class="qt-num blue-text">' + (ppReqs > 0 || ppTotal > 0 ? fmtTok(ppReqs) : '—') + '</div><div class="qt-sublabel">今日请求</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num blue-text">' + (ppTok > 0 || ppTotal > 0 ? fmtTok(ppTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num" style="color:#fff">' + (p.active_conns || 0) + '</div><div class="qt-sublabel">连接数</div></div>';
+      row3 += '</div>';
+      var ppDaily = p.quota_private_daily || 0, ppMonthly = p.quota_private_monthly || 0;
+      var ppDailyUsed = p.quota_private_daily_used || 0, ppMonthlyUsed = p.quota_private_monthly_used || 0;
+      row3 += '<div class="nq-row"><span class="nq-label blue-text">日</span><span class="nq-value blue-text" >' + formatQuota(ppDailyUsed, ppDaily) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill blue" style="width:' + barPercent(ppDailyUsed, ppDaily) + '%"></div></div>';
+      row3 += '<div class="nq-row"><span class="nq-label blue-text">月</span><span class="nq-value blue-text" >' + formatQuota(ppMonthlyUsed, ppMonthly) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill blue" style="width:' + barPercent(ppMonthlyUsed, ppMonthly) + '%"></div></div>';
+      row3 += '</div>';
+
+      // Public pool cell (purple)
+      var upUsed = p.quota_public_used || 0, upTotal = p.quota_public_total || 0;
+      var upReqs = p.today_reqs_public || 0, upTok = p.today_tokens_public || 0;
+      row3 += '<div class="v5-quota-cell">';
+      row3 += '<div class="qc-header"><span class="dot dot-purple"></span>公共池 <span style="font-size:10px;color:var(--text-muted);font-weight:400">(' + publicPct + '%)</span></div>';
+      row3 += '<div class="qc-traffic">';
+      row3 += '<div class="qt-stat"><div class="qt-num purple-text">' + (upReqs > 0 || upTotal > 0 ? fmtTok(upReqs) : '—') + '</div><div class="qt-sublabel">今日请求</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num purple-text">' + (upTok > 0 || upTotal > 0 ? fmtTok(upTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num" style="color:#fff">' + (p.active_conns || 0) + '</div><div class="qt-sublabel">连接数</div></div>';
+      row3 += '</div>';
+      var upDaily = p.quota_public_daily || 0, upMonthly = p.quota_public_monthly || 0;
+      var upDailyUsed = p.quota_public_daily_used || 0, upMonthlyUsed = p.quota_public_monthly_used || 0;
+      row3 += '<div class="nq-row"><span class="nq-label purple-text">日</span><span class="nq-value purple-text" >' + formatQuota(upDailyUsed, upDaily) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill purple" style="width:' + barPercent(upDailyUsed, upDaily) + '%"></div></div>';
+      row3 += '<div class="nq-row"><span class="nq-label purple-text">月</span><span class="nq-value purple-text" >' + formatQuota(upMonthlyUsed, upMonthly) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill purple" style="width:' + barPercent(upMonthlyUsed, upMonthly) + '%"></div></div>';
+      row3 += '</div>';
+
+      // Guest pool cell (green)
+      var gpUsed = p.quota_guest_used || 0, gpTotal = p.quota_guest_total || 0;
+      var gpReqs = p.today_reqs_guest || 0, gpTok = p.today_tokens_guest || 0;
+      row3 += '<div class="v5-quota-cell">';
+      row3 += '<div class="qc-header"><span class="dot dot-green"></span>Guest池 <span style="font-size:10px;color:var(--text-muted);font-weight:400">(' + guestPct + '%)</span></div>';
+      row3 += '<div class="qc-traffic">';
+      row3 += '<div class="qt-stat"><div class="qt-num green-text">' + (gpReqs > 0 || gpTotal > 0 ? fmtTok(gpReqs) : '—') + '</div><div class="qt-sublabel">今日请求</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num green-text">' + (gpTok > 0 || gpTotal > 0 ? fmtTok(gpTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
+      row3 += '<div class="qt-stat"><div class="qt-num" style="color:#fff">' + (p.active_conns || 0) + '</div><div class="qt-sublabel">连接数</div></div>';
+      row3 += '</div>';
+      var gpDaily = p.quota_guest_daily || 0, gpMonthly = p.quota_guest_monthly || 0;
+      var gpDailyUsed = p.quota_guest_daily_used || 0, gpMonthlyUsed = p.quota_guest_monthly_used || 0;
+      row3 += '<div class="nq-row"><span class="nq-label green-text">日</span><span class="nq-value green-text" >' + formatQuota(gpDailyUsed, gpDaily) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill green" style="width:' + barPercent(gpDailyUsed, gpDaily) + '%"></div></div>';
+      row3 += '<div class="nq-row"><span class="nq-label green-text">月</span><span class="nq-value green-text" >' + formatQuota(gpMonthlyUsed, gpMonthly) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill green" style="width:' + barPercent(gpMonthlyUsed, gpMonthly) + '%"></div></div>';
+      row3 += '</div>';
+
+      row3 += '</div>';
+      // Row 2: Model stats + action buttons in one line
+      var enabledModels = (p.models || []).filter(function(m){return m.enabled}).length;
+      var privModels = p.private_model_count || 0;
+      var sharedModels = p.shared_model_count || 0;
+      var row2stats = '<div class="v7-merged-row" style="margin-top:8px;flex-wrap:wrap;gap:0">';
+      row2stats += '<div class="v7-stats-group" style="flex-wrap:wrap">';
+      row2stats += '<span class="v7-stat-pill" style="background:transparent;border-color:transparent;color:#94a3b8;font-weight:600">模型:</span>';
+      row2stats += '<span class="v8-ms-pill enabled" onclick="event.stopPropagation();openModelMatrix(\x27' + pid + '\x27)" title="点击打开模型配置矩阵">启用<span class="v8-ms-val">' + enabledModels + '</span></span>';
+      if (privModels > 0) row2stats += '<span class="v8-ms-pill private">🔒<span class="v8-ms-val">' + privModels + '</span></span>';
+      if (sharedModels > 0) row2stats += '<span class="v8-ms-pill shared">🌐<span class="v8-ms-val">' + sharedModels + '</span></span>';
+      row2stats += '<span class="v8-ms-pill total">总计<span class="v8-ms-val">' + (p.total_model_count || p.model_count || 0) + '</span></span>';
+      row2stats += '</div>';
+      row2stats += '<div class="v7-separator"></div>';
+      row2stats += '<div style="display:flex;align-items:center;gap:5px;flex-shrink:0;flex-wrap:wrap">';
+      row2stats += actionBtns;
+      row2stats += '</div>';
+      row2stats += '</div>';
+
+      // Build card with color accent cycling
+      var accentIdx = providers.indexOf(p) % 6;
+      var cardClass = 'v5-provider-card v5-card-accent-' + accentIdx + (enabled ? '' : ' disabled');
+      cardsHtml += '<div class="' + cardClass + '" id="v5p-' + pid + '">';
+      cardsHtml += row1;
+      cardsHtml += row2stats;
+      cardsHtml += '<div style="border-bottom:1px solid rgba(148,163,184,.12);margin:10px 0">';
+      cardsHtml += row3;
+      cardsHtml += '</div>';  // close separator
+      cardsHtml += '</div>';  // close card
+    }
+
+    v5List.innerHTML = cardsHtml;
+  } catch(e) {
+    console.error('refreshHealth error:', e.message, e.stack);
+    var sc = document.getElementById('nodeStatsContainer');
+    if (sc) sc.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + escapeHtml(e.message) + '</div>';
+    var vl = document.getElementById('providerV5List');
+    if (vl) vl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">Provider加载失败: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+// ============================================================
+// Multi API Key Management
+// ============================================================
+async function toggleApiKeys(pid) {
+  const el = document.getElementById('apikeys-' + pid);
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    await loadApiKeys(pid);
+  } else {
+    el.style.display = 'none';
+  }
+}
+async function loadApiKeys(pid) {
+  const container = document.getElementById('apikeys-list-' + pid);
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys');
+    const d = await r.json();
+    const keys = d.keys || [];
+    if (!keys.length) {
+      container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:8px">未配置多 Key，点击下方按钮添加</div>';
+    } else {
+      let html = '<table class="usage-table" ><thead><tr><th>别名/Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>可用</th><th>操作</th><th>测试</th></tr></thead><tbody>';
+      for (const k of keys) {
+        var qParts = [];
+        if (k.quota_daily > 0) qParts.push('日:' + k.quota_daily.toLocaleString());
+        if (k.quota_monthly > 0) qParts.push('月:' + k.quota_monthly.toLocaleString());
+        if (k.quota > 0) qParts.push('总:' + k.quota.toLocaleString());
+        if (k.quota > 0) qParts.push('总:' + k.quota.toLocaleString());
+        const quotaText = qParts.length > 0 ? qParts.join('/') : '无限';
+        const hourlyText = k.quota_hourly > 0 ? k.quota_hourly.toLocaleString() + '/h' : '';
+        const rpmText = k.rpm > 0 ? k.rpm + ' RPM' : '';
+        const extraLimits = [hourlyText, rpmText].filter(Boolean).join(' · ');
+        const accessLabel = k.access_control === 'shared' ? '🔗 共享' : '🔒 私有';
+        const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
+        const expiresText = k.expires_at ? '<br><small style="color:var(--text-muted)">过期: ' + new Date(k.expires_at).toLocaleDateString('zh-CN') + '</small>' : '';
+        html += '<tr>';
+        html += '<td style="font-family:monospace">' + escapeHtml(k.alias || k.key.substring(0, 8) + '...') + '</td>';
+        html += '<td>' + quotaText + '<br><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:1px 6px;margin-top:2px" onclick="resetKeyQuota(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">重置</button></td>';
+        html += '<td>' + accessLabel + '</td>';
+        html += '<td>' + (k.priority || 1) + '</td>';
+        html += '<td>' + statusBadge + expiresText + '</td>';
+        // Key availability status indicator
+        const tableKeyStatusId = 'table-keystatus-' + k.id;
+        html += '<td><span id="' + tableKeyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试按钮检测">⏳</span></td>';
+        html += '<td>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="editKeyAccessControl(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\',\'' + escapeJS(k.access_control) + '\')">编辑权限</button> ';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteApiKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">删除</button>';
+        html += '</td>';
+        html += '<td><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testSingleKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">测试</button></td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+    // Add key button
+    container.innerHTML += '<div style="margin-top:8px;display:flex;justify-content:space-between"><button class="btn btn-secondary btn-sm" onclick="testAllKeys(\'' + escapeJS(pid) + '\')">🧪 测试全部 Key</button><button class="btn btn-primary btn-sm" onclick="showAddApiKey(\'' + escapeJS(pid) + '\')">+ 添加 API Key</button></div>';
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error)">加载失败: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+async function showAddApiKey(pid) {
+  const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
+  const key = prompt('请输入 API Key:');
+  if (!key) return;
+  const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
+  const access = prompt('访问权限 (private/shared):', 'private') || 'private';
+  const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys', {
+      method: 'POST',
+      body: JSON.stringify({ key: key, alias: alias, quota: quota, quota_daily: quotaDaily, quota_monthly: quotaMonthly, access_control: access, priority: priority, enabled: true })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ API Key 已添加', 'success');
+      await loadApiKeys(pid);
+      await loadProviders();
+    } else {
+      toast('添加失败: ' + extractError(d) || '未知错误', 'error');
+    }
+  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+async function toggleKeyEnabled(pid, keyId, enabled) {
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: enabled })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast(enabled ? '✅ 已启用' : '⏸ 已禁用', 'success');
+      await loadApiKeys(pid);
+    } else {
+      toast('操作失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('操作失败: ' + e.message, 'error'); }
+}
+async function editKeyAccessControl(pid, keyId, currentAccess) {
+  const newAccess = prompt('修改 Key 访问权限\n\n当前: ' + currentAccess + '\n\n可选值:\n- private: 私有（额度仅自用）\n- shared: 共享（额度贡献到共享池）', currentAccess);
+  if (!newAccess || newAccess === currentAccess) return;
+  if (!['private', 'shared'].includes(newAccess)) {
+    toast('无效权限值，请输入 private/shared', 'error');
+    return;
+  }
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+      method: 'PUT',
+      body: JSON.stringify({ access_control: newAccess })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ 权限已更新为: ' + newAccess, 'success');
+      await loadApiKeys(pid);
+      await loadProviders();
+    } else {
+      toast('更新失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('更新失败: ' + e.message, 'error'); }
+}
+async function deleteApiKey(pid, keyId) {
+  if (!confirm('确定删除此 API Key？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId, { method: 'DELETE' });
+    toast('已删除');
+    await loadApiKeys(pid);
+    await loadProviders();
+  } catch(e) { toast('删除失败: ' + e.message, 'error'); }
+}
+async function resetKeyQuota(pid, keyId) {
+  if (!confirm('确定重置此 Key 的已用额度？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId + '/reset-quota', { method: 'POST' });
+    toast('额度已重置');
+    await loadApiKeys(pid);
+  } catch(e) { toast('重置失败: ' + e.message, 'error'); }
+}
+async function testSingleKey(pid, keyId) {
+  const statusEl = document.getElementById('table-keystatus-' + keyId);
+  if (statusEl) {
+    statusEl.innerHTML = '⏳';
+    statusEl.style.background = 'rgba(59,130,246,.1)';
+    statusEl.style.color = 'var(--info)';
+  }
+  toast('正在测试...', 'info');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test?key_id=' + keyId, {method:'POST'});
+    const d = await r.json();
+    if (statusEl) {
+      if (d.success) {
+        statusEl.innerHTML = '✅';
+        statusEl.style.background = 'rgba(34,197,94,.1)';
+        statusEl.style.color = '#22c55e';
+      } else {
+        statusEl.innerHTML = '❌';
+        statusEl.style.background = 'rgba(239,68,68,.1)';
+        statusEl.style.color = '#ef4444';
+      }
+    }
+    toast(d.success ? '✅ Key 可用' : '❌ Key 不可用: ' + (d.error||''), d.success ? 'success' : 'error');
+  } catch(e) {
+    if (statusEl) {
+      statusEl.innerHTML = '❌';
+      statusEl.style.background = 'rgba(239,68,68,.1)';
+      statusEl.style.color = '#ef4444';
+    }
+    toast('测试失败: ' + e.message, 'error');
+  }
+}
+async function testAllKeys(pid) {
+  toast('正在测试所有 Key...', 'info');
+  // Set all table indicators to testing state
+  document.querySelectorAll('[id^="table-keystatus-"]').forEach(el => {
+    el.innerHTML = '⏳';
+    el.style.background = 'rgba(59,130,246,.1)';
+    el.style.color = 'var(--info)';
+  });
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test-all-keys', {method:'POST'});
+    const d = await r.json();
+    if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    // Update each key's status indicator
+    d.results.forEach(k => {
+      if (k.key_id) {
+        const statusEl = document.getElementById('table-keystatus-' + k.key_id);
+        if (statusEl) {
+          if (k.success) {
+            statusEl.innerHTML = '✅';
+            statusEl.style.background = 'rgba(34,197,94,.1)';
+            statusEl.style.color = '#22c55e';
+          } else {
+            statusEl.innerHTML = '❌';
+            statusEl.style.background = 'rgba(239,68,68,.1)';
+            statusEl.style.color = '#ef4444';
+          }
+        }
+      }
+    });
+    let msg = d.results.map(k => {
+      let status = k.success ? '✅' : '❌';
+      let label = k.alias || ('Key#' + k.index);
+      return status + ' ' + label + (k.error ? ': ' + k.error : '');
+    }).join('\n');
+    
+    const lines = msg.split('\n');
+    const successCount = lines.filter(l => l.startsWith('✅')).length;
+    const failCount = lines.filter(l => l.startsWith('❌')).length;
+    toast(`Key 测试完成: ${successCount} 成功, ${failCount} 失败`, failCount > 0 ? 'error' : 'success');
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+// ============================================================
+// Edit Form Multi-Key Management
+// ============================================================
+// ===== Multi-Key Inline Editor =====
+function showInlineKeyForm() {
+  document.getElementById('editKeysInlineRow').style.display = 'block';
+  document.getElementById('newKeyAlias').value = '';
+  document.getElementById('newKeyValue').value = '';
+  document.getElementById('newKeyQuota').value = '0';
+        document.getElementById('newKeyQuotaDaily').value = '0';
+        document.getElementById('newKeyQuotaMonthly').value = '0';
+  document.getElementById('newKeyPriority').value = '1';
+  document.getElementById('newKeyAccess').value = 'private';
+  document.getElementById('newKeyValue').focus();
+  // Add a "+" button row at bottom of key list if not exists
+  if (!document.getElementById('addKeyRow')) {
+    const addBtn = document.createElement('div');
+    addBtn.id = 'addKeyRow';
+    addBtn.style.cssText = 'margin-top:10px;text-align:center';
+    addBtn.innerHTML = '<button class="btn btn-primary btn-sm" onclick="showInlineKeyForm()" style="font-size:11px;padding:4px 14px;border:1px dashed var(--border-color)">+ 添加新 Key</button>';
+    document.getElementById('editKeysList').appendChild(addBtn);
+  }
+}
+function cancelInlineKey() {
+  document.getElementById('editKeysInlineRow').style.display = 'none';
+}
+async function saveInlineKey() {
+  if (!editingId) return;
+  const alias = document.getElementById('newKeyAlias').value.trim();
+  const key = document.getElementById('newKeyValue').value.trim();
+  if (!key) { toast('请输入 API Key', 'error'); return; }
+  const quota = parseInt(document.getElementById('newKeyQuota').value, 10) || 0;
+  const quotaDaily = parseInt(document.getElementById('newKeyQuotaDaily').value, 10) || 0;
+  const quotaMonthly = parseInt(document.getElementById('newKeyQuotaMonthly').value, 10) || 0;
+  const priority = parseInt(document.getElementById('newKeyPriority').value, 10) || 1;
+  const access = document.getElementById('newKeyAccess').value;
+  try {
+    const r = await authFetch('/api/providers/' + editingId + '/keys', {
+      method: 'POST',
+      body: JSON.stringify({ key: key, alias: alias, quota: quota, access_control: access, priority: priority, enabled: true })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ Key 已添加', 'success');
+      document.getElementById('editKeysInlineRow').style.display = 'none';
+      await loadEditKeys(editingId);
+      await loadProviders();
+    } else {
+      toast('添加失败: ' + extractError(d) || '未知错误', 'error');
+    }
+  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+async function loadEditKeys(pid) {
+  const container = document.getElementById('editKeysList');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys');
+    const d = await r.json();
+    const keys = d.keys || [];
+    let html = '';
+    if (!keys.length) {
+      html = '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">暂无 Key，点击下方按钮添加</div>';
+    } else {
+      for (const k of keys) {
+        // Build multi-period quota text
+        var quotaParts = [];
+        if (k.quota_daily > 0) quotaParts.push('日:' + k.quota_daily.toLocaleString());
+        if (k.quota_monthly > 0) quotaParts.push('月:' + k.quota_monthly.toLocaleString());
+        if (k.quota > 0) quotaParts.push('总:' + k.quota.toLocaleString());
+        if (k.quota > 0) quotaParts.push('总:' + k.quota.toLocaleString());
+        const quotaText = quotaParts.length > 0 ? (k.used.toLocaleString() + ' 已用 | ' + quotaParts.join(' · ')) : '无限制';
+        const statusBadge = k.enabled ? '<span class="badge badge-green" style="font-size:11px;padding:2px 8px">启用</span>' : '<span class="badge badge-red" style="font-size:11px;padding:2px 8px">禁用</span>';
+        const accessLabel = k.access_control === 'shared' ? '🔗 共享' : '🔒 私有';
+        const maskedKey = k.key ? (k.key.includes('...') ? k.key.replace('...', '••••') : (k.key.length > 8 ? k.key.substring(0, 4) + '••••••••' + k.key.substring(k.key.length - 4) : '••••••••')) : '未设置';
+        const aliasDisplay = k.alias ? k.alias : '未命名';
+        html += '<div id="keycard-' + escapeHtml(k.id) + '" style="padding:14px 16px;margin-bottom:10px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
+        html += '<div style="display:flex;align-items:center;gap:8px">';
+        html += '<span style="font-size:13px;font-weight:600">' + escapeHtml(aliasDisplay) + '</span>';
+        html += statusBadge;
+        html += '<span style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(108,99,255,.1);color:var(--accent-start)">' + accessLabel + '</span>';
+        // Key availability status indicator
+        const keyStatusId = 'keystatus-' + k.id;
+        html += '<span id="' + keyStatusId + '" style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(156,163,175,.1);color:var(--text-muted)" title="点击测试此Key">⏳ 未测试</span>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:6px">';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="editInlineKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">✏️ 编辑</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="toggleEditKeyEnabled(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\',' + !k.enabled + ')">' + (k.enabled ? '⏸ 禁用' : '▶ 启用') + '</button>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="testEditKey(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">🧪 测试</button>';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:11px;padding:3px 10px" onclick="deleteKeyInEdit(\'' + escapeJS(pid) + '\',\'' + escapeJS(k.id) + '\')">🗑 删除</button>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:20px;font-size:12px;color:var(--text-secondary)">';
+        html += '<span>Key: <code style="font-family:monospace;font-size:11px">' + escapeHtml(maskedKey) + '</code></span>';
+        html += '<span>额度: ' + quotaText + '</span>';
+        html += '<span>优先级: ' + k.priority + '</span>';
+        html += '</div>';
+        html += '</div>';
+      }
+    }
+    html += '<div id="addKeyRow" style="margin-top:12px;text-align:center"><button class="btn btn-primary btn-sm" onclick="showInlineKeyForm()" style="font-size:12px;padding:6px 18px;border:1px dashed var(--border-color)">+ 添加新 Key</button></div>';
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error);font-size:12px">加载失败: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+async function editInlineKey(pid, keyId) {
+  const card = document.getElementById('keycard-' + keyId);
+  if (!card) return;
+  const r = await authFetch('/api/providers/' + pid + '/keys');
+  const d = await r.json();
+  const k = (d.keys || []).find(x => x.id === keyId);
+  if (!k) { toast('Key 未找到', 'error'); return; }
+  card.innerHTML = buildKeyEditForm(pid, keyId, k);
+}
+function buildKeyEditForm(pid, keyId, k) {
+  const maskedKey = k.key ? (k.key.includes('...') ? k.key.replace('...', '••••') : (k.key.length > 8 ? k.key.substring(0, 4) + '••••••••' + k.key.substring(k.key.length - 4) : '••••••••')) : '';
+  const accessOptions = [
+    {value:'private', label:'🔒 私有'},
+    {value:'shared', label:'🔗 共享'},
+
+  ];
+  // Format expires_at for datetime-local input
+  let expiresVal = '';
+  if (k.expires_at && k.expires_at !== '') {
+    try { expiresVal = k.expires_at.substring(0, 16); } catch(e) {}
+  }
+  // Usage percentage
+  const usagePct = k.quota > 0 ? Math.round((k.used||0) / k.quota * 100) : -1;
+  const usageColor = usagePct < 0 ? 'var(--text-muted)' : usagePct < 70 ? '#22c55e' : usagePct < 90 ? '#f59e0b' : '#ef4444';
+  
+  let h = '';
+  // Header
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
+  h += '<span style="font-size:14px;font-weight:600">编辑 Key</span>';
+  h += '<span style="font-size:11px;font-family:monospace;color:var(--text-muted)">' + escapeHtml(maskedKey) + '</span>';
+  h += '</div>';
+  
+  // Read-only info row
+  h += '<div style="display:flex;gap:16px;margin-bottom:14px;padding:8px 12px;background:rgba(108,99,255,.04);border-radius:8px;font-size:12px;color:var(--text-secondary)">';
+  h += '<span>状态: <b style="color:' + (k.enabled ? '#22c55e' : '#ef4444') + '">' + (k.enabled ? '✅ 启用' : '⏸ 禁用') + '</b></span>';
+  h += '<span>已用: <b>' + (k.used||0).toLocaleString() + '</b>';
+  if (k.quota > 0) {
+    h += ' / ' + k.quota.toLocaleString() + ' <span style="color:' + usageColor + '">(' + usagePct + '%)</span>';
+  } else {
+    h += ' / <span style="color:var(--text-muted)">无限制</span>';
+  }
+  h += '</span>';
+  if (k.created_at) h += '<span>创建: ' + k.created_at.substring(0, 10) + '</span>';
+  h += '</div>';
+  
+  // Editable fields - 3 column grid
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 14px">';
+  
+  // Row 1: Alias, Priority, Access Control
+  h += '<div>';
+  h += '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">别名</label>';
+  h += '<input id="ekf-alias" type="text" value="' + (k.alias||'').replace(/"/g,'&quot;') + '" placeholder="输入别名" style="width:100%;padding:6px 10px;font-size:13px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box">';
+  h += '</div>';
+  h += '<div>';
+  h += '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">优先级 <span style="font-size:10px;color:var(--text-muted)">(越高越优先)</span></label>';
+  h += '<input id="ekf-priority" type="number" value="' + (k.priority||1) + '" min="0" style="width:100%;padding:6px 10px;font-size:13px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box">';
+  h += '</div>';
+  h += '<div>';
+  h += '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">访问权限</label>';
+  h += '<select id="ekf-access" style="width:100%;padding:6px 10px;font-size:13px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box">';
+  for (const opt of accessOptions) {
+    const sel = (k.access_control === opt.value) ? ' selected' : '';
+    h += '<option value="' + opt.value + '"' + sel + '>' + opt.label + '</option>';
+  }
+  h += '</select>';
+  h += '</div>';
+  
+  // Row 2: Quota table (daily / monthly / total) + ExpiresAt
+  h += '<div style="grid-column:1/3">';
+  h += '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">额度限制 <span style="font-size:10px;color:var(--text-muted)">(tokens, 0=不限)</span></label>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  h += '<thead><tr style="background:rgba(108,99,255,.03)">';
+  h += '<th style="padding:4px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每日</th>';
+  h += '<th style="padding:4px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每月Token</th>';
+  h += '<th style="padding:4px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">总额</th>';
+  h += '</tr></thead><tbody><tr>';
+  h += '<td style="padding:3px"><input id="ekf-quota-daily" type="number" value="' + (k.quota_daily||0) + '" min="0" placeholder="不限" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box;text-align:center"></td>';
+  h += '<td style="padding:3px"><input id="ekf-quota-monthly" type="number" value="' + (k.quota_monthly||0) + '" min="0" placeholder="不限" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box;text-align:center"></td>';
+  h += '<td style="padding:3px"><input id="ekf-quota" type="number" value="' + (k.quota||0) + '" min="0" placeholder="不限" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box;text-align:center"></td>';
+  h += '</tr></tbody></table>';
+  h += '</div>';
+  h += '<div>';
+  h += '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">过期时间 <span style="font-size:10px;color:var(--text-muted)">(留空=永不过期)</span></label>';
+  h += '<input id="ekf-expires" type="datetime-local" value="' + expiresVal + '" style="width:100%;padding:6px 10px;font-size:13px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box">';
+  h += '</div>';
+  h += '</div>';
+  
+  // Buttons
+  h += '<div style="display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color)">';
+  h += '<span style="font-size:11px;color:var(--text-muted);flex:1">ID: ' + escapeHtml(k.id) + '</span>';
+  h += '<button class="btn btn-sm btn-secondary" onclick="cancelEditKey(\'' + pid + '\')" style="font-size:12px;padding:5px 14px">取消</button>';
+  h += '<button class="btn btn-sm btn-primary" onclick="saveEditKeyForm(\'' + pid + '\',\'' + keyId + '\')" style="font-size:12px;padding:5px 14px">💾 保存</button>';
+  h += '</div>';
+  return h;
+}
+async function saveEditKeyForm(pid, keyId) {
+  const alias = document.getElementById('ekf-alias').value.trim();
+  const quota = parseInt(document.getElementById('ekf-quota').value, 10) || 0;
+  const quotaDaily = parseInt(document.getElementById('ekf-quota-daily').value, 10) || 0;
+  const quotaMonthly = parseInt(document.getElementById('ekf-quota-monthly').value, 10) || 0;
+  const priority = parseInt(document.getElementById('ekf-priority').value, 10) || 1;
+  const access = document.getElementById('ekf-access').value;
+  const expiresEl = document.getElementById('ekf-expires');
+  const expiresAt = expiresEl && expiresEl.value ? new Date(expiresEl.value).toISOString() : '';
+  // Key sharing is independent of provider - shared key quota goes to public pool
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+      method: 'PUT',
+      body: JSON.stringify({ alias: alias, quota: quota, quota_daily: quotaDaily, quota_monthly: quotaMonthly, priority: priority, access_control: access, expires_at: expiresAt })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ Key 已更新', 'success');
+      await loadEditKeys(pid);
+    } else {
+      toast('更新失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('更新失败: ' + e.message, 'error'); }
+}
+function cancelEditKey(pid) {
+  loadEditKeys(pid);
+}
+async function toggleEditKeyEnabled(pid, keyId, enabled) {
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: enabled })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast(enabled ? '✅ 已启用' : '⏸ 已禁用', 'success');
+      await loadEditKeys(pid);
+    } else {
+      toast('操作失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('操作失败: ' + e.message, 'error'); }
+}
+async function deleteKeyInEdit(pid, keyId) {
+  if (!confirm('确定删除此 API Key？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId, { method: 'DELETE' });
+    toast('已删除');
+    await loadEditKeys(pid);
+    await loadProviders();
+  } catch(e) { toast('删除失败: ' + e.message, 'error'); }
+}
+async function testEditKey(pid, keyId) {
+  const statusEl = document.getElementById('keystatus-' + keyId);
+  if (statusEl) {
+    statusEl.innerHTML = '⏳ 测试中...';
+    statusEl.style.background = 'rgba(59,130,246,.1)';
+    statusEl.style.color = 'var(--info)';
+  }
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test?key_id=' + keyId, {method:'POST'});
+    const d = await r.json();
+    if (statusEl) {
+      if (d.success) {
+        statusEl.innerHTML = '✅ 可用';
+        statusEl.style.background = 'rgba(34,197,94,.1)';
+        statusEl.style.color = '#22c55e';
+      } else {
+        statusEl.innerHTML = '❌ 不可用';
+        statusEl.style.background = 'rgba(239,68,68,.1)';
+        statusEl.style.color = '#ef4444';
+      }
+    }
+    toast(d.success ? '✅ Key 可用' : '❌ Key 不可用: ' + (d.error||''), d.success ? 'success' : 'error');
+  } catch(e) {
+    if (statusEl) {
+      statusEl.innerHTML = '❌ 测试失败';
+      statusEl.style.background = 'rgba(239,68,68,.1)';
+      statusEl.style.color = '#ef4444';
+    }
+    toast('测试失败: ' + e.message, 'error');
+  }
+}
+async function testAllEditKeys() {
+  if (!editingId) return;
+  toast('正在测试所有 Key...', 'info');
+  // Set all indicators to testing state
+  document.querySelectorAll('[id^="keystatus-"]').forEach(el => {
+    el.innerHTML = '⏳ 测试中...';
+    el.style.background = 'rgba(59,130,246,.1)';
+    el.style.color = 'var(--info)';
+  });
+  try {
+    const r = await authFetch('/api/providers/' + editingId + '/test-all-keys', {method:'POST'});
+    const d = await r.json();
+    if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    // Update each key's status indicator
+    d.results.forEach(k => {
+      if (k.key_id) {
+        const statusEl = document.getElementById('keystatus-' + k.key_id);
+        if (statusEl) {
+          if (k.success) {
+            let balanceText = '';
+            if (k.balance && k.balance.available) {
+              if (k.balance.hard_limit_usd) {
+                balanceText = ' 💰$' + k.balance.hard_limit_usd.toFixed(2);
+              } else if (k.balance.balance) {
+                balanceText = ' 💰' + k.balance.balance.toFixed(2);
+              }
+              if (k.quota_updated) {
+                balanceText += ' (已同步)';
+              }
+            }
+            statusEl.innerHTML = '✅ 可用' + balanceText;
+            statusEl.style.background = 'rgba(34,197,94,.1)';
+            statusEl.style.color = '#22c55e';
+          } else {
+            statusEl.innerHTML = '❌ 不可用';
+            statusEl.style.background = 'rgba(239,68,68,.1)';
+            statusEl.style.color = '#ef4444';
+          }
+        }
+      }
+    });
+    let msg = d.results.map(k => {
+      let status = k.success ? '✅' : '❌';
+      let label = k.alias || ('Key#' + k.index);
+      return status + ' ' + label + (k.error ? ': ' + k.error : '');
+    }).join('\n');
+    
+    const lines = msg.split('\n');
+    const successCount = lines.filter(l => l.startsWith('✅')).length;
+    const failCount = lines.filter(l => l.startsWith('❌')).length;
+    toast(`Key 测试完成: ${successCount} 成功, ${failCount} 失败`, failCount > 0 ? 'error' : 'success');
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+// ===== Start (only if authenticated) =====
+if (authToken) {
+  init().then(() => { 
+    console.log('[CHAIN] Starting post-init chain (optimized)');
+    // P0: Critical — render provider cards & node stats immediately
+    try { refreshHealth(); } catch(e) { console.error('[CHAIN] refreshHealth FAILED:', e); }
+    // P1: Secondary — usage & weights (defer 50ms, let P0 render first)
+    setTimeout(() => {
+      try { refreshUsage(); } catch(e) {}
+      try { loadWeights(); } catch(e) {}
+    }, 50);
+    // P2: Settings panels (defer 500ms)
+    setTimeout(() => {
+      try { initApiUrls(); } catch(e) {}
+      try { loadProxyApiKey(); } catch(e) {}
+      try { loadSmtp(); } catch(e) {}
+      try { loadAdminInfo(); } catch(e) {}
+      try { refreshSiderStatus(); } catch(e) {}
+      try { refreshLogs(); } catch(e) {}
+    }, 500);
+    // P3: Network mode check & toggle initialization (defer 800ms)
+    setTimeout(async () => {
+      try {
+        await loadNetworkStatus();
+        // loadNetworkStatus() → renderNetworkUI() initializes all toggle states
+        if (window._networkMode === 'shared') {
+          try { loadFederationConfig(); } catch(e) {}
+          try { loadShareInfo(); } catch(e) {}
+          try { loadGuestKeys(); } catch(e) {}
+        }
+      } catch(e) { console.warn('network mode check failed', e); }
+    }, 800);
+    console.log('[CHAIN] All functions scheduled');
+});
+  // Lightweight polling: status every 30s, usage every 60s (separate timers)
+  let _statusTimer = setInterval(async () => {
+    try { await loadStatus(); } catch(e) { console.error('状态刷新失败:', e); clearInterval(_statusTimer); _statusTimer = null; }
+  }, 30000);
+  let _usageTimer = setInterval(async () => {
+    try { await refreshUsage(); } catch(e) { console.error('使用量刷新失败:', e); clearInterval(_usageTimer); _usageTimer = null; }
+  }, 60000);
+  // Pause polling when tab is hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (_statusTimer) { clearInterval(_statusTimer); _statusTimer = null; }
+      if (_usageTimer) { clearInterval(_usageTimer); _usageTimer = null; }
+    } else {
+      if (!_statusTimer) { _statusTimer = setInterval(async () => { try { await loadStatus(); } catch(e) { clearInterval(_statusTimer); _statusTimer = null; } }, 30000); }
+      if (!_usageTimer) { _usageTimer = setInterval(async () => { try { await refreshUsage(); } catch(e) { clearInterval(_usageTimer); _usageTimer = null; } }, 60000); }
+    }
+  });
+}
+// ================================================================
+// Module: RealtimeEvents - SSE connection for live updates
+// ================================================================
+    // ============================================================
+    // ============================================================
+    
+    
+function toggleDiscoveryPanel() {
+  const panel = document.getElementById('discoveryPanel');
+  const isVisible = panel.style.display !== 'none';
+  if (isVisible) {
+    panel.style.display = 'none';
+  } else {
+    panel.style.display = '';
+    if (discoveredPlatforms.length === 0) {
+      loadDiscoveredPlatforms();
+    }
+    setTimeout(() => panel.scrollIntoView({behavior:'smooth', block:'start'}), 100);
+  }
+}
+async function loadDiscoveredPlatforms() {
+  const el = document.getElementById('discoveredList');
+  el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px"><div class="loading"></div><br>加载中...</div>';
+  try {
+    const r = await authFetch('/api/discovery/platforms');
+    const d = await r.json();
+    discoveredPlatforms = d.platforms || [];
+    renderDiscoveredPlatforms();
+  } catch(e) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">加载失败: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+function renderDiscoveredPlatforms() {
+  const el = document.getElementById('discoveredList');
+  // Filter out added AND already-configured providers
+  const existingIds = new Set((allProviders || []).map(p => p.id));
+  const visible = discoveredPlatforms.filter(p => p.status !== 'added' && !existingIds.has(p.id));
+  if (!visible.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无新发现，所有平台已添加或处理</div>';
+    return;
+  }
+  const statusMap = {
+    'new': {label: '新发现', color: '#3b82f6', bg: 'rgba(59,130,246,.1)'},
+    'reviewed': {label: '已审核', color: '#22c55e', bg: 'rgba(34,197,94,.1)'},
+    'dismissed': {label: '已忽略', color: '#6b7280', bg: 'rgba(107,114,128,.1)'},
+    'added': {label: '已添加', color: '#a855f7', bg: 'rgba(168,85,247,.1)'}
+  };
+  el.innerHTML = visible.map(p => {
+    const st = statusMap[p.status] || statusMap['new'];
+    const models = (p.models || []).slice(0, 4).join(', ');
+    const modelsExtra = (p.models || []).length > 4 ? ` +${p.models.length - 4}个` : '';
+    return `<div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:10px;display:grid;gap:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="font-size:14px;font-weight:600">${escapeHtml(p.name)}</div>
+        <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${st.bg};color:${st.color}">${st.label}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary)">${escapeHtml(p.description || '')}</div>
+      <div style="font-size:12px;color:var(--text-muted);font-family:monospace;word-break:break-all">${escapeHtml(p.base_url)}</div>
+      ${models ? `<div style="font-size:11px;color:var(--text-muted)">模型: ${models}${modelsExtra}</div>` : ''}
+      <div style="font-size:11px;color:var(--text-muted)">来源: ${escapeHtml(p.source)} · 发现时间: ${new Date(p.discovered_at).toLocaleString()}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+        ${p.api_key_url ? `<a href="${safeUrl(p.api_key_url)}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;font-size:11px">🔗 官网注册</a>` : ''}
+        ${p.status === 'new' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px" onclick="updateDiscoveredStatus('${escapeJS(p.id)}','reviewed')">✅ 标记已审核</button>` : ''}
+        ${p.status !== 'dismissed' ? `<button class="btn btn-secondary btn-sm" style="font-size:11px;border-color:rgba(239,68,68,.3);color:#ef4444" onclick="updateDiscoveredStatus('${escapeJS(p.id)}','dismissed')">❌ 忽略</button>` : ''}
+        <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="addDiscoveredAsPreset('${escapeJS(p.id)}')">+ 添加为预设</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function updateDiscoveredStatus(id, status) {
+  try {
+    const r = await authFetch(`/api/discovery/platforms/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({status: status})
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(extractError(e)); }
+    toast(status === 'reviewed' ? '已标记为已审核' : status === 'dismissed' ? '已忽略' : '已更新');
+    await loadDiscoveredPlatforms();
+  } catch(e) { toast(e.message, 'error'); }
+}
+function addDiscoveredAsPreset(id) {
+  // Open the add-provider modal at Step 1 so user can see it in the preset list
+  showAddProvider();
+  toast('已在预设列表中标记为 🆕 新发现，点击它即可添加');
+}
+async function triggerDiscovery() {
+  const btn = document.getElementById('triggerScanBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 扫描中...';
+  try {
+    const r = await authFetch('/api/discovery/scan', {method: 'POST'});
+    const d = await r.json();
+    if (d.status === 'already_running') {
+      toast('扫描已在进行中');
+    } else {
+      toast('扫描已启动');
+      // Wait a bit then reload
+      setTimeout(() => loadDiscoveredPlatforms(), 3000);
+    }
+  } catch(e) {
+    toast('扫描失败: ' + e.message, 'error');
+  } finally {
+    setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 扫描新平台'; }, 2000);
+  }
+}
+async function addAllDiscoveredAsPreset() {
+  // Ensure we have the latest discovered platforms list
+  try {
+    const dr = await authFetch('/api/discovery/platforms');
+    const dd = await dr.json();
+    discoveredPlatforms = dd.platforms || [];
+  } catch(e) {}
+  const pending = discoveredPlatforms.filter(p => p.status !== 'added' && p.status !== 'dismissed' && p.status !== 'ignored');
+  if (!pending.length) { toast('没有待添加的发现平台', 'error'); return; }
+  const btn = document.getElementById('batchAddDiscoveredBtn');
+  btn.disabled = true;
+  btn.textContent = `⏳ 添加中 (0/${pending.length})...`;
+  let added = 0, skipped = 0, incompatible = 0, errors = [];
+  for (const p of pending) {
+    btn.textContent = `⏳ 添加中 (${added}/${pending.length})...`;
+    try {
+      // Check if already exists as provider
+      const existingProviders = document.querySelectorAll('[data-provider-id]');
+      const ids = Array.from(existingProviders).map(el => el.getAttribute('data-provider-id'));
+      if (ids.includes(p.id)) {
+        await authFetch(`/api/discovery/platforms/${p.id}`, {
+          method: 'POST', body: JSON.stringify({status: 'added'})
+        });
+        skipped++;
+        continue;
+      }
+      // Compatibility check: verify OpenAI API format
+      btn.textContent = `🔍 检测 ${p.name}...`;
+      try {
+        const checkR = await authFetch(`/api/discovery/platforms/${p.id}/check`, { method: 'POST' });
+        const checkD = await checkR.json();
+        if (!checkD.compatible && !checkD.skipped) {
+          incompatible++;
+          errors.push(`${p.name}: 不支持 OpenAI API 标准格式（${extractError(checkD) || '未知'}）`);
+          continue;
+        }
+      } catch(ce) {
+        // If check itself fails, still try to add
+        console.warn('Compatibility check failed for', p.name, ce);
+      }
+      const data = {
+        id: p.id,
+        name: p.name,
+        type: 'openai_compatible',
+        base_url: p.base_url,
+        description: p.description || '',
+        priority: 5,
+        enabled: true,
+        access_control: { guest_pool_percent: 50 },
+        models: p.models || []
+      };
+      const r = await authFetch('/api/providers', { method: 'POST', body: JSON.stringify(data) });
+      if (r.ok) {
+        await authFetch(`/api/discovery/platforms/${p.id}`, {
+          method: 'POST', body: JSON.stringify({status: 'added'})
+        });
+        added++;
+      } else {
+        const e = await r.json().catch(() => ({}));
+        errors.push(p.name + ': ' + extractError(e));
+      }
+    } catch(e) {
+      errors.push(p.name + ': ' + e.message);
+    }
+  }
+  btn.disabled = false;
+  btn.textContent = '📥 一键添加全部发现';
+  let msg = `✅ 已添加 ${added} 个平台`;
+  if (skipped > 0) msg += `，${skipped} 个已存在跳过`;
+  if (incompatible > 0) msg += `，${incompatible} 个不兼容`;
+  if (errors.length > 0) msg += `，${errors.length} 个问题`;
+  toast(msg, (errors.length > 0 || incompatible > 0) ? 'warning' : 'success');
+  if (incompatible > 0) {
+    setTimeout(() => {
+      toast('不兼容的平台暂不支持，欢迎到 GitHub 提 PR 增加适配', 'info', 8000);
+    }, 1500);
+  }
+  if (errors.length > 0) console.warn('Batch add errors:', errors);
+  // Refresh provider list
+  await loadProviders();
+  // Refresh discovered platforms data (no loading spinner) and re-render
+  try {
+    const dr = await authFetch('/api/discovery/platforms');
+    const dd = await dr.json();
+    discoveredPlatforms = dd.platforms || [];
+  } catch(e) {}
+  renderDiscoveredPlatforms();
+  // Also refresh preset grid if the modal is open
+  if (document.getElementById('providerModal')?.classList.contains('open')) {
+    renderPresets();
+  }
+}
+</script>
+
+</body>
+</html>

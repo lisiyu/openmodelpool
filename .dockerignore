@@ -1,0 +1,9 @@
+.git
+.github
+data
+*.out
+*.exe
+openmodelpool
+openmodelpool-*
+docs
+*.md

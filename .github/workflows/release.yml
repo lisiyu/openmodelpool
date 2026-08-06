@@ -1,0 +1,110 @@
+name: Release
+
+# Cross-compile release binaries for every supported platform and publish a
+# GitHub release with checksums whenever a `v*` tag is pushed.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set VERSION
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+
+      - name: Build all platforms
+        run: |
+          mkdir -p dist
+          targets=(
+            "linux/amd64"
+            "linux/arm64"
+            "linux/arm/7"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+          )
+          for t in "${targets[@]}"; do
+            goos=${t%%/*}
+            rest=${t#*/}
+            if [[ "$rest" == */* ]]; then
+              goarch=${rest%%/*}
+              goarm=${rest#*/}
+            else
+              goarch=$rest
+              goarm=""
+            fi
+            ext=""
+            [ "$goos" = "windows" ] && ext=".exe"
+            display="${goarch}"
+            [ -n "$goarm" ] && display="${goarch}v${goarm}"
+            name="openmodelpool-${goos}-${display}"
+            echo "Building ${name}${ext}"
+            env GOOS="$goos" GOARCH="$goarch" ${goarm:+GOARM="$goarm"} \
+              go build -ldflags="-s -w -X main.AppVersion=${VERSION}" -trimpath -o "dist/${name}${ext}" .
+            ( cd dist && sha256sum "${name}${ext}" > "${name}${ext}.sha256" )
+          done
+
+      - name: Generate aggregate checksums
+        run: ( cd dist && sha256sum * > SHA256SUMS )
+
+      - name: Sign release binaries (Ed25519)
+        env:
+          ED25519_SIGNING_KEY: ${{ secrets.ED25519_SIGNING_KEY }}
+        run: |
+          if [ -z "$ED25519_SIGNING_KEY" ]; then
+            echo "No signing key configured, skipping"
+            exit 0
+          fi
+          cat > /tmp/sign.go << 'GOEOF'
+          package main
+          import (
+            "crypto/ed25519"
+            "encoding/base64"
+            "fmt"
+            "os"
+            "path/filepath"
+            "strings"
+          )
+          func main() {
+            seed, err := base64.StdEncoding.DecodeString(os.Getenv("ED25519_SIGNING_KEY"))
+            if err != nil { panic(err) }
+            privKey := ed25519.NewKeyFromSeed(seed)
+            matches, _ := filepath.Glob("dist/openmodelpool-*")
+            for _, path := range matches {
+              base := filepath.Base(path)
+              if strings.HasSuffix(base, ".sha256") || strings.HasSuffix(base, ".sig") || base == "SHA256SUMS" {
+                continue
+              }
+              data, err := os.ReadFile(path)
+              if err != nil { panic(err) }
+              sig := ed25519.Sign(privKey, data)
+              if err := os.WriteFile(path+".sig", sig, 0644); err != nil { panic(err) }
+              fmt.Printf("Signed %s\n", base)
+            }
+          }
+          GOEOF
+          go run /tmp/sign.go
+          rm /tmp/sign.go
+
+      - name: Update checksums with signatures
+        run: ( cd dist && sha256sum * > SHA256SUMS )
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
