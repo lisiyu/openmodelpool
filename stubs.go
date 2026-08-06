@@ -1,10 +1,11 @@
 package main
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -220,7 +221,65 @@ func startRegionSyncLoop() {
 // TODO: implement federation bootstrap registration when the federation
 // handshake protocol is finalized. Currently a no-op; federation join is
 // handled via the trust pool refresh loop in discovery.go.
-func registerWithBootstraps() {}
+func registerWithBootstraps() {
+	if netMgr == nil || !netMgr.config.NetworkEnabled {
+		return
+	}
+	bootstrapNodes := netMgr.config.BootstrapNodes
+	if len(bootstrapNodes) == 0 {
+		return
+	}
+	nodeID := netMgr.GetNodeID()
+	if nodeID == "" {
+		return
+	}
+	var addrs []string
+	if natMgr != nil && natMgr.GetPublicAddr() != "" {
+		addrs = append(addrs, "https://"+natMgr.GetPublicAddr())
+	}
+	if len(netMgr.config.Addresses) > 0 {
+		addrs = append(addrs, netMgr.config.Addresses...)
+	}
+	if len(addrs) == 0 {
+		slog.Warn("registerWithBootstraps: no addresses to advertise")
+		return
+	}
+
+	payload := map[string]any{
+		"node_id":   nodeID,
+		"addresses": addrs,
+		"is_gateway": cfg.Get("is_gateway", "false") == "true",
+	}
+	body, _ := json.Marshal(payload)
+
+	for _, bs := range bootstrapNodes {
+		go func(bootstrapURL string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, "POST",
+				strings.TrimRight(bootstrapURL, "/")+"/api/federation/register", bytes.NewReader(body))
+			if err != nil {
+				slog.Debug("registerWithBootstraps: create request failed", "url", bootstrapURL, "error", err)
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if node != nil {
+				req.Header.Set("X-OMP-NodeID", nodeID)
+				sig, ts := signRelayForward(nodeID, "POST", "/api/federation/register", body)
+				req.Header.Set("X-OMP-Sig", sig)
+				req.Header.Set("X-OMP-Ts", ts)
+			}
+			resp, err := GetSharedHTTPClient().Do(req)
+			if err != nil {
+				slog.Debug("registerWithBootstraps: request failed", "url", bootstrapURL, "error", err)
+				return
+			}
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			slog.Info("registered with bootstrap node", "url", bootstrapURL, "status", resp.StatusCode)
+		}(bs)
+	}
+}
 
 // GetDHTStats returns DHT routing-table statistics. DHT (Kademlia) is not yet
 // implemented, so this reports a clear "not implemented" status.

@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.3.16] - 2026-08-06
+
+### ✨ Feature: NAT traversal architecture (§7.5)
+- New `nat_traversal.go`: `NATManager` with STUN-based public address discovery and direct connectivity probing
+  - `stunQuery()`: RFC 5389 STUN binding request, extracts XOR-MAPPED-ADDRESS
+  - `ProbeDirect(nodeID, targetURL)`: 5s timeout direct HTTP probe
+  - `ShouldUseDirect(nodeID)`: returns true if cached probe succeeded and <5min old
+  - `stunLoop()`: periodic STUN discovery every 5min
+- `network_relay.go`: `relayToRemote` now triggers async direct probe when cached result is stale
+- `routes.go`: Register NAT routes (`GET /api/nat/status`, `POST /api/nat/probe`)
+- `init.go`: `initNATManager()` called after contribution ledger init
+- `stubs.go`: `registerWithBootstraps()` implemented — registers node with seed/bootstrap nodes, advertises public address and gateway status
+
 ## [4.3.15] - 2026-08-06
 
 ### ✨ Feature: AddrMan address manager (§7.8.4)

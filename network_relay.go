@@ -271,6 +271,12 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 		return
 	}
 
+	// NAT traversal (§7.5): attempt direct connection if cached probe is stale.
+	// If direct probe fails, continue with relay (fallback).
+	if natMgr != nil && !natMgr.ShouldUseDirect(entry.NodeID) {
+		go natMgr.ProbeDirect(entry.NodeID, targetAddr)
+	}
+
 	// SA-04: Enforce HTTPS for relay to prevent data interception
 	if !strings.HasPrefix(targetAddr, "https://") {
 		slog.Warn("relay target uses insecure protocol, rejecting", "node_id", entry.NodeID, "addr", targetAddr)

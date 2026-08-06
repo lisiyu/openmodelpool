@@ -303,6 +303,8 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/network/balance/adjustments", withAuth(handleBalanceAdjustments))
 	mux.HandleFunc("POST /api/network/balance/recalculate", withAuth(handleBalanceRecalculate))
 
+	RegisterNATRoutes(mux)
+
 	// P2P Relay: /network/{node_id}/{rest...} — any shared node can relay
 	// §10A: WAF is enforced on the relay proxy path (no-op until enabled).
 	mux.HandleFunc("GET /network/{id}/", wafMiddleware(handleNetworkRelay))
