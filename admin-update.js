@@ -2,7 +2,8 @@
 //
 // Responsibilities (per PRD P0-1 / P0-3 and ARCH §3):
 //   * Poll GET /api/admin/version/latest every 5 minutes and render a
-//     three-state update button (disabled / "已是最新" / "更新到 vX.Y.Z").
+//     four-state update button (更新进行中 / "更新到 vX.Y.Z" / "已是最新" /
+//     "无需更新" when the local build is ahead of the newest published release).
 //   * On click, POST /api/admin/update/start, then poll
 //     GET /api/admin/update/status and aggregate local + peer progress.
 //   * While any node is mid-update, poll status every ~2.5s; otherwise
@@ -71,7 +72,75 @@
   }
 
   // -------------------------------------------------------------------------
-  // Version card (three-state button)
+  // Version string helpers
+  //
+  // The backend only exposes a boolean `has_update`, which cannot distinguish
+  // "local == remote" from "local is NEWER than the newest published release"
+  // (the latter happens whenever a version bump is committed without a git
+  // tag, so no GitHub Release exists yet). We therefore re-compare locally.
+  //
+  // NOTE: comparison MUST be numeric per segment. A naive string compare would
+  // report "4.3.9" > "4.3.15", which is exactly the class of bug this fixes.
+  // -------------------------------------------------------------------------
+
+  // Splits a version string into an array of non-negative integers.
+  // Tolerates an optional leading "v"/"V" and a -prerelease / +build suffix.
+  // Returns null when the input is empty or not a numeric dotted version, so
+  // that callers can fall back to a neutral, non-misleading presentation.
+  function parseVersionParts(v) {
+    var s = (v === null || v === undefined) ? '' : String(v).trim();
+    if (!s) return null;
+    if (s.charAt(0) === 'v' || s.charAt(0) === 'V') s = s.slice(1);
+
+    // Drop SemVer pre-release / build metadata: "4.3.15-rc.1+abc" -> "4.3.15".
+    var cut = s.search(/[-+]/);
+    if (cut !== -1) s = s.slice(0, cut);
+    s = s.trim();
+    if (!s) return null;
+
+    var raw = s.split('.');
+    var parts = [];
+    for (var i = 0; i < raw.length; i++) {
+      var seg = raw[i].trim();
+      if (!/^[0-9]+$/.test(seg)) return null;   // non-numeric segment -> unknown
+      var n = parseInt(seg, 10);
+      if (isNaN(n)) return null;
+      parts.push(n);
+    }
+    return parts.length > 0 ? parts : null;
+  }
+
+  // Compares two version strings segment-by-segment as integers.
+  // Returns 1 (a > b), 0 (a == b), -1 (a < b), or NaN when either side is
+  // empty / unparseable. Missing trailing segments count as 0, so
+  // "4.3" == "4.3.0".
+  function compareVersionStr(a, b) {
+    var pa = parseVersionParts(a);
+    var pb = parseVersionParts(b);
+    if (!pa || !pb) return NaN;
+
+    var n = Math.max(pa.length, pb.length);
+    for (var i = 0; i < n; i++) {
+      var x = i < pa.length ? pa[i] : 0;
+      var y = i < pb.length ? pb[i] : 0;
+      if (x > y) return 1;
+      if (x < y) return -1;
+    }
+    return 0;
+  }
+
+  // Display-only helper: ensures exactly one leading "v" so the explanatory
+  // copy reads consistently even when the tag and AppVersion disagree on the
+  // prefix (GitHub tags are "v4.3.9", main.go AppVersion is "4.3.15").
+  // Never feed the result back into a comparison.
+  function vLabel(s) {
+    var t = (s === null || s === undefined) ? '' : String(s).trim();
+    if (!t) return '-';
+    return (t.charAt(0) === 'v' || t.charAt(0) === 'V') ? t : 'v' + t;
+  }
+
+  // -------------------------------------------------------------------------
+  // Version card (four-state button)
   // -------------------------------------------------------------------------
   function renderVersionBody() {
     var el = document.getElementById('versionUpdateBody');
@@ -90,25 +159,65 @@
       return;
     }
 
-    var cur = escapeHtml(info.current_version || _currentVersion || '-');
-    var latest = escapeHtml(info.latest_version || '-');
+    var rawCur = info.current_version || _currentVersion || '';
+    var rawLatest = info.latest_version || '';
+    var cur = escapeHtml(rawCur || '-');
+    var latest = escapeHtml(rawLatest || '-');
     var checked = formatTime(info.checked_at);
+
+    // Only re-compare when the backend says there is nothing to update to.
+    // cmp === 1  -> the running build is ahead of the newest published release
+    //               (version bumped but never tagged, so no Release exists).
+    // cmp === 0  -> genuinely up to date.
+    // NaN        -> unknown (missing / unparseable version): stay neutral and
+    //               keep the pre-existing "已是最新版本" wording.
+    var cmp = info.has_update ? -1 : compareVersionStr(rawCur, rawLatest);
+    var localAhead = (!info.has_update && cmp === 1);
 
     var btn;
     if (inFlight) {
       btn = '<button class="btn btn-secondary" disabled style="opacity:.6">更新进行中…</button>';
     } else if (info.has_update) {
       btn = '<button class="btn btn-primary" onclick="startVersionUpdate()">🔄 更新到 ' + latest + '</button>';
+    } else if (localAhead) {
+      btn = '<button class="btn btn-secondary" disabled style="opacity:.6">✅ 无需更新</button>';
     } else {
       btn = '<button class="btn btn-secondary" disabled style="opacity:.6">✅ 已是最新版本</button>';
+    }
+
+    // The "latest" line differs per state so the user is never left thinking
+    // the panel is offering them a downgrade.
+    var latestLine;
+    if (localAhead) {
+      latestLine =
+        '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">已发布最新版本：' +
+          '<b style="color:var(--text-primary)">' + latest + '</b>' +
+          ' <span style="color:var(--success,#3fb950)">● 已是最新</span></div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.5">' +
+          '本地版本 <b style="color:var(--text-secondary)">' + escapeHtml(vLabel(rawCur)) + '</b> ' +
+          '领先于已发布的 <b style="color:var(--text-secondary)">' + escapeHtml(vLabel(rawLatest)) + '</b>' +
+          '（该版本尚未发布），无需操作。</div>';
+    } else {
+      // marker: warning when an update exists, success only when the two
+      // versions are *confirmed* equal. When cmp is NaN (missing/unparseable
+      // latest_version, e.g. GitHub degraded) we show no marker at all, which
+      // is byte-identical to the previous fallback rendering.
+      var marker = '';
+      if (info.has_update) {
+        marker = ' <span style="color:var(--warning,#f5a623)">● 有新版本</span>';
+      } else if (cmp === 0) {
+        marker = ' <span style="color:var(--success,#3fb950)">● 已是最新</span>';
+      }
+      latestLine =
+        '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">最新版本：' +
+          '<b style="color:var(--text-primary)">' + latest + '</b>' + marker + '</div>';
     }
 
     el.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">' +
         '<div>' +
           '<div style="font-size:13px;color:var(--text-secondary)">当前版本：<b style="color:var(--text-primary)">' + cur + '</b></div>' +
-          '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">最新版本：<b style="color:var(--text-primary)">' + latest + '</b>' +
-            (info.has_update ? ' <span style="color:var(--warning,#f5a623)">● 有新版本</span>' : '') + '</div>' +
+          latestLine +
           '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">检查时间：' + checked + '</div>' +
         '</div>' +
         '<div>' + btn + '</div>' +

@@ -27,3 +27,12 @@ openmodelpool.bak
 
 # WorkBuddy local agent state / memory (operational notes, not for public repo)
 .workbuddy/
+
+# Local scratch: test harnesses, runtime logs, binary backups
+.tmp
+.tmp-*
+.check_globals.js
+_wtest*
+*.exe.bak
+omp.out.log
+omp.err.log
