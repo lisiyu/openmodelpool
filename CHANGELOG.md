@@ -1,5 +1,21 @@
 # Changelog
 
+## [4.3.13] - 2026-08-06
+
+### ✨ Feature: Gemini native adapter (§4.1-4.4)
+- `platform_adapter.go`: Add `GeminiAdapter` implementing `PlatformAdapter` interface
+  - `TranslateRequest`: IR → Gemini `contents/parts` nesting, `user`/`model` role mapping, `systemInstruction` for system prompt
+  - `TranslateResponse`: `candidates[0].content.parts[0].text` → OpenAI `ChatResponse`, `usageMetadata` → `TokenUsage`
+  - `TranslateStreamChunk`: Gemini SSE chunk → OpenAI `ChatChunk`
+  - `ExtractUsage`: `usageMetadata` extraction
+- `client.go`: Add `geminiNonStream` and `geminiStream` functions
+  - Non-stream: `POST /v1beta/models/{model}:generateContent?key=`
+  - Stream: `POST /v1beta/models/{model}:streamGenerateContent?alt=sse&key=`
+  - Both convert Gemini native format to OpenAI-compatible response
+- `client.go`: `doNonStream`/`doStream` switch adds `"gemini"` case
+- `providers.go`: Gemini preset Type changed from `"openai_compatible"` to `"gemini"`, BaseURL to `https://generativelanguage.googleapis.com`
+- `platform_adapter.go`: `adapterRegistry` registers `"gemini"` → `&GeminiAdapter{}`
+
 ## [4.3.11] - 2026-08-06
 
 ### ✨ Feature: Auto-register as Gateway after domain binding (§7.10)

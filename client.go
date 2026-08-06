@@ -154,6 +154,8 @@ func doNonStream(ctx context.Context, p Provider, model string, messages []ChatM
 		return cozeNonStream(ctx, p, model, messages)
 	case "anthropic":
 		return anthropicNonStream(ctx, p, model, messages)
+	case "gemini":
+		return geminiNonStream(ctx, p, model, messages, extra)
 	default:
 		return openaiNonStream(ctx, p, model, messages, extra)
 	}
@@ -169,6 +171,8 @@ func doStream(ctx context.Context, p Provider, model string, messages []ChatMess
 		return cozeStream(ctx, p, model, messages, w)
 	case "anthropic":
 		return anthropicStream(ctx, p, model, messages, w)
+	case "gemini":
+		return geminiStream(ctx, p, model, messages, extra, w)
 	default:
 		return openaiStream(ctx, p, model, messages, extra, w)
 	}
@@ -1683,4 +1687,210 @@ func fetchRemoteModels(p Provider) []map[string]string {
 		}
 	}
 	return out
+}
+
+// ============================================================
+// Gemini (Google Generative AI native format)
+// ============================================================
+
+func geminiBuildContents(messages []ChatMessage) (contents []map[string]any, systemPrompt string) {
+	for _, m := range messages {
+		if m.Role == "system" {
+			systemPrompt = m.Content
+			continue
+		}
+		role := "user"
+		if m.Role == "assistant" {
+			role = "model"
+		}
+		contents = append(contents, map[string]any{
+			"role": role,
+			"parts": []map[string]any{
+				{"text": m.Content},
+			},
+		})
+	}
+	return
+}
+
+func geminiNonStream(ctx context.Context, p Provider, model string, messages []ChatMessage, extra map[string]any) (*ChatResponse, error) {
+	contents, systemPrompt := geminiBuildContents(messages)
+
+	payload := map[string]any{
+		"contents": contents,
+	}
+	if systemPrompt != "" {
+		payload["systemInstruction"] = map[string]any{
+			"parts": []map[string]any{{"text": systemPrompt}},
+		}
+	}
+	genConfig := map[string]any{}
+	if t, ok := extra["temperature"]; ok {
+		genConfig["temperature"] = t
+	}
+	if mt, ok := extra["max_tokens"]; ok {
+		genConfig["maxOutputTokens"] = mt
+	}
+	if len(genConfig) > 0 {
+		payload["generationConfig"] = genConfig
+	}
+
+	body, _ := json.Marshal(payload)
+	endpoint := p.BaseURL + "/v1beta/models/" + url.PathEscape(model) + ":generateContent?key=" + p.APIKey
+	req, _ := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := proxyHTTPClient(p, 300*time.Second).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("gemini upstream (%d): %s", resp.StatusCode, truncate(string(b), 300))
+	}
+
+	var result struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+			FinishReason string `json:"finishReason"`
+		} `json:"candidates"`
+		UsageMetadata *struct {
+			PromptTokenCount     int `json:"promptTokenCount"`
+			CandidatesTokenCount int `json:"candidatesTokenCount"`
+			TotalTokenCount      int `json:"totalTokenCount"`
+		} `json:"usageMetadata"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode gemini response: %w", err)
+	}
+
+	var text string
+	if len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
+		text = result.Candidates[0].Content.Parts[0].Text
+	}
+	stop := "stop"
+
+	cr := &ChatResponse{
+		ID:      fmt.Sprintf("chatcmpl-%s", randomString(24)),
+		Object:  "chat.completion",
+		Created: time.Now().Unix(),
+		Model:   model,
+		Choices: []Choice{{
+			Message:      &Msg{Role: "assistant", Content: &text},
+			FinishReason: &stop,
+		}},
+	}
+	if result.UsageMetadata != nil {
+		cr.Usage = &Usage{
+			PromptTokens:     result.UsageMetadata.PromptTokenCount,
+			CompletionTokens: result.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      result.UsageMetadata.TotalTokenCount,
+		}
+	}
+	return cr, nil
+}
+
+func geminiStream(ctx context.Context, p Provider, model string, messages []ChatMessage, extra map[string]any, w io.Writer) error {
+	contents, systemPrompt := geminiBuildContents(messages)
+
+	payload := map[string]any{
+		"contents": contents,
+	}
+	if systemPrompt != "" {
+		payload["systemInstruction"] = map[string]any{
+			"parts": []map[string]any{{"text": systemPrompt}},
+		}
+	}
+	genConfig := map[string]any{}
+	if t, ok := extra["temperature"]; ok {
+		genConfig["temperature"] = t
+	}
+	if mt, ok := extra["max_tokens"]; ok {
+		genConfig["maxOutputTokens"] = mt
+	}
+	if len(genConfig) > 0 {
+		payload["generationConfig"] = genConfig
+	}
+
+	body, _ := json.Marshal(payload)
+	endpoint := p.BaseURL + "/v1beta/models/" + url.PathEscape(model) + ":streamGenerateContent?alt=sse&key=" + p.APIKey
+	req, _ := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := proxyHTTPClient(p, 300*time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		writeSSEError(w, model, fmt.Sprintf("gemini upstream (%d): %s", resp.StatusCode, truncate(string(b), 200)))
+		return nil
+	}
+
+	cmplID := fmt.Sprintf("chatcmpl-%s", randomString(24))
+	created := time.Now().Unix()
+	flusher, hasFlusher := w.(interface{ Flush() })
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		dataStr := strings.TrimSpace(line[6:])
+		if dataStr == "" {
+			continue
+		}
+
+		var event struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			} `json:"candidates"`
+		}
+		if json.Unmarshal([]byte(dataStr), &event) != nil {
+			continue
+		}
+
+		if len(event.Candidates) > 0 && len(event.Candidates[0].Content.Parts) > 0 {
+			text := event.Candidates[0].Content.Parts[0].Text
+			if text != "" {
+				chunk := ChatChunk{
+					ID: cmplID, Object: "chat.completion.chunk",
+					Created: created, Model: model,
+					Choices: []Choice{{Delta: &Msg{Content: &text}}},
+				}
+				writeSSEChunk(w, chunk)
+				if hasFlusher {
+					flusher.Flush()
+				}
+			}
+		}
+	}
+
+	stop := "stop"
+	final := ChatChunk{
+		ID: cmplID, Object: "chat.completion.chunk",
+		Created: created, Model: model,
+		Choices: []Choice{{Delta: &Msg{Role: stop}, FinishReason: &stop}},
+	}
+	writeSSEChunk(w, final)
+	if hasFlusher {
+		flusher.Flush()
+	}
+	return nil
 }

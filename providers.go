@@ -234,8 +234,8 @@ var presetProviders = []Provider{
 		},
 	},
 	{
-		ID: "gemini", Name: "Google Gemini", Type: "openai_compatible",
-		BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+		ID: "gemini", Name: "Google Gemini", Type: "gemini",
+		BaseURL: "https://generativelanguage.googleapis.com",
 		Priority: 4,
 		Description: "Google Gemini - 多模态、超长上下文",
 		Icon: "gemini",

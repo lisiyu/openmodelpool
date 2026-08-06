@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-var AppVersion string = "4.3.11"
+var AppVersion string = "4.3.13"
 
 // checkAndFixFilePermissions ensures sensitive files have restricted permissions. (SA-08)
 func checkAndFixFilePermissions(paths []string) {

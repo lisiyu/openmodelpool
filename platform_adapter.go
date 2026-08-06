@@ -72,6 +72,7 @@ type PlatformAdapter interface {
 var adapterRegistry = map[string]PlatformAdapter{
 	"openai_compatible": &OpenAIAdapter{},
 	"anthropic":         &AnthropicAdapter{},
+	"gemini":            &GeminiAdapter{},
 }
 
 // GetAdapter returns the PlatformAdapter for a given provider type.
@@ -239,4 +240,173 @@ func (a *AnthropicAdapter) ExtractUsage(raw []byte) (*TokenUsage, error) {
 		return nil, fmt.Errorf("cannot extract anthropic usage: %w", err)
 	}
 	return resp.Usage, nil
+}
+
+// ============================================================
+// Gemini Adapter (Google Generative AI native format)
+// ============================================================
+
+// GeminiAdapter handles Google Gemini native format conversion.
+// Key differences: contents/parts nesting, user/model role mapping,
+// candidates[0].content.parts[0].text for response extraction.
+type GeminiAdapter struct{}
+
+func (a *GeminiAdapter) PlatformName() string { return "gemini" }
+
+// geminiRequest is the native Gemini API request structure.
+type geminiRequest struct {
+	Contents    []geminiContent `json:"contents"`
+	GenerationConfig *geminiGenerationConfig `json:"generationConfig,omitempty"`
+}
+
+type geminiContent struct {
+	Role  string        `json:"role"`
+	Parts []geminiPart  `json:"parts"`
+}
+
+type geminiPart struct {
+	Text string `json:"text,omitempty"`
+}
+
+type geminiGenerationConfig struct {
+	Temperature *float64 `json:"temperature,omitempty"`
+	MaxOutputTokens *int `json:"maxOutputTokens,omitempty"`
+}
+
+func (a *GeminiAdapter) TranslateRequest(ir *RequestIR) ([]byte, error) {
+	var contents []geminiContent
+
+	if ir.SystemPrompt != "" {
+		contents = append(contents, geminiContent{
+			Role:  "user",
+			Parts: []geminiPart{{Text: ir.SystemPrompt}},
+		})
+		contents = append(contents, geminiContent{
+			Role:  "model",
+			Parts: []geminiPart{{Text: "Understood."}},
+		})
+	}
+
+	for _, m := range ir.Messages {
+		if m.Role == "system" {
+			continue
+		}
+		role := "user"
+		if m.Role == "assistant" {
+			role = "model"
+		}
+		contents = append(contents, geminiContent{
+			Role:  role,
+			Parts: []geminiPart{{Text: m.Content}},
+		})
+	}
+
+	req := geminiRequest{Contents: contents}
+	if ir.Temperature != nil || ir.MaxTokens != nil {
+		req.GenerationConfig = &geminiGenerationConfig{
+			Temperature:     ir.Temperature,
+			MaxOutputTokens: ir.MaxTokens,
+		}
+	}
+
+	return json.Marshal(req)
+}
+
+func (a *GeminiAdapter) TranslateResponse(raw []byte) (*OpenAIResponse, error) {
+	var gr struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+		UsageMetadata *struct {
+			PromptTokenCount     int `json:"promptTokenCount"`
+			CandidatesTokenCount int `json:"candidatesTokenCount"`
+			TotalTokenCount      int `json:"totalTokenCount"`
+		} `json:"usageMetadata"`
+	}
+	if err := json.Unmarshal(raw, &gr); err != nil {
+		return nil, fmt.Errorf("cannot parse gemini response: %w", err)
+	}
+
+	var text string
+	if len(gr.Candidates) > 0 && len(gr.Candidates[0].Content.Parts) > 0 {
+		text = gr.Candidates[0].Content.Parts[0].Text
+	}
+
+	resp := &OpenAIResponse{
+		Object: "chat.completion",
+		Choices: []any{map[string]any{
+			"index": 0,
+			"message": map[string]any{
+				"role":    "assistant",
+				"content": text,
+			},
+			"finish_reason": "stop",
+		}},
+	}
+
+	if gr.UsageMetadata != nil {
+		resp.Usage = &TokenUsage{
+			PromptTokens:     gr.UsageMetadata.PromptTokenCount,
+			CompletionTokens: gr.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      gr.UsageMetadata.TotalTokenCount,
+		}
+	}
+
+	return resp, nil
+}
+
+func (a *GeminiAdapter) TranslateStreamChunk(raw []byte) (*OpenAIStreamChunk, error) {
+	var gr struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+	if err := json.Unmarshal(raw, &gr); err != nil {
+		return nil, fmt.Errorf("cannot parse gemini stream chunk: %w", err)
+	}
+
+	var text string
+	if len(gr.Candidates) > 0 && len(gr.Candidates[0].Content.Parts) > 0 {
+		text = gr.Candidates[0].Content.Parts[0].Text
+	}
+
+	chunk := &OpenAIStreamChunk{
+		Object: "chat.completion.chunk",
+		Choices: []any{map[string]any{
+			"index": 0,
+			"delta": map[string]any{
+				"content": text,
+			},
+		}},
+	}
+	return chunk, nil
+}
+
+func (a *GeminiAdapter) ExtractUsage(raw []byte) (*TokenUsage, error) {
+	var gr struct {
+		UsageMetadata *struct {
+			PromptTokenCount     int `json:"promptTokenCount"`
+			CandidatesTokenCount int `json:"candidatesTokenCount"`
+			TotalTokenCount      int `json:"totalTokenCount"`
+		} `json:"usageMetadata"`
+	}
+	if err := json.Unmarshal(raw, &gr); err != nil {
+		return nil, fmt.Errorf("cannot extract gemini usage: %w", err)
+	}
+	if gr.UsageMetadata == nil {
+		return nil, nil
+	}
+	return &TokenUsage{
+		PromptTokens:     gr.UsageMetadata.PromptTokenCount,
+		CompletionTokens: gr.UsageMetadata.CandidatesTokenCount,
+		TotalTokens:      gr.UsageMetadata.TotalTokenCount,
+	}, nil
 }
