@@ -146,14 +146,21 @@ type RouteEntry struct {
 	NodeID    string    `json:"node_id"`
 	NodeName  string    `json:"node_name"`
 	Addresses []string  `json:"addresses"`
-	Status    string    `json:"status"` // online/offline/degraded
-	UpdatedAt time.Time `json:"updated_at"`
+	Status    string    `json:"status"` // online/offline/degraded/unreachable
 
 	// Gateway routing fields
-	Models    []string  `json:"models,omitempty"`     // models this node provides
-	LatencyMS float64   `json:"latency_ms,omitempty"` // average latency (ms)
-	LoadScore float64   `json:"load_score,omitempty"` // current load (0-1, 0=idle)
-	LastSeen  time.Time `json:"last_seen,omitempty"`  // last heartbeat time
+	Models    []string  `json:"models,omitempty"`
+	LatencyMS float64   `json:"latency_ms,omitempty"`
+	LoadScore float64   `json:"load_score,omitempty"`
+	LastSeen  time.Time `json:"last_seen,omitempty"`
+
+	// AddrMan fields (§7.8.4)
+	FailCount   int     `json:"fail_count,omitempty"`
+	UptimeScore float64 `json:"uptime_score,omitempty"`
+	IsGateway   bool    `json:"is_gateway,omitempty"`
+	IsSeed      bool    `json:"is_seed,omitempty"`
+
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // RouteTable is a simplified DHT routing table (Phase 1)
@@ -367,6 +374,115 @@ func (rt *RouteTable) SelectBestNode(model string) *RouteEntry {
 	return scored_list[bestIdx].entry
 }
 
+// RecordSuccess marks a successful interaction with a node, resetting FailCount
+// and updating UptimeScore and LatencyMS.
+func (rt *RouteTable) RecordSuccess(nodeID string, latencyMs float64) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	e, ok := rt.entries[nodeID]
+	if !ok {
+		return
+	}
+	e.FailCount = 0
+	e.UptimeScore = e.UptimeScore*0.9 + 1.0*0.1
+	e.LatencyMS = e.LatencyMS*0.8 + latencyMs*0.2
+	e.LastSeen = time.Now()
+	e.Status = "online"
+	e.UpdatedAt = time.Now()
+}
+
+// RecordFail increments FailCount for a node. When FailCount >= 3, marks it
+// unreachable. Returns the new FailCount.
+func (rt *RouteTable) RecordFail(nodeID string) int {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	e, ok := rt.entries[nodeID]
+	if !ok {
+		return 0
+	}
+	e.FailCount++
+	e.UptimeScore = e.UptimeScore * 0.8
+	if e.FailCount >= 3 {
+		e.Status = "unreachable"
+	}
+	e.UpdatedAt = time.Now()
+	return e.FailCount
+}
+
+// GetGateways returns all entries marked as Gateway.
+func (rt *RouteTable) GetGateways() []*RouteEntry {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	var result []*RouteEntry
+	for _, e := range rt.entries {
+		if e.IsGateway && e.Status != "unreachable" {
+			cp := *e
+			result = append(result, &cp)
+		}
+	}
+	return result
+}
+
+// GetSeeds returns all entries marked as Seed.
+func (rt *RouteTable) GetSeeds() []*RouteEntry {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	var result []*RouteEntry
+	for _, e := range rt.entries {
+		if e.IsSeed {
+			cp := *e
+			result = append(result, &cp)
+		}
+	}
+	return result
+}
+
+// PurgeStale removes entries that have not been seen for 7 days and
+// increments FailCount for entries not seen in 30 minutes.
+func (rt *RouteTable) PurgeStale() (removed int, failed int) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	now := time.Now()
+	for id, e := range rt.entries {
+		if e.IsSeed {
+			continue
+		}
+		if now.Sub(e.LastSeen) > 7*24*time.Hour {
+			delete(rt.entries, id)
+			removed++
+			continue
+		}
+		if now.Sub(e.LastSeen) > 30*time.Minute && e.Status != "unreachable" {
+			e.FailCount++
+			if e.FailCount >= 3 {
+				e.Status = "unreachable"
+			}
+			failed++
+		}
+	}
+	return
+}
+
+// MarkGateway sets or clears the IsGateway flag for a node.
+func (rt *RouteTable) MarkGateway(nodeID string, isGateway bool) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if e, ok := rt.entries[nodeID]; ok {
+		e.IsGateway = isGateway
+		e.UpdatedAt = time.Now()
+	}
+}
+
+// MarkSeed sets the IsSeed flag for a node.
+func (rt *RouteTable) MarkSeed(nodeID string, isSeed bool) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if e, ok := rt.entries[nodeID]; ok {
+		e.IsSeed = isSeed
+		e.UpdatedAt = time.Now()
+	}
+}
+
 // ============================================================
 // NetworkManager
 // ============================================================
@@ -413,6 +529,28 @@ func initNetworkManager(dataDir string) {
 	}
 
 	slog.Info("network manager initialized", "mode", netMgr.config.Mode, "node_id", netMgr.config.NodeID)
+
+	if netMgr.config.NetworkEnabled {
+		go routeTableHealthLoop()
+	}
+}
+
+func routeTableHealthLoop() {
+	ticker := time.NewTicker(30 * time.Minute)
+	defer ticker.Stop()
+	slog.Info("route table health check loop started", "interval", "30m")
+	for {
+		select {
+		case <-ticker.C:
+			if routeTable == nil {
+				return
+			}
+			removed, failed := routeTable.PurgeStale()
+			if removed > 0 || failed > 0 {
+				slog.Info("route table health check", "removed_7d", removed, "failed_30m", failed)
+			}
+		}
+	}
 }
 
 func (nm *NetworkManager) load() {

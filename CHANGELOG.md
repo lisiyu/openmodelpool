@@ -1,5 +1,38 @@
 # Changelog
 
+## [4.3.15] - 2026-08-06
+
+### ✨ Feature: AddrMan address manager (§7.8.4)
+- `network.go`: `RouteEntry` extended with `FailCount`, `UptimeScore`, `IsGateway`, `IsSeed` fields
+- `network.go`: `RouteTable` new methods:
+  - `RecordSuccess(nodeID, latencyMs)`: reset FailCount, update UptimeScore (EMA 0.9/0.1), update LatencyMS (EMA 0.8/0.2)
+  - `RecordFail(nodeID)`: increment FailCount, degrade UptimeScore (×0.8), mark unreachable at FailCount>=3
+  - `GetGateways()`: return all non-unreachable gateway entries
+  - `GetSeeds()`: return all seed entries
+  - `PurgeStale()`: remove 7-day-unseen entries, increment FailCount for 30-min-unseen entries
+  - `MarkGateway(nodeID, bool)`, `MarkSeed(nodeID, bool)`: set flags
+- `network.go`: `routeTableHealthLoop()` runs every 30min, calls `PurgeStale()`
+- `node_registry.go`: `persistedNode` extended with `FailCount`, `UptimeScore`; `SaveNode` and `LoadAll` updated
+- Existing `NodeRegistry` persistence (`.nodes/` directory) now covers all AddrMan fields
+
+## [4.3.14] - 2026-08-06
+
+### ✨ Feature: Gossip five-message protocol (§7.8.3)
+- `gossip.go`: Replace single `gossipLoop` with three independent loops:
+  - `pingLoop`: PING every 30s to 3 random peers (liveness probe, peer responds PONG)
+  - `getPeersLoop`: GET_PEERS every 5min to 2 random peers (peer responds PEERS with KnownPeers)
+  - `announceLoop`: ANNOUNCE every 10min to all active peers (broadcasts enabled providers)
+- `gossip.go`: Add `sendToRandomPeers()` helper and `doAnnounceRound()` for provider broadcasts
+- `gossip.go`: `handleFederationGossip` now handles all 5 message types:
+  - PING → respond PONG
+  - GET_PEERS → respond PEERS with KnownPeers
+  - PEERS → merge peer hints via `processPeerHints()`
+  - SYNC/ANNOUNCE → existing logic preserved
+- `gossip.go`: Add `processPeerHints()` method for PEERS message handling
+- `types.go`: `GossipMessage.Type` comment updated with all 8 type values
+- `gossip.go`: Add message type constants (`GossipPing`, `GossipPong`, `GossipGetPeers`, `GossipPeers`, `GossipAnnounce`, `GossipSync`, `GossipScore`, `GossipHeartbeat`)
+- Legacy `doGossipRound` (sync) kept for backward compatibility
+
 ## [4.3.13] - 2026-08-06
 
 ### ✨ Feature: Gemini native adapter (§4.1-4.4)

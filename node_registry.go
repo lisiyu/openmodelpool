@@ -48,6 +48,8 @@ type persistedNode struct {
 	Status          string   `json:"status"`
 	LastSeenUnix    int64    `json:"last_seen_unix"`
 	LatencyMS       float64  `json:"latency_ms"`
+	FailCount       int      `json:"fail_count"`
+	UptimeScore     float64  `json:"uptime_score"`
 	PersistedAtUnix int64    `json:"persisted_at_unix"`
 }
 
@@ -103,6 +105,10 @@ func (r *NodeRegistry) SaveNode(entry *RouteEntry) {
 		Status:          entry.Status,
 		LastSeenUnix:    entry.LastSeen.Unix(),
 		LatencyMS:       entry.LatencyMS,
+		FailCount:       entry.FailCount,
+		UptimeScore:     entry.UptimeScore,
+		IsGateway:       entry.IsGateway,
+		IsSeed:          entry.IsSeed,
 		PersistedAtUnix: time.Now().Unix(),
 	}
 	r.writeLocked(pn)
@@ -179,16 +185,18 @@ func (r *NodeRegistry) LoadAll() ([]*RouteEntry, error) {
 		}
 		lastSeen := time.Unix(pn.LastSeenUnix, 0)
 		result = append(result, &RouteEntry{
-			NodeID:    pn.NodeID,
-			NodeName:  pn.NodeName,
-			Addresses: cloneStrings(pn.Addresses),
-			Status:    orDefault(pn.Status, "online"),
-			Models:    cloneStrings(pn.Models),
-			LatencyMS: pn.LatencyMS,
-			LastSeen:  lastSeen,
-			// Treat loaded nodes as freshly seen so they survive until the next
-			// purge cycle — this is the whole point of cold-start resilience.
-			UpdatedAt: time.Now(),
+			NodeID:      pn.NodeID,
+			NodeName:    pn.NodeName,
+			Addresses:   cloneStrings(pn.Addresses),
+			Status:      orDefault(pn.Status, "online"),
+			Models:      cloneStrings(pn.Models),
+			LatencyMS:   pn.LatencyMS,
+			LastSeen:    lastSeen,
+			FailCount:   pn.FailCount,
+			UptimeScore: pn.UptimeScore,
+			IsGateway:   pn.IsGateway,
+			IsSeed:      pn.IsSeed,
+			UpdatedAt:   time.Now(),
 		})
 	}
 	return result, nil
