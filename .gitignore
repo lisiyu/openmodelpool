@@ -24,3 +24,6 @@ openmodelpool.bak
 
 # Monkeycode AI planning files
 .monkeycode/
+
+# WorkBuddy local agent state / memory (operational notes, not for public repo)
+.workbuddy/
