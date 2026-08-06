@@ -30,7 +30,7 @@ func (s *SiderMonitor) load() {
 
 func (s *SiderMonitor) save() {
 	b, _ := json.MarshalIndent(s.status, "", "  ")
-	os.MkdirAll("data", 0755)
+	os.MkdirAll("data", 0700)
 	atomicWriteFile(s.filePath, b, 0600)
 }
 

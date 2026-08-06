@@ -159,7 +159,7 @@ func (m *ProviderManager) makeProviderListLocked() []Provider {
 // C2-fix: Use atomicWriteFile to prevent data corruption from partial writes.
 func (m *ProviderManager) writeFile(list []Provider) {
 	b, _ := json.MarshalIndent(list, "", "  ")
-	os.MkdirAll("data", 0755)
+	os.MkdirAll("data", 0700)
 	atomicWriteFile(m.dataPath, b, 0600) // P0-4: restrict file permissions to owner-only
 }
 

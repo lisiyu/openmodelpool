@@ -491,7 +491,7 @@ func (gks *GuestKeyStore) doSaveLocked() {
 		slog.Error("failed to marshal guest keys", "error", err)
 		return
 	}
-	os.MkdirAll(filepath.Dir(gks.dataPath), 0755)
+	os.MkdirAll(filepath.Dir(gks.dataPath), 0700)
 	if err := atomicWriteFile(gks.dataPath, data, 0600); err != nil {
 		slog.Error("failed to write guest keys", "error", err)
 	}

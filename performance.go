@@ -72,7 +72,7 @@ var internalTransport = &http.Transport{
 	TLSHandshakeTimeout:   10 * time.Second,
 	ExpectContinueTimeout: 1 * time.Second,
 	ForceAttemptHTTP2:     true,
-	TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, // trust pool-internal self-signed certs
+	TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, // #nosec G402 -- internalTransport only talks to mutually-trusted pool nodes; self-signed certs are expected
 }
 
 var internalHTTPClient *http.Client

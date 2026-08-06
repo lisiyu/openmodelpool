@@ -36,7 +36,7 @@ func initCore() {
 	initMultiUser("data")
 
 	// SA-08: Fix data directory and file permissions
-	os.Chmod("data", 0700)
+	os.Chmod("data", 0700) // #nosec G302 -- "data" is a directory; 0700 = owner-only rwx, correct per SA-08
 	checkAndFixFilePermissions([]string{
 		"data/.key",
 		"data/config.json",

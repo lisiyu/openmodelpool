@@ -77,7 +77,7 @@ func saveDiscoveredPlatforms() error {
 	}
 
 	dir := filepath.Dir(discoveredPlatformsFile)
-	os.MkdirAll(dir, 0755)
+	os.MkdirAll(dir, 0700)
 	return atomicWriteFile(discoveredPlatformsFile, data, 0600)
 }
 

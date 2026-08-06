@@ -69,7 +69,7 @@ func NewNodeRegistry(dir string) *NodeRegistry {
 		dir = ".nodes"
 	}
 	r := &NodeRegistry{dir: dir}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		slog.Error("failed to create node registry directory", "dir", dir, "error", err)
 	}
 	return r

@@ -5,8 +5,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/smtp"
+	"os"
 	"sync"
 )
+
+// trustedReverseProxy is true when the deployment opts in via OMP_TRUSTED_PROXY=1,
+// i.e. it sits behind a reverse proxy that terminates TLS and sets X-Forwarded-Proto.
+// Header-based scheme detection must not be trusted otherwise: an attacker reaching
+// the server directly can spoof the header to strip the Secure flag from cookies (G124).
+var trustedReverseProxy = os.Getenv("OMP_TRUSTED_PROXY") == "1"
 
 // ============================================================
 // Auth handlers
@@ -69,12 +76,13 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if body.Remember {
 		maxAge = 7 * 86400
 	}
-	// Determine if Secure flag should be set
-	// NOTE: X-Forwarded-Proto is only trustworthy when behind a trusted
-	// reverse proxy. In direct-exposure deployments, an attacker can spoof
-	// this header to prevent the Secure cookie flag from being set.
-	isHTTPS := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
-	c := &http.Cookie{
+	// Determine if Secure flag should be set.
+	// X-Forwarded-Proto is only trusted when the deployment opts in via
+	// OMP_TRUSTED_PROXY=1 (see trustedReverseProxy above). In direct-exposure
+	// deployments an attacker can spoof this header to prevent the Secure
+	// cookie flag from being set.
+	isHTTPS := r.TLS != nil || (trustedReverseProxy && r.Header.Get("X-Forwarded-Proto") == "https")
+	c := &http.Cookie{ // #nosec G124 -- Secure is intentionally dynamic (true on TLS, false on plain HTTP); X-Forwarded-Proto trust is gated by OMP_TRUSTED_PROXY
 		Name:     "admin_token",
 		Path:     "/",
 		Value:    accessToken,

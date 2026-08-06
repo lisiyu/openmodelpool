@@ -622,7 +622,7 @@ func (um *UpdateManager) downloadFile(url, dest string) error {
 	}
 	um.downloadHash = hex.EncodeToString(h.Sum(nil))
 	if runtime.GOOS != "windows" {
-		_ = os.Chmod(dest, 0755)
+		_ = os.Chmod(dest, 0700) // #nosec G302 -- the binary needs the owner exec bit; 0700 is the minimum and is not group/world accessible
 	}
 	um.setLocalPhase(PhaseDownloading, 70, fmt.Sprintf("下载完成（%d 字节）", written), "")
 	return nil

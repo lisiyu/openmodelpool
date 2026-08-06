@@ -102,7 +102,7 @@ func (t *Tracker) save() {
 	t.dirtyCount = 0
 	t.lastFlush = time.Now()
 	t.mu.Unlock()
-	os.MkdirAll("data", 0755)
+	os.MkdirAll("data", 0700)
 	atomicWriteFile(t.dataPath, b, 0600)
 	t.mu.Lock()
 }
@@ -341,7 +341,7 @@ func (t *Tracker) archiveUsage() {
 
 	archivePath := fmt.Sprintf("data/usage_%s.json", archiveMonth)
 	b, _ := json.MarshalIndent(toArchive, "", "  ")
-	os.MkdirAll("data", 0755)
+	os.MkdirAll("data", 0700)
 	if err := atomicWriteFile(archivePath, b, 0600); err != nil {
 		slog.Error("failed to archive usage", "error", err)
 		return
