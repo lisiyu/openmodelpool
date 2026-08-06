@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.3.17] - 2026-08-06
+
+### ✨ Feature: Active probing and cross-verification (§10.2-10.3)
+- `contribution_ledger_init.go`: Replace no-op `probeFn` with `realProbeFn` — sends 1-token chat completion request to remote node, 15s timeout
+- `contribution_ledger_init.go`: `minVerifiers` raised from 2 to 3 for cross-verification quorum
+- `contribution_ledger.go`: Add `ProbeSchedulerLoop()` — periodic probing of claimed capabilities at adaptive intervals:
+  - New node (last seen <10min): 5min
+  - Regular node: 30min
+  - High-reputation (>80): 2h
+  - Suspicious (<30): 1min
+- `contribution_ledger.go`: Add `probeSchedule()` — determines interval based on reputation and last-seen
+- `contribution_ledger.go`: Add `CrossVerifyWithQuorum()` — 3-node independent verification, >20% latency deviation triggers investigation
+- Probe scheduler starts automatically after `initContributionLedger()`
+
 ## [4.3.16] - 2026-08-06
 
 ### ✨ Feature: NAT traversal architecture (§7.5)

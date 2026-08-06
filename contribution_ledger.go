@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -576,6 +577,110 @@ func (cv *CapabilityVerifier) GetProbeHistory(modelID string) []ProbeResult {
 	out := make([]ProbeResult, len(results))
 	copy(out, results)
 	return out
+}
+
+// probeSchedule determines the next probe interval based on node category.
+// New node: 5min, regular: 30min, high-rep: 2h, suspicious: 1min (§10.3).
+func probeSchedule(nodeID string) time.Duration {
+	if repMgr != nil {
+		if rep := repMgr.GetReputation(nodeID); rep != nil {
+			if rep.OverallScore < 30 {
+				return 1 * time.Minute
+			}
+			if rep.OverallScore > 80 {
+				return 2 * time.Hour
+			}
+		}
+	}
+	if routeTable != nil {
+		e := routeTable.Get(nodeID)
+		if e != nil && time.Since(e.LastSeen) < 10*time.Minute {
+			return 5 * time.Minute
+		}
+	}
+	return 30 * time.Minute
+}
+
+// ProbeSchedulerLoop runs the periodic active probing of known peers.
+// It collects capability claims from the ledger and probes each claimed
+// model at the interval determined by probeSchedule.
+func (cv *CapabilityVerifier) ProbeSchedulerLoop() {
+	slog.Info("capability probe scheduler started")
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		if contributionLedger == nil {
+			continue
+		}
+		claims := contributionLedger.GetAllClaims()
+		for _, claim := range claims {
+			if claim.PeerID == "" || len(claim.Models) == 0 {
+				continue
+			}
+			for _, modelID := range claim.Models {
+				cv.mu.RLock()
+				results := cv.crossResults[modelID]
+				cv.mu.RUnlock()
+				lastProbe := time.Time{}
+				for _, r := range results {
+					if r.PeerID == claim.PeerID && r.Timestamp.After(lastProbe) {
+						lastProbe = r.Timestamp
+					}
+				}
+				interval := probeSchedule(claim.PeerID)
+				if time.Since(lastProbe) < interval {
+					continue
+				}
+				r := cv.Probe(claim.PeerID, modelID)
+				slog.Debug("scheduled probe completed",
+					"peer", claim.PeerID, "model", modelID,
+					"success", r.Success, "latency_ms", r.LatencyMS)
+			}
+		}
+	}
+}
+
+// CrossVerifyWithQuorum performs cross-verification: 3 independent verifiers
+// probe the same model, and deviation >20% triggers investigation (§10.3).
+func (cv *CapabilityVerifier) CrossVerifyWithQuorum(modelID string) (verified int, suspect bool) {
+	cv.mu.RLock()
+	results := cv.crossResults[modelID]
+	cv.mu.RUnlock()
+
+	successCount := 0
+	totalLatency := int64(0)
+	seen := make(map[string]bool)
+	var peerLatencies []int64
+
+	for _, r := range results {
+		if r.PeerID == "" || seen[r.PeerID] {
+			continue
+		}
+		seen[r.PeerID] = true
+		if r.Success {
+			successCount++
+			totalLatency += r.LatencyMS
+			peerLatencies = append(peerLatencies, r.LatencyMS)
+		}
+	}
+
+	if len(peerLatencies) < 3 {
+		return successCount, false
+	}
+
+	avgLatency := float64(totalLatency) / float64(len(peerLatencies))
+	for _, lat := range peerLatencies {
+		if avgLatency > 0 {
+			deviation := float64(lat) / avgLatency
+			if deviation < 0.8 || deviation > 1.2 {
+				slog.Warn("cross-verify: latency deviation >20%, suspect",
+					"model", modelID, "latency_ms", lat, "avg", avgLatency)
+				return successCount, true
+			}
+		}
+	}
+
+	return successCount, false
 }
 
 type IPFSClient struct {
