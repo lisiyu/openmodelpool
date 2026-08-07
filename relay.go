@@ -473,6 +473,14 @@ func recordContributionToLedger(fromNodeID, model, providerID string, tokens int
 		Tokens:   tokens,
 	})
 	contributionLedger.AppendTransaction("contribution", fromNodeID, tokens, model, requestID)
+
+	if ticketStore != nil && requestID != "" && node != nil {
+		t := ticketStore.IssueTicket(requestID, fromNodeID, providerID, model, tokens)
+		if err := ticketStore.Countersign(t); err != nil {
+			slog.Debug("ticket countersign failed (possible double-spend)",
+				"request_id", requestID, "error", err)
+		}
+	}
 }
 
 func recordConsumptionToLedger(model string, tokens int64, requestID string) {

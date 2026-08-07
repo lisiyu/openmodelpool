@@ -51,6 +51,9 @@ func initContributionLedger(dataDir string) {
 	capabilityVerifier = NewCapabilityVerifier(realProbeFn, 3)
 	go capabilityVerifier.ProbeSchedulerLoop()
 	slog.Info("capability verifier initialized")
+
+	initTicketStore()
+	go notarizeLoop()
 }
 
 func saveContributionLedger() {

@@ -305,6 +305,10 @@ func setupRoutes() *http.ServeMux {
 
 	RegisterNATRoutes(mux)
 
+	mux.HandleFunc("POST /api/ticket/submit", withAuth(handleTicketSubmit))
+	mux.HandleFunc("POST /api/ticket/notarize", withFederationAuth(handleNotarize))
+	mux.HandleFunc("GET /api/ticket/anti-collusion", withAuth(handleAntiCollusionCheck))
+
 	// P2P Relay: /network/{node_id}/{rest...} — any shared node can relay
 	// §10A: WAF is enforced on the relay proxy path (no-op until enabled).
 	mux.HandleFunc("GET /network/{id}/", wafMiddleware(handleNetworkRelay))

@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.3.18] - 2026-08-07
+
+### ✨ Feature: Ticket anti-double-spend system (§9.3-9.4)
+- New `ticket.go`: `UsageTicket` with dual signatures (requestor + provider), `TicketFingerprint` for deterministic dedup
+- `TicketStore`: issue, countersign, double-spend detection, notarization tracking
+- `notarizeLoop()`: hourly batch notarization with seed nodes
+- `AntiCollusionCheck()`: three-layer anti-collusion verification:
+  - Layer 1: Upstream response fingerprint
+  - Layer 2: Random sampling (5% re-probe)
+  - Layer 3: Statistical anomaly detection (>50% deviation from average flags provider)
+- `relay.go`: `recordContributionToLedger` now issues and countersigns a ticket for each contribution
+- API endpoints: `POST /api/ticket/submit`, `POST /api/ticket/notarize`, `GET /api/ticket/anti-collusion`
+- `contribution_ledger_init.go`: `initTicketStore()` + `notarizeLoop()` started after ledger init
+
 ## [4.3.17] - 2026-08-06
 
 ### ✨ Feature: Active probing and cross-verification (§10.2-10.3)
