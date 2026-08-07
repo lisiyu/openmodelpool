@@ -149,8 +149,7 @@ func (n *NATManager) ProbeDirect(nodeID, targetURL string) bool {
 	}
 
 	start := time.Now()
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := GetSharedHTTPClient().Do(req)
 	latency := float64(time.Since(start).Milliseconds())
 
 	if err != nil {

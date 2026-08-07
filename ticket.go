@@ -56,6 +56,42 @@ func initTicketStore() {
 		notarized: make(map[string]bool),
 	}
 	slog.Info("ticket store initialized")
+	go startTicketCleanup()
+}
+
+// Cleanup removes fingerprints and tickets older than maxAge to prevent
+// unbounded memory growth in long-running nodes.
+func (ts *TicketStore) Cleanup(maxAge time.Duration) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	cutoff := time.Now().Add(-maxAge)
+	removed := 0
+	for fp, seenAt := range ts.seen {
+		if seenAt.Before(cutoff) {
+			delete(ts.seen, fp)
+			delete(ts.notarized, fp)
+			removed++
+		}
+	}
+	for id, t := range ts.tickets {
+		if ts2, err := time.Parse(time.RFC3339, t.Timestamp); err == nil && ts2.Before(cutoff) {
+			delete(ts.tickets, id)
+		}
+	}
+	if removed > 0 {
+		slog.Info("ticket store cleanup", "removed_fingerprints", removed, "remaining", len(ts.seen))
+	}
+}
+
+// startTicketCleanup runs periodic cleanup every 2 hours.
+func startTicketCleanup() {
+	ticker := time.NewTicker(2 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		if ticketStore != nil {
+			ticketStore.Cleanup(24 * time.Hour)
+		}
+	}
 }
 
 // IssueTicket creates a new usage ticket with the requestor's signature.
@@ -268,13 +304,13 @@ func AntiCollusionCheck(tickets []*UsageTicket) (anomalies int, flagged []string
 		avgAmount = totalAmount / int64(providerCount)
 	}
 
+	flaggedSet := make(map[string]bool)
 	for pid, s := range providerStats {
 		if avgSuccess > 0 {
 			deviation := float64(s.success) / float64(avgSuccess)
 			if deviation < 0.5 || deviation > 1.5 {
-				anomalies++
-				flagged = append(flagged, pid)
-				slog.Warn("anti-collusion: provider deviation >50%",
+				flaggedSet[pid] = true
+				slog.Warn("anti-collusion: provider success deviation >50%",
 					"provider", pid, "success", s.success,
 					"avg", avgSuccess, "deviation", fmt.Sprintf("%.2f", deviation))
 			}
@@ -282,15 +318,16 @@ func AntiCollusionCheck(tickets []*UsageTicket) (anomalies int, flagged []string
 		if avgAmount > 0 && s.amount > 0 {
 			amountDev := float64(s.amount) / float64(avgAmount)
 			if amountDev < 0.5 || amountDev > 1.5 {
-				if !contains(flagged, pid) {
-					anomalies++
-					flagged = append(flagged, pid)
-					slog.Warn("anti-collusion: amount deviation >50%",
-						"provider", pid, "amount", s.amount,
-						"avg", avgAmount, "deviation", fmt.Sprintf("%.2f", amountDev))
-				}
+				flaggedSet[pid] = true
+				slog.Warn("anti-collusion: provider amount deviation >50%",
+					"provider", pid, "amount", s.amount,
+					"avg", avgAmount, "deviation", fmt.Sprintf("%.2f", amountDev))
 			}
 		}
+	}
+	anomalies = len(flaggedSet)
+	for pid := range flaggedSet {
+		flagged = append(flagged, pid)
 	}
 
 	return anomalies, flagged
@@ -345,8 +382,13 @@ func handleNotarize(w http.ResponseWriter, r *http.Request) {
 		if t == nil || t.Fingerprint == "" {
 			continue
 		}
-		if !ticketStore.IsDoubleSpend(t.Fingerprint) {
-			ticketStore.Countersign(t)
+		if ticketStore.IsDoubleSpend(t.Fingerprint) {
+			slog.Debug("notarize rejected: double-spend", "fingerprint", t.Fingerprint[:min(16, len(t.Fingerprint))])
+			continue
+		}
+		if err := ticketStore.Countersign(t); err != nil {
+			slog.Debug("notarize countersign failed", "id", t.ID, "error", err)
+			continue
 		}
 		ticketStore.MarkNotarized(t.Fingerprint)
 		count++

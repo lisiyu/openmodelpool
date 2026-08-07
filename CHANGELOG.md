@@ -1,5 +1,17 @@
 # Changelog
 
+## [v4.3.19] - 2026-08-08
+
+### Bug Fixes
+- **ticket: 修复 TicketStore 内存泄漏** — 添加 `Cleanup()` 方法，每 2 小时清理超过 24h 的 fingerprint 和 ticket，防止长时间运行节点内存无限增长
+- **ticket: 修复 handleNotarize 逻辑** — 不再将 double-spend ticket 标记为已公证，攻击者无法通过重复提交来"洗白"非法 ticket
+- **ticket: 修复 AntiCollusionCheck 重复计数** — 使用 `flaggedSet` 去重，同一 provider 不会因 success deviation 和 amount deviation 被重复计入 anomalies
+
+### Performance
+- **nat_traversal: 复用共享 HTTP Client** — `ProbeDirect` 不再每次创建新 `http.Client{}`，改用 `GetSharedHTTPClient()` 复用连接池
+
+### Security
+- 延续 v4.3.18 安全加固（data dir 0700、X-Forwarded-Proto trust gate）
 ## [4.3.18] - 2026-08-07
 
 ### ✨ Feature: Ticket anti-double-spend system (§9.3-9.4)
