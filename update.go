@@ -60,6 +60,17 @@ var releaseSigningPubKey = ed25519.PublicKey{
 	132, 172, 139, 186, 201, 136, 170, 246,
 }
 
+// githubDownloadMirrors lists prefix-based GitHub download accelerators.
+// Each entry is prepended to the original download URL.
+// Direct GitHub is tried first; mirrors are fallbacks in order.
+// Mirrors that go offline are silently skipped by the retry logic.
+var githubDownloadMirrors = []string{
+	"https://gh-proxy.com/",
+	"https://ghproxy.net/",
+	"https://mirror.ghproxy.com/",
+	"https://gh-proxy.llyke.com/",
+}
+
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
@@ -510,19 +521,58 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 	exePath = filepath.Clean(exePath)
 
 	asset := platformAssetName()
-	downloadURL := fmt.Sprintf("https://github.com/lisiyu/openmodelpool/releases/download/%s/%s", target, asset)
+	directURL := fmt.Sprintf("https://github.com/lisiyu/openmodelpool/releases/download/%s/%s", target, asset)
+
+	// Build download sources: direct GitHub first, then each mirror.
+	type downloadSource struct {
+		label string
+		url   string
+	}
+	sources := []downloadSource{{label: "GitHub 直连", url: directURL}}
+	for _, mirror := range githubDownloadMirrors {
+		sources = append(sources, downloadSource{
+			label: mirror,
+			url:   mirror + directURL,
+		})
+	}
 
 	tmpPath := filepath.Join(um.dataDir, fmt.Sprintf(".omp-update-%s.tmp", target))
 	_ = os.Remove(tmpPath) // best-effort cleanup of any stale temp
 
-	if err := um.downloadFile(downloadURL, tmpPath); err != nil {
-		um.setLocalFailed("下载失败: " + err.Error())
+	// Try each source in order; on failure, fall through to next mirror.
+	var downloadErr error
+	var usedSource downloadSource
+	for i, src := range sources {
+		if i > 0 {
+			slog.Info("trying mirror download", "mirror", src.label, "attempt", i+1)
+			um.setLocalPhase(PhaseDownloading, 5+i*5,
+				fmt.Sprintf("直连失败，切换镜像 %s 下载…", src.label), "")
+		}
+		downloadErr = um.downloadFile(src.url, tmpPath)
+		if downloadErr == nil {
+			usedSource = src
+			break
+		}
+		slog.Warn("download source failed", "source", src.label, "error", downloadErr)
+		_ = os.Remove(tmpPath) // clean partial download
+	}
+	if downloadErr != nil {
+		um.setLocalFailed(fmt.Sprintf("下载失败（已尝试 %d 个源）: %v", len(sources), downloadErr))
 		return
+	}
+	if usedSource.label != "GitHub 直连" {
+		slog.Info("download succeeded via mirror", "mirror", usedSource.label)
 	}
 
 	// P0-1: Verify SHA-256 checksum from GitHub release assets.
-	checksumURL := downloadURL + ".sha256"
+	// Try checksum from the same source first, then fall back to direct.
+	checksumURL := usedSource.url + ".sha256"
 	expectedHash, err := um.fetchChecksum(checksumURL)
+	if err != nil && usedSource.url != directURL {
+		// Mirror checksum failed; try direct GitHub for checksum.
+		slog.Warn("mirror checksum failed, trying direct", "error", err)
+		expectedHash, err = um.fetchChecksum(directURL + ".sha256")
+	}
 	if err != nil {
 		slog.Warn("checksum unavailable, skipping verification", "error", err)
 	} else if um.downloadHash != expectedHash {
@@ -536,7 +586,7 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 	// P2: Verify Ed25519 signature if a .sig file is available in the release.
 	// This provides cryptographic integrity verification beyond SHA-256,
 	// protecting against scenarios where the GitHub repository is compromised.
-	sigURL := downloadURL + ".sig"
+	sigURL := directURL + ".sig"
 	sigBytes, err := um.fetchSignature(sigURL)
 	if err != nil {
 		slog.Warn("Ed25519 signature unavailable, falling back to SHA-256 only", "error", err)
@@ -585,47 +635,83 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 	os.Exit(0)
 }
 
-// downloadFile fetches url into dest, validating a non-empty result.
-// It updates local progress along the way. Caller must NOT hold um.mu.
+// downloadFile fetches url into dest with retry and extended timeout.
+// It retries up to 3 times with exponential backoff to handle unreliable
+// GitHub connectivity from regions like mainland China.
+// Caller must NOT hold um.mu.
 func (um *UpdateManager) downloadFile(url, dest string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", "OpenModelPool/"+AppVersion)
+	const (
+		maxAttempts     = 3
+		downloadTimeout = 5 * time.Minute
+		baseBackoff     = 2 * time.Second
+	)
+	client := GetSharedHTTPClientWithTimeout(downloadTimeout)
 
-	client := GetSharedHTTPClient()
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("下载返回 HTTP %d", resp.StatusCode)
-	}
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 {
+			backoff := baseBackoff * time.Duration(1<<(attempt-1))
+			slog.Info("retrying download", "attempt", attempt, "backoff", backoff, "url", url)
+			um.setLocalPhase(PhaseDownloading, 5+int(attempt)*5,
+				fmt.Sprintf("第 %d 次重试（等待 %v）…", attempt, backoff), "")
+			time.Sleep(backoff)
+		}
 
-	out, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+		if err != nil {
+			return err // non-retryable
+		}
+		req.Header.Set("User-Agent", "OpenModelPool/"+AppVersion)
 
-	h := sha256.New()
-	written, err := io.Copy(io.MultiWriter(out, h), resp.Body)
-	if err != nil {
-		return err
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			slog.Warn("download attempt failed", "attempt", attempt, "error", err)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("下载返回 HTTP %d", resp.StatusCode)
+			slog.Warn("download attempt failed", "attempt", attempt, "status", resp.StatusCode)
+			if resp.StatusCode >= 500 {
+				continue // server error, retryable
+			}
+			return lastErr // 4xx is not retryable
+		}
+
+		out, err := os.Create(dest)
+		if err != nil {
+			resp.Body.Close()
+			return err // non-retryable
+		}
+
+		h := sha256.New()
+		written, copyErr := io.Copy(io.MultiWriter(out, h), resp.Body)
+		resp.Body.Close()
+		out.Close()
+
+		if copyErr != nil {
+			_ = os.Remove(dest)
+			lastErr = copyErr
+			slog.Warn("download attempt failed during transfer", "attempt", attempt, "written", written, "error", copyErr)
+			continue
+		}
+		if written == 0 {
+			_ = os.Remove(dest)
+			lastErr = fmt.Errorf("下载文件为空")
+			slog.Warn("download attempt returned empty file", "attempt", attempt)
+			continue
+		}
+
+		// Success.
+		um.downloadHash = hex.EncodeToString(h.Sum(nil))
+		if runtime.GOOS != "windows" {
+			_ = os.Chmod(dest, 0700) // #nosec G302 -- the binary needs the owner exec bit; 0700 is the minimum and is not group/world accessible
+		}
+		um.setLocalPhase(PhaseDownloading, 70, fmt.Sprintf("下载完成（%d 字节）", written), "")
+		return nil
 	}
-	if written == 0 {
-		return fmt.Errorf("下载文件为空")
-	}
-	um.downloadHash = hex.EncodeToString(h.Sum(nil))
-	if runtime.GOOS != "windows" {
-		_ = os.Chmod(dest, 0700) // #nosec G302 -- the binary needs the owner exec bit; 0700 is the minimum and is not group/world accessible
-	}
-	um.setLocalPhase(PhaseDownloading, 70, fmt.Sprintf("下载完成（%d 字节）", written), "")
-	return nil
+	return fmt.Errorf("下载失败（已重试 %d 次）: %w", maxAttempts, lastErr)
 }
 
 // fetchChecksum downloads a .sha256 checksum file and returns the hex hash.
