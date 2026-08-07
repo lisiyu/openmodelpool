@@ -660,7 +660,7 @@ func TestQAFrontendWiring(t *testing.T) {
 		`id="versionUpdateCard"`,
 		`id="versionUpdateBody"`,
 		`id="updateStatusArea"`,
-		`/admin-update.js?v=345`,
+		`/admin-update.js?v=346`,
 	} {
 		if !strings.Contains(h, need) {
 			t.Errorf("admin.html missing required fragment: %q", need)

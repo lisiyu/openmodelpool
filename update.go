@@ -652,7 +652,7 @@ func (um *UpdateManager) downloadFile(url, dest string) error {
 		if attempt > 1 {
 			backoff := baseBackoff * time.Duration(1<<(attempt-1))
 			slog.Info("retrying download", "attempt", attempt, "backoff", backoff, "url", url)
-			um.setLocalPhase(PhaseDownloading, 5+int(attempt)*5,
+			um.setLocalPhase(PhaseDownloading, 5+attempt*5,
 				fmt.Sprintf("第 %d 次重试（等待 %v）…", attempt, backoff), "")
 			time.Sleep(backoff)
 		}
