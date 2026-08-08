@@ -249,6 +249,17 @@ func (n *NATManager) ShouldUseDirect(nodeID string) bool {
 	return r.DirectOK && time.Since(r.ProbedAt) < 5*time.Minute
 }
 
+// PreferRelay reports whether this node's NAT behaviour makes direct peering
+// unreliable, so relay must be the primary transport. A symmetric NAT remaps
+// the source port for every distinct destination, defeating both TCP/UDP hole
+// punching and direct connections — there is no point probing direct, and
+// callers should fall back to relay. full-cone / open NATs may attempt direct.
+func (n *NATManager) PreferRelay() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.natType == "symmetric"
+}
+
 // handleNATStatus returns the current NAT traversal status.
 func handleNATStatus(w http.ResponseWriter, r *http.Request) {
 	if natMgr == nil {

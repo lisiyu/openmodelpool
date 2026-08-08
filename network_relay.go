@@ -272,8 +272,13 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 	}
 
 	// NAT traversal (§7.5): attempt direct connection if cached probe is stale.
-	// If direct probe fails, continue with relay (fallback).
-	if natMgr != nil && !natMgr.ShouldUseDirect(entry.NodeID) {
+	// A symmetric NAT remaps the source port per destination, so a direct
+	// connection cannot be established — skip the (futile) probe and go
+	// straight to relay. Otherwise, probe direct when the cached result is
+	// stale; relay remains the fallback if the probe fails.
+	if natMgr != nil && natMgr.PreferRelay() {
+		// symmetric NAT: relay only
+	} else if natMgr != nil && !natMgr.ShouldUseDirect(entry.NodeID) {
 		go natMgr.ProbeDirect(entry.NodeID, targetAddr)
 	}
 

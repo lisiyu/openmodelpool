@@ -71,3 +71,25 @@ func TestClassifyNAT(t *testing.T) {
 		}
 	}
 }
+
+// TestPreferRelay verifies the NAT-type-driven transport decision: a symmetric
+// NAT must prefer relay (direct peering is unreliable), everything else may
+// attempt direct. This is the gate that keeps P1-2b from wasting probe
+// attempts on symmetric NATs.
+func TestPreferRelay(t *testing.T) {
+	cases := []struct {
+		natType string
+		want    bool
+	}{
+		{"symmetric", true},
+		{"full_cone", false},
+		{"open", false},
+		{"unknown", false},
+	}
+	for _, c := range cases {
+		n := &NATManager{natType: c.natType}
+		if got := n.PreferRelay(); got != c.want {
+			t.Fatalf("natType=%s: PreferRelay=%v want %v", c.natType, got, c.want)
+		}
+	}
+}

@@ -27,7 +27,8 @@
 
 - [x] **P1-1 DHT 网络 I/O（单进程多节点验证）**：为 `dht_kademlia.go` 的惰性 K-Bucket 表补上真正的 Kademlia RPC 层（新增 `dht_networking.go`）。实现 `DHTMessage`（PING/PONG、FIND_NODE、FIND_VALUE、STORE）+ `DHTTransport` 可插拔传输 + `DHTNode`（含迭代查找算法）+ `InMemoryDHTNetwork`（单进程内多节点路由，作验证台）。`dht_networking_test.go` 四个用例证明：Ping/Pong、A 仅知 B 却经 B 学到 C 的**多跳发现**、值经 relay 存储并被 D 跨跳取回、缺失键返回未找到。这是 P1-1 的第一个里程碑（先单进程多节点验证）；后续再桥接真实 UDP/QUIC/HTTP 传输。**未改动现有 federation/gossip 代码路径**（加法式、零耦合）。
 - [x] P1-2a STUN 响应解析抽离为纯函数 `parseSTUNResponse` + NAT 类型判定 `classifyNAT`（full_cone/symmetric，RFC 5780 轻量探测：对比两个 STUN 服务器返回的公网端点是否一致）+ `nat_traversal_test.go` 单测（此前解析内联、零测试、natType 恒为 "unknown"）。`discoverPublicAddr` 改为轮询全部 STUN 服务器后再判定
-- [ ] P1-2b 真实 UDP 打洞 / 直连通道建立（在 P1-2a 判定基础上：symmetric 强制走中继、cone 尝试直连）
+- [x] P1-2b-1 NAT 类型驱动路由：`NATManager.PreferRelay()` 在 `symmetric` NAT 下强制走中继、跳过后台直连探测（`network_relay.go` 已接线，无行为回退风险），`nat_traversal_test.go` 新增 `TestPreferRelay` 表驱动验证
+- [ ] P1-2b-2 真实 UDP 打洞 / 直连通道建立（cone NAT 尝试直连：经 relay/gossip 交换 reflexive 地址 + 并发打洞 + 直连通道旁路 relay）
 - [ ] P1-3 贡献账本多节点冗余：联邦内 N 个节点各存一份 + 哈希校验（替代真 IPFS 的短期方案）
 
 ## Phase 2 — 贡献透明与社区共治（公益信任）
