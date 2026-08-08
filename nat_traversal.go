@@ -53,21 +53,28 @@ func (n *NATManager) stunLoop() {
 	}
 }
 
-// discoverPublicAddr attempts STUN binding to learn the public address.
+// discoverPublicAddr attempts STUN binding against every configured server to
+// learn the public address and infer the NAT behaviour (see classifyNAT).
+// All servers are queried so the NAT type can be distinguished; the first
+// successful mapping is advertised as this node's public address.
 func (n *NATManager) discoverPublicAddr() {
+	var addrs []string
 	for _, server := range n.stunServers {
 		addr, err := stunQuery(server)
 		if err != nil {
 			slog.Debug("STUN query failed", "server", server, "error", err)
 			continue
 		}
-		n.mu.Lock()
-		n.publicAddr = addr
-		n.natType = "unknown"
-		n.mu.Unlock()
-		slog.Info("STUN discovered public address", "addr", addr)
+		addrs = append(addrs, addr)
+	}
+	if len(addrs) == 0 {
 		return
 	}
+	n.mu.Lock()
+	n.publicAddr = addrs[0]
+	n.natType = classifyNAT(addrs)
+	n.mu.Unlock()
+	slog.Info("STUN discovered public address", "addr", addrs[0], "nat_type", n.natType)
 }
 
 // stunQuery performs a simple STUN binding request over UDP and extracts
@@ -105,24 +112,32 @@ func stunQuery(serverAddr string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read STUN response: %w", err)
 	}
+	return parseSTUNResponse(buf[:n])
+}
 
-	if n < 28 || buf[0] != 0x01 || buf[1] != 0x01 {
+// parseSTUNResponse extracts the XOR-MAPPED-ADDRESS from a STUN Binding
+// Response (RFC 5389). It returns the mapped "ip:port", or an error if the
+// packet is malformed or lacks the attribute. Kept as a pure function so the
+// (over-the-network) STUN handshake can be verified with crafted packets in
+// nat_traversal_test.go.
+func parseSTUNResponse(buf []byte) (string, error) {
+	if len(buf) < 28 || buf[0] != 0x01 || buf[1] != 0x01 {
 		return "", fmt.Errorf("invalid STUN response")
 	}
-
-	// Parse XOR-MAPPED-ADDRESS attribute
-	for i := 20; i+4 <= n; {
+	// Walk the attribute list starting after the 20-byte message header.
+	for i := 20; i+4 <= len(buf); {
 		attrType := uint16(buf[i])<<8 | uint16(buf[i+1])
 		attrLen := uint16(buf[i+2])<<8 | uint16(buf[i+3])
 		if attrType == 0x0020 { // XOR-MAPPED-ADDRESS
-			if int(attrLen) < 8 || i+8 > n {
+			if int(attrLen) < 8 || i+8 > len(buf) {
 				break
 			}
 			family := buf[i+5]
 			xorPort := uint16(buf[i+6])<<8 | uint16(buf[i+7])
 			port := xorPort ^ 0x2112
 			if family == 0x01 { // IPv4
-				xorIP := uint32(buf[i+8])<<24 | uint32(buf[i+9])<<16 | uint32(buf[i+10])<<8 | uint32(buf[i+11])
+				xorIP := uint32(buf[i+8])<<24 | uint32(buf[i+9])<<16 |
+					uint32(buf[i+10])<<8 | uint32(buf[i+11])
 				ip := xorIP ^ 0x2112A442
 				return fmt.Sprintf("%d.%d.%d.%d:%d",
 					(ip>>24)&0xFF, (ip>>16)&0xFF, (ip>>8)&0xFF, ip&0xFF, port), nil
@@ -134,6 +149,37 @@ func stunQuery(serverAddr string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no XOR-MAPPED-ADDRESS in STUN response")
+}
+
+// classifyNAT infers a coarse NAT behaviour from the mapped addresses returned
+// by two or more distinct STUN servers (RFC 5780 §4.3 lightweight test):
+//   - identical (ip,port) across servers  -> "full_cone" (cone NAT or open)
+//   - differing port (or ip) across servers -> "symmetric"
+// A single successful response yields "unknown" (insufficient data to decide).
+// Behind a symmetric NAT direct peering is unreliable, so callers should fall
+// back to relay — erring toward "symmetric" here is the safe choice.
+func classifyNAT(addrs []string) string {
+	if len(addrs) < 2 {
+		return "unknown"
+	}
+	firstIP, firstPort := splitHostPortSafe(addrs[0])
+	for _, a := range addrs[1:] {
+		ip, port := splitHostPortSafe(a)
+		if ip != firstIP || port != firstPort {
+			return "symmetric"
+		}
+	}
+	return "full_cone"
+}
+
+// splitHostPortSafe parses "host:port"; on failure it returns empty strings so
+// classifyNAT treats any unparseable address as a mismatch (conservative).
+func splitHostPortSafe(addr string) (string, string) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", ""
+	}
+	return host, port
 }
 
 // ProbeDirect attempts a direct HTTP connection to the target node with a
