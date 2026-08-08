@@ -657,6 +657,51 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 	os.Exit(1)
 }
 
+// progressReader wraps an io.Reader and periodically reports download
+// progress via a callback. Keeps the admin UI progress bar alive during
+// large binary downloads that may take minutes on slow connections.
+type progressReader struct {
+	reader      io.Reader
+	total       int64 // ContentLength; -1 if unknown
+	written     int64
+	callback    func(progress int, written int64)
+	lastReport  time.Time
+	minInterval time.Duration
+	lastPercent int
+}
+
+func newProgressReader(r io.Reader, total int64, cb func(int, int64)) *progressReader {
+	return &progressReader{
+		reader:      r,
+		total:       total,
+		callback:    cb,
+		minInterval: 500 * time.Millisecond,
+		lastReport:  time.Now(),
+		lastPercent: -1,
+	}
+}
+
+func (pr *progressReader) Read(p []byte) (int, error) {
+	n, err := pr.reader.Read(p)
+	pr.written += int64(n)
+	if pr.callback != nil && pr.written > 0 {
+		now := time.Now()
+		percent := -1
+		if pr.total > 0 {
+			percent = int(pr.written * 100 / pr.total)
+			if percent > 65 {
+				percent = 65 // cap at 65% for downloading phase
+			}
+		}
+		if now.Sub(pr.lastReport) >= pr.minInterval || percent != pr.lastPercent {
+			pr.callback(percent, pr.written)
+			pr.lastReport = now
+			pr.lastPercent = percent
+		}
+	}
+	return n, err
+}
+
 // downloadFile fetches url into dest with retry and extended timeout.
 // It retries up to 3 times with exponential backoff to handle unreliable
 // GitHub connectivity from regions like mainland China.
@@ -708,7 +753,16 @@ func (um *UpdateManager) downloadFile(url, dest string) error {
 		}
 
 		h := sha256.New()
-		written, copyErr := io.Copy(io.MultiWriter(out, h), resp.Body)
+		progressR := newProgressReader(resp.Body, resp.ContentLength, func(progress int, written int64) {
+			if progress >= 0 {
+				um.setLocalPhase(PhaseDownloading, progress,
+					fmt.Sprintf("下载中… %d%% (%.1f MB)", progress, float64(written)/1024/1024), "")
+			} else {
+				um.setLocalPhase(PhaseDownloading, 10,
+					fmt.Sprintf("下载中… (%.1f MB)", float64(written)/1024/1024), "")
+			}
+		})
+		written, copyErr := io.Copy(io.MultiWriter(out, h), progressR)
 		resp.Body.Close()
 		out.Close()
 
