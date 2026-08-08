@@ -376,7 +376,7 @@ stop_omp() {
     elif [ -f /usr/local/etc/rc.d/openmodelpool.sh ]; then
         /usr/local/etc/rc.d/openmodelpool.sh stop 2>/dev/null || true
     else
-        pkill -f "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
+        pkill -f "$BINARY_NAME" 2>/dev/null || true
     fi
 }
 
@@ -485,7 +485,7 @@ install_omp() {
     start_omp
     sleep 3
 
-    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
+    if pgrep -f "$BINARY_NAME" >/dev/null 2>&1; then
         NAS_IP=$(ip addr show | grep -oP 'inet \K[0-9.]+' | grep -v '127.0.0.1' | head -1)
         echo ""
         echo -e "${GREEN}  ╔══════════════════════════════════════════╗${NC}"
@@ -604,7 +604,7 @@ case "\$1" in
   start)  su root -c "$INSTALL_DIR/start.sh &" ;;
   stop)   $INSTALL_DIR/stop.sh ;;
   restart) \$0 stop; sleep 2; \$0 start ;;
-  status) pgrep -f "$INSTALL_DIR/$BINARY_NAME" && echo "运行中" || echo "未运行" ;;
+  status) pgrep -f "$BINARY_NAME" && echo "运行中" || echo "未运行" ;;
   *) echo "Usage: \$0 {start|stop|restart|status}"; exit 1 ;;
 esac
 exit 0
@@ -706,7 +706,7 @@ upgrade_omp() {
     start_omp
     sleep 3
 
-    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
+    if pgrep -f "$BINARY_NAME" >/dev/null 2>&1; then
         write_ok "升级成功！数据已保留。"
     else
         write_err "启动失败，请检查日志: $INSTALL_DIR/data/app.log"
@@ -1411,7 +1411,7 @@ EOF
     start_omp
     sleep 3
 
-    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
+    if pgrep -f "$BINARY_NAME" >/dev/null 2>&1; then
         write_ok "端口已修改为 $NEW_PORT，服务已重启"
         NAS_IP=$(ip addr show | grep -oP 'inet \K[0-9.]+' | grep -v '127.0.0.1' | head -1)
         echo -e "  管理面板: ${CYAN}http://${NAS_IP}:${NEW_PORT}/admin${NC}"
@@ -1428,8 +1428,11 @@ show_status() {
 
     echo ""
     echo -e "  ${CYAN}── OMP 服务 ──${NC}"
-    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
-        PID=$(pgrep -f "$INSTALL_DIR/$BINARY_NAME" | head -1)
+    if command -v systemctl > /dev/null 2>&1 && systemctl is-active --quiet openmodelpool 2>/dev/null; then
+        PID=$(pgrep -f "$BINARY_NAME" | head -1)
+        write_ok "OMP 运行中 (PID: $PID, systemd)"
+    elif pgrep -f "$BINARY_NAME" > /dev/null 2>&1; then
+        PID=$(pgrep -f "$BINARY_NAME" | head -1)
         write_ok "OMP 运行中 (PID: $PID)"
     else
         write_err "OMP 未运行"
@@ -1528,7 +1531,7 @@ restart_all() {
     sleep 2
     start_omp
     sleep 3
-    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
+    if pgrep -f "$BINARY_NAME" >/dev/null 2>&1; then
         write_ok "OMP 已启动"
     else
         write_err "OMP 启动失败"
@@ -1663,7 +1666,7 @@ auto_update() {
     start_omp 2>/dev/null || true
     sleep 3
 
-    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
+    if pgrep -f "$BINARY_NAME" >/dev/null 2>&1; then
         echo "[$(date)] ✅ 自动更新成功: $LATEST_TAG" >> "$LOG_FILE"
     else
         echo "[$(date)] ❌ 启动失败，回滚..." >> "$LOG_FILE"
