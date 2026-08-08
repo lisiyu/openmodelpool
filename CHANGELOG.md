@@ -1,5 +1,15 @@
 # Changelog
 
+## [v4.3.20] - 2026-08-08
+
+### Bug Fixes
+- **update: 修复自更新后服务无法重启的问题** — `TriggerSelfUpdate` 不再依赖 `os.Exit(0)` + systemd Restart 策略来拉起新进程。改为：
+  1. 自动检测是否运行在 systemd 下（通过 /proc/self/cgroup 解析 .service 单元名）
+  2. 若检测到 systemd，显式调用 `systemctl restart <service>` 重启服务
+  3. 若 systemctl 失败（非 systemd 环境、权限不足等），回退到 `os.Exit(1)`，触发 `Restart=on-failure` / `Restart=always` 策略
+  修复前：`os.Exit(0)` 在 `Restart=on-failure` 策略下不会触发重启，导致服务挂死
+  修复后：无论 systemd 策略配置如何，新进程都能被正确拉起
+
 ## [v4.3.19] - 2026-08-08
 
 ### Bug Fixes

@@ -31,6 +31,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -630,9 +631,30 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 	// Give the HTTP layer a moment to flush any in-flight response
 	// (e.g. the /api/admin/update/start 200) before we die.
 	time.Sleep(300 * time.Millisecond)
-	slog.Info("self-update binary replaced; exiting for supervisor restart",
+	slog.Info("self-update binary replaced; restarting service",
 		"target", target, "exe", exePath)
-	os.Exit(0)
+
+	// Try to explicitly restart via systemctl. This is more reliable than
+	// relying on systemd's Restart= policy, which may be set to
+	// "on-failure" (would ignore os.Exit(0)) or "no" (would never restart).
+	// If systemctl restart succeeds, the new process takes over immediately.
+	// If it fails (not running under systemd, no permissions, etc.), we fall
+	// back to os.Exit(1) which triggers Restart=on-failure / Restart=always.
+	if svc := detectSystemdService(); svc != "" {
+		slog.Info("attempting explicit systemctl restart", "service", svc)
+		if err := restartViaSystemd(svc); err != nil {
+			slog.Warn("systemctl restart failed, falling back to exit(1)", "error", err)
+		} else {
+			// systemctl restart succeeded — the new process is already starting.
+			// We still need to exit, but the restart is already in flight.
+			os.Exit(0)
+		}
+	}
+
+	// Fallback: exit with code 1 so systemd Restart=on-failure will pick it up.
+	// Exit code 1 also works with Restart=always.
+	slog.Warn("exiting with code 1 for supervisor restart", "target", target)
+	os.Exit(1)
 }
 
 // downloadFile fetches url into dest with retry and extended timeout.
@@ -800,6 +822,49 @@ func atomicReplace(exePath, tmpPath string) error {
 	}
 	if err := os.Rename(tmpPath, exePath); err != nil {
 		return fmt.Errorf("原子替换失败: %w", err)
+	}
+	return nil
+}
+
+// detectSystemdService returns the systemd service unit name if this process
+// is managed by systemd, or "" otherwise. It inspects the cgroup path for a
+// .service suffix, which is the standard indicator.
+func detectSystemdService() string {
+	// Method 1: check NOTIFY_SOCKET (set by systemd when Type=notify).
+	if os.Getenv("NOTIFY_SOCKET") != "" {
+		// Try to derive service name from cgroup.
+	}
+
+	// Method 2: inspect /proc/self/cgroup for a .service unit.
+	data, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return "" // not Linux, or cgroup not readable
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		// cgroup v2 format: "0::/system.slice/openmodelpool.service"
+		// cgroup v1 format: "1:name=systemd:/system.slice/omp.service"
+		if idx := strings.Index(line, ".service"); idx >= 0 {
+			// Walk back to find the service name.
+			slashIdx := strings.LastIndex(line[:idx], "/")
+			if slashIdx >= 0 {
+				return line[slashIdx+1 : idx+len(".service")]
+			}
+		}
+	}
+	return ""
+}
+
+// restartViaSystemd attempts to restart the named systemd service.
+// It shells out to "systemctl restart" which is reliable and well-tested.
+func restartViaSystemd(serviceName string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "systemctl", "restart", serviceName)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("systemctl restart %s: %w", serviceName, err)
 	}
 	return nil
 }
