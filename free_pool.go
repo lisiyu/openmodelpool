@@ -285,7 +285,7 @@ func mapAwesomeProvider(ap awesomeProvider) (string, []ModelDef, bool, string, b
 	// Determine if anonymous (no API key needed)
 	anonymous := false
 	switch ap.Name {
-	case "OVHcloud AI Endpoints":
+	case "OVHcloud AI Endpoints", "Kilo Code":
 		anonymous = true
 	}
 
