@@ -89,6 +89,15 @@ func setupTestEnv(t *testing.T) *testEnv {
 			}
 			<-cfgInst.done // wait for debounceWriter to fully exit
 		}
+		// Stop multi-user batch save goroutine to prevent goroutine leaks
+		// across the (hundreds of) test cases that each call setupTestEnv.
+		if muInst != nil && muInst.saveStopCh != nil {
+			select {
+			case <-muInst.saveStopCh:
+			default:
+				close(muInst.saveStopCh)
+			}
+		}
 		// Restore globals
 		enc = origEnc
 		cfg = origCfg

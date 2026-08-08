@@ -476,8 +476,9 @@ func (e *WAFEngine) cleanupIPLimitersLocked() {
 }
 
 // wafMiddleware enforces the WAF engine on inbound requests. It is a no-op when
-// WAF is disabled (the default), so normal traffic is never affected until an
-// operator explicitly enables WAF via configuration.
+// WAF is disabled (set waf_enabled=false). The default configuration enables WAF
+// (waf_enabled defaults to "true" in Reload), so proxy and relay traffic is screened
+// by default until an operator explicitly disables WAF via configuration.
 func wafMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if wafEngine == nil || !wafEngine.Enabled() {

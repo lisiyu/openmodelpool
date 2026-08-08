@@ -49,12 +49,14 @@ func startHeartbeatLoop() {
 		defer ticker.Stop()
 		slog.Info("heartbeat loop started",
 			"interval", getHeartbeatInterval().String())
-		select {
+		for {
+			select {
 			case <-ticker.C:
 				runHeartbeatOnce()
 			case <-globalStopCh:
 				return
 			}
+		}
 	}()
 }
 
@@ -208,12 +210,14 @@ func startRegionSyncLoop() {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
-		select {
+		for {
+			select {
 			case <-ticker.C:
 				// No-op today; see TODO above.
 			case <-globalStopCh:
 				return
 			}
+		}
 	}()
 }
 

@@ -10,6 +10,25 @@ import (
 	"time"
 )
 
+// configDebounceWindow is how long the writer coalesces rapid config writes
+// before flushing to disk. The wait is interruptible by stopCh so shutdown is
+// never delayed by a full window.
+const configDebounceWindow = 3 * time.Second
+
+// configDebounceOverride, when non-zero, replaces configDebounceWindow. It exists
+// so tests can shrink the coalescing window: with the production value every test
+// that writes config would otherwise wait out a full 3s window on teardown.
+// Production code never sets this.
+var configDebounceOverride time.Duration
+
+// debounceWindow returns the effective coalescing window for this Config.
+func (c *Config) debounceWindow() time.Duration {
+	if configDebounceOverride > 0 {
+		return configDebounceOverride
+	}
+	return configDebounceWindow
+}
+
 // Config manages persistent JSON config with env var fallback.
 type Config struct {
 	mu      sync.RWMutex
@@ -45,8 +64,23 @@ func (c *Config) debounceWriter() {
 	for {
 		select {
 		case <-c.dirtyCh:
-			time.Sleep(3 * time.Second)
-			// Drain any additional signals during sleep
+			// Debounce window: coalesce rapid writes into one save. The wait
+			// must stay interruptible so shutdown (and tests) are not blocked
+			// for the full window; stopCh falls through to the final flush.
+			timer := time.NewTimer(c.debounceWindow())
+			select {
+			case <-timer.C:
+			case <-c.stopCh:
+				timer.Stop()
+				c.mu.Lock()
+				if c.dirty {
+					c.doSave()
+					c.dirty = false
+				}
+				c.mu.Unlock()
+				return
+			}
+			// Drain any additional signals accumulated during the window
 			for len(c.dirtyCh) > 0 {
 				<-c.dirtyCh
 			}

@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -660,11 +661,16 @@ func TestQAFrontendWiring(t *testing.T) {
 		`id="versionUpdateCard"`,
 		`id="versionUpdateBody"`,
 		`id="updateStatusArea"`,
-		`/admin-update.js?v=346`,
 	} {
 		if !strings.Contains(h, need) {
 			t.Errorf("admin.html missing required fragment: %q", need)
 		}
+	}
+	// The cache-busting query (?v=NNN) is bumped whenever the asset changes, so
+	// assert the script is wired with *some* version rather than pinning a
+	// literal number that goes stale on every asset update.
+	if !regexp.MustCompile(`/admin-update\.js\?v=\d+`).MatchString(h) {
+		t.Errorf("admin.html must load /admin-update.js with a ?v=<number> cache-busting query")
 	}
 
 	js, err := os.ReadFile("admin-update.js")

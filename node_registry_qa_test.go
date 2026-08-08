@@ -255,9 +255,16 @@ func TestNodeRegistry_FileNameSafety_NoTraversalOnDisk(t *testing.T) {
 // writes are serialized by sync.Mutex, and the temp-file suffix (.tmp) is never
 // treated as a .json node file by LoadAll, so there is no shared-memory race and
 // no corruption.
+//
+// n is deliberately modest: the interleaving is what proves the locking is
+// correct, not the raw file count. Larger values mainly stress the host
+// filesystem — on Windows the real-time AV scanner can hold handles on the
+// freshly written files long enough that t.TempDir()'s RemoveAll cleanup blocks
+// for minutes, which stalls the whole suite without telling us anything new
+// about the registry.
 func TestNodeRegistry_ConcurrentSaveAndLoad(t *testing.T) {
 	r := newTestRegistry(t)
-	const n = 64
+	const n = 16
 
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {

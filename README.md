@@ -72,8 +72,7 @@ This is not a commercial product. This is the continuation of internet spirit: *
 |------|---------------|
 | BIP39 mnemonic node identity | ⚠️ `handleNodePubKey` returns empty pubkey; UI not yet exposed. The "Identity System (BIP39 Mnemonic)" below is currently a **vision**; the node pubkey interface is not yet generated/displayed |
 | DHT | ⚠️ Former empty shell removed; `GetDHTStats` returns `{"enabled":false}`. The DHT layer in triple-layer discovery is **currently disabled**; P2P discovery relies on registry/gossip, not DHT |
-| IPFS ledger | ⚠️ Ledger is currently an **in-memory `GossipLedger` stub**, no IPFS persistence; contribution credits stored locally only |
-| WAF 4-layer protection | ⚠️ `handleWAFStatus` returns `enabled:false`; the WAF engine is **not yet wired into the proxy request path** |
+| Contribution ledger | ⚠️ Ledger uses a **local content-hash store** (`ContentHashStore`, `sha256:` prefix) — verifiable but **no IPFS node / distributed persistence**; contribution credits stored locally only |
 | Algorithm governance DAO voting | ⚠️ `propose`/`vote` endpoints accept locally and return status; on-chain / decentralized voting is **not implemented** |
 | 5-dimension network routing | ⚠️ README describes network mode as 5-dimension (trust/reputation/latency/availability/contribution), but the admin weight editor currently exposes **only 4 sliders** |
 | Regional routing | ⚠️ Compiles (minimal stub), but real geo-based routing is not wired (`handleNetworkRegions` returns empty) |
@@ -131,7 +130,7 @@ Failed requests automatically switch to the next available Provider, forming a f
 - Status tracking: `healthy` / `degraded` / `down` / `unknown`
 - Consecutive failure count, last success/failure time, failure reasons
 
-#### 🛡️ WAF 4-Layer Protection（架构已设计，尚未激活）
+#### 🛡️ WAF 4-Layer Protection（已实现，默认启用）
 
 | Layer | Function (designed) |
 |-------|----------|
@@ -140,7 +139,7 @@ Failed requests automatically switch to the next available Provider, forming a f
 | Layer 3: Content Safety | L1 hard block / L2 soft block / L3 log-only |
 | Layer 4: Behavioral | High-frequency repetition / anomaly detection |
 
-> **⚠️ Status: not yet active.** The WAF engine is **not yet wired into the proxy request path**. `handleWAFStatus` currently returns `enabled:false`. The four-layer rules and escalation model (warn → record → temp ban (2h) → long ban (7d) → permanent ban) are **designed and documented**, but enforcement is pending integration.
+> **状态：已实现并默认启用。** `wafMiddleware` 已包裹 `/v1/*` 代理路由与 network relay 路由（`routes.go:17-22`、`routes.go:310-315`），由 `waf_enabled` 配置控制（默认 `true`）。四层规则与升级模型（warn → record → temp ban (2h) → long ban (7d) → permanent ban）均已实现并经测试（`waf_wire_test.go`、`waf_qa_test.go`）。`handleWAFStatus` 返回引擎实时状态。
 
 #### 🔐 Security & Encryption（真实实现）
 
@@ -254,7 +253,7 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 
 #### 💎 Contribution Credit System ⚠️
 
-> **⚠️ Ledger is currently in-memory.** The ledger is an in-memory **`GossipLedger` stub** — there is **no IPFS persistence** yet, and contribution credits are stored **locally only**. The anti-double-spend chain described below is designed but not yet backed by durable/IPFS storage.
+> **⚠️ Ledger is currently local-only.** Contribution records are persisted locally with a **verifiable content hash** (`sha256:` prefix via `ContentHashStore`) — there is **no IPFS / distributed persistence** yet, and contribution credits are stored **locally only**. The anti-double-spend chain is backed by local signed records; durable multi-node replication is a future phase.
 
 - **Earn**: Provide Provider resources that other nodes consume → earn Contribution Credits (requests without request-id are not counted)
 - **Spend**: Call other nodes' Providers, send P2P messages, etc.

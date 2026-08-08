@@ -57,8 +57,6 @@ var algoChain *AlgorithmChain
 // governor is the package-level governance store, wired in initCore().
 var governor *AlgorithmGovernor
 
-var governanceMgr *GovernanceManager
-
 var quotaPriorityMgr *quotaPriorityManager
 
 var tunnel *TunnelManager

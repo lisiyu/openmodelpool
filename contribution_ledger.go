@@ -25,7 +25,7 @@ type ContributionRecord struct {
 }
 
 type StorageProof struct {
-	IPFSHash        string `json:"ipfs_hash"`
+	ContentHash     string `json:"content_hash"`
 	StorageLocation string `json:"storage_location"`
 	Verified        bool   `json:"verified"`
 }
@@ -88,7 +88,7 @@ type ProbeResult struct {
 type GossipLedger struct {
 	mu        sync.RWMutex
 	peerID    string
-	ipfs      *IPFSClient
+	hashStore *ContentHashStore
 	recs      map[string]*ContributionRecord
 	trusts    map[string]*TrustRecord
 	claims    map[string]*CapabilityClaim
@@ -107,7 +107,7 @@ func NewGossipLedger(peerID string) (*GossipLedger, error) {
 	}
 	return &GossipLedger{
 		peerID:    peerID,
-		ipfs:      NewIPFSClient(),
+		hashStore: NewContentHashStore(),
 		recs:      make(map[string]*ContributionRecord),
 		trusts:    make(map[string]*TrustRecord),
 		claims:    make(map[string]*CapabilityClaim),
@@ -153,9 +153,9 @@ func (g *GossipLedger) RecordContribution(record *ContributionRecord) (string, e
 	g.recs[record.ID] = &cp
 	g.mu.Unlock()
 
-	if cid, err := g.ipfs.StoreJSON(record); err == nil {
-		cp.Proof.IPFSHash = cid
-		cp.Proof.StorageLocation = "ipfs"
+	if cid, err := g.hashStore.StoreJSON(record); err == nil {
+		cp.Proof.ContentHash = cid
+		cp.Proof.StorageLocation = "local-hash"
 		g.mu.Lock()
 		g.recs[record.ID] = &cp
 		g.mu.Unlock()
@@ -481,7 +481,7 @@ func LoadGossipLedger(path string) (*GossipLedger, error) {
 	}
 	return &GossipLedger{
 		peerID:    data.PeerID,
-		ipfs:      NewIPFSClient(),
+		hashStore: NewContentHashStore(),
 		recs:      data.Recs,
 		trusts:    data.Trusts,
 		claims:    data.Claims,
@@ -683,26 +683,32 @@ func (cv *CapabilityVerifier) CrossVerifyWithQuorum(modelID string) (verified in
 	return successCount, false
 }
 
-type IPFSClient struct {
+type ContentHashStore struct {
 	mu         sync.RWMutex
-	gateways   []string
 	localCache map[string][]byte
 }
 
-func NewIPFSClient() *IPFSClient {
-	return &IPFSClient{
-		gateways:   []string{"https://ipfs.io", "https://dweb.link"},
+// NewContentHashStore returns a local content-addressing store. It computes a
+// SHA-256 content hash that serves as an integrity proof and keeps a local
+// cache for redundancy.
+//
+// IMPORTANT: This is NOT a real IPFS node. It provides a verifiable content
+// hash and local-only redundancy. Distributed persistence (real IPFS / multi-
+// node replication) is a planned future phase and must not be implied by the
+// naming or behavior here.
+func NewContentHashStore() *ContentHashStore {
+	return &ContentHashStore{
 		localCache: make(map[string][]byte),
 	}
 }
 
-func (c *IPFSClient) StoreJSON(v interface{}) (string, error) {
+func (c *ContentHashStore) StoreJSON(v interface{}) (string, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return "", err
 	}
 	h := sha256.Sum256(data)
-	cid := "Qm" + fmt.Sprintf("%x", h[:])
+	cid := "sha256:" + fmt.Sprintf("%x", h[:])
 	c.mu.Lock()
 	c.localCache[cid] = data
 	c.mu.Unlock()

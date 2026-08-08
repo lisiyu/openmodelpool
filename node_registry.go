@@ -157,6 +157,12 @@ func (r *NodeRegistry) LoadAll() ([]*RouteEntry, error) {
 	if r == nil {
 		return nil, nil
 	}
+	// Read under the same mutex writers use, so a concurrent write+rename can
+	// never be observed mid-flight (which on Windows surfaces as spurious
+	// "cannot find the path specified" errors during directory scans).
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	entries, err := os.ReadDir(r.dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -206,17 +212,22 @@ func (r *NodeRegistry) LoadAll() ([]*RouteEntry, error) {
 // rename) under the registry mutex. The mutex prevents concurrent writes to the
 // same directory/files from racing. Callers must not hold r.mu.
 func (r *NodeRegistry) writeLocked(pn persistedNode) {
-	r.mu.Lock()
-	name := registryFileName(pn.NodeID)
-	path := filepath.Join(r.dir, name)
-	r.mu.Unlock()
-
-	tmp := path + ".tmp"
+	// Marshal outside the lock: it is pure CPU work on local data and holding
+	// the mutex for it would needlessly serialize callers.
 	data, err := json.MarshalIndent(pn, "", "  ")
 	if err != nil {
 		slog.Error("failed to marshal node", "node_id", pn.NodeID, "error", err)
 		return
 	}
+
+	// The lock must cover write+rename (not just path computation), otherwise
+	// concurrent writers race on the same temp file and on the directory while
+	// LoadAll is scanning it.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	path := filepath.Join(r.dir, registryFileName(pn.NodeID))
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		slog.Error("failed to write node temp file", "node_id", pn.NodeID, "error", err)
 		return

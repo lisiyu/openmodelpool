@@ -399,7 +399,7 @@ graph TD
 - **多 Seed 冗余与故障切换**：留 Phase 2/3。
 - **模型能力矩阵之外的定价/计费货币化**：不做。
 
-> **注**：DHT Kademlia 256-bit 发现与 IPFS 贡献账本接口已作为 Phase 1 核心组件实现（内存版），完整网络 I/O 集成与真实 IPFS 接入留 Phase 2。
+> **注（准确性修正）**：DHT Kademlia 发现当前为**内存 K-Bucket 空壳**（`dht_kademlia.go`，无真实网络 I/O，`GetDHTStats` 返回 `enabled:false`）；贡献账本为**本地内容哈希存储**（`ContentHashStore`，`sha256:` 前缀），**未接入任何 IPFS 节点**。所谓"已实现（内存版）"仅为本地桩，完整网络 I/O 与分布式持久化均尚未实现，请勿据此误判进度。
 
 ---
 
