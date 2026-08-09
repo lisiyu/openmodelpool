@@ -25,7 +25,22 @@ type MultiUserManager struct {
 	// Batch save fields (P-3)
 	dirtyCount atomic.Int64
 	saveStopCh chan struct{}
+	// saveDone is closed by batchSaveLoop when it has fully exited, including
+	// its final flush. Callers of StopBatchSave wait on it so that no disk
+	// write can still be in flight after shutdown returns. Mirrors the
+	// stopCh/done pair used by the config debounce writer (see config.go).
+	saveDone chan struct{}
+	// saveOnce makes StopBatchSave idempotent — closing saveStopCh twice
+	// would panic, and shutdown paths can legitimately be reached more than
+	// once (signal handler plus test cleanup).
+	saveOnce sync.Once
 }
+
+// shutdownFlushTimeout bounds how long StopBatchSave waits for the batch save
+// goroutine to finish its final flush. Writing a local JSON file takes
+// milliseconds; the timeout exists only so a wedged goroutine cannot hang
+// process shutdown forever.
+const shutdownFlushTimeout = 5 * time.Second
 
 func initMultiUser(dataDir string) {
 	multiUser = &MultiUserManager{
@@ -34,6 +49,7 @@ func initMultiUser(dataDir string) {
 		apiKeyMap:  make(map[string]string),
 		dataPath:   filepath.Join(dataDir, "consumers.json"),
 		saveStopCh: make(chan struct{}),
+		saveDone:   make(chan struct{}),
 	}
 	multiUser.load()
 	// Start batch save goroutine
@@ -41,7 +57,13 @@ func initMultiUser(dataDir string) {
 }
 
 // batchSaveLoop flushes consumer stats to disk periodically.
+//
+// Closing saveDone on exit is what makes shutdown deterministic: the final
+// flush below writes consumers.json, so a caller that merely signals stop and
+// returns can race that write against process exit (losing usage stats) or,
+// in tests, against t.TempDir() cleanup.
 func (m *MultiUserManager) batchSaveLoop() {
+	defer close(m.saveDone)
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -401,11 +423,32 @@ func (m *MultiUserManager) FlushSaves() {
 	}
 }
 
-// StopBatchSave stops the batch save goroutine.
+// StopBatchSave stops the batch save goroutine and waits for its final flush
+// to reach disk. Safe to call more than once, and on a manager whose loop was
+// never started.
+//
+// The previous implementation did a non-blocking send on saveStopCh: whenever
+// the loop happened to be inside save() rather than parked on its select, the
+// stop signal hit the default branch and was silently discarded, so the
+// goroutine outlived shutdown and its pending writes were never flushed. It
+// also returned immediately, racing the final write against process exit.
+// Closing the channel delivers the signal unconditionally, and waiting on
+// saveDone guarantees the write completed before we return.
 func (m *MultiUserManager) StopBatchSave() {
+	if m == nil || m.saveStopCh == nil {
+		return
+	}
+	m.saveOnce.Do(func() { close(m.saveStopCh) })
+	if m.saveDone == nil {
+		// Manager constructed directly without initMultiUser (some tests do
+		// this to exercise load()); there is no goroutine to wait for.
+		return
+	}
 	select {
-	case m.saveStopCh <- struct{}{}:
-	default:
+	case <-m.saveDone:
+	case <-time.After(shutdownFlushTimeout):
+		slog.Warn("multi-user batch save did not exit in time; consumer usage stats may be stale",
+			"timeout", shutdownFlushTimeout)
 	}
 }
 

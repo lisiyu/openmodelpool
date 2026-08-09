@@ -91,12 +91,17 @@ func setupTestEnv(t *testing.T) *testEnv {
 		}
 		// Stop multi-user batch save goroutine to prevent goroutine leaks
 		// across the (hundreds of) test cases that each call setupTestEnv.
-		if muInst != nil && muInst.saveStopCh != nil {
-			select {
-			case <-muInst.saveStopCh:
-			default:
-				close(muInst.saveStopCh)
-			}
+		//
+		// This must WAIT for the goroutine to exit, not just signal it: the
+		// loop performs a final flush of any dirty consumer stats on the way
+		// out, and that write lands inside the test's t.TempDir(). Returning
+		// early let the write race TempDir cleanup, which surfaced as a flaky
+		// "TempDir RemoveAll cleanup: directory is not empty" failure in
+		// whichever test happened to leave the manager dirty (in practice
+		// TestHB10_MultiUser_RecordConsumerUsage). StopBatchSave handles the
+		// signal-and-wait, and is idempotent.
+		if muInst != nil {
+			muInst.StopBatchSave()
 		}
 		// Restore globals
 		enc = origEnc
