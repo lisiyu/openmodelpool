@@ -63,13 +63,95 @@ var releaseSigningPubKey = ed25519.PublicKey{
 
 // githubDownloadMirrors lists prefix-based GitHub download accelerators.
 // Each entry is prepended to the original download URL.
-// Direct GitHub is tried first; mirrors are fallbacks in order.
+// The order is dynamically adjusted based on detected network region:
+//   - China mainland: mirrors first, direct GitHub last
+//   - Global/overseas: direct GitHub first, mirrors as fallback
 // Mirrors that go offline are silently skipped by the retry logic.
 var githubDownloadMirrors = []string{
+	"https://ghfast.top/",
 	"https://gh-proxy.com/",
 	"https://ghproxy.net/",
 	"https://mirror.ghproxy.com/",
-	"https://gh-proxy.llyke.com/",
+}
+
+// detectedRegion caches the result of detectRegion(). "cn" for China mainland,
+// "global" for everything else. Computed once on first call.
+var detectedRegion string
+
+// detectRegion determines the VPS network region by querying IP geolocation.
+// Returns "cn" for China mainland (mirror-first download), "global" otherwise
+// (direct-first download). Result is cached after first call.
+func detectRegion() string {
+	if detectedRegion != "" {
+		return detectedRegion
+	}
+
+	// Default to global if detection fails
+	detectedRegion = "global"
+
+	// Try multiple IP services to get public IP
+	var publicIP string
+	ipServices := []string{
+		"https://ifconfig.me",
+		"https://api.ipify.org",
+		"https://icanhazip.com",
+	}
+
+	client := GetSharedHTTPClientWithTimeout(5 * time.Second)
+	for _, svc := range ipServices {
+		req, err := http.NewRequest("GET", svc, nil)
+		if err != nil {
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+		publicIP = strings.TrimSpace(string(body))
+		if publicIP != "" {
+			break
+		}
+	}
+
+	if publicIP == "" {
+		slog.Debug("region detection: could not determine public IP, defaulting to global")
+		return detectedRegion
+	}
+
+	// Query IP geolocation
+	geoURL := fmt.Sprintf("http://ip-api.com/line/%s?fields=countryCode", publicIP)
+	req, err := http.NewRequest("GET", geoURL, nil)
+	if err != nil {
+		return detectedRegion
+	}
+
+	geoClient := GetSharedHTTPClientWithTimeout(5 * time.Second)
+	resp, err := geoClient.Do(req)
+	if err != nil {
+		slog.Debug("region detection: geo lookup failed", "error", err)
+		return detectedRegion
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 16))
+	if err != nil {
+		return detectedRegion
+	}
+
+	countryCode := strings.TrimSpace(string(body))
+	if countryCode == "CN" {
+		detectedRegion = "cn"
+		slog.Info("region detection: China mainland detected, mirror-first download")
+	} else {
+		slog.Info("region detection: non-CN region detected, direct-first download", "country", countryCode)
+	}
+
+	return detectedRegion
 }
 
 // ---------------------------------------------------------------------------
@@ -524,17 +606,37 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 	asset := platformAssetName()
 	directURL := fmt.Sprintf("https://github.com/lisiyu/openmodelpool/releases/download/%s/%s", target, asset)
 
-	// Build download sources: direct GitHub first, then each mirror.
+	// Build download sources: order based on detected region
+	// - China mainland: mirrors first, direct GitHub last
+	// - Global/overseas: direct GitHub first, mirrors as fallback
 	type downloadSource struct {
 		label string
 		url   string
 	}
-	sources := []downloadSource{{label: "GitHub 直连", url: directURL}}
-	for _, mirror := range githubDownloadMirrors {
-		sources = append(sources, downloadSource{
-			label: mirror,
-			url:   mirror + directURL,
-		})
+	var sources []downloadSource
+	
+	region := detectRegion()
+	if region == "cn" {
+		// China mainland: mirrors first
+		slog.Info("using mirror-first download order (China mainland detected)")
+		um.setLocalPhase(PhaseDownloading, 3, "检测到中国大陆网络，优先使用镜像下载...", "")
+		for _, mirror := range githubDownloadMirrors {
+			sources = append(sources, downloadSource{
+				label: mirror,
+				url:   mirror + directURL,
+			})
+		}
+		sources = append(sources, downloadSource{label: "GitHub 直连", url: directURL})
+	} else {
+		// Global: direct GitHub first
+		slog.Info("using direct-first download order (non-CN region detected)")
+		sources = append(sources, downloadSource{label: "GitHub 直连", url: directURL})
+		for _, mirror := range githubDownloadMirrors {
+			sources = append(sources, downloadSource{
+				label: mirror,
+				url:   mirror + directURL,
+			})
+		}
 	}
 
 	tmpPath := filepath.Join(um.dataDir, fmt.Sprintf(".omp-update-%s.tmp", target))

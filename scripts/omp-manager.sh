@@ -41,19 +41,61 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # ============================================================
+# 区域检测（根据 IP 判断 VPS 所在区域，优选下载源）
+# ============================================================
+detect_region() {
+    local ip country
+    # 尝试多个 IP 查询服务，任一成功即返回
+    ip=$(curl -s --connect-timeout 3 https://ifconfig.me 2>/dev/null) || \
+    ip=$(curl -s --connect-timeout 3 https://api.ipify.org 2>/dev/null) || \
+    ip=$(curl -s --connect-timeout 3 https://icanhazip.com 2>/dev/null) || true
+    
+    if [[ -z "$ip" ]]; then
+        echo "global"  # 无法获取 IP，默认海外
+        return
+    fi
+    
+    # 查询 IP 归属地
+    country=$(curl -s --connect-timeout 3 "http://ip-api.com/line/${ip}?fields=countryCode" 2>/dev/null) || country=""
+    
+    if [[ "$country" == "CN" ]]; then
+        echo "cn"
+    else
+        echo "global"
+    fi
+}
+
+REGION=$(detect_region)
+if [[ "$REGION" == "cn" ]]; then
+    echo -e "${CYAN}→${NC} 检测到中国大陆网络环境，优先使用镜像下载"
+    DOWNLOAD_FIRST="mirror"
+else
+    echo -e "${CYAN}→${NC} 检测到海外网络环境，优先直连 GitHub"
+    DOWNLOAD_FIRST="direct"
+fi
+
+# ============================================================
 # 网络下载封装（超时 / 重试 / GitHub 镜像回退）
 #   - 所有下载/请求都带超时与重试，避免在中国大陆网络下无限挂起
-#   - GitHub 直连（含重试）仍失败则自动回退到 ghproxy.net 公共镜像
-#   - 镜像仅作兜底：直连成功则不会使用镜像；非 GitHub URL 不加镜像
+#   - 根据区域自动选择优先下载源：
+#     * 中国大陆：镜像优先，直连兜底
+#     * 海外环境：直连优先，镜像兜底
 # ============================================================
 CURL_CONNECT_TIMEOUT=15
 CURL_DL_MAX_TIME=300      # 二进制 / 大文件下载上限（秒）
 CURL_GET_MAX_TIME=120     # API / 本地查询上限（秒）
 CURL_RETRIES=3
 CURL_RETRY_DELAY=2
-GITHUB_MIRROR="https://ghproxy.net/"
 
-# 判断是否为 GitHub URL（仅对 GitHub 启用镜像回退）
+# 镜像列表（按优先级排序）
+GITHUB_MIRRORS=(
+    "https://ghfast.top/"
+    "https://gh-proxy.com/"
+    "https://ghproxy.net/"
+    "https://mirror.ghproxy.com/"
+)
+
+# 判断是否为 GitHub URL（仅对 GitHub 启用镜像）
 _is_github_url() {
     case "$1" in
         https://github.com/*|https://api.github.com/*|http://github.com/*|http://api.github.com/*) return 0 ;;
@@ -63,46 +105,134 @@ _is_github_url() {
 
 # 为 GitHub URL 添加镜像前缀
 _mirror_url() {
-    echo "${GITHUB_MIRROR}${1}"
+    echo "${1}${2}"
 }
 
-# 下载文件到指定路径；成功返回 0。GitHub 直连失败则回退镜像再试。
+# 下载文件到指定路径；成功返回 0。根据区域选择优先下载源。
 curl_dl() {
     local url="$1" outfile="$2" rc
-    curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
-        --max-time "$CURL_DL_MAX_TIME" \
-        --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
-        "$url" -o "$outfile" 2>/dev/null
-    rc=$?
-    if [ $rc -ne 0 ] && _is_github_url "$url"; then
-        echo -e "  ${CYAN}⚠ 直连失败，尝试镜像 ${GITHUB_MIRROR} ...${NC}" >&2
+    
+    if _is_github_url "$url"; then
+        # GitHub URL: 根据区域选择下载策略
+        if [[ "$DOWNLOAD_FIRST" == "mirror" ]]; then
+            # 中国大陆：镜像优先
+            for mirror in "${GITHUB_MIRRORS[@]}"; do
+                echo -e "  ${CYAN}→${NC} 尝试镜像: ${mirror##*://}" >&2
+                curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+                    --max-time "$CURL_DL_MAX_TIME" \
+                    --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+                    "${mirror}${url}" -o "$outfile" 2>/dev/null
+                rc=$?
+                if [ $rc -eq 0 ]; then
+                    echo -e "  ${GREEN}✓${NC} 镜像下载成功" >&2
+                    return 0
+                fi
+            done
+            # 镜像都失败，尝试直连
+            echo -e "  ${YELLOW}⚠${NC} 镜像下载失败，尝试直连 GitHub..." >&2
+            curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+                --max-time "$CURL_DL_MAX_TIME" \
+                --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+                "$url" -o "$outfile" 2>/dev/null
+            return $?
+        else
+            # 海外：直连优先
+            curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+                --max-time "$CURL_DL_MAX_TIME" \
+                --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+                "$url" -o "$outfile" 2>/dev/null
+            rc=$?
+            if [ $rc -eq 0 ]; then
+                return 0
+            fi
+            # 直连失败，尝试镜像
+            echo -e "  ${CYAN}⚠${NC} 直连失败，尝试镜像下载..." >&2
+            for mirror in "${GITHUB_MIRRORS[@]}"; do
+                echo -e "  ${CYAN}→${NC} 尝试镜像: ${mirror##*://}" >&2
+                curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+                    --max-time "$CURL_DL_MAX_TIME" \
+                    --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+                    "${mirror}${url}" -o "$outfile" 2>/dev/null
+                rc=$?
+                if [ $rc -eq 0 ]; then
+                    echo -e "  ${GREEN}✓${NC} 镜像下载成功" >&2
+                    return 0
+                fi
+            done
+            return 1
+        fi
+    else
+        # 非 GitHub URL: 直接下载
         curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
             --max-time "$CURL_DL_MAX_TIME" \
             --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
-            "$(_mirror_url "$url")" -o "$outfile" 2>/dev/null
-        rc=$?
+            "$url" -o "$outfile" 2>/dev/null
+        return $?
     fi
-    return $rc
 }
 
-# 抓取内容到 stdout；成功返回 0。GitHub 直连失败则回退镜像。
+# 抓取内容到 stdout；成功返回 0。根据区域选择优先下载源。
 curl_get() {
     local url="$1" out rc
-    out=$(curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
-        --max-time "$CURL_GET_MAX_TIME" \
-        --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
-        "$url" 2>/dev/null)
-    rc=$?
-    if [ $rc -ne 0 ] && _is_github_url "$url"; then
-        echo -e "  ${CYAN}⚠ 直连失败，尝试镜像 ${GITHUB_MIRROR} ...${NC}" >&2
+    
+    if _is_github_url "$url"; then
+        # GitHub URL: 根据区域选择下载策略
+        if [[ "$DOWNLOAD_FIRST" == "mirror" ]]; then
+            # 中国大陆：镜像优先
+            for mirror in "${GITHUB_MIRRORS[@]}"; do
+                out=$(curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+                    --max-time "$CURL_GET_MAX_TIME" \
+                    --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+                    "${mirror}${url}" 2>/dev/null)
+                rc=$?
+                if [ $rc -eq 0 ] && [ -n "$out" ]; then
+                    printf '%s' "$out"
+                    return 0
+                fi
+            done
+            # 镜像都失败，尝试直连
+            out=$(curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+                --max-time "$CURL_GET_MAX_TIME" \
+                --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+                "$url" 2>/dev/null)
+            rc=$?
+            printf '%s' "$out"
+            return $rc
+        else
+            # 海外：直连优先
+            out=$(curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+                --max-time "$CURL_GET_MAX_TIME" \
+                --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+                "$url" 2>/dev/null)
+            rc=$?
+            if [ $rc -eq 0 ] && [ -n "$out" ]; then
+                printf '%s' "$out"
+                return 0
+            fi
+            # 直连失败，尝试镜像
+            for mirror in "${GITHUB_MIRRORS[@]}"; do
+                out=$(curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+                    --max-time "$CURL_GET_MAX_TIME" \
+                    --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+                    "${mirror}${url}" 2>/dev/null)
+                rc=$?
+                if [ $rc -eq 0 ] && [ -n "$out" ]; then
+                    printf '%s' "$out"
+                    return 0
+                fi
+            done
+            return 1
+        fi
+    else
+        # 非 GitHub URL: 直接获取
         out=$(curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
             --max-time "$CURL_GET_MAX_TIME" \
             --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
-            "$(_mirror_url "$url")" 2>/dev/null)
+            "$url" 2>/dev/null)
         rc=$?
+        printf '%s' "$out"
+        return $rc
     fi
-    printf '%s' "$out"
-    return $rc
 }
 
 
