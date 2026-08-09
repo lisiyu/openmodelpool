@@ -43,43 +43,109 @@ if [[ -z "$TARGET_VERSION" ]]; then
 fi
 info "目标版本: ${YELLOW}$TARGET_VERSION${NC} (${PLATFORM})"
 
-# ─── 下载 URL ───
+# ─── 下载配置 ───
 ASSET="${BINARY_NAME}-${PLATFORM}"
 URL="https://github.com/$REPO/releases/download/${TARGET_VERSION}/${ASSET}"
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 
-# ─── 下载 ───
-info "下载二进制..."
-HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$TMP_DIR/$ASSET" "$URL")
-[[ "$HTTP_CODE" != "200" ]] && fail "下载失败 (HTTP $HTTP_CODE)，版本 $TARGET_VERSION 可能不存在"
-SIZE=$(stat -c%s "$TMP_DIR/$ASSET" 2>/dev/null || stat -f%z "$TMP_DIR/$ASSET" 2>/dev/null)
-ok "已下载 $(( SIZE / 1024 / 1024 )) MB"
+# 下载源列表：直连 GitHub + CDN 镜像兜底
+# 与 OMP 自动更新逻辑保持一致的多源策略
+MIRRORS=(
+    "$URL"
+    "https://ghfast.top/$URL"
+    "https://gh-proxy.com/$URL"
+    "https://ghproxy.net/$URL"
+    "https://mirror.ghproxy.com/$URL"
+)
 
-# ─── 校验 ───
-if curl -sSL "${URL}.sha256" -o "$TMP_DIR/${ASSET}.sha256" 2>/dev/null; then
+# ─── 带重试的多源下载 ───
+download_with_retry() {
+    local url="$1" dest="$2" max_tries="${3:-3}" timeout="${4:-120}"
+    local attempt=1 last_err=""
+    while [ $attempt -le $max_tries ]; do
+        if [ $attempt -gt 1 ]; then
+            local backoff=$(( attempt * 2 ))
+            info "重试第 ${attempt} 次（等待 ${backoff}s）..."
+            sleep $backoff
+        fi
+        local http_code
+        http_code=$(curl -sSL --connect-timeout 30 --max-time "$timeout"             -w "%{http_code}" -o "$dest" "$url" 2>/dev/null) || http_code="000"
+        if [ "$http_code" = "200" ]; then
+            local size
+            size=$(stat -c%s "$dest" 2>/dev/null || stat -f%z "$dest" 2>/dev/null || echo 0)
+            if [ "$size" -lt 100000 ]; then
+                last_err="文件异常 (${size}B)"
+                attempt=$((attempt + 1)); continue
+            fi
+            return 0
+        fi
+        last_err="HTTP $http_code"
+        attempt=$((attempt + 1))
+    done
+    warn "源下载失败 ($last_err): $(echo "$url" | cut -c1-80)..."
+    return 1
+}
+
+info "下载二进制（多源兜底）..."
+DOWNLOADED=false
+USED_SOURCE=""
+for src_url in "${MIRRORS[@]}"; do
+    label=$(echo "$src_url" | sed 's|https://||;s|/.*||;s|^$|github-direct|')
+    info "尝试源: $label"
+    if download_with_retry "$src_url" "$TMP_DIR/$ASSET" 2 90; then
+        DOWNLOADED=true
+        USED_SOURCE="$label"
+        break
+    fi
+    rm -f "$TMP_DIR/$ASSET"
+done
+
+if ! $DOWNLOADED; then
+    fail "所有下载源均失败，版本 $TARGET_VERSION 可能不存在或网络不可达"
+fi
+
+SIZE=$(stat -c%s "$TMP_DIR/$ASSET" 2>/dev/null || stat -f%z "$TMP_DIR/$ASSET" 2>/dev/null)
+ok "已下载 $(( SIZE / 1024 / 1024 )) MB（via $USED_SOURCE）"
+
+# ─── 校验（多源兜底）───
+SHA_DOWNLOADED=false
+SHA_URLS=("${URL}.sha256" "https://ghfast.top/${URL}.sha256" "https://gh-proxy.com/${URL}.sha256")
+for sha_url in "${SHA_URLS[@]}"; do
+    if curl -sSL --connect-timeout 10 --max-time 30 "$sha_url" -o "$TMP_DIR/${ASSET}.sha256" 2>/dev/null; then
+        if grep -qE '^[a-f0-9]{64}' "$TMP_DIR/${ASSET}.sha256" 2>/dev/null; then
+            SHA_DOWNLOADED=true
+            break
+        fi
+    fi
+done
+
+if $SHA_DOWNLOADED; then
     EXPECTED=$(awk '{print $1}' < "$TMP_DIR/${ASSET}.sha256")
     ACTUAL=$(sha256sum "$TMP_DIR/$ASSET" | awk '{print $1}')
-    [[ "$EXPECTED" != "$ACTUAL" ]] && fail "SHA-256 校验失败"
+    if [[ "$EXPECTED" != "$ACTUAL" ]]; then
+        fail "SHA-256 校验失败！expected=$EXPECTED actual=$ACTUAL"
+    fi
     ok "SHA-256 校验通过"
 else
     warn "校验文件不可用，跳过"
 fi
 
 # ─── systemctl 可用性检测 ───
-USE_SYSTEMCTL=true
+# Coze 云主机等环境中 systemctl 可能被安全策略阻塞，需要主动探测
+USE_SYSTEMCTL=false
 if command -v systemctl &>/dev/null; then
-    # Test if systemctl actually works (some environments block it)
-    if ! systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && \
-       ! systemctl list-units --type=service 2>/dev/null | grep -q "$SERVICE_NAME"; then
-        # systemctl exists but might be blocked - test further
-        if ! systemctl show "$SERVICE_NAME" &>/dev/null 2>&1; then
-            USE_SYSTEMCTL=false
-            warn "systemctl 受限，使用直接进程管理"
-        fi
+    # 实际尝试 systemctl 操作（带超时），判断是否真正可用
+    if timeout 5 systemctl status "$SERVICE_NAME" &>/dev/null; then
+        USE_SYSTEMCTL=true
+        info "systemctl 可用，使用 systemd 管理服务"
+    elif timeout 5 systemctl list-units --type=service &>/dev/null; then
+        USE_SYSTEMCTL=true
+        info "systemctl 可用，使用 systemd 管理服务"
+    else
+        warn "systemctl 受限（超时或被阻塞），使用直接进程管理"
     fi
 else
-    USE_SYSTEMCTL=false
     warn "systemctl 不可用，使用直接进程管理"
 fi
 
@@ -88,7 +154,11 @@ stop_service() {
     if $USE_SYSTEMCTL; then
         if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
             info "停止服务 (systemctl)..."
-            systemctl stop "$SERVICE_NAME"
+            if ! timeout 10 systemctl stop "$SERVICE_NAME" 2>/dev/null; then
+                warn "systemctl stop 超时，强制停止进程"
+                pkill -x "$BINARY_NAME" 2>/dev/null || true
+                sleep 2
+            fi
             ok "服务已停止"
         fi
     else
@@ -162,9 +232,18 @@ fi
 start_service() {
     if $USE_SYSTEMCTL; then
         info "启动服务 (systemctl)..."
-        systemctl start "$SERVICE_NAME"
-        sleep 3
-        if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+        if ! timeout 10 systemctl start "$SERVICE_NAME" 2>/dev/null; then
+            warn "systemctl start 失败，降级为直接启动"
+            cd "$INSTALL_DIR"
+            nohup ./$BINARY_NAME > "$INSTALL_DIR/omp.log" 2>&1 &
+            sleep 3
+            if ! pgrep -x "$BINARY_NAME" &>/dev/null; then
+                fail "服务启动失败，检查日志:\n  cat $INSTALL_DIR/omp.log | tail -50"
+            fi
+        else
+            sleep 3
+        fi
+        if ! systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && ! pgrep -x "$BINARY_NAME" &>/dev/null; then
             fail "服务启动失败，检查日志:\n  journalctl -u $SERVICE_NAME -n 50"
         fi
     else

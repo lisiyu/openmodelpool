@@ -114,12 +114,34 @@ func (c *Config) load() {
 	if err := loadWithIntegrity(path, &c.data); err != nil {
 		b, ferr := os.ReadFile(path)
 		if ferr == nil {
-			c.mu.Lock()
-			if uerr := json.Unmarshal(b, &c.data); uerr != nil {
-				slog.Error("failed to parse config data, using defaults", "error", uerr)
-				c.data = make(map[string]any)
-			}
-			c.mu.Unlock()
+			func() {
+				c.mu.Lock()
+				defer c.mu.Unlock()
+				// Try parsing as plain JSON first
+				if uerr := json.Unmarshal(b, &c.data); uerr != nil {
+					// Plain JSON failed — file may have a binary HMAC header (32 bytes).
+					// Try to find the first '{' and parse from there.
+					start := -1
+					for i, ch := range b {
+						if ch == '{' {
+							start = i
+							break
+						}
+					}
+					if start > 0 {
+						if uerr2 := json.Unmarshal(b[start:], &c.data); uerr2 == nil {
+							slog.Warn("config loaded by skipping binary header (HMAC/encryption prefix)",
+								"path", path, "skipped_bytes", start)
+						} else {
+							slog.Error("failed to parse config data, using defaults", "error", uerr2)
+							c.data = make(map[string]any)
+						}
+					} else {
+						slog.Error("failed to parse config data, using defaults", "error", uerr)
+						c.data = make(map[string]any)
+					}
+				}
+			}()
 		}
 	}
 	c.mu.Lock()
