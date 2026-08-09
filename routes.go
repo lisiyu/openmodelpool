@@ -20,6 +20,12 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /v1/embeddings", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
 	// Anthropic Messages API compatibility — for Claude Code and other Anthropic clients
 	mux.HandleFunc("POST /v1/messages", anthropicAuthAdapter(withProxyAuth(wafMiddleware(rateLimitMiddleware(handleAnthropicMessages)))))
+	// Azure OpenAI URL compatibility — accepts /openai/deployments/{deployment}/chat/completions
+	// (the deployment name is used as the model). Response is OpenAI-format, no translation needed.
+	mux.HandleFunc("POST /openai/deployments/{deployment}/chat/completions", azureAuthAdapter(withProxyAuth(wafMiddleware(rateLimitMiddleware(handleAzureChatCompletions)))))
+	// Google Gemini native API compatibility — accepts /v1beta/models/{model}:generateContent
+	// and /v1beta/models/{model}:streamGenerateContent, translating to/from OpenAI format.
+	mux.HandleFunc("POST /v1beta/models/{model}", geminiAuthAdapter(withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGeminiGenerateContent)))))
 
 	// Seed discovery endpoints (public, no auth required)
 	mux.HandleFunc("GET /api/peers", rateLimitByIP(30, "peers")(handleSeedPeers))
@@ -51,6 +57,11 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/diagnostics", rateLimitByIP(10, "diagnostics")(withAuth(handleDiagnostics)))
 	mux.HandleFunc("GET /api/admin/security/check", rateLimitByIP(10, "security_check")(withAuth(handleSecurityCheck)))
 	mux.HandleFunc("GET /api/admin/goroutines", rateLimitByIP(5, "goroutines")(withAuth(handleGoroutineDump)))
+	// Ledger transparency (P2-2): where contributed compute came from + integrity
+	mux.HandleFunc("GET /api/admin/ledger/transparency", rateLimitByIP(10, "ledger_transparency")(withAuth(handleAdminLedgerTransparency)))
+	mux.HandleFunc("GET /api/admin/ledger/contribution-quota", rateLimitByIP(10, "ledger_quota")(withAuth(handleAdminLedgerContributionQuota)))
+	// Ledger export for research / openness (P4-1): JSON (full) or CSV (contributions)
+	mux.HandleFunc("GET /api/admin/ledger/export", rateLimitByIP(10, "ledger_export")(withAuth(handleLedgerExport)))
 	mux.HandleFunc("GET /api/admin/audit", rateLimitByIP(10, "audit")(withAuth(handleAuditLog)))
 	mux.HandleFunc("POST /api/admin/change-password", rateLimitByIP(3, "change_password")(withAuth(handleChangePassword)))
 	mux.HandleFunc("POST /api/admin/update-email", rateLimitByIP(5, "update_email")(withAuth(handleUpdateEmail)))
@@ -61,6 +72,14 @@ func setupRoutes() *http.ServeMux {
 	// Federation cross-node update signal + report-back
 	mux.HandleFunc("POST /api/federation/update-signal", rateLimitByIP(30, "update_signal")(withFederationAuth(handleFederationUpdateSignal)))
 	mux.HandleFunc("POST /api/federation/update-report", rateLimitByIP(30, "update_report")(withFederationAuth(handleFederationUpdateReport)))
+	// Ledger redundancy / federation reconciliation (P1-3): manifest + sync + record pull
+	mux.HandleFunc("GET /ledger/__manifest", withFederationAuth(handleLedgerManifest))
+	mux.HandleFunc("POST /ledger/__sync", withFederationAuth(handleLedgerSync))
+	mux.HandleFunc("GET /ledger/__record", withFederationAuth(handleLedgerRecord))
+	// P2-1 community co-governance (contributors govern; lightweight, no penalties)
+	mux.HandleFunc("POST /api/governance/propose", rateLimitByIP(10, "gov_propose")(withFederationAuth(handleGovernancePropose)))
+	mux.HandleFunc("POST /api/governance/ratify", rateLimitByIP(30, "gov_ratify")(withFederationAuth(handleGovernanceRatify)))
+	mux.HandleFunc("GET /api/governance/proposals", rateLimitByIP(30, "gov_list")(handleGovernanceProposals))
 	mux.HandleFunc("POST /api/admin/restart", rateLimitByIP(3, "restart")(withAuth(handleRestart)))
 	mux.HandleFunc("GET /api/share/info", withAuth(handleShareInfo))
 

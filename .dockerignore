@@ -1,9 +1,11 @@
 .git
-.github
 data
-*.out
+bin
+node_modules
+.workbuddy
 *.exe
-openmodelpool
-openmodelpool-*
-docs
-*.md
+*.out
+*.log
+*.bak
+*.tmp
+_*

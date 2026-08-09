@@ -447,16 +447,21 @@ func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 		return cands // admin keys always have unrestricted access
 	}
 
-	// Public key only works when node is in shared mode
-	if keyType == "public" {
-		if netMgr == nil || !netMgr.IsSharedMode() {
-			return nil // personal mode: public key has no access
-		}
-	}
-
 	// Proxy key: same as admin, unrestricted access to all candidates
 	if keyType == "proxy" {
 		return cands
+	}
+
+	if keyType == "public" {
+		if netMgr == nil || !netMgr.IsSharedMode() {
+			// Personal mode: the global public key still reaches the COMMUNITY
+			// FREE POOL — anonymous free LLM APIs (free-anonymous, no operator
+			// capacity involved) — so the free tier works out of the box at ANY
+			// node. The operator's own shared providers stay gated behind shared
+			// mode; we must not expose private paid keys in personal mode.
+			return filterFreePoolOnly(cands)
+		}
+		// Shared mode: all ShareToPool providers accessible (existing behavior).
 	}
 
 	filtered := make([]candidate, 0, len(cands))
@@ -831,7 +836,12 @@ func providerAllowsKeyType(p Provider, keyType string) bool {
 	case "guest":
 		return hasNonPrivateKey(p)
 	case "public":
-		// Public key only works in shared mode, and provider must be shared with non-private keys
+		// Public key reaches the community free pool at ANY node (out of the
+		// box), regardless of shared mode. Operator-shared providers still
+		// require shared mode (privacy: don't expose private paid keys).
+		if isFreePoolProvider(p) {
+			return true
+		}
 		if netMgr == nil || !netMgr.IsSharedMode() {
 			return false
 		}
@@ -855,6 +865,26 @@ func hasNonPrivateKey(p Provider) bool {
 		return true
 	}
 	return false
+}
+
+// isFreePoolProvider reports whether p belongs to the community free pool:
+// anonymous free LLM APIs (APIKey == "free-anonymous") synced from
+// awesome-free-llm-apis, identified by the "free-" ID prefix. These require
+// no API key and no operator capacity, so they are safe to expose to the
+// global public key at any node, in any mode (P3-2: free pool out of the box).
+func isFreePoolProvider(p Provider) bool {
+	return p.APIKey == "free-anonymous" || strings.HasPrefix(p.ID, "free-")
+}
+
+// filterFreePoolOnly returns only community free-pool candidates.
+func filterFreePoolOnly(cands []candidate) []candidate {
+	out := make([]candidate, 0, len(cands))
+	for _, c := range cands {
+		if isFreePoolProvider(c.Provider) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // RoutingAdvice returns comparison info for a model across providers.

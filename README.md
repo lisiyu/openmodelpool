@@ -1,12 +1,15 @@
 # OpenModelPool Agent
 
-**Personal Model Proxy + Geek Sharing Network** — Your local AI gateway first, then optionally join the global AI capability sharing network.
+**A non-profit, OpenAI-compatible gateway for pooled AI access** — a local model proxy first, and optionally a node in a community-run capability sharing network.
 
 > Network has no borders; AI capabilities shouldn't either.
 
+**No business model. No token. No points economy. No skim.** There is nothing to pay for: a single Go binary you run yourself, on your own machine, against your own provider keys. Read the pledge — [中文](docs/PUBLIC-WELFARE.md) · [English](docs/PUBLIC-WELFARE.en.md).
+
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v4.1.6-blue)](#)
+[![Version](https://img.shields.io/badge/version-v4.3.24-blue)](#)
+[![Non-profit](https://img.shields.io/badge/non--profit-no%20token%20%C2%B7%20no%20skim-2f855a)](docs/PUBLIC-WELFARE.en.md)
 
 ---
 
@@ -19,9 +22,11 @@ By default, it is a **pure-local personal model proxy** — managing your API to
 Only when you configure Provider Tokens, enable quota management, and the system detects idle quota this month, will it gently prompt you: **Would you like to share some idle quota to the network?**
 
 > Your GPT-4o quota is only 60% used this month? The remaining 40% expires and goes to waste.
-> Share it to the OpenModelPool network, and you earn **Contribution Credits** when others use it.
-> When you need Claude-3 in the future, use Contribution Credits to reclaim equivalent resources.
-> If you never reclaim — these contributions naturally become a geek gift to the community.
+> Share the idle part with the network, and the ledger records what you gave.
+> That record entitles you to the same amount back from the pool later — 1:1, no fee, no interest, no expiry games.
+> If you never claim it — the contribution simply stays a gift to the community.
+
+**This is bookkeeping, not currency.** The entitlement cannot be bought, sold, transferred, or withdrawn, and the project takes no cut of anything. It exists so the ledger can answer one question honestly: *who gave what, and what are they owed back.* Non-contributors are never locked out — the community free pool stays open to everyone by default.
 
 **Three principles**:
 - Configuring Token ≠ Joining the sharing network
@@ -43,6 +48,13 @@ BitTorrent let knowledge escape server monopolies; IPFS let storage escape singl
 We believe a developer in New York with a Claude API and a programmer in Beijing have equally valuable access. When global AI capabilities converge through a decentralized network, anyone can equally access the most powerful intelligence — regardless of where they are.
 
 This is not a commercial product. This is the continuation of internet spirit: **sharing, openness, no borders.**
+
+### The pledge, in four lines
+
+1. **No money changes hands.** No subscription, no credits for sale, no token, no ad, no telemetry sold. The project cannot be monetized without breaking its own rules.
+2. **Good faith is the default.** The system defends against malicious abuse, never against "this person did not contribute". There is no freeloader penalty and no trust score.
+3. **Nothing is claimed that isn't shipped.** Every unimplemented item in this README is marked ⚠️ on purpose — see the Implementation Status section below.
+4. **Governance belongs to contributors.** Node admission and model allow-lists go through an append-only, hash-chained proposal ledger with a 2/3 supermajority of contributing nodes — no owner override.
 
 > **Note**: In the BT network, seeders could be anonymous and still participate. In OpenModelPool, joining the sharing network requires an identity (mnemonic → Ed25519 key pair → Node ID), and Contribution Credits are bound to identity. This is not for censorship, but for Sybil defense — ensuring contributions are traceable and preventing one person from impersonating a thousand nodes to farm credits.
 >
@@ -255,8 +267,8 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 
 > **⚠️ Ledger is currently local-only.** Contribution records are persisted locally with a **verifiable content hash** (`sha256:` prefix via `ContentHashStore`) — there is **no IPFS / distributed persistence** yet, and contribution credits are stored **locally only**. The anti-double-spend chain is backed by local signed records; durable multi-node replication is a future phase.
 
-- **Earn**: Provide Provider resources that other nodes consume → earn Contribution Credits (requests without request-id are not counted)
-- **Spend**: Call other nodes' Providers, send P2P messages, etc.
+- **Earn**: Provide Provider resources that other nodes consume → the ledger credits you 1:1 with what you gave (requests without request-id are not counted). No fee, no interest, no inflation
+- **Spend**: A verified contributor draws on its own entitlement instead of the anonymous per-IP abuse guard. Running out is **not** a rejection — the request falls through to the community free pool like anyone else's
 - **Non-withdrawable**: Cannot be exchanged for fiat or financial assets
 - **Non-transferable**: Cannot be transferred between nodes
 - **Bound to Node ID**: Credits follow identity, not device

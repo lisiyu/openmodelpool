@@ -161,6 +161,12 @@ type RouteEntry struct {
 	IsSeed      bool    `json:"is_seed,omitempty"`
 
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// NAT traversal reachability (§7.5): how to punch a direct UDP channel to
+	// this node. Populated from the node's own STUN discovery and shared over
+	// the federation so peers can aim their hole-punch at the right port.
+	ReflexiveUDP string `json:"reflexive_udp,omitempty"`
+	NATType      string `json:"nat_type,omitempty"`
 }
 
 // RouteTable is a simplified DHT routing table (Phase 1)
@@ -915,7 +921,7 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		}
 	}
 
-	return map[string]any{
+	status := map[string]any{
 		"mode":               nm.config.Mode,
 		"consent_accepted":   nm.config.ConsentAccepted,
 		"consent_time":       nm.config.ConsentTime,
@@ -952,6 +958,20 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		"backup_confirmed":     backupConfirmed,
 		"needs_migration":      needsMigration,
 	}
+
+	// 治理（P2-1）：软提醒，绝不强制。个人模式下若节点仍有闲置的「自有额度」，
+	// 温和建议（非强制）加入共享网络，把闲置额度变成社区公共池资源。
+	// 注意：社区免费池（预设公共上游）始终开箱即用，与此软提醒无关。
+	if !nm.config.NetworkEnabled {
+		if iq := checkIdleQuota(); iq.ShouldNotify {
+			status["shared_network_suggestion"] = map[string]any{
+				"should_join": true,
+				"reason":      iq.Message,
+				"idle_quota":  iq.RemainingQuota,
+			}
+		}
+	}
+	return status
 }
 
 // GetNetworkStats returns aggregated network statistics including provider and consumer data.
@@ -2170,4 +2190,21 @@ func checkIdleQuota() IdleQuotaStatus {
 
 func handleIdleQuotaCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, checkIdleQuota())
+}
+
+// logSharedNetworkSoftReminder emits a one-time, non-blocking governance nudge at
+// startup. If the node runs in personal mode yet still has idle OWN capacity, it
+// gently suggests (NEVER forces) joining the shared network so the spare quota
+// becomes a community public-pool resource. The community free pool (preset
+// public upstream) is always available out-of-the-box and is unaffected.
+func logSharedNetworkSoftReminder() {
+	if netMgr == nil || netMgr.config.NetworkEnabled {
+		return
+	}
+	iq := checkIdleQuota()
+	if iq.ShouldNotify {
+		slog.Info("治理软提醒: 节点处于个人模式且有闲置自有额度，鼓励(非强制)加入共享网络将闲置额度贡献为社区公共池资源",
+			"idle_quota", iq.RemainingQuota,
+			"hint", "管理后台「共享中心」一键加入；不加入也完全可用(仅自用 + 社区免费池)")
+	}
 }
