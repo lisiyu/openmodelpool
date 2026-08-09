@@ -86,8 +86,10 @@ This is not a commercial product. This is the continuation of internet spirit: *
 | DHT | ⚠️ Former empty shell removed; `GetDHTStats` returns `{"enabled":false}`. The DHT layer in triple-layer discovery is **currently disabled**; P2P discovery relies on registry/gossip, not DHT |
 | Contribution ledger | ⚠️ Ledger uses a **local content-hash store** (`ContentHashStore`, `sha256:` prefix) — verifiable but **no IPFS node / distributed persistence**; contribution credits stored locally only |
 | Algorithm governance DAO voting | ⚠️ `propose`/`vote` endpoints accept locally and return status; on-chain / decentralized voting is **not implemented** |
-| 5-dimension network routing | ⚠️ README describes network mode as 5-dimension (trust/reputation/latency/availability/contribution), but the admin weight editor currently exposes **only 4 sliders** |
 | Regional routing | ⚠️ Compiles (minimal stub), but real geo-based routing is not wired (`handleNetworkRegions` returns empty) |
+
+> **Not a gap — by design: "5-dimension routing" exposes only 4 sliders.**
+> Network-mode scoring genuinely is a 5-dimension weighted model (trust / reputation / latency / availability / contribution — see `ScoreNode` and `LBConfig` in `network_loadbalancer.go`, §9.2). The 5th "dimension" is the **routing algorithm itself** — weighted composition, regional adjustment and `SelectNode` selection logic — which is fixed backend behaviour and deliberately not user-tunable. The 4 sliders in the admin panel (priority / cost / latency / quota) already cover **every** adjustable weight. This is intentional, not unfinished work; a 5th slider will not be added.
 
 ---
 
@@ -115,7 +117,9 @@ Personal Mode is a pure-local proxy — no network participation, no identity ge
 | ⚡ Fastest | Selects the fastest platform based on EWMA historical latency |
 | 🧠 Composite | Weighted fusion of **4 dimensions**: **priority / cost / latency / tokens** (all customizable via the admin panel sliders) |
 
-> **Personal Mode is 4-dimension** (priority / cost / latency / tokens). Network Mode's **design target** is 5-dimension (trust / reputation / latency / availability / contribution), but the admin weight editor currently exposes **only 4 sliders** — the 5th (network-specific) dimension is not yet surfaced in the UI.
+> **Personal Mode is 4-dimension** (priority / cost / latency / tokens). Network Mode scores nodes on a **5-dimension** weighted model (trust / reputation / latency / availability / contribution).
+>
+> The admin weight editor exposes **4 sliders in both modes, by design** — the 5th network dimension is the routing algorithm itself (weighted composition + regional adjustment + `SelectNode`), which is fixed backend behaviour and intentionally not user-tunable. The 4 sliders cover every adjustable weight. See the "Not a gap — by design" note in the Implementation Status section above.
 
 #### 🔗 Automatic Failover
 
@@ -301,6 +305,8 @@ The network load balancer uses a 5-dimension scoring model for optimal node sele
 | Latency | 20% | Network latency |
 | Availability | 15% | Node uptime / reliability |
 | Contribution | 15% | Contribution to the network |
+
+These weights are backend defaults (`LBConfig`, §9.2). They are **not** exposed as a 5th admin slider — see the "Not a gap — by design" note in Implementation Status.
 
 Real-time metrics tracked per node: latency, CPU, memory, error rate, active connections, sliding-window history.
 
@@ -1131,6 +1137,33 @@ curl -X POST http://localhost:8000/api/routing/weights \
   -H "Content-Type: application/json" \
   -d '{"priority": 0.30, "cost": 0.25, "latency": 0.25, "tokens": 0.20}'
 ```
+
+---
+
+## 🤝 Contributing
+
+**This project belongs to everyone who uses it.** New features, design input and criticism are all genuinely welcome — you do not need permission to start.
+
+**Where to begin:**
+
+| I want to… | Do this |
+|------------|---------|
+| Propose a feature or challenge a design decision | Open an issue. Disagreement is useful — say what feels wrong and why |
+| Pick up existing work | The roadmap is public in [`docs/BACKLOG.md`](docs/BACKLOG.md). Comment on an item to claim it, then send a PR |
+| Report a bug | Open an issue with your OS, version (`/api/version`) and steps to reproduce |
+| Understand the codebase first | Read [`docs/openmodelpool-v4-design.md`](docs/openmodelpool-v4-design.md) for the architecture, then [`docs/REVIEW-2026-08-08.md`](docs/REVIEW-2026-08-08.md) for an honest account of what is solid and what is not |
+
+**Before sending a PR:**
+
+```bash
+go build ./...   # must pass
+go test ./...    # must pass
+go vet ./...     # should be clean
+```
+
+**Keep the dependency footprint small.** The project deliberately runs on Go's standard library for everything structural — no web framework, no ORM, no DI container. The five direct dependencies it does have (`golang-jwt`, `x/crypto`, `x/net`, `go-bip39`, `chromedp`) each exist because the standard library genuinely has no equivalent. A PR that adds a dependency needs to justify it on those terms. Keep PRs focused on one thing.
+
+**One thing we will not merge:** anything that introduces a token, points economy, paid tier, or revenue share. This project is non-profit by construction, not by current circumstance. Everything else is on the table.
 
 ---
 
