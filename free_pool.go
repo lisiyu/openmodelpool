@@ -22,6 +22,49 @@ const (
 	freePoolPriority     = 100 // low priority — tried after paid providers
 )
 
+// Default free providers — hardcoded so they exist even if remote sync fails.
+// Anyone deploying OMP gets these immediately, accessible via their own base URL.
+var defaultFreeProviders = []struct {
+	id       string
+	name     string
+	baseURL  string
+	models   []string
+}{
+	{
+		id:      "free-kilo-code",
+		name:    "🇺🇸 Kilo Code (免费)",
+		baseURL: "https://api.kilo.ai/api/gateway",
+		models: []string{
+			"nvidia/nemotron-3-ultra-550b-a55b:free",
+			"stepfun/step-3.7-flash:free",
+			"nvidia/nemotron-3-super-120b-a12b:free",
+			"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+			"inclusionai/ling-3.0-flash:free",
+			"ai21/jamba-large-1.7",
+			"ai21/jamba-mini-1.7",
+			"openai/gpt-4o-mini",
+			"openai/gpt-4o",
+			"anthropic/claude-3.5-sonnet",
+			"google/gemini-2.0-flash-exp",
+			"meta-llama/llama-3.3-70b-instruct",
+		},
+	},
+	{
+		id:      "free-ovhcloud-ai-endpoints",
+		name:    "🇫🇷 OVHcloud AI Endpoints (免费)",
+		baseURL: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+		models: []string{
+			"Meta-Llama-3_3-70B-Instruct",
+			"Mistral-7B-Instruct-v0.3",
+			"Mistral-Nemo-Instruct-2407",
+			"Qwen3.5-397B-A17B",
+			"Qwen3.6-27B",
+			"gpt-oss-120b",
+			"gpt-oss-20b",
+		},
+	},
+}
+
 // FreePoolManager manages syncing free LLM API providers.
 type FreePoolManager struct {
 	mu        sync.RWMutex
@@ -91,6 +134,9 @@ func initFreePool() {
 		stopCh:    make(chan struct{}),
 	}
 
+	// Seed default free providers immediately so they exist even if sync fails.
+	seedDefaultProviders()
+
 	// Initial sync on startup (delayed to let other components initialize)
 	if freePool.autoSync {
 		go func() {
@@ -105,6 +151,50 @@ func initFreePool() {
 	go freePool.syncLoop()
 
 	slog.Info("free pool manager initialized", "auto_sync", freePool.autoSync)
+}
+
+// seedDefaultProviders creates hardcoded default free providers (Kilo Code, OVHcloud)
+// so anyone deploying OMP gets them immediately, even without network access to remote sync.
+func seedDefaultProviders() {
+	if pm == nil {
+		return
+	}
+	for _, dp := range defaultFreeProviders {
+		// Skip if already exists (e.g., from a previous sync)
+		if _, exists := pm.GetRaw(dp.id); exists {
+			continue
+		}
+
+		var models []ModelDef
+		for _, mid := range dp.models {
+			models = append(models, ModelDef{
+				ID:      mid,
+				Name:    mid,
+				Enabled: true,
+			})
+		}
+
+		provider := Provider{
+			ID:          dp.id,
+			Name:        dp.name,
+			Type:        "openai_compatible",
+			BaseURL:     dp.baseURL,
+			APIKey:      "free-anonymous",
+			Enabled:     true,
+			Models:      models,
+			Priority:    freePoolPriority,
+			Description: "Default free provider — no API key required",
+			Icon:        "free",
+			AccessControl: ProviderAccessControl{
+				ShareToPool: true,
+			},
+			CreatedAt: time.Now().Format(time.RFC3339),
+			UpdatedAt: time.Now().Format(time.RFC3339),
+		}
+
+		pm.Add(provider)
+		slog.Info("seeded default free provider", "id", dp.id, "models", len(models))
+	}
 }
 
 func (f *FreePoolManager) syncLoop() {
