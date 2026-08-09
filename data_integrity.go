@@ -92,32 +92,30 @@ func loadWithIntegrity(path string, v any) error {
 		return nil
 	}
 
-	// HMAC failed — check if the file is just plain JSON (pre-upgrade file)
-	// Try to parse the entire raw content as JSON
+	// HMAC failed. Two cases remain, and they MUST be told apart:
+	//
+	//   1. Pre-upgrade / enc-not-ready file: written as plain JSON with NO
+	//      HMAC prefix at all. The entire raw content parses as JSON, so we
+	//      load it (backward compat). This is detected below by the whole
+	//      file parsing as JSON — an HMAC-prefixed file never parses as JSON
+	//      because its first 32 bytes are opaque binary.
+	//
+	//   2. The HMAC genuinely does not verify: the data was tampered with, or
+	//      the encryption key changed. We MUST fail closed. Recovering the
+	//      payload after the HMAC header and loading it without verification
+	//      (the old behaviour) defeats the entire integrity guarantee (SA-15)
+	//      and lets tampering pass silently. Key rotation is NOT a reason to
+	//      bypass verification — a key change should be handled explicitly
+	//      (operator re-saves), not by silently trusting unverified bytes.
 	var testCheck any
 	if json.Unmarshal(raw, &testCheck) == nil {
-		// It's valid JSON without HMAC — load it (backward compat)
+		// Whole file is valid JSON => no HMAC prefix => pre-upgrade format.
 		slog.Info("data file loaded without integrity check (pre-upgrade format)", "path", path)
 		return json.Unmarshal(raw, v)
 	}
 
-	// HMAC verification failed AND raw content is not valid JSON.
-	// The file likely has an HMAC prefix written by a previous run with a
-	// different encryption key (e.g., .key regenerated, key mismatch after
-	// upgrade, or enc not ready). Try to recover the JSON payload that
-	// sits after the 32-byte HMAC header — the data is still valid even
-	// though we can't verify its integrity.
-	if len(raw) > hmacSize {
-		recoveredPayload := raw[hmacSize:]
-		if json.Unmarshal(recoveredPayload, &testCheck) == nil {
-			slog.Warn("data file HMAC verification failed but payload recovered as valid JSON — loading without integrity check",
-				"path", path,
-				"reason", "encryption key may have changed since file was written")
-			return json.Unmarshal(recoveredPayload, v)
-		}
-	}
-
-	// Neither HMAC-verified nor recoverable JSON — data may be tampered
+	// File carries an HMAC prefix but it did not verify, and the file is not
+	// valid plain JSON. Treat as a failed integrity check.
 	slog.Error("data file integrity check FAILED — possible tampering detected", "path", path)
 	return fmt.Errorf("integrity check failed for %s: data may have been tampered", path)
 }
