@@ -1,13 +1,27 @@
+# OpenModelPool — 一行部署（公益优先，纯本地/自有网络运行）
+#
+# 用法：
+#   docker compose up -d        # 拉起，数据持久化在命名卷 omp-data
+#   docker compose logs -f      # 查看日志
+#   docker compose down         # 停止（数据不丢）
+#
+# 默认监听 :8000（全接口）。公网暴露推荐走 Cloudflare Tunnel / 自有反代，
+# 而非直接暴露 8000 端口。
 services:
   openmodelpool:
     build:
       context: .
       args:
         VERSION: latest
-    image: ghcr.io/lisiyu/openmodelpool:latest
+    image: openmodelpool:latest
     container_name: openmodelpool
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data
-    restart: unless-stopped
+      - omp-data:/app/data
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  omp-data:

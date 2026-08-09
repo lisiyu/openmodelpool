@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -159,6 +162,18 @@ func (g *GossipLedger) RecordContribution(record *ContributionRecord) (string, e
 		g.mu.Lock()
 		g.recs[record.ID] = &cp
 		g.mu.Unlock()
+	}
+	// P1-3(ii): asynchronously mirror the contribution to federation peers so
+	// the record survives any single node's loss (nil replicator = no-op).
+	if ledgerReplicator != nil {
+		recCopy := *record
+		go ledgerReplicator.ReplicateContribution(&recCopy)
+	}
+	// P2-3(i): accrue the donor's public-welfare free-quota entitlement
+	// (1:1 with contributed tokens). Nil tracker = no-op (keeps unit tests
+	// and the additive hook side-effect free).
+	if contribQuotaTracker != nil && record.Tokens > 0 {
+		contribQuotaTracker.Accrue(record.PeerID, record.Tokens)
 	}
 	return record.ID, nil
 }
@@ -368,6 +383,12 @@ func (g *GossipLedger) DeriveBalance(nodeID string) int64 {
 func (g *GossipLedger) VerifyChain() bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
+	return g.chainValid()
+}
+
+// chainValid checks the transaction hash chain without locking. Callers must
+// hold at least a read lock.
+func (g *GossipLedger) chainValid() bool {
 	for i, tx := range g.txs {
 		if i > 0 {
 			if tx.PrevHash != g.txs[i-1].Hash {
@@ -380,6 +401,97 @@ func (g *GossipLedger) VerifyChain() bool {
 		}
 	}
 	return true
+}
+
+// LedgerTransparency is the public-welfare transparency view: where compute
+// came from (contributions by peer/model) and the integrity of the record. It
+// powers the admin "算力从哪来、到哪去" panel (P2-2).
+type LedgerTransparency struct {
+	PeerID            string           `json:"peer_id"`
+	TotalTokens       int64            `json:"total_tokens"`
+	ContributionCount int              `json:"contribution_count"`
+	ByModel           map[string]int64 `json:"by_model"`
+	ByPeer            map[string]int64 `json:"by_peer"`
+	TrustCount        int              `json:"trust_count"`
+	ClaimCount        int              `json:"claim_count"`
+	PenaltyCount      int              `json:"penalty_count"`
+	TransactionCount  int              `json:"transaction_count"`
+	ChainValid        bool             `json:"chain_valid"`
+}
+
+// GetTransparency aggregates the ledger into a transparency report. Callers may
+// hold any lock state; the method locks internally.
+func (g *GossipLedger) GetTransparency() LedgerTransparency {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	t := LedgerTransparency{
+		PeerID:   g.peerID,
+		ByModel:  map[string]int64{},
+		ByPeer:   map[string]int64{},
+	}
+	for _, r := range g.recs {
+		t.TotalTokens += r.Tokens
+		t.ContributionCount++
+		if r.ModelID != "" {
+			t.ByModel[r.ModelID] += r.Tokens
+		}
+		if r.PeerID != "" {
+			t.ByPeer[r.PeerID] += r.Tokens
+		}
+	}
+	t.TrustCount = len(g.trusts)
+	t.ClaimCount = len(g.claims)
+	t.PenaltyCount = len(g.penalties)
+	t.TransactionCount = len(g.txs)
+	t.ChainValid = g.chainValid()
+	return t
+}
+
+// ExportContributionsCSV renders all contribution records as CSV (header +
+// one row per record) for researchers / public-welfare transparency (P4-1).
+func (g *GossipLedger) ExportContributionsCSV() (string, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	if err := w.Write([]string{"id", "peer_id", "model_id", "provider", "tokens", "value_usd", "timestamp"}); err != nil {
+		return "", err
+	}
+	for _, r := range g.recs {
+		row := []string{
+			r.ID,
+			r.PeerID,
+			r.ModelID,
+			r.Provider,
+			strconv.FormatInt(r.Tokens, 10),
+			strconv.FormatFloat(r.ValueUSD, 'f', 2, 64),
+			r.Timestamp.Format(time.RFC3339),
+		}
+		if err := w.Write(row); err != nil {
+			return "", err
+		}
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// ExportLedgerJSON renders the full ledger (contributions, trusts, claims,
+// penalties, transactions) as indented JSON for download / archival (P4-1).
+func (g *GossipLedger) ExportLedgerJSON() ([]byte, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	payload := map[string]interface{}{
+		"peer_id":      g.peerID,
+		"contributions": g.recs,
+		"trusts":       g.trusts,
+		"claims":       g.claims,
+		"penalties":    g.penalties,
+		"transactions": g.txs,
+	}
+	return json.MarshalIndent(payload, "", "  ")
 }
 
 func (g *GossipLedger) GetPenalties(peerID string) ([]*PenaltyRecord, error) {
@@ -416,6 +528,26 @@ func (g *GossipLedger) GetAllContributions() []*ContributionRecord {
 	out := make([]*ContributionRecord, 0, len(g.recs))
 	for _, r := range g.recs {
 		out = append(out, r)
+	}
+	return out
+}
+
+func (g *GossipLedger) GetAllTrusts() []*TrustRecord {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	out := make([]*TrustRecord, 0, len(g.trusts))
+	for _, t := range g.trusts {
+		out = append(out, t)
+	}
+	return out
+}
+
+func (g *GossipLedger) GetAllPenalties() []*PenaltyRecord {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	out := make([]*PenaltyRecord, 0, len(g.penalties))
+	for _, p := range g.penalties {
+		out = append(out, p)
 	}
 	return out
 }

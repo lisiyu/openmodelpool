@@ -523,6 +523,47 @@ func TestProviderAllowsKeyType_Guest(t *testing.T) {
 	}
 }
 
+// TestProviderAllowsKeyType_PublicFreePool verifies P3-2: the public key
+// reaches the community free pool even in personal mode, but must NOT expose
+// the operator's own private paid providers.
+func TestProviderAllowsKeyType_PublicFreePool(t *testing.T) {
+	savedNet := netMgr
+	netMgr = nil // simulate personal mode (not shared)
+	defer func() { netMgr = savedNet }()
+
+	// Free pool provider (anonymous free LLM API) — reachable in personal mode.
+	freeP := Provider{ID: "free-ovhcloud", APIKey: "free-anonymous"}
+	if !providerAllowsKeyType(freeP, "public") {
+		t.Error("public key should reach the community free pool in personal mode")
+	}
+
+	// Operator's private paid provider — must stay hidden in personal mode.
+	paidP := Provider{
+		AccessControl: ProviderAccessControl{ShareToPool: true},
+		APIKeys:       []APIKeyConfig{{Enabled: true, AccessControl: "shared"}},
+	}
+	if providerAllowsKeyType(paidP, "public") {
+		t.Error("public key must NOT expose operator's private paid providers in personal mode")
+	}
+}
+
+// TestIsFreePoolProvider verifies the free-pool provider detector used by the
+// P3-2 out-of-the-box free tier.
+func TestIsFreePoolProvider(t *testing.T) {
+	free := Provider{ID: "free-ovhcloud", APIKey: "free-anonymous"}
+	if !isFreePoolProvider(free) {
+		t.Error("provider with free-anonymous key should be detected as free pool")
+	}
+	prefixed := Provider{ID: "free-kilo-code", APIKey: "sk-x"}
+	if !isFreePoolProvider(prefixed) {
+		t.Error("provider with 'free-' ID prefix should be detected as free pool")
+	}
+	paid := Provider{ID: "openai", APIKey: "sk-paid"}
+	if isFreePoolProvider(paid) {
+		t.Error("paid provider should NOT be detected as free pool")
+	}
+}
+
 // ============================================================
 // hasNonPrivateKey tests
 // ============================================================

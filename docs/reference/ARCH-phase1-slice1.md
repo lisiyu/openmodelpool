@@ -3,7 +3,7 @@
 > **文档版本**: ARCH-Phase1-Slice1 v1.0
 > **作者**: 高见远（架构师）
 > **日期**: 2026-07-18
-> **基于**: `docs/PRD-phase1.md`（§0/§3 REQ-1~4/§5 切片①）、`ROADMAP_v3.md`（第 3 节）、现有 `admin.html` / `admin-network.js` / `*.go` 真实代码
+> **基于**: `./PRD-phase1.md`（§0/§3 REQ-1~4/§5 切片①）、现有 `admin.html` / `admin-network.js` / `*.go` 真实代码
 > **语言**: 简体中文
 > **范围**: REQ-1、REQ-2、REQ-3、REQ-4、REQ-12（部分底座）
 

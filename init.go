@@ -125,6 +125,11 @@ func initAllNetwork() {
 	// REQ-2 / T6: reconcile federation (and gossip) with the network_enabled
 	// single source of truth now that both managers are initialized.
 	netMgr.syncFederationToNetwork()
+
+	// 治理（P2-1）：启动时的软提醒（同步、best-effort）。绝不强制加入共享网络——
+	// 仅在有闲置自有额度时温和建议。供应方若在 init 时尚未就绪也只是本次不提示，
+	// admin 状态接口（/api/network/status）仍会持续展示软提醒。
+	logSharedNetworkSoftReminder()
 	if gossip == nil {
 		initGossip()
 	}

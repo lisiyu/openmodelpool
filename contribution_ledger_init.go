@@ -48,6 +48,16 @@ func initContributionLedger(dataDir string) {
 		slog.Info("contribution ledger initialized", "peer_id", selfID)
 	}
 
+	// P1-3(ii): wire the cross-node ledger replicator (nil-safe elsewhere).
+	ledgerReplicator = NewLedgerReplicator(contributionLedger, selfID)
+	// P1-3(iii): background loop that keeps federation ledgers consistent.
+	startLedgerReconcileLoop()
+	// P2-1: co-governance ledger — contributors govern; lightweight, no
+	// penalties. Voters = nodes that have contributed compute to the commons.
+	governanceLedger = NewGovernanceLedger(selfID, contributorsVoterSource, dataDir+"/governance.json")
+	// P2-3(i): accrue each donor's public-welfare free-quota entitlement.
+	contribQuotaTracker = initContributionQuotaTracker(dataDir)
+
 	capabilityVerifier = NewCapabilityVerifier(realProbeFn, 3)
 	go capabilityVerifier.ProbeSchedulerLoop()
 	slog.Info("capability verifier initialized")

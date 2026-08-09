@@ -1,5 +1,20 @@
 # Changelog
 
+## v4.3.28 (2026-08-09)
+
+### Features
+- **Region-aware download optimization**: Both the installer (`scripts/install.sh`, `scripts/omp-manager.sh`) and the built-in self-updater (`update.go`) now detect the VPS network region from its public IP (via `ifconfig.me` / `api.ipify.org` + `ip-api.com` geolocation). **Mainland China → mirrors first, direct GitHub last**; **overseas → direct GitHub first, mirrors as fallback**. Eliminates the slow direct-GitHub-first penalty for CN users.
+
+## v4.3.24 (2026-08-09)
+
+### Features
+- **Free pool works out of the box**: `Kilo Code` (api.kilo.ai, 12 models) and `OVHcloud AI Endpoints` (7 models) are now **seeded at first boot** as hardcoded default free providers — available immediately even before the remote free-provider sync completes (or with no network access to sync at all). Remote sync still augments the list.
+- **Installer multi-mirror download fallback**: `scripts/install.sh` now tries GitHub direct first, then falls back through `ghfast.top` / `gh-proxy.com` / `ghproxy.net` / `mirror.ghproxy.com` mirrors, with per-source retry/backoff, file-size validation, and multi-source SHA256 verification. Regions with poor GitHub connectivity install reliably.
+
+### Bug Fixes
+- Installer: `systemctl` detection hardened for restart-after-self-update edge cases.
+- Installer: download timeout now triggers the mirror fallback instead of failing outright.
+
 ## v4.3.21 (2026-08-08)
 
 ### Bug Fixes
@@ -403,3 +418,132 @@
 ### Bug Fixes — Additional Pre-existing Test Failures (4 tests fixed)
 - **Fix preset provider clearing**: Changed from `presetProviders = nil` to disabling `Enabled` on all presets, preserving `GetRaw`/`GetPresets` functionality (test_helpers_test.go)
 - **Fix TestQARouteSignalValidSignature race**: Use `MinSupportedVersion` instead of modifying `AppVersion`; add `reportToOriginWG.Wait()` (update_qa_test.go)
+
+---
+
+## Historical Release Notes (v4.1.6 and earlier)
+
+> Moved here from the README so the homepage stays short. Feature-level release notes; the entries above are the maintained engineering changelog.
+
+### v4.1.6 (2026-07)
+
+**🌐 Federation / Private Mesh**
+- **Private-node mesh** — `public_domain` + `federation_endpoint` now resolve the correct public address for private mesh interconnection; `resolvePublicEndpoint` no longer falls back to LAN hostnames in production
+- **Manual peer UI** — Add-node form for pasting a peer's public URL, plus invite-code based interconnection
+- **Seed auth** — `/federation/pool` read-only path allowed for trusted seed `Host`s only (fixes the prior 403)
+- **QA regression** — endpoint priority, empty `node_id` peer handling, `GetInfo` public endpoint
+
+### v4.1.5 (2026-07)
+
+**🖥️ Built-in Browser Login Fix**
+- **Cross-platform Chrome discovery** — `findBrowserExecutable` (env override `OMP_CHROME_PATH`/`CHROME_PATH`/`CHROMIUM_PATH` + OS dirs + PATH); replaces the Windows-only lookup
+- **Launch flags** — `--headless=new`, `--disable-gpu`, `--enable-unsafe-swiftshader` (fixes Chromium 139+ "chrome failed to start" on Windows); Linux adds `--no-sandbox` + `--disable-dev-shm-usage`
+- **Per-session profile** — isolated temp `userDataDir`, cleaned up after use
+- **Panic-safe JSON** — all browser handlers return valid JSON on panic
+- **Docs** — built-in browser prerequisite FAQ (requires Chrome/Chromium)
+
+### v4.1.4 (2026-07)
+
+**🧩 Web Session Providers on Main UI**
+- **`web_session` on main UI** — included in `/api/health` even without an API key
+
+### v4.1.3 (2026-07)
+
+**🛠️ Web Session Two-Step Save**
+- **Cookie field fix** — removed the readonly cookie field that blocked saving; `extra_cookies` now restored on edit load
+
+### v4.1.2 (2026-07)
+
+**🌐 LAN IP & Browser Login Fixes**
+- **LAN IP detection** — `getLocalIP` filters APIPA/link-local (169.254/16), prefers RFC1918 private IPs
+- **Linux browser login** — added `chromedp.Headless` for headless servers
+- **Docs** — corrected the stale "v4.0.3 fixed 169.254" claim
+
+### v4.1.1 (2026-07)
+
+**🔗 Network Join Conditions & Hardening**
+- **Join requires shared key only** — remaining quota downgraded to an idle-capacity reminder
+- **Codespace self-heal** — `run-omp.sh` repo-writable binary path; cron in postStart + `:8000` watchdog
+- **Concurrency** — eliminated remaining data race; resolved CI smoke-test failures
+- **Free pool** — key-management UI + real model sync + LLM7.io auth fix
+
+### v4.1.0 (2026-07)
+
+**🎁 Free Model Pool**
+- **Auto-sync free LLM providers** — 16+ free providers from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis), low-priority public pool
+- **Anonymous provider support** — OVHcloud works zero-config
+- **Real model list sync** — queries actual `/v1/models` after sync
+- **In-page API key management** — enable key-based providers from the Free Pool page
+- **24-hour auto-sync** + smart provider filtering + dark-theme admin page
+
+### v4.0.7 (2026-07)
+
+**🪟 Windows Browser Login & Domain Bind**
+- **Windows built-in browser login** — `chromedp.ExecPath` for Chrome path
+- **Domain manual-bind route** — `POST /api/domain/manual-bind` (fixes 405)
+- **Codespace** — `postStartCommand` auto-starts cron + OMP
+- **Windows script** — fixed `$var` parsing in double-quoted strings
+
+### v4.0.6 (2026-07)
+
+**🆔 Identity Module & Performance**
+- **Identity module (slice2)** — BIP39 mnemonic → Node ID (`mmx-` prefix)
+- **Performance** — preset caching + lite modes (68KB → 461B / 2.4KB)
+- **Cloudflare tunnel** — auto-detect GUI + install verification
+- **Docs** — consolidated 9 design docs into `openmodelpool-v4-design.md`
+
+### v4.0.5 (2026-07)
+
+**🔵 Script Consolidation**
+- **All-in-one manager scripts** — `omp-manager.sh` + `omp-manager.ps1`, `--auto-update` mode
+- **Dynamic Release asset detection** · **CPU arch auto-detection** · **SHA256 verification**
+
+### v4.0.4 (2026-07)
+
+**🟠 API & Performance**
+- **Anthropic Messages API compatibility** — `/v1/messages`
+- **ChatMessage array content fix** · **SOCKS5 connection pool** (5-7s → 0.3s) · **FindCandidates fix**
+
+### v4.0.3 (2026-07)
+
+**🟢 Multi-Key & Quota System**
+- **Multi-key health check** · **Quota aggregation** (Guest/Public pool) · **Multi-period quota** · **Platform cap**
+
+### v4.0.2 (2026-07)
+
+**🔵 Tunnel & Deployment**
+- **ngrok tunnel support** · **Cloudflare domain reuse** · **FRP tunnel reuse**
+
+### v4.0.1 (2026-07)
+
+**🔴 Architecture Upgrade**
+- **Dual-Mode Architecture** — Personal + Network
+- **BIP39 Mnemonic Identity** — → Ed25519 → Node ID
+- **5-Dimension Routing** — Trust/Reputation/Latency/Availability/Contribution
+- **Two-Level Switch** — `network_enabled` + `share_to_pool`
+
+**🟠 Network System (New)**
+- **P2P Node Discovery** (Peer Seed + DHT + Gossip) · **Reputation** (S/A/B/C/D) · **Contribution Credit** · **Guest/Public Key** · **WAF 4-Layer** · **Token Estimation** · **Auto Discovery** · **Load Balancer** · **Data Integrity** · **Global Pool** · **Algorithm Governance**
+
+**🟢 Platform Updates** — 34 → **36** platforms (Agnes AI, AIHubMix)
+
+### v3.4.1 (2026-07)
+
+**🔴 Admin UI Modularization**
+- **admin.html** 5063 → 2457 lines · JS modular split · sub-page architecture · 30 unused functions removed · 4-platform cross-compilation
+
+### v3.3.0 (2026-07)
+
+**🔴 Web Session Template System**
+- **`web_session` provider type** · **`WebSessionConfig`** (7 generic functions) · **Sider.ai migration**
+
+**🔴 Security Fixes**
+- API Key masking · Consumer Key AES-256-GCM · CORS tightening · file perms 0644→0600 · HttpOnly Cookie JWT · `/metrics` + `/events` auth required
+
+### v3.2.0 (2026-07)
+
+**🔴 Security & Performance**
+- **Rate Limiting** (token bucket) · **CORS whitelist** · **Sensitive field encryption unified** · **JSON parse error handling**
+
+**🟡 Feature Enhancements**
+- **Provider model list auto-sync** · **Federation Gossip** · **Structured logging** · **SSE `/events`** · **Prometheus `/metrics`** · **Frontend modularization** · **Config hot reload (`SIGHUP`)**

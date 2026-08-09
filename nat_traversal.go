@@ -21,6 +21,15 @@ type NATManager struct {
 	natType     string // "open", "full_cone", "symmetric", "unknown"
 	probeCache  map[string]probeResult
 	stunServers []string
+
+	// udpConn is a single long-lived UDP socket reused for BOTH STUN discovery
+	// and hole-punching. A fresh per-query socket would remap the source port
+	// each time, which defeats NAT-type detection (symmetric vs cone) and makes
+	// the peer aim its punch at the wrong port. Sharing one port keeps the
+	// reflexive address stable and the punches consistent.
+	udpConn  *net.UDPConn
+	localUDP string
+	stunCh   chan string // STUN responses surfaced by udpRecvLoop
 }
 
 type probeResult struct {
@@ -38,9 +47,21 @@ func initNATManager() {
 			"stun:stun.l.google.com:19302",
 			"stun:stun1.l.google.com:19302",
 		},
+		stunCh: make(chan string, 4),
+	}
+	// Bind one long-lived UDP socket reused for STUN discovery and
+	// hole-punching (see udpConn doc above). On bind failure we degrade
+	// gracefully: STUN discovery and UDP punching are disabled, relay stays.
+	if uc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0}); err != nil {
+		slog.Warn("NAT UDP socket bind failed; STUN/punch disabled", "error", err)
+	} else {
+		natMgr.udpConn = uc
+		natMgr.localUDP = uc.LocalAddr().String()
+		go natMgr.udpRecvLoop()
 	}
 	go natMgr.stunLoop()
-	slog.Info("NAT traversal manager initialized")
+	ensureDirectLinkMgr()
+	slog.Info("NAT traversal manager initialized", "local_udp", natMgr.localUDP)
 }
 
 // stunLoop periodically discovers the public address via STUN.
@@ -58,9 +79,12 @@ func (n *NATManager) stunLoop() {
 // All servers are queried so the NAT type can be distinguished; the first
 // successful mapping is advertised as this node's public address.
 func (n *NATManager) discoverPublicAddr() {
+	if n.udpConn == nil {
+		return
+	}
 	var addrs []string
 	for _, server := range n.stunServers {
-		addr, err := stunQuery(server)
+		addr, err := n.stunQueryOnConn(server)
 		if err != nil {
 			slog.Debug("STUN query failed", "server", server, "error", err)
 			continue
@@ -73,46 +97,14 @@ func (n *NATManager) discoverPublicAddr() {
 	n.mu.Lock()
 	n.publicAddr = addrs[0]
 	n.natType = classifyNAT(addrs)
+	pub := n.publicAddr
 	n.mu.Unlock()
-	slog.Info("STUN discovered public address", "addr", addrs[0], "nat_type", n.natType)
-}
-
-// stunQuery performs a simple STUN binding request over UDP and extracts
-// the XOR-MAPPED-ADDRESS from the response.
-func stunQuery(serverAddr string) (string, error) {
-	host := strings.TrimPrefix(serverAddr, "stun:")
-	addr, err := net.ResolveUDPAddr("udp", host)
-	if err != nil {
-		return "", fmt.Errorf("resolve STUN server: %w", err)
+	slog.Info("STUN discovered public address", "addr", pub, "nat_type", n.natType)
+	// Keep the direct-link manager's advertised reflexive address in sync so
+	// the offers it sends to peers point at the port we actually punch from.
+	if directLinkMgr != nil {
+		directLinkMgr.SetPubAddr(pub)
 	}
-
-	conn, err := net.DialTimeout("udp", addr.String(), 3*time.Second)
-	if err != nil {
-		return "", fmt.Errorf("dial STUN server: %w", err)
-	}
-	defer conn.Close()
-
-	// RFC 5389 Binding Request (magic cookie)
-	req := []byte{
-		0x00, 0x01, // Type: Binding Request
-		0x00, 0x00, // Length: 0
-		0x21, 0x12, 0xA4, 0x42, // Magic Cookie
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Transaction ID
-	}
-
-	_, err = conn.Write(req)
-	if err != nil {
-		return "", fmt.Errorf("write STUN request: %w", err)
-	}
-
-	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-	buf := make([]byte, 576)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return "", fmt.Errorf("read STUN response: %w", err)
-	}
-	return parseSTUNResponse(buf[:n])
 }
 
 // parseSTUNResponse extracts the XOR-MAPPED-ADDRESS from a STUN Binding
@@ -303,6 +295,97 @@ func handleDirectProbe(w http.ResponseWriter, r *http.Request) {
 		"latency_ms": result.LatencyMS,
 		"probed_at":  result.ProbedAt.Format(time.RFC3339),
 	})
+}
+
+// UDPConn returns the shared UDP socket (nil if bind failed). Callers use it
+// for hole-punching so the source port matches the advertised reflexive addr.
+func (n *NATManager) UDPConn() *net.UDPConn { return n.udpConn }
+
+// LocalUDP returns the bound "ip:port" of the shared UDP socket.
+func (n *NATManager) LocalUDP() string { return n.localUDP }
+
+// stunQueryOnConn performs a STUN binding request over the shared UDP socket so
+// the source port matches the one peers will punch against. Because the socket
+// also carries hole-punch datagrams, we may read a non-STUN packet first; we
+// retry until a valid STUN response arrives or the 3s deadline elapses.
+func (n *NATManager) stunQueryOnConn(serverAddr string) (string, error) {
+	if n.udpConn == nil {
+		return "", fmt.Errorf("udp socket unavailable")
+	}
+	host := strings.TrimPrefix(serverAddr, "stun:")
+	srv, err := net.ResolveUDPAddr("udp", host)
+	if err != nil {
+		return "", fmt.Errorf("resolve STUN server: %w", err)
+	}
+	req := []byte{
+		0x00, 0x01, 0x00, 0x00, // Binding Request, length 0
+		0x21, 0x12, 0xA4, 0x42, // Magic Cookie
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Transaction ID
+	}
+	if _, err := n.udpConn.WriteToUDP(req, srv); err != nil {
+		return "", fmt.Errorf("write STUN request: %w", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("read STUN response: timeout")
+		}
+		_ = n.udpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		buf := make([]byte, 576)
+		nn, _, rerr := n.udpConn.ReadFromUDP(buf)
+		if rerr != nil {
+			if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			return "", fmt.Errorf("read STUN response: %w", rerr)
+		}
+		if addr, perr := parseSTUNResponse(buf[:nn]); perr == nil {
+			return addr, nil
+		}
+	}
+}
+
+// udpRecvLoop is the SINGLE reader of the shared UDP socket. It multiplexes
+// inbound datagrams: hole-punch frames are handed to the DirectLinkManager,
+// STUN responses are surfaced on stunCh for stunQueryOnConn. A single reader
+// avoids concurrent ReadFromUDP races between STUN polling and punching.
+func (n *NATManager) udpRecvLoop() {
+	buf := make([]byte, 1500)
+	for {
+		_ = n.udpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		nn, addr, err := n.udpConn.ReadFromUDP(buf)
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			return
+		}
+		if offer, derr := DecodePunchOffer(buf[:nn]); derr == nil {
+			if directLinkMgr != nil {
+				directLinkMgr.Ingest(offer, addr)
+			}
+			continue
+		}
+		if a, perr := parseSTUNResponse(buf[:nn]); perr == nil {
+			select {
+			case n.stunCh <- a:
+			default:
+			}
+		}
+	}
+}
+
+// ensureDirectLinkMgr lazily wires the DirectLinkManager onto the shared UDP
+// socket once netMgr (which supplies the node id) is available.
+func ensureDirectLinkMgr() {
+	if directLinkMgr != nil || natMgr == nil || natMgr.udpConn == nil {
+		return
+	}
+	if netMgr == nil {
+		return
+	}
+	directLinkMgr = NewDirectLinkManager(natMgr.udpConn, netMgr.GetNodeID(), natMgr.localUDP, natMgr.publicAddr, false)
 }
 
 func init() {

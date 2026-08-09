@@ -83,6 +83,13 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	targetNodeID := parts[0]
 
+	// Punch-offer exchange endpoint: a peer POSTs its PunchOffer here so we can
+	// start punching a direct UDP channel back to it. No route lookup needed.
+	if targetNodeID == "__punch" {
+		handlePunchExchange(w, r)
+		return
+	}
+
 	// Validate NodeID format
 	if !strings.HasPrefix(targetNodeID, p2pNodeIDPrefix) {
 		writeError(w, 400, "invalid node_id format")
@@ -271,15 +278,34 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 		return
 	}
 
-	// NAT traversal (§7.5): attempt direct connection if cached probe is stale.
-	// A symmetric NAT remaps the source port per destination, so a direct
-	// connection cannot be established — skip the (futile) probe and go
-	// straight to relay. Otherwise, probe direct when the cached result is
-	// stale; relay remains the fallback if the probe fails.
+	// NAT traversal (§7.5): decide between relay, direct-TCP probe, and a
+	// direct UDP hole-punch.
+	//   - symmetric NAT (PreferRelay): relay only, never punch — the port
+	//     remaps per destination so a direct channel is mathematically impossible.
+	//   - direct UDP link already established: skip the redundant TCP probe and
+	//     let the verified direct channel carry traffic (relay bypass).
+	//   - otherwise: probe direct over TCP when stale, AND asynchronously kick
+	//     off a UDP hole-punch (exchange our offer with the peer + punch toward
+	//     its reflexive address) so a direct channel can be built opportunistically.
 	if natMgr != nil && natMgr.PreferRelay() {
 		// symmetric NAT: relay only
+	} else if directLinkMgr != nil && directLinkMgr.HasDirect(entry.NodeID) {
+		slog.Info("relay: direct UDP link verified, bypassing TCP probe", "peer", entry.NodeID)
 	} else if natMgr != nil && !natMgr.ShouldUseDirect(entry.NodeID) {
 		go natMgr.ProbeDirect(entry.NodeID, targetAddr)
+		if directLinkMgr != nil && entry.ReflexiveUDP != "" {
+			go func() {
+				offer, err := directLinkMgr.Offer()
+				if err != nil {
+					return
+				}
+				// Hand our offer to the peer (over its HTTPS endpoint) and start
+				// punching toward its reflexive address. The peer does the same,
+				// so both NAT mappings open concurrently.
+				ExchangePunchWithPeer(targetAddr, offer)
+				directLinkMgr.BeginPunch(PunchOffer{NodeID: entry.NodeID, ReflexiveAddr: entry.ReflexiveUDP}, time.Second, 20)
+			}()
+		}
 	}
 
 	// SA-04: Enforce HTTPS for relay to prevent data interception
@@ -376,6 +402,53 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 
 	slog.Info("relaying to remote", "target_node", entry.NodeID, "addr", targetAddr, "path", restPath, "hop", hopCount+1)
 	proxy.ServeHTTP(w, r)
+}
+
+// handlePunchExchange receives a peer's PunchOffer (POSTed to
+// /network/__punch) and starts a hole-punch back toward that peer. The actual
+// punch frames are delivered to DirectLinkManager.Ingest by the NATManager's
+// single UDP reader (udpRecvLoop), which marks the channel established.
+func handlePunchExchange(w http.ResponseWriter, r *http.Request) {
+	if directLinkMgr == nil {
+		writeError(w, 503, "punch not available")
+		return
+	}
+	var offer PunchOffer
+	if err := json.NewDecoder(r.Body).Decode(&offer); err != nil {
+		writeError(w, 400, "invalid punch offer")
+		return
+	}
+	if offer.NodeID == "" || offer.ReflexiveAddr == "" {
+		writeError(w, 400, "punch offer missing node_id or reflexive_addr")
+		return
+	}
+	directLinkMgr.BeginPunch(offer, time.Second, 20)
+	writeJSON(w, 200, map[string]any{"accepted": true, "peer": offer.NodeID})
+}
+
+// ExchangePunchWithPeer sends our PunchOffer to a peer's /network/__punch
+// endpoint so it can start punching back. A short timeout keeps a slow or
+// unreachable peer from blocking the (best-effort, async) punch attempt.
+func ExchangePunchWithPeer(peerBase string, offer PunchOffer) {
+	body, err := json.Marshal(offer)
+	if err != nil {
+		return
+	}
+	url := strings.TrimRight(peerBase, "/") + "/network/__punch"
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		slog.Debug("punch exchange: build request failed", "peer", peerBase, "error", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		slog.Debug("punch exchange: POST failed", "peer", peerBase, "error", err)
+		return
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
 }
 
 // pickBestAddress selects the best address from a list (prefer HTTPS public URLs)
@@ -612,6 +685,11 @@ func verifyRelayForwardAuth(r *http.Request, body []byte) (int, string) {
 // handleGatewayRequest handles /v1/chat/completions, /v1/completions, /v1/embeddings
 // in gateway mode. It selects the best node and forwards the request.
 func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
+	// P2-3(ii): drop any client-supplied internal quota marker before it can be
+	// trusted. Only this handler is allowed to set it (after it has actually
+	// accounted for the request).
+	stripInternalQuotaHeaders(r)
+
 	// Check hop count to prevent loops
 	hopCount := 0
 	if hopStr := r.Header.Get(headerRelayHop); hopStr != "" {
@@ -696,11 +774,7 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	keyType := ClassifyKey(bearerKey)
 
 	var reservedQuota int64
-	if keyType == KeyTypePublic && publicQuota != nil {
-		clientIP := ""
-		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			clientIP = ip
-		}
+	if keyType == KeyTypePublic {
 		estimatedTokens := int64(4096) // default estimate
 		if mt, ok := bodyMap["max_tokens"]; ok {
 			var mtVal int64
@@ -709,12 +783,29 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		ok, reason, _ := publicQuota.ReserveQuota(clientIP, model, estimatedTokens)
-		if !ok {
-			writeError(w, 429, fmt.Sprintf("public key quota exceeded: %s", reason))
-			return
+		// P2-3(ii): a cryptographically verified contributor with remaining
+		// entitlement pays out of what it already donated, and therefore skips
+		// the anonymous per-IP abuse guard. If it has no entitlement left (or
+		// is not identifiable at all) nothing is denied — control simply falls
+		// through to the community free pool below, exactly as before.
+		if draw := tryContributorDraw(r, estimatedTokens); draw.OK {
+			w.Header().Set(headerQuotaSource, quotaSourceContributor)
+			r.Header.Set(headerQuotaCharged, quotaSourceContributor)
+			defer draw.settle(0)
+		} else if publicQuota != nil {
+			clientIP := ""
+			if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+				clientIP = ip
+			}
+			ok, reason, _ := publicQuota.ReserveQuota(clientIP, model, estimatedTokens)
+			if !ok {
+				writeError(w, 429, fmt.Sprintf("public key quota exceeded: %s", reason))
+				return
+			}
+			reservedQuota = estimatedTokens
+			w.Header().Set(headerQuotaSource, quotaSourceCommunity)
+			r.Header.Set(headerQuotaCharged, quotaSourceCommunity)
 		}
-		reservedQuota = estimatedTokens
 	}
 
 	// Try to find the best node for this model

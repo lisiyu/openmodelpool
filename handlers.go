@@ -697,6 +697,31 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		accessType = "guest"
 	}
 
+	// P3-2: abuse guard for the global public key on the DIRECT request path.
+	// Reuses the existing per-IP four-layer PublicKeyQuota so a single abuser
+	// cannot monopolize the community free pool. (The relay/cross-node path in
+	// network_relay.go already applies the same guard; this closes the gap for
+	// requests served directly by this node.)
+	//
+	// P2-3(ii): skip when the gateway already accounted for this request
+	// (marker set by handleGatewayRequest, which strips any client-supplied
+	// value first). Without this check a request arriving through the gateway
+	// and falling back to local handling would be charged twice against the
+	// same per-IP cap, and a contributor drawing on its own entitlement would
+	// still be throttled at the anonymous rate.
+	if keyType == "public" && publicQuota != nil && r.Header.Get(headerQuotaCharged) == "" {
+		clientIP := extractClientIP(r.RemoteAddr)
+		estTokens := int64(4096)
+		if req.MaxTokens != nil && *req.MaxTokens > 0 {
+			estTokens = int64(*req.MaxTokens)
+		}
+		if ok, reason, _ := publicQuota.ReserveQuota(clientIP, model, estTokens); !ok {
+			writeError(w, 429, fmt.Sprintf("public free pool quota exceeded: %s", reason))
+			return
+		}
+		defer publicQuota.AdjustQuota(clientIP, model, estTokens, 0)
+	}
+
 	// D-4: Per-Key local quota check for Guest Keys
 	if keyType == "guest" && guestKeyUsage != nil && guestKeyStore != nil {
 		auth := r.Header.Get("Authorization")

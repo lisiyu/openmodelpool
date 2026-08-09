@@ -399,7 +399,7 @@ graph TD
 - **多 Seed 冗余与故障切换**：留 Phase 2/3。
 - **模型能力矩阵之外的定价/计费货币化**：不做。
 
-> **注（准确性修正）**：DHT Kademlia 发现当前为**内存 K-Bucket 空壳**（`dht_kademlia.go`，无真实网络 I/O，`GetDHTStats` 返回 `enabled:false`）；贡献账本为**本地内容哈希存储**（`ContentHashStore`，`sha256:` 前缀），**未接入任何 IPFS 节点**。所谓"已实现（内存版）"仅为本地桩，完整网络 I/O 与分布式持久化均尚未实现，请勿据此误判进度。
+> **注（准确性修正）**：DHT Kademlia 发现当前为**内存 K-Bucket 空壳**（`dht_kademlia.go`，无真实网络 I/O，`GetDHTStats` 返回 `enabled:false`），真实 P2P 路由仍待后续阶段。贡献账本存储层：本地为**内容哈希存储**（`ContentHashStore`，`sha256:` 前缀，**非 IPFS 节点**）；作为真 IPFS 的短期替代，**联邦内多节点冗余已实现（P1-3，2026-08-09 落地）**——`LedgerReplicator` 在贡献落库后异步推送至各联邦节点 `/ledger/__sync`，并提供 `/ledger/__manifest` + `/ledger/__record` + 后台每 60s `ReconcileAll` 自动对账自愈（缺失记录按内容哈希补齐、分歧仅告警不覆盖），`/api/admin/ledger/transparency` 暴露"算力从哪来、到哪去"透明度、`/api/admin/ledger/export` 支持 CSV/JSON 开放下载。真 IPFS/Kademlia 网络 I/O 仍留待后续阶段，请勿据此误判为"已完全去中心化"。
 
 ---
 

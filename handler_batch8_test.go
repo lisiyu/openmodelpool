@@ -1284,6 +1284,27 @@ func TestHB8_FilterByAccessControl_Guest(t *testing.T) {
 	}
 }
 
+// TestHB8_FilterByAccessControl_PublicFreePoolPersonalMode verifies P3-2:
+// in personal mode the global public key reaches ONLY the community free pool
+// (anonymous free LLM APIs), never the operator's private paid providers.
+func TestHB8_FilterByAccessControl_PublicFreePoolPersonalMode(t *testing.T) {
+	savedNet := netMgr
+	netMgr = nil // simulate personal mode (not shared)
+	defer func() { netMgr = savedNet }()
+
+	cands := []candidate{
+		{Provider: Provider{ID: "free-ovhcloud", APIKey: "free-anonymous"}, Model: "m-free"},
+		{Provider: Provider{ID: "p-private", APIKey: "sk-paid"}, Model: "m-priv"},
+	}
+	result := FilterByAccessControl(cands, "public")
+	if len(result) != 1 {
+		t.Fatalf("public key in personal mode should reach ONLY the free pool, got %d", len(result))
+	}
+	if result[0].Provider.ID != "free-ovhcloud" {
+		t.Fatalf("expected free pool provider, got %s", result[0].Provider.ID)
+	}
+}
+
 // ============================================================
 // Global Pool tests
 // ============================================================
