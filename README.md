@@ -160,7 +160,7 @@ Both manager scripts provide an interactive menu: install / upgrade / uninstall 
 
 ## 📜 License
 
-MIT
+MIT — see [LICENSE](LICENSE).
 
 ---
 
