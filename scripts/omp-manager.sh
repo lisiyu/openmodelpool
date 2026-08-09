@@ -660,6 +660,16 @@ upgrade_omp() {
     write_info "目标版本: $RELEASE_TAG"
 
     write_step 1 5 "停止服务..."
+    # 备份关键数据文件（升级前后配置格式兼容保障）
+    local BACKUP_TS=$(date +%Y%m%d_%H%M%S)
+    if [ -d "$INSTALL_DIR/data" ]; then
+        for f in config.json providers.json admin.json .key; do
+            if [ -f "$INSTALL_DIR/data/$f" ]; then
+                cp "$INSTALL_DIR/data/$f" "$INSTALL_DIR/data/${f}.bak.${BACKUP_TS}" 2>/dev/null || true
+            fi
+        done
+        write_ok "数据已备份 ($BACKUP_TS)"
+    fi
     stop_omp
     sleep 2
     write_ok "已停止"
@@ -706,8 +716,34 @@ upgrade_omp() {
     start_omp
     sleep 3
 
-    if pgrep -f "$BINARY_NAME" >/dev/null 2>&1; then
-        write_ok "升级成功！数据已保留。"
+    if pgrep -f "$BINARY_NAME" > /dev/null 2>&1; then
+        # 健康检查：验证 API 可访问且配置加载正常
+        sleep 2
+        local HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/api/health" 2>/dev/null)
+        local PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers",0))' 2>/dev/null)
+        if [ -n "$PROVIDERS" ] && [ "$PROVIDERS" -gt 0 ] 2>/dev/null; then
+            write_ok "升级成功！数据已保留。providers=$PROVIDERS"
+        else
+            # 配置可能加载失败（格式不兼容），尝试从备份恢复
+            write_info "⚠️ 配置加载异常，尝试从备份恢复..."
+            local LATEST_BAK=$(ls -t "$INSTALL_DIR/data/config.json.bak."* 2>/dev/null | head -1)
+            if [ -n "$LATEST_BAK" ]; then
+                stop_omp 2>/dev/null || true
+                sleep 2
+                cp "$LATEST_BAK" "$INSTALL_DIR/data/config.json"
+                start_omp 2>/dev/null || true
+                sleep 3
+                HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/api/health" 2>/dev/null)
+                PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers",0))' 2>/dev/null)
+                if [ -n "$PROVIDERS" ] && [ "$PROVIDERS" -gt 0 ] 2>/dev/null; then
+                    write_ok "从备份恢复成功！providers=$PROVIDERS"
+                else
+                    write_err "恢复后仍异常，请检查日志: $INSTALL_DIR/data/app.log"
+                fi
+            else
+                write_err "未找到配置备份，请检查日志: $INSTALL_DIR/data/app.log"
+            fi
+        fi
     else
         write_err "启动失败，请检查日志: $INSTALL_DIR/data/app.log"
     fi
@@ -1645,6 +1681,15 @@ auto_update() {
 
     # 备份
     cp "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/${BINARY_NAME}.bak" 2>/dev/null || true
+    # 备份关键数据文件（配置格式兼容保障）
+    local BACKUP_TS=$(date +%Y%m%d_%H%M%S)
+    if [ -d "$INSTALL_DIR/data" ]; then
+        for f in config.json providers.json admin.json .key; do
+            if [ -f "$INSTALL_DIR/data/$f" ]; then
+                cp "$INSTALL_DIR/data/$f" "$INSTALL_DIR/data/${f}.bak.${BACKUP_TS}" 2>/dev/null || true
+            fi
+        done
+    fi
 
     # 停止服务
     stop_omp 2>/dev/null || true
@@ -1666,8 +1711,40 @@ auto_update() {
     start_omp 2>/dev/null || true
     sleep 3
 
-    if pgrep -f "$BINARY_NAME" >/dev/null 2>&1; then
-        echo "[$(date)] ✅ 自动更新成功: $LATEST_TAG" >> "$LOG_FILE"
+    if pgrep -f "$BINARY_NAME" > /dev/null 2>&1; then
+        # 健康检查：验证 API 可访问且配置加载正常
+        sleep 2
+        local HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/api/health" 2>/dev/null)
+        local PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers",0))' 2>/dev/null)
+        if [ -n "$PROVIDERS" ] && [ "$PROVIDERS" -gt 0 ] 2>/dev/null; then
+            echo "[$(date)] ✅ 自动更新成功: $LATEST_TAG (providers=$PROVIDERS)" >> "$LOG_FILE"
+        else
+            # 配置可能加载失败，尝试从备份恢复
+            echo "[$(date)] ⚠️ 配置加载异常，尝试从备份恢复..." >> "$LOG_FILE"
+            local LATEST_BAK=$(ls -t "$INSTALL_DIR/data/config.json.bak."* 2>/dev/null | head -1)
+            if [ -n "$LATEST_BAK" ]; then
+                stop_omp 2>/dev/null || true
+                sleep 2
+                cp "$LATEST_BAK" "$INSTALL_DIR/data/config.json"
+                start_omp 2>/dev/null || true
+                sleep 3
+                HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/api/health" 2>/dev/null)
+                PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers",0))' 2>/dev/null)
+                if [ -n "$PROVIDERS" ] && [ "$PROVIDERS" -gt 0 ] 2>/dev/null; then
+                    echo "[$(date)] ✅ 从备份恢复成功: providers=$PROVIDERS" >> "$LOG_FILE"
+                else
+                    echo "[$(date)] ❌ 恢复后仍异常，回滚二进制..." >> "$LOG_FILE"
+                    cp "$INSTALL_DIR/${BINARY_NAME}.bak" "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
+                    start_omp 2>/dev/null || true
+                    echo "[$(date)] 已回滚到旧版本" >> "$LOG_FILE"
+                fi
+            else
+                echo "[$(date)] ❌ 未找到配置备份，回滚二进制..." >> "$LOG_FILE"
+                cp "$INSTALL_DIR/${BINARY_NAME}.bak" "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
+                start_omp 2>/dev/null || true
+                echo "[$(date)] 已回滚到旧版本" >> "$LOG_FILE"
+            fi
+        fi
     else
         echo "[$(date)] ❌ 启动失败，回滚..." >> "$LOG_FILE"
         cp "$INSTALL_DIR/${BINARY_NAME}.bak" "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
