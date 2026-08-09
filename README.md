@@ -8,7 +8,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v4.3.24-blue)](#)
+[![Version](https://img.shields.io/badge/version-v4.3.29-blue)](#)
 [![Non-profit](https://img.shields.io/badge/non--profit-no%20token%20%C2%B7%20no%20skim-2f855a)](docs/PUBLIC-WELFARE.en.md)
 
 ---
