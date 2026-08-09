@@ -66,12 +66,50 @@ else
     warn "校验文件不可用，跳过"
 fi
 
-# ─── 停止服务 ───
-if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-    info "停止服务..."
-    systemctl stop "$SERVICE_NAME"
-    ok "服务已停止"
+# ─── systemctl 可用性检测 ───
+USE_SYSTEMCTL=true
+if command -v systemctl &>/dev/null; then
+    # Test if systemctl actually works (some environments block it)
+    if ! systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && \
+       ! systemctl list-units --type=service 2>/dev/null | grep -q "$SERVICE_NAME"; then
+        # systemctl exists but might be blocked - test further
+        if ! systemctl show "$SERVICE_NAME" &>/dev/null 2>&1; then
+            USE_SYSTEMCTL=false
+            warn "systemctl 受限，使用直接进程管理"
+        fi
+    fi
+else
+    USE_SYSTEMCTL=false
+    warn "systemctl 不可用，使用直接进程管理"
 fi
+
+# ─── 停止服务 ───
+stop_service() {
+    if $USE_SYSTEMCTL; then
+        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+            info "停止服务 (systemctl)..."
+            systemctl stop "$SERVICE_NAME"
+            ok "服务已停止"
+        fi
+    else
+        # Direct process management
+        info "停止服务 (直接进程管理)..."
+        if pgrep -x "$BINARY_NAME" &>/dev/null; then
+            pkill -x "$BINARY_NAME" 2>/dev/null || true
+            sleep 2
+            # Force kill if still running
+            if pgrep -x "$BINARY_NAME" &>/dev/null; then
+                pkill -9 -x "$BINARY_NAME" 2>/dev/null || true
+                sleep 1
+            fi
+            ok "进程已停止"
+        else
+            info "服务未运行"
+        fi
+    fi
+}
+
+stop_service
 
 # ─── 安装目录 ───
 INSTALL_DIR="$DEFAULT_INSTALL_DIR"
@@ -92,9 +130,10 @@ NEW_VER=$("$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null || echo "$TARGET_VER
 ok "已安装 $NEW_VER"
 
 # ─── systemd unit ───
-if [[ ! -f /etc/systemd/system/${SERVICE_NAME}.service ]]; then
-    info "创建 systemd 服务..."
-    cat > /etc/systemd/system/${SERVICE_NAME}.service << UNIT
+if $USE_SYSTEMCTL; then
+    if [[ ! -f /etc/systemd/system/${SERVICE_NAME}.service ]]; then
+        info "创建 systemd 服务..."
+        cat > /etc/systemd/system/${SERVICE_NAME}.service << UNIT
 [Unit]
 Description=OpenModelPool - AI Model Router & Load Balancer
 After=network-online.target
@@ -111,22 +150,36 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 UNIT
-    systemctl daemon-reload
-    systemctl enable "$SERVICE_NAME" 2>/dev/null || true
-    ok "systemd 服务已创建并启用"
-else
-    info "systemd 服务已存在，跳过创建"
+        systemctl daemon-reload
+        systemctl enable "$SERVICE_NAME" 2>/dev/null || true
+        ok "systemd 服务已创建并启用"
+    else
+        info "systemd 服务已存在，跳过创建"
+    fi
 fi
 
 # ─── 启动 ───
-info "启动服务..."
-systemctl start "$SERVICE_NAME"
-sleep 3
+start_service() {
+    if $USE_SYSTEMCTL; then
+        info "启动服务 (systemctl)..."
+        systemctl start "$SERVICE_NAME"
+        sleep 3
+        if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+            fail "服务启动失败，检查日志:\n  journalctl -u $SERVICE_NAME -n 50"
+        fi
+    else
+        info "启动服务 (直接启动)..."
+        cd "$INSTALL_DIR"
+        nohup ./$BINARY_NAME > "$INSTALL_DIR/omp.log" 2>&1 &
+        sleep 3
+        if ! pgrep -x "$BINARY_NAME" &>/dev/null; then
+            fail "服务启动失败，检查日志:\n  cat $INSTALL_DIR/omp.log | tail -50"
+        fi
+    fi
+    ok "服务运行中"
+}
 
-if ! systemctl is-active --quiet "$SERVICE_NAME"; then
-    fail "服务启动失败，检查日志:\n  journalctl -u $SERVICE_NAME -n 50"
-fi
-ok "服务运行中"
+start_service
 
 # ─── 健康检查 ───
 sleep 2
@@ -161,5 +214,9 @@ echo "║  架构:    $PLATFORM"
 echo "║  路径:    $INSTALL_DIR/$BINARY_NAME"
 echo "║  数据:    $DATA_DIR"
 echo "║  管理面板: http://$IP:8000"
+if $USE_SYSTEMCTL; then
 echo "║  日志:    journalctl -u $SERVICE_NAME -f"
+else
+echo "║  日志:    tail -f $INSTALL_DIR/omp.log"
+fi
 echo "╚══════════════════════════════════════════╝"

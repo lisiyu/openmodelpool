@@ -395,6 +395,36 @@ select.form-input{appearance:none;cursor:pointer}
             <span style="font-size:13px">🌐 启动内置浏览器</span>
           </button>
         </div>
+
+        <div id="clientBrowserLogin" style="margin-bottom:16px;padding:16px;background:linear-gradient(135deg,rgba(0,122,255,.06),rgba(0,122,255,.02));border:1px solid rgba(0,122,255,.2);border-radius:12px">
+          <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="toggleClientLogin()">
+            <span style="font-size:16px">💻</span>
+            <span style="font-size:13px;font-weight:600;color:var(--text-primary)">本机浏览器登录</span>
+            <span style="font-size:11px;color:var(--text-muted);margin-left:4px">（使用你自己的浏览器完成登录）</span>
+            <span id="clientLoginArrow" style="margin-left:auto;font-size:10px;color:var(--text-muted);transition:transform .2s">▼</span>
+          </div>
+          <div id="clientLoginBody" style="display:none;margin-top:14px">
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.8;margin-bottom:12px">
+              <b>第一步：</b>将下方蓝色按钮拖到书签栏（仅需一次）<br>
+              <div style="margin:10px 0">
+                <a id="bookmarkletLink" href="#" draggable="true" style="display:inline-block;padding:8px 20px;background:linear-gradient(135deg,#007aff,#0055d4);color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;cursor:grab;box-shadow:0 2px 8px rgba(0,122,255,.3)" ondragstart="event.dataTransfer.setData('text/plain',this.href)">📌 拖我到书签栏</a>
+              </div>
+              <b>第二步：</b>点击下方按钮打开平台登录页，完成登录<br>
+              <button onclick="openProviderLogin()" class="btn btn-sm" style="margin:8px 0;width:100%;background:linear-gradient(135deg,#007aff,#0055d4);color:#fff;font-weight:600;padding:10px">🔗 打开登录页面</button>
+              <b>第三步：</b>登录成功后，点击刚才保存的书签 → Token 自动保存到本节点
+            </div>
+            <div id="clientLoginStatus" style="font-size:12px;padding:8px 12px;border-radius:8px;background:var(--bg-input);margin-bottom:10px;display:none"></div>
+            <details style="margin-top:8px">
+              <summary style="font-size:12px;color:var(--text-muted);cursor:pointer">手动粘贴 Token（备用）</summary>
+              <div style="margin-top:8px;display:flex;gap:8px">
+                <input id="manualTokenInput" class="form-input" type="text" placeholder="粘贴 Token..." style="flex:1;font-family:monospace;font-size:12px">
+                <button onclick="saveManualToken()" class="btn btn-primary btn-sm" style="white-space:nowrap">💾 保存</button>
+              </div>
+              <div id="manualTokenStatus" style="font-size:11px;margin-top:6px"></div>
+            </details>
+          </div>
+        </div>
+
         <div class="form-group" id="pExtraCookiesGroup" style="display:none">
           <label class="form-label">🌐 浏览器 Cookie</label>
           <textarea class="form-input" id="pExtraCookies" rows="2" style="font-family:monospace;font-size:11px" placeholder="可手动粘贴 Cookie，或由内置浏览器登录自动填充"></textarea>
@@ -1794,6 +1824,125 @@ async function autoSaveForBrowserLogin(pid) {
   } catch(e) {
     toast('自动保存失败: ' + e.message, 'error');
     return false;
+  }
+}
+
+
+// === 本机浏览器登录 (Client Browser Login) ===
+let clientLoginPollTimer = null;
+
+function toggleClientLogin() {
+  const body = document.getElementById('clientLoginBody');
+  const arrow = document.getElementById('clientLoginArrow');
+  const show = body.style.display === 'none';
+  body.style.display = show ? 'block' : 'none';
+  arrow.style.transform = show ? 'rotate(180deg)' : 'rotate(0)';
+  if (show) generateBookmarklet();
+}
+
+function generateBookmarklet() {
+  const ompUrl = window.location.origin;
+  const providerId = document.getElementById('pProviderId')?.value || getCurrentProviderId();
+  // Bookmarklet: extract token from current page cookie and POST to OMP
+  const bmCode = `(function(){
+    var t='',c=document.cookie.split('; ');
+    for(var i=0;i<c.length;i++){
+      var m=c[i].match(/^token=(.+)/);
+      if(m){t=decodeURIComponent(m[1]);break;}
+    }
+    if(!t){
+      try{t=localStorage.getItem('token')||localStorage.getItem('auth_token')||'';}catch(e){}
+    }
+    if(!t){alert('未找到 Token，请先登录');return;}
+    if(t.startsWith('Bearer%20'))t=t.replace('Bearer%20','');
+    if(t.startsWith('Bearer '))t=t.replace('Bearer ','');
+    fetch('${ompUrl}/api/providers/'+encodeURIComponent('${providerId}'),{
+      method:'PUT',
+      headers:{'Content-Type':'application/json','X-Admin-Token':localStorage.getItem('omp_admin_token')||''},
+      body:JSON.stringify({api_key:t,extra_cookies:'token=Bearer%20'+t+'; refresh_token=discard'})
+    }).then(function(r){return r.json()}).then(function(d){
+      if(d.success)alert('Token 已自动保存！');
+      else alert('保存失败: '+(d.error||'未知错误'));
+    }).catch(function(e){alert('请求失败: '+e.message);});
+  })();`;
+  const bookmarkletUrl = 'javascript:' + encodeURIComponent(bmCode);
+  const link = document.getElementById('bookmarkletLink');
+  if (link) link.href = bookmarkletUrl;
+}
+
+function openProviderLogin() {
+  const pid = getCurrentProviderId();
+  const urls = {
+    'sider': 'https://sider.ai',
+    'poe': 'https://poe.com/login',
+    'anthropic': 'https://console.anthropic.com/login',
+  };
+  const url = urls[pid] || 'https://' + pid + '.com';
+  window.open(url, '_blank');
+  // Start polling for token update
+  startClientLoginPoll();
+}
+
+function startClientLoginPoll() {
+  if (clientLoginPollTimer) clearInterval(clientLoginPollTimer);
+  const statusEl = document.getElementById('clientLoginStatus');
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = '⏳ 等待 Token 回传...（登录后点击书签即可）';
+  statusEl.style.color = 'var(--info)';
+  
+  clientLoginPollTimer = setInterval(async () => {
+    try {
+      const pid = getCurrentProviderId();
+      const r = await authFetch('/api/providers/' + pid);
+      const d = await r.json();
+      if (d && d.api_key && d.api_key !== 'your-api-key-here' && !d.api_key.includes('...')) {
+        clearInterval(clientLoginPollTimer);
+        clientLoginPollTimer = null;
+        statusEl.innerHTML = '✅ Token 已自动保存！';
+        statusEl.style.color = 'var(--success)';
+        statusEl.style.background = 'rgba(34,197,94,.1)';
+        // Auto test
+        setTimeout(() => testSiderToken?.(), 1500);
+      }
+    } catch(e) {}
+  }, 3000);
+  
+  // Stop polling after 5 minutes
+  setTimeout(() => {
+    if (clientLoginPollTimer) {
+      clearInterval(clientLoginPollTimer);
+      clientLoginPollTimer = null;
+      statusEl.innerHTML = '⏱ 等待超时，请确认是否已点击书签';
+      statusEl.style.color = 'var(--warning)';
+    }
+  }, 300000);
+}
+
+async function saveManualToken() {
+  const input = document.getElementById('manualTokenInput');
+  const status = document.getElementById('manualTokenStatus');
+  const token = input.value.trim();
+  if (!token) { status.innerHTML = '<span style="color:var(--error)">请输入 Token</span>'; return; }
+  const pid = getCurrentProviderId();
+  status.innerHTML = '<span style="color:var(--info)">⏳ 保存中...</span>';
+  try {
+    const r = await authFetch('/api/providers/' + pid, {
+      method: 'PUT',
+      body: JSON.stringify({
+        api_key: token,
+        extra_cookies: 'token=Bearer%20' + token + '; refresh_token=discard'
+      })
+    });
+    const d = await r.json();
+    if (d.success) {
+      status.innerHTML = '<span style="color:var(--success)">✅ 已保存！</span>';
+      input.value = '';
+      setTimeout(() => testSiderToken?.(), 1000);
+    } else {
+      status.innerHTML = '<span style="color:var(--error)">❌ ' + (d.error || '保存失败') + '</span>';
+    }
+  } catch(e) {
+    status.innerHTML = '<span style="color:var(--error)">❌ ' + e.message + '</span>';
   }
 }
 
