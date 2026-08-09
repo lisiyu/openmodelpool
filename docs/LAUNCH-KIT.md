@@ -35,7 +35,8 @@ Non-profit OpenAI-compatible gateway that pools multiple LLM APIs into one endpo
 
 发布前建议再人工确认两点：
 
-1. README 中仍有若干 ⚠️「Planned / Not Yet Wired」条目（BIP39 助记词身份、DHT 关闭、区域路由 stub、5 维路由只有 4 个滑块）。这些是**刻意保留的诚实标注**，不要为了好看删掉——这正是项目的差异化卖点。
+1. README 中仍有若干 ⚠️「Planned / Not Yet Wired」条目（BIP39 助记词身份、DHT 关闭、区域路由 stub），这些是**刻意保留的诚实标注**，不要为了好看删掉——这正是项目的差异化卖点。
+   - **「5 维路由只有 4 个滑块」不是缺口、不要补第 5 个滑块**：后台路由是 5 维加权打分模型（Trust / Reputation / Latency / Availability / Contribution，见 `network_loadbalancer.go` 的 `ScoreNode` 与 `LBConfig` §9.2），但第 5 个"维度"是**路由算法本身**（`ScoreNode` 加权合成 + 区域加减分 + `SelectNode` 选择逻辑），属固定后台实现、用户不可调。用户能设置的 4 个滑块（优先级 / 成本 / 延迟 / 额度）已覆盖全部可调权重，因此 4 滑块是设计使然而非 unfinished work。
 2. README 通篇使用 emoji 作为章节图标（🤖🌍📋 等），与近期文档风格不一致。是否统一去除，请雷工拍板；本轮未擅自改动。
 
 ---
