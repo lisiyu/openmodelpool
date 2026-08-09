@@ -115,7 +115,7 @@ non-profit
 ## 六、发布前检查清单
 
 - [ ] `go build ./...` / `go test ./...` 全绿（本轮已验证：build EXIT=0，test EXIT=0，耗时约 72s）
-- [x] README 版本徽章与 `main.go` 的 `AppVersion` 一致（2026-08-09 复核：两处均为 **4.3.29**，与 tag `v4.3.29` 一致，无漂移）
+- [x] README 版本徽章与 `main.go` 的 `AppVersion` 一致（2026-08-09 复核：两处均为 **4.3.30**，与 tag `v4.3.30` 一致，无漂移）
 - [ ] 决定 README 章节 emoji 是否保留（见第二节第 2 点）
 - [x] **补共建入口**：已在 README 新增 `## 🤝 Contributing` 章节（四类入口表 + PR 前门禁 + "不会合并代币/积分/付费层"红线），指向公开路线图 `docs/BACKLOG.md`
 - [x] **补齐社区协作基建（2026-08-09，v4.3.29 后）**：`CONTRIBUTING.md`、`SECURITY.md`、`.github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.yml`、`.github/PULL_REQUEST_TEMPLATE.md` 均已落地；README 贡献表改为模板直链并补安全上报行，`docs/INDEX.md` 贡献者区同步。**发布前请在 GitHub 仓库设置确认 Issues 已开启、模板生效**

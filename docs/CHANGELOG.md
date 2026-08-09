@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.3.30 (2026-08-09)
 
 Post-release sustainability pass: make the project trustworthy for the first outside contributor.
 
