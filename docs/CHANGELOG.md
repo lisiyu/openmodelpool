@@ -1,5 +1,29 @@
 # Changelog
 
+## v4.3.29 (2026-08-09)
+
+Functional closure release: decentralization (P1), contribution transparency & governance (P2), low-barrier access (P3), and public-welfare documentation (P4) land together, plus a security regression fix.
+
+### Features
+- **P1 — Real decentralization**: NAT hole punching (`nat_punch.go`, `nat_punch_loop.go`, `nat_traversal.go`) lets nodes connect directly without a relay wherever possible. The contribution ledger gains multi-replica storage with 60s automatic reconciliation (`ledger_redundancy.go`, `ledger_replication.go`, `contribution_ledger.go`).
+- **P2 — Contribution transparency & shared governance**: ledger transparency and export endpoints (`ledger_transparency.go`, `ledger_export.go`), public-welfare quota accounting (`ledger_contrib_quota.go`), a proposal/approval dual-chain governance flow (`governance.go`), and a soft reminder for shared-network participation (`network.go`, `init.go`).
+- **P2-3(ii) — Contributor quota on the consumption side (non-exclusive)**: reuses the existing federation ed25519 node identity rather than introducing a user system. A verified contributor with remaining balance spends their own earned quota and skips the anonymous per-IP gate; once the quota is exhausted — or when the caller is anonymous or cannot be verified — the request falls back to the community free pool with **exactly** the anonymous code path. Quota is an extra lane for contributors, never a toll gate in front of the free pool.
+- **P3 — Low-barrier access**: downstream Gemini and Azure OpenAI compatibility (`gemini_api.go`, `azure_api.go`), decoupling of the community free pool from private shared providers (`provider.go`, `routes.go`), and one-line deployment via `docker-compose.yml` / `.dockerignore`.
+
+### Security
+- **SA-15 — Restored fail-closed tamper detection** (`data_integrity.go`): `loadWithIntegrity` no longer "recovers" a file whose HMAC check fails just because the bytes after the 32-byte header still parse as valid JSON — that path silently defeated tamper detection. HMAC-prefixed files that fail verification are now rejected outright. Legacy plain-JSON files without an HMAC prefix still load (whole-file JSON parse fallback).
+
+### Bug Fixes
+- Fixed an existing double-charge bug where a gateway request falling back to local handling deducted quota twice for the same IP.
+
+### Documentation
+- **README compressed from ~1300 to 169 lines**: detail split into `docs/` (API, FEATURES, CONFIGURATION, PLATFORMS, INDEX), and historical design docs consolidated under `docs/reference/`.
+- Added a standard **MIT LICENSE** file and linked it from the README.
+- Added a **Contributing** section (four contribution paths, build/test/vet PR gate, and the no-token/no-credit/no-revenue-share red line).
+- Clarified that the **5-dimension routing vs. 4 UI sliders** gap is by design, not unfinished work — the fifth dimension is the algorithm itself and is not user-tunable.
+- Corrected a false "zero third-party dependencies" claim to the accurate "single binary, no web framework / ORM / database, five direct dependencies".
+- Added public-welfare positioning docs (`PUBLIC-WELFARE.md` / `.en.md`) and the promotion material kit (`LAUNCH-KIT.md`).
+
 ## v4.3.28 (2026-08-09)
 
 ### Features
