@@ -8,7 +8,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v4.3.29-blue)](#)
+[![Version](https://img.shields.io/badge/version-v4.3.30-blue)](#)
 [![Non-profit](https://img.shields.io/badge/non--profit-no%20token%20%C2%B7%20no%20skim-2f855a)](docs/PUBLIC-WELFARE.en.md)
 
 ---
@@ -141,16 +141,17 @@ Both manager scripts provide an interactive menu: install / upgrade / uninstall 
 
 ## 🤝 Contributing
 
-**This project belongs to everyone who uses it.** Features, design input and criticism are all genuinely welcome — you do not need permission to start.
+**This project belongs to everyone who uses it.** Features, design input and criticism are all genuinely welcome — you do not need permission to start. [CONTRIBUTING.md](CONTRIBUTING.md) has the full guide.
 
 | I want to… | Do this |
 |------------|---------|
-| Propose a feature or challenge a design decision | Open an issue |
+| Propose a feature or challenge a design decision | Open a [feature / design proposal](../../issues/new?template=feature_request.yml) |
 | Pick up existing work | The roadmap is public in [docs/BACKLOG.md](docs/BACKLOG.md). Comment to claim, then send a PR |
-| Report a bug | Open an issue with OS, version (`/api/version`), steps to reproduce |
+| Report a bug | Open a [bug report](../../issues/new?template=bug_report.yml) |
+| Report a security issue | **Not via issues** — see [SECURITY.md](SECURITY.md) |
 | Understand the codebase first | Start with [docs/reference/openmodelpool-v4-design.md](docs/reference/openmodelpool-v4-design.md), then [docs/reference/REVIEW-2026-08-08.md](docs/reference/REVIEW-2026-08-08.md) |
 
-**Before a PR:** `go build ./...` · `go test ./...` · `go vet ./...` must pass.
+**Before a PR:** `go build ./...` · `go test ./...` · `go vet ./...` must pass. The suite runs offline in about two minutes — no API keys or network needed.
 
 **Keep the dependency footprint small.** No web framework, no ORM, no DI container — Go stdlib for everything structural. The five direct dependencies (`golang-jwt`, `x/crypto`, `x/net`, `go-bip39`, `chromedp`) each exist because stdlib has no equivalent.
 

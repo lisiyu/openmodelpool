@@ -1,5 +1,19 @@
 # Changelog
 
+## v4.3.30 (2026-08-09)
+
+Post-release sustainability pass: make the project trustworthy for the first outside contributor.
+
+### Bug Fixes
+- **Consumer usage stats were lost on every restart.** `gracefulShutdown` stopped a dozen subsystems but never stopped `multiUser`, and `RecordConsumerUsage` only marks the manager dirty below its batch threshold of 10 — so up to five seconds of every consumer's token and request counts were silently dropped on each shutdown. `StopBatchSave()` was meanwhile dead code that nothing called, and its non-blocking send on an unbuffered channel meant the stop signal was discarded outright whenever the loop happened to be inside `save()`.
+- **Fixed the intermittent test failure that was hiding it.** `TestHB10_MultiUser_RecordConsumerUsage` failed roughly one run in three with `TempDir RemoveAll cleanup: The directory is not empty` — not an assertion failure, but the batch loop's final flush racing `t.TempDir()` cleanup. `MultiUserManager` now exposes a `saveDone` channel (mirroring the existing `stopCh`/`done` pair in `config.go`); `StopBatchSave` closes the stop channel idempotently and waits for the goroutine to exit, bounded by a 5s timeout so a wedged goroutine cannot hang shutdown. Verified: three consecutive full runs failed once before the fix and pass cleanly after.
+
+### Documentation
+- Added `CONTRIBUTING.md` — quick start, the four ways to contribute, the build/vet/test gate, code conventions (stdlib first, additive changes, don't oversell in docs), and what will not be merged.
+- Added `SECURITY.md` — private reporting via GitHub Security Advisories, scope, and an explicit statement of what the software does *not* promise (provider keys sit in plaintext config; federation trust is reputational, not proof of honesty; don't expose the admin plane publicly).
+- Added GitHub issue forms (bug report, feature/design proposal), an issue-template config routing security reports away from public issues, and a pull request template.
+- README contribution table now links the templates directly and lists security reporting; `docs/INDEX.md` gained a contributor section for these files.
+
 ## v4.3.29 (2026-08-09)
 
 Functional closure release: decentralization (P1), contribution transparency & governance (P2), low-barrier access (P3), and public-welfare documentation (P4) land together, plus a security regression fix.

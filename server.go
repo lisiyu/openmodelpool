@@ -137,6 +137,13 @@ func gracefulShutdown(server *http.Server) {
 			cfg.stop()
 			cfg.saveSync()
 			tracker.Stop()
+			// Flush pending consumer usage (token counts, request counts).
+			// RecordConsumerUsage only marks the manager dirty below its
+			// batch threshold, so without this the last few seconds of usage
+			// were silently dropped on every restart.
+			if multiUser != nil {
+				multiUser.StopBatchSave()
+			}
 			stopConnTracker() // B11: stop conn tracker goroutine
 			if freePool != nil {
 				freePool.stop() // B11: stop free pool sync goroutine
