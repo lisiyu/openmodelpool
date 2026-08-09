@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.3.31 (2026-08-09)
+
+Scripts: region-aware smart mirror selection for one-click install/update scripts.
+
+### Features
+- **Region detection + smart mirror for all one-click scripts.** `scripts/omp-manager.ps1` and `.devcontainer/run-omp.sh` gained `detect_region`/`Get-Region` plus a four-source GitHub mirror list (`ghfast.top` → `gh-proxy.com` → `ghproxy.net` → `mirror.ghproxy.com`) with region-sorted candidate selection — `cn` mirrors first, `global` direct first. `scripts/install.sh` and `scripts/omp-manager.sh` already had this; all four now follow the same mandatory SOP, so GitHub Release downloads no longer stall on mainland China networks.
+
 ## v4.3.30 (2026-08-09)
 
 Post-release sustainability pass: make the project trustworthy for the first outside contributor.
