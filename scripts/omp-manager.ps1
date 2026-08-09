@@ -17,6 +17,41 @@ $ErrorActionPreference = "Continue"
 
 $C = "Cyan"; $Y = "Yellow"; $G = "Green"; $R = "Red"; $W = "White"
 
+# ============================================================
+# 区域检测 + 智能镜像（与 omp-manager.sh / install.sh 完全一致）
+#   cn     -> 中国大陆：镜像优先，直连兜底
+#   global -> 海外/其他：直连优先，镜像兜底
+# 镜像列表顺序与 Go 侧自动更新逻辑 (commit 61f4bd5) 保持一致。
+# ============================================================
+# GitHub 镜像列表（按优先级排序）
+$GITHUB_MIRRORS = @(
+    "https://ghfast.top/",
+    "https://gh-proxy.com/",
+    "https://ghproxy.net/",
+    "https://mirror.ghproxy.com/"
+)
+
+# 检测网络区域：返回 "cn"（中国大陆）或 "global"（海外）。无法判定时默认 global（直连优先）。
+function Get-Region {
+    $ip = $null
+    foreach ($svc in @("https://ifconfig.me", "https://api.ipify.org", "https://icanhazip.com")) {
+        try {
+            $ip = (Invoke-RestMethod -Uri $svc -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop).Trim()
+            if ($ip) { break }
+        } catch {}
+    }
+    if (-not $ip) { return "global" }
+    try {
+        $country = (Invoke-RestMethod -Uri "http://ip-api.com/line/$ip`?fields=countryCode" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop).Trim()
+        if ($country -eq "CN") { return "cn" }
+    } catch {}
+    return "global"
+}
+
+$REGION = Get-Region
+if ($REGION -eq "cn") { Write-Host "  检测到中国大陆网络环境，镜像优先下载" -ForegroundColor $C }
+else { Write-Host "  检测到海外网络环境，直连优先下载" -ForegroundColor $C }
+
 # 常量 - OMP
 $GITHUB_REPO = "lisiyu/openmodelpool"
 # 动态获取最新 Release tag（可通过环境变量 OMP_RELEASE_TAG 覆盖）
@@ -26,7 +61,7 @@ if (-not $RELEASE_TAG) {
     if ($releaseInfo) {
         $RELEASE_TAG = $releaseInfo.tag_name
     } else {
-        $RELEASE_TAG = "v4.3.30"  # fallback
+        $RELEASE_TAG = "v4.3.31"  # fallback
     }
 }
 $exeName = "openmodelpool.exe"
@@ -43,10 +78,12 @@ $cfCertFile = "$cfConfigDir\cert.pem"
 $cfTaskName = "CloudflaredTunnel"
 
 # ============================================================
-# 网络请求封装（超时 / 重试 / GitHub 镜像回退）
-#   避免在中国大陆网络下无限挂起；GitHub 直连失败自动回退 ghproxy.net 镜像。
+# 网络请求封装（超时 / 重试 / 区域感知智能镜像回退）
+#   避免在中国大陆网络下无限挂起；GitHub 下载按区域选择优先源：
+#     * 中国大陆 (cn)：镜像优先，直连兜底
+#     * 海外 (global)：直连优先，镜像兜底
+#   镜像列表 $GITHUB_MIRRORS 与区域 $REGION 在脚本顶部定义。
 # ============================================================
-$GITHUB_MIRROR = "https://ghproxy.net/"
 $NET_TIMEOUT_SEC = 300        # 文件下载超时（秒）
 $NET_API_TIMEOUT_SEC = 120    # API 查询超时（秒）
 $NET_RETRIES = 3
@@ -58,17 +95,22 @@ function Test-IsGitHubUrl {
         -or $Uri -like "http://github.com/*" -or $Uri -like "http://api.github.com/*")
 }
 
-function Get-GitHubMirrorUrl {
+# 生成候选下载地址列表，已按 $REGION 排序：
+#   cn     -> 镜像优先，最后直连兜底
+#   global -> 直连优先，最后镜像兜底
+function Get-GitHubCandidates {
     param([string]$Uri)
-    return "$GITHUB_MIRROR$Uri"
+    $direct = @($Uri)
+    $mirrored = $GITHUB_MIRRORS | ForEach-Object { "$_$Uri" }
+    if ($REGION -eq "cn") { return ($mirrored + $direct) }
+    return ($direct + $mirrored)
 }
 
-# 下载文件（带超时/重试/镜像回退）。成功返回 $true，失败返回 $false。
+# 下载文件（带超时/重试/智能镜像回退）。成功返回 $true，失败返回 $false。
 function Invoke-DownloadWithRetry {
     param([string]$Uri, [string]$OutFile)
-    $attempts = @($Uri)
-    if (Test-IsGitHubUrl $Uri) { $attempts += (Get-GitHubMirrorUrl $Uri) }
-    foreach ($u in $attempts) {
+    $candidates = if (Test-IsGitHubUrl $Uri) { Get-GitHubCandidates $Uri } else { @($Uri) }
+    foreach ($u in $candidates) {
         for ($i = 1; $i -le $NET_RETRIES; $i++) {
             try {
                 Invoke-WebRequest -Uri $u -OutFile $OutFile -UseBasicParsing `
@@ -78,17 +120,19 @@ function Invoke-DownloadWithRetry {
                 if ($i -lt $NET_RETRIES) { Start-Sleep -Milliseconds $NET_RETRY_DELAY_MS }
             }
         }
-        if ($u -ne $attempts[-1]) { Write-Host "  直连失败，尝试镜像 $GITHUB_MIRROR ..." -ForegroundColor $C }
+        if ($u -ne $candidates[-1]) {
+            $label = ($u -replace '^https?://', '' -split '/')[0]
+            Write-Host "  $label 下载失败，尝试下一个源..." -ForegroundColor $C
+        }
     }
     return $false
 }
 
-# API 查询（带超时/重试/镜像回退）。成功返回响应对象，失败返回 $null。
+# API 查询（带超时/重试/智能镜像回退）。成功返回响应对象，失败返回 $null。
 function Invoke-RestWithRetry {
     param([string]$Uri)
-    $attempts = @($Uri)
-    if (Test-IsGitHubUrl $Uri) { $attempts += (Get-GitHubMirrorUrl $Uri) }
-    foreach ($u in $attempts) {
+    $candidates = if (Test-IsGitHubUrl $Uri) { Get-GitHubCandidates $Uri } else { @($Uri) }
+    foreach ($u in $candidates) {
         for ($i = 1; $i -le $NET_RETRIES; $i++) {
             try {
                 return (Invoke-RestMethod -Uri $u -UseBasicParsing `
@@ -97,7 +141,10 @@ function Invoke-RestWithRetry {
                 if ($i -lt $NET_RETRIES) { Start-Sleep -Milliseconds $NET_RETRY_DELAY_MS }
             }
         }
-        if ($u -ne $attempts[-1]) { Write-Host "  直连失败，尝试镜像 $GITHUB_MIRROR ..." -ForegroundColor $C }
+        if ($u -ne $candidates[-1]) {
+            $label = ($u -replace '^https?://', '' -split '/')[0]
+            Write-Host "  $label 查询失败，尝试下一个源..." -ForegroundColor $C
+        }
     }
     return $null
 }
