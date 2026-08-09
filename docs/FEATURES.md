@@ -16,6 +16,7 @@
 - **`provider/model` syntax** — Route to specific platforms via `deepseek/deepseek-chat` format, also supports OpenRouter-style routing
 - **Auto platform discovery** — Automatically scans and discovers free AI platforms on the internet
 - **🎁 Free Model Pool** — Auto-syncs 16+ permanently free LLM API providers from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis), configured as low-priority public pool resources. Anonymous providers (OVHcloud) work zero-config; key-based providers can be enabled with a single paste in the admin UI
+  - **Seeded at startup** — `Kilo Code` (api.kilo.ai, 12 models incl. gpt-4o / claude-3.5-sonnet / gemini-2.0-flash) and `OVHcloud AI Endpoints` (7 models) are hardcoded defaults created on first boot, so a fresh deployment has working free models **immediately, even with no network access to remote sync**. Remote sync then augments the list.
 - **Web session template** — Generic `web_session` provider type for browser-login platforms (no API needed), Sider.ai as first template
 
 ### 🧠 4-Dimension Intelligent Routing

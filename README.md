@@ -88,7 +88,7 @@ This is not a commercial product. This is the continuation of internet spirit: *
 Full detail, examples and endpoint tables: **[docs/FEATURES.md](docs/FEATURES.md)**.
 
 **Personal Mode (default — pure-local proxy):**
-- 🔌 **Unified API Gateway** — OpenAI-compatible `/v1/chat/completions` + `/v1/messages` (Anthropic), streaming SSE, 37 preset platforms, `provider/model` routing, auto platform discovery, 🎁 Free Model Pool (16+ free providers auto-synced), `web_session` type for browser-login platforms
+- 🔌 **Unified API Gateway** — OpenAI-compatible `/v1/chat/completions` + `/v1/messages` (Anthropic), streaming SSE, 37 preset platforms, `provider/model` routing, auto platform discovery, 🎁 Free Model Pool (16+ free providers auto-synced; **Kilo Code + OVHcloud AI Endpoints are seeded at startup**, so a fresh deploy works out of the box even before remote sync), `web_session` type for browser-login platforms
 - 🧠 **4-Dimension Intelligent Routing** — priority / cheapest / fastest / composite (weighted fusion, all slider-tunable)
 - 🔗 **Automatic Failover** · 👥 **Multi-User** (invite codes, visibility isolation, per-consumer keys) · 💰 **Token Budget** (dual-dimension pricing, monthly limits, threshold alerts)
 - 🩺 **Provider Auto Health Check** (5-min probe) · 🛡️ **WAF 4-Layer Protection** (real, default-on) · 🔐 **AES-256-GCM + bcrypt + JWT** · 📝 Request Logging · 📊 Usage Archiving · 📧 SMTP · 🌐 VMess Proxy · 🖥️ Web Admin Panel

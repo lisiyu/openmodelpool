@@ -66,6 +66,8 @@ curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/
 - 配置 systemd 开机自启服务
 - 启动服务
 
+> **下载源兜底**：安装脚本内置多源下载——直连 GitHub，失败时自动回退到 `ghfast.top` / `gh-proxy.com` / `ghproxy.net` / `mirror.ghproxy.com` 等镜像，每个源带重试退避与文件大小校验。GitHub 访问不便的地区也能顺利安装。SHA256 校验同样从多源获取。
+
 **自定义端口和安装目录：**
 
 ```bash

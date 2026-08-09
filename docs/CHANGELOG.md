@@ -1,5 +1,15 @@
 # Changelog
 
+## v4.3.24 (2026-08-09)
+
+### Features
+- **Free pool works out of the box**: `Kilo Code` (api.kilo.ai, 12 models) and `OVHcloud AI Endpoints` (7 models) are now **seeded at first boot** as hardcoded default free providers — available immediately even before the remote free-provider sync completes (or with no network access to sync at all). Remote sync still augments the list.
+- **Installer multi-mirror download fallback**: `scripts/install.sh` now tries GitHub direct first, then falls back through `ghfast.top` / `gh-proxy.com` / `ghproxy.net` / `mirror.ghproxy.com` mirrors, with per-source retry/backoff, file-size validation, and multi-source SHA256 verification. Regions with poor GitHub connectivity install reliably.
+
+### Bug Fixes
+- Installer: `systemctl` detection hardened for restart-after-self-update edge cases.
+- Installer: download timeout now triggers the mirror fallback instead of failing outright.
+
 ## v4.3.21 (2026-08-08)
 
 ### Bug Fixes
