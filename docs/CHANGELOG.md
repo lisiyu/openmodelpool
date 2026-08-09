@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.3.28 (2026-08-09)
+
+### Features
+- **Region-aware download optimization**: Both the installer (`scripts/install.sh`, `scripts/omp-manager.sh`) and the built-in self-updater (`update.go`) now detect the VPS network region from its public IP (via `ifconfig.me` / `api.ipify.org` + `ip-api.com` geolocation). **Mainland China → mirrors first, direct GitHub last**; **overseas → direct GitHub first, mirrors as fallback**. Eliminates the slow direct-GitHub-first penalty for CN users.
+
 ## v4.3.24 (2026-08-09)
 
 ### Features
