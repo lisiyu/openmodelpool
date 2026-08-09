@@ -67,19 +67,20 @@ else
 fi
 
 # ─── systemctl 可用性检测 ───
-USE_SYSTEMCTL=true
+# Coze 云主机等环境中 systemctl 可能被安全策略阻塞，需要主动探测
+USE_SYSTEMCTL=false
 if command -v systemctl &>/dev/null; then
-    # Test if systemctl actually works (some environments block it)
-    if ! systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && \
-       ! systemctl list-units --type=service 2>/dev/null | grep -q "$SERVICE_NAME"; then
-        # systemctl exists but might be blocked - test further
-        if ! systemctl show "$SERVICE_NAME" &>/dev/null 2>&1; then
-            USE_SYSTEMCTL=false
-            warn "systemctl 受限，使用直接进程管理"
-        fi
+    # 实际尝试 systemctl 操作（带超时），判断是否真正可用
+    if timeout 5 systemctl status "$SERVICE_NAME" &>/dev/null; then
+        USE_SYSTEMCTL=true
+        info "systemctl 可用，使用 systemd 管理服务"
+    elif timeout 5 systemctl list-units --type=service &>/dev/null; then
+        USE_SYSTEMCTL=true
+        info "systemctl 可用，使用 systemd 管理服务"
+    else
+        warn "systemctl 受限（超时或被阻塞），使用直接进程管理"
     fi
 else
-    USE_SYSTEMCTL=false
     warn "systemctl 不可用，使用直接进程管理"
 fi
 
@@ -88,7 +89,11 @@ stop_service() {
     if $USE_SYSTEMCTL; then
         if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
             info "停止服务 (systemctl)..."
-            systemctl stop "$SERVICE_NAME"
+            if ! timeout 10 systemctl stop "$SERVICE_NAME" 2>/dev/null; then
+                warn "systemctl stop 超时，强制停止进程"
+                pkill -x "$BINARY_NAME" 2>/dev/null || true
+                sleep 2
+            fi
             ok "服务已停止"
         fi
     else
@@ -162,9 +167,18 @@ fi
 start_service() {
     if $USE_SYSTEMCTL; then
         info "启动服务 (systemctl)..."
-        systemctl start "$SERVICE_NAME"
-        sleep 3
-        if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+        if ! timeout 10 systemctl start "$SERVICE_NAME" 2>/dev/null; then
+            warn "systemctl start 失败，降级为直接启动"
+            cd "$INSTALL_DIR"
+            nohup ./$BINARY_NAME > "$INSTALL_DIR/omp.log" 2>&1 &
+            sleep 3
+            if ! pgrep -x "$BINARY_NAME" &>/dev/null; then
+                fail "服务启动失败，检查日志:\n  cat $INSTALL_DIR/omp.log | tail -50"
+            fi
+        else
+            sleep 3
+        fi
+        if ! systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && ! pgrep -x "$BINARY_NAME" &>/dev/null; then
             fail "服务启动失败，检查日志:\n  journalctl -u $SERVICE_NAME -n 50"
         fi
     else
