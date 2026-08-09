@@ -23,7 +23,9 @@
 | Topic | File |
 |-------|------|
 | **Public roadmap (claim work here)** | [BACKLOG.md](BACKLOG.md) |
-| **Contributing guide** | see [README § Contributing](../README.md#-contributing) |
+| **Contributing guide** | [CONTRIBUTING.md](../CONTRIBUTING.md) |
+| **Security policy & threat model** | [SECURITY.md](../SECURITY.md) |
+| **Issue / PR templates** | [.github/ISSUE_TEMPLATE/](../.github/ISSUE_TEMPLATE) · [.github/PULL_REQUEST_TEMPLATE.md](../.github/PULL_REQUEST_TEMPLATE.md) |
 
 ## Internal design specs & historical working docs
 

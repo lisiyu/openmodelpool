@@ -1,0 +1,57 @@
+name: Feature or design proposal
+description: Suggest a capability, or challenge an existing design decision
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Design criticism is as welcome as feature ideas. If you think something
+        here is built wrong, say so — that is a legitimate use of this form.
+
+        Before writing code, it is usually worth opening this issue first so
+        nobody's evening gets wasted on an approach that won't be merged.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve
+      description: Describe the situation, not the solution. What are you unable to do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+      description: Optional. A rough sketch is fine — it does not need to be a design doc.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including "I currently work around it by ..."
+    validations:
+      required: false
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Project constraints
+      description: >
+        These are hard limits, not preferences. Proposals that conflict with them
+        will be closed with a pointer to CONTRIBUTING.md.
+      options:
+        - label: This does not introduce a token, points economy, paid tier, or revenue share
+          required: true
+        - label: This does not require a hosted service that maintainers would have to run and pay for
+          required: true
+        - label: I have read the public roadmap in docs/BACKLOG.md and this is not already planned
+          required: true
+  - type: dropdown
+    id: participation
+    attributes:
+      label: Would you like to implement it
+      options:
+        - "Yes, I'd like to send a PR"
+        - "Maybe, with some guidance"
+        - "No, just proposing the idea"
+    validations:
+      required: true

@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/lisiyu/openmodelpool/security/advisories/new
+    about: Report privately through GitHub Security Advisories — please do not open a public issue.
+  - name: Public roadmap
+    url: https://github.com/lisiyu/openmodelpool/blob/main/docs/BACKLOG.md
+    about: See what is planned, and comment on an item to claim it.
+  - name: Documentation index
+    url: https://github.com/lisiyu/openmodelpool/blob/main/docs/INDEX.md
+    about: Configuration, deployment, API and federation docs before you file a question.

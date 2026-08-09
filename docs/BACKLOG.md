@@ -69,6 +69,23 @@
   - [x] P4-2(ii) 英文版 `docs/PUBLIC-WELFARE.en.md`（与中文版对齐：免费额度归属模型/默认不强制/软提醒/网关角色/社区共治）
   - [x] P4-2(i) 中文版 `docs/PUBLIC-WELFARE.md`：使命 / 架构分层 / 去中心化联邦 / 透明 / 公益额度闭环 / 与商业网关区别 / 一行部署，全部对应已落地代码、不夸大
 
+## Phase 5 — 发布后可持续性（2026-08-09 起，v4.3.29 之后）
+
+> 背景：v4.3.29 已发布。这一阶段的判据不再是"功能有没有做完"，而是**外部贡献者第一次接触这个项目时会不会被绊倒**。
+
+- [x] P5-1 修复 `go test ./...` 门禁不可信（flaky）+ 由此挖出的关机数据丢失 bug
+  - 现象：全量测试约 1/3 概率失败于 `TestHB10_MultiUser_RecordConsumerUsage`，报 `TempDir RemoveAll cleanup: The directory is not empty`。**不是断言失败**，是 `t.TempDir()` 清理与后台写盘竞态。
+  - 根因链（一个 flaky 挖出一个真 bug）：`batchSaveLoop` 的停止分支带**最终 flush**（会写 `consumers.json`）→ 测试 cleanup 只 `close(saveStopCh)` 不等待退出 → 清理返回后 `RemoveAll` 与那次 flush 并发 → 目录删不干净。
+  - **顺带定位到真实生产数据丢失**：① `gracefulShutdown`（server.go）停了 cfg/tracker/connTracker/freePool/healthChecker/日志/tunnel/fed/gossip/账本/netMgr，**唯独漏了 `multiUser`**——`RecordConsumerUsage` 在脏数据低于批量阈值(10)时只标脏、等 5s ticker，因此**每次重启最多静默丢失 5 秒内全部消费者的 token 用量与请求计数**；② `StopBatchSave()` 是**从未被调用的死代码**，且实现用 `select` + `default` 做**非阻塞发送**，当 loop 恰在 `save()` 中而非停在 select 上时停止信号被静默丢弃，goroutine 永不退出。
+  - 修法（对齐 config.go 既有 `stopCh`/`done` 房子风格）：`MultiUserManager` 增 `saveDone chan struct{}` + `saveOnce sync.Once`；`batchSaveLoop` `defer close(m.saveDone)`；`StopBatchSave` 改为幂等 `close` + 等待 `saveDone`（`shutdownFlushTimeout=5s` 兜底，防卡死挂起关机）+ nil 保护（兼容测试里直接构造、未启动 loop 的 manager）；`gracefulShutdown` 补调 `multiUser.StopBatchSave()`；测试 cleanup 改走同一入口。
+  - 验证：修复前连跑 3 轮 **1 轮失败**；修复后连跑 3 轮 **全绿**。新增 `multiuser_shutdown_test.go` 4 用例（落盘不丢用量 / 返回即已退出 / 幂等 / 无 loop 不阻塞），并做**反向验证**——临时摘掉等待逻辑后测试如期报 `TotalTokens on disk = 0, want 100 (usage lost on shutdown)`，证明用例真能抓 bug 而非恒绿摆设。
+- [x] P5-2 社区协作基建（发布稿号召"开 Issue、认领 BACKLOG 提 PR"，但仓库当时没有任何模板）
+  - 新增 `CONTRIBUTING.md`（quick start / 四类参与入口 / PR 前三条门禁 + **Windows 杀毒占用句柄导致偶发失败的说明** / 代码约定：stdlib 优先·加法式改动·不吹没做的·测试随改动 / 不会合并清单 / 评审预期）
+  - 新增 `SECURITY.md`（私密上报走 GitHub Security Advisories、in-scope 与 out-of-scope、**并诚实写明本项目不承诺什么**：API key 明文落盘、联邦信任是声誉而非诚实性证明、勿把管理面暴露公网）
+  - 新增 `.github/ISSUE_TEMPLATE/bug_report.yml`（强制版本/模式/OS/复现步骤 + 脱敏确认）、`feature_request.yml`（含公益红线勾选，冲突提案直接闭环到 CONTRIBUTING）、`config.yml`（安全问题引流到 Advisories、公开路线图、文档索引）、`PULL_REQUEST_TEMPLATE.md`
+  - README 贡献表接模板直链 + 补安全上报行 + 注明测试离线约 2 分钟；`docs/INDEX.md` 贡献者区补 CONTRIBUTING / SECURITY / 模板三项
+- [ ] P5-3 CI 与本地门禁口径不一致：CI 硬门禁跑 `-race -short`，README 让贡献者跑不带 `-short` 的全量——P5-1 的 flaky 正藏在这条缝里（CI 绿、本地随机红）。待评估是否让 CI 也跑一轮非 short，或在 CONTRIBUTING 标注差异（当前已用后者兜底）
+
 ## Promotion（稳定后）
 
 - [x] 准备推广物料包（2026-08-09）：`docs/LAUNCH-KIT.md` —— 中英一句话定位 + 仓库 About 文案、README 润色清单（副标题改为直述公益、新增"无商业模式/无代币/无积分/无抽成"段与徽章、版本徽章 v4.1.6→v4.3.24 修漂移、Contribution Credits 经济学措辞改写为"记账非货币"、新增 four-line pledge、Earn/Spend 明确 1:1 且额度耗尽不拒绝）、约 330 字中文发布稿（附裁到 300 字的删法）、Show HN 英文稿、15 个 GitHub topics（并说明为何**不**加 web3/dao/decentralized-ai）、发布前检查清单、以及"一律不用"的措辞黑名单。**代理不发布**，待雷工审核

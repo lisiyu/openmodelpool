@@ -115,9 +115,11 @@ non-profit
 ## 六、发布前检查清单
 
 - [ ] `go build ./...` / `go test ./...` 全绿（本轮已验证：build EXIT=0，test EXIT=0，耗时约 72s）
-- [ ] README 版本徽章与 `main.go` 的 `AppVersion` 一致（当前均为 4.3.24）
+- [x] README 版本徽章与 `main.go` 的 `AppVersion` 一致（2026-08-09 复核：两处均为 **4.3.29**，与 tag `v4.3.29` 一致，无漂移）
 - [ ] 决定 README 章节 emoji 是否保留（见第二节第 2 点）
-- [x] **补共建入口**：已在 README 新增 `## 🤝 Contributing` 章节（四类入口表 + PR 前门禁 + "不会合并代币/积分/付费层"红线），指向公开路线图 `docs/BACKLOG.md`。仍建议后续补 `.github/ISSUE_TEMPLATE/`
+- [x] **补共建入口**：已在 README 新增 `## 🤝 Contributing` 章节（四类入口表 + PR 前门禁 + "不会合并代币/积分/付费层"红线），指向公开路线图 `docs/BACKLOG.md`
+- [x] **补齐社区协作基建（2026-08-09，v4.3.29 后）**：`CONTRIBUTING.md`、`SECURITY.md`、`.github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.yml`、`.github/PULL_REQUEST_TEMPLATE.md` 均已落地；README 贡献表改为模板直链并补安全上报行，`docs/INDEX.md` 贡献者区同步。**发布前请在 GitHub 仓库设置确认 Issues 已开启、模板生效**
+- [x] **测试门禁已可信**：修掉了约 1/3 概率随机失败的 `TestHB10_MultiUser_RecordConsumerUsage`（详见 BACKLOG P5-1，并由此挖出关机丢失消费者用量的真实 bug）。第一批 clone 项目的人按 README 跑 `go test ./...` 不会再随机翻车——在 Show HN 场景下这条尤其致命
 - [x] **已修正不实陈述：「零第三方依赖」**。`go.mod` 实际有 5 个直接依赖（`golang-jwt/jwt`、`golang.org/x/crypto`、`golang.org/x/net`、`go-bip39`、`chromedp`）+ 6 个间接依赖。原中英文发布稿与 About 栏均写了"零第三方依赖 / standard library only, no third-party deps"——**任何人 `cat go.mod` 即可证伪**，发在 HN 上会直接摧毁"诚实标注"这个核心卖点。已全部改为"单二进制自托管 / 无 Web 框架无 ORM 无数据库 / 五个直接依赖"的准确表述
 - [ ] `docs/PUBLIC-WELFARE.md` 与 `.en.md` 两版内容仍然对齐
 - [ ] 仓库 About 栏与 Topics 按第一、五节填写
