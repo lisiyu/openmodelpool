@@ -34,6 +34,37 @@ case "$ARCH" in
     *)       fail "不支持的架构: $ARCH (仅支持 x86_64/aarch64/armv7l)" ;;
 esac
 
+# ─── 区域检测（根据 IP 判断 VPS 所在区域，优选下载源）───
+# 返回: cn (中国大陆) | global (海外/其他)
+detect_region() {
+    local ip country
+    # 尝试多个 IP 查询服务，任一成功即返回
+    ip=$(curl -s --connect-timeout 3 https://ifconfig.me 2>/dev/null) || \
+    ip=$(curl -s --connect-timeout 3 https://api.ipify.org 2>/dev/null) || \
+    ip=$(curl -s --connect-timeout 3 https://icanhazip.com 2>/dev/null) || true
+    
+    if [[ -z "$ip" ]]; then
+        echo "global"  # 无法获取 IP，默认海外
+        return
+    fi
+    
+    # 查询 IP 归属地
+    country=$(curl -s --connect-timeout 3 "http://ip-api.com/line/${ip}?fields=countryCode" 2>/dev/null) || country=""
+    
+    if [[ "$country" == "CN" ]]; then
+        echo "cn"
+    else
+        echo "global"
+    fi
+}
+
+REGION=$(detect_region)
+if [[ "$REGION" == "cn" ]]; then
+    info "检测到中国大陆网络环境，优先使用镜像下载"
+else
+    info "检测到海外网络环境，优先直连 GitHub"
+fi
+
 # ─── 版本检测 ───
 if [[ -z "$TARGET_VERSION" ]]; then
     info "获取最新版本..."
@@ -43,21 +74,33 @@ if [[ -z "$TARGET_VERSION" ]]; then
 fi
 info "目标版本: ${YELLOW}$TARGET_VERSION${NC} (${PLATFORM})"
 
-# ─── 下载配置 ───
+# 下载源列表：根据区域自动优选
+# 中国大陆：镜像优先；海外：直连优先
+# 与 OMP 自动更新逻辑保持一致的多源策略
 ASSET="${BINARY_NAME}-${PLATFORM}"
 URL="https://github.com/$REPO/releases/download/${TARGET_VERSION}/${ASSET}"
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 
-# 下载源列表：直连 GitHub + CDN 镜像兜底
-# 与 OMP 自动更新逻辑保持一致的多源策略
-MIRRORS=(
-    "$URL"
-    "https://ghfast.top/$URL"
-    "https://gh-proxy.com/$URL"
-    "https://ghproxy.net/$URL"
-    "https://mirror.ghproxy.com/$URL"
-)
+if [[ "$REGION" == "cn" ]]; then
+    # 中国大陆：镜像优先，直连兜底
+    MIRRORS=(
+        "https://ghfast.top/$URL"
+        "https://gh-proxy.com/$URL"
+        "https://ghproxy.net/$URL"
+        "https://mirror.ghproxy.com/$URL"
+        "$URL"
+    )
+else
+    # 海外：直连优先，镜像兜底
+    MIRRORS=(
+        "$URL"
+        "https://ghfast.top/$URL"
+        "https://gh-proxy.com/$URL"
+        "https://ghproxy.net/$URL"
+        "https://mirror.ghproxy.com/$URL"
+    )
+fi
 
 # ─── 带重试的多源下载 ───
 download_with_retry() {
