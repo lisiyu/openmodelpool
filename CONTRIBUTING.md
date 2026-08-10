@@ -51,9 +51,12 @@ Notes on the test suite, so you do not waste time on someone else's problem:
 
 - The full suite takes **roughly 2 minutes** and runs entirely offline. No API
   keys, no network, no Docker required.
-- CI runs `go test -race -short ./...` as its hard gate, plus a full
-  `go test -race ./...` integration job that is allowed to fail on
-  network-dependent cases. Locally, prefer the full run.
+- CI runs the **same suite you do**, with `-race` and `-count=1` added:
+  `go test -race -count=1 ./...` is the hard gate. There is no short/full
+  split — the codebase has no `//go:build integration` files and no
+  `testing.Short()` branches, so nothing is held back from you locally. A
+  second, identical run is also executed as a soft gate purely to catch flaky
+  tests; it is allowed to fail.
 - **On Windows**, real-time antivirus scanning can hold handles on files that a
   test just wrote, which surfaces as `The system cannot find the path specified`
   or a slow `t.TempDir()` cleanup. If a test fails once and passes on a re-run,
