@@ -511,19 +511,24 @@ func (gp *GlobalPool) Heartbeat(nodeID string) {
 func (gp *GlobalPool) refreshLoop() {
 	ticker := time.NewTicker(globalPoolRefreshInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		gp.mu.Lock()
-		now := time.Now()
-		for i, n := range gp.ParticipantNodes {
-			if now.Sub(n.LastHeartbeat) > 10*time.Minute {
-				gp.ParticipantNodes[i].Status = "offline"
-			} else if now.Sub(n.LastHeartbeat) > 5*time.Minute {
-				gp.ParticipantNodes[i].Status = "degraded"
+	for {
+		select {
+		case <-globalStopCh:
+			return
+		case <-ticker.C:
+			gp.mu.Lock()
+			now := time.Now()
+			for i, n := range gp.ParticipantNodes {
+				if now.Sub(n.LastHeartbeat) > 10*time.Minute {
+					gp.ParticipantNodes[i].Status = "offline"
+				} else if now.Sub(n.LastHeartbeat) > 5*time.Minute {
+					gp.ParticipantNodes[i].Status = "degraded"
+				}
 			}
+			gp.recalculateLocked()
+			gp.mu.Unlock()
+			gp.doSave()
 		}
-		gp.recalculateLocked()
-		gp.mu.Unlock()
-		gp.doSave()
 	}
 }
 
@@ -1148,10 +1153,15 @@ func (q *PublicKeyQuota) resetIfNeededLocked() {
 func (q *PublicKeyQuota) resetLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		q.mu.Lock()
-		q.resetIfNeededLocked()
-		q.mu.Unlock()
+	for {
+		select {
+		case <-globalStopCh:
+			return
+		case <-ticker.C:
+			q.mu.Lock()
+			q.resetIfNeededLocked()
+			q.mu.Unlock()
+		}
 	}
 }
 

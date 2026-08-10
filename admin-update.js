@@ -181,6 +181,10 @@
       btn = '<button class="btn btn-primary" onclick="startVersionUpdate()">🔄 更新到 ' + latest + '</button>';
     } else if (localAhead) {
       btn = '<button class="btn btn-secondary" disabled style="opacity:.6">✅ 无需更新</button>';
+    } else if (isNaN(cmp)) {
+      // UX-P1-10: unknown/unparseable latest version — do NOT claim "已是最新
+      // 版本"; offer a manual re-check instead.
+      btn = '<button class="btn btn-secondary" onclick="refreshVersion()">🔄 重新检查</button>';
     } else {
       btn = '<button class="btn btn-secondary" disabled style="opacity:.6">✅ 已是最新版本</button>';
     }
@@ -305,12 +309,12 @@
   async function refreshVersion() {
     try {
       var r = await authFetch('/api/admin/version/latest');
-      if (r.ok) {
-        var d = await r.json();
-        _versionInfo = d;
-      }
+      var d = await r.json();
+      _versionInfo = d;
     } catch (e) {
-      // Keep previous info on transient failure.
+      // UX-P1-10: don't silently keep a stale "已是最新版本" — surface the
+      // failure with a retry action.
+      _versionInfo = { error: (e && e.message) || '网络错误' };
     }
     renderVersionBody();
   }

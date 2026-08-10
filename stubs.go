@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -95,7 +96,7 @@ func runHeartbeatOnce() {
 
 	selfEndpoint := resolveSelfEndpoint()
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := GetSharedHTTPClientWithTimeout(5 * time.Second)
 	for _, ep := range collectPeerEndpoints(selfEndpoint) {
 		peerURL := strings.TrimRight(ep, "/") + "/api/network/heartbeat"
 		if err := postHeartbeatToPeer(client, peerURL, selfNodeID, selfEndpoint, secret); err != nil {
@@ -256,8 +257,16 @@ func registerWithBootstraps() {
 	}
 	body, _ := json.Marshal(payload)
 
+	// PERF-P3-25: register with bootstrap nodes using bounded concurrency
+	// instead of one unbounded goroutine per entry.
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
 	for _, bs := range bootstrapNodes {
+		wg.Add(1)
 		go func(bootstrapURL string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			req, err := http.NewRequestWithContext(ctx, "POST",
@@ -283,6 +292,7 @@ func registerWithBootstraps() {
 			slog.Info("registered with bootstrap node", "url", bootstrapURL, "status", resp.StatusCode)
 		}(bs)
 	}
+	wg.Wait()
 }
 
 // GetDHTStats returns DHT routing-table statistics. DHT (Kademlia) is not yet

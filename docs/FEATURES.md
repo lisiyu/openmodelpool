@@ -119,14 +119,14 @@ Failed requests automatically switch to the next available Provider, forming a f
 
 When you opt in, your node joins the **AI Capability Sharing Network** — a decentralized P2P network where nodes share AI model access and exchange Contribution Credits.
 
-### 🔑 Identity System (BIP39 Mnemonic) ⚠️
+### 🔑 Identity System (BIP39 Mnemonic)
 
-> **⚠️ Planned / not yet exposed.** The node mnemonic identity described below is currently a **vision**. `handleNodePubKey` returns an **empty pubkey** and the UI does **not** yet surface mnemonic generation or the derived Ed25519 key pair. No node identity is generated or broadcast in the current build.
+> **Implemented (v4.3.x).** The node mnemonic identity is live: `handleNodePubKey` (`handlers_missing.go`) returns the real derived public key, the admin UI (`admin.html` onboarding step 2) surfaces mnemonic generation (12/24 words), encrypted export, and restore, and the identity lifecycle endpoints are registered (`routes.go`). `GET /api/node/pubkey` requires HTTPS (`requireHTTPS`).
 
 | Component | Description |
 |-----------|-------------|
-| **BIP39 Mnemonic** | Generated when joining the network (12/24 words), manually backed up, never uploaded |
-| **Ed25519 Key Pair** | Derived from mnemonic; private key never leaves this node; public key broadcast network-wide |
+| **BIP39 Mnemonic** | Generated when joining the network (12/24 words), manually backed up, never uploaded; generation `node.go GenerateWithMnemonic`, restore `RestoreFromMnemonic` |
+| **Ed25519 Key Pair** | Derived from mnemonic (BIP32/SLIP-0010); private key never leaves this node; public key served at `/api/node/pubkey` and broadcast network-wide |
 | **Node ID** | Unique identifier: `mmx-` + Base58(Ed25519 public key first 16 bytes) |
 | **Signing** | All broadcast data (Providers, scores, credit transactions) signed by node private key |
 
@@ -137,9 +137,9 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 | Mechanism | Purpose | Protocol |
 |-----------|---------|----------|
 | **Peer Seed** (:8001) | Initial bootstrapping; every online node can serve as seed | HTTPS + dynamic seed list |
-| **Kademlia DHT** | Global node routing, capability registration (256-bit hash space, k=20 buckets) | SHA-256 XOR distance metric |
-| **Gossip Protocol** | Real-time state propagation (node online/offline, capability changes) | Plumtree / Scuttlebutt variant |
-| **LAN Discovery** | Local network node auto-discovery | mDNS |
+| **Kademlia DHT** | Global node routing, capability registration (256-bit hash space, k=20 buckets) — **design target only, not wired into production** (in-process `InMemoryDHTNetwork` used by tests; transport bridge is a BACKLOG item) | SHA-256 XOR distance metric |
+| **Gossip Protocol** | Real-time state propagation (node online/offline, capability changes) | internal implementation (custom variant; **not** Plumtree / Scuttlebutt) |
+| **LAN Discovery** | Local network node auto-discovery — **not implemented** (no mDNS) | — |
 
 ### 🔗 联邦组网配置（v4.1.6 新增）
 
@@ -180,7 +180,7 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 
 ### 💎 Contribution Credit System ⚠️
 
-> **⚠️ Ledger is currently local-only.** Contribution records are persisted locally with a **verifiable content hash** (`sha256:` prefix via `ContentHashStore`) — there is **no IPFS / distributed persistence** yet, and contribution credits are stored **locally only**. The anti-double-spend chain is backed by local signed records; durable multi-node replication is a future phase.
+> **⚠️ Ledger is local-first with federation replication (P1-3 delivered).** Contribution records are persisted locally with a **verifiable content hash** (`sha256:` prefix via `ContentHashStore`) — there is **no IPFS / distributed persistence** yet. Since v4.3.x, records are **push-replicated** to federation peers (`ledger_replication.go`, `/ledger/__manifest|__sync|__record`, `withFederationAuth`) and a **60s background reconcile loop** (`startLedgerReconcileLoop`) heals missing records from peers. Contribution credits are still computed from the local view; the anti-double-spend chain is backed by signed records. IPFS-style global persistence remains a future phase.
 
 - **Earn**: Provide Provider resources that other nodes consume → the ledger credits you 1:1 with what you gave (requests without request-id are not counted). No fee, no interest, no inflation
 - **Spend**: A verified contributor draws on its own entitlement instead of the anonymous per-IP abuse guard. Running out is **not** a rejection — the request falls through to the community free pool like anyone else's
@@ -249,3 +249,15 @@ Real-time metrics tracked per node: latency, CPU, memory, error rate, active con
 | `GET /api/network/algorithm/current` | Current routing algorithm |
 | `GET /api/network/regions` | Network region information |
 | `GET /api/network/balance/status` | Load balance status |
+
+### 📌 已上线但文档此前未记录的特性（v4.3.x 正向背离补记）
+
+以下能力均已随 v4.3.x 上线（`routes.go`），此前未在 FEATURES.md / API.md 记录，现如实补记：
+
+- **Gemini 下游入口**：`POST /v1beta/models/{model}:generateContent` 与 `:streamGenerateContent`（`gemini_api.go`，`x-goog-api-key` 头 / `?key=` 查询，鉴权后剥离查询令牌）
+- **Azure URL 兼容入口**：`POST /openai/deployments/{deployment}/chat/completions`（`azure_api.go`，`api-key` 头转 Bearer，deployment 注入为 model）
+- **社区共治端点**（P2-1）：`POST /api/governance/propose`、`POST /api/governance/ratify`（均 `withFederationAuth` + 限流）、`GET /api/governance/proposals`（公开只读）
+- **账本透明 / 配额 / 导出端点**（P2-2 / P2-3 / P4-1）：`GET /api/admin/ledger/transparency`、`GET /api/admin/ledger/contribution-quota`、`GET /api/admin/ledger/export?format=csv|json`（均 admin + 限流）
+- **账本联邦复制端点**（P1-3）：`GET /ledger/__manifest`、`POST /ledger/__sync`、`GET /ledger/__record`（均 `withFederationAuth`）
+- **UDP 打洞端点**：`POST /network/__punch`（经 relay 路由分发到 `handlePunchExchange`，交换 PunchOffer；无独立认证，见 review 待办）
+- **响应头 `X-OMP-Quota-Source`**：`contributor|community`，标识请求扣自哪条免费额度通道（`ledger_quota_consume.go`）

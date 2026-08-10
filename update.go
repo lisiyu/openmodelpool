@@ -667,47 +667,48 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 		slog.Info("download succeeded via mirror", "mirror", usedSource.label)
 	}
 
-	// P0-1: Verify SHA-256 checksum from GitHub release assets.
-	// Try checksum from the same source first, then fall back to direct.
-	checksumURL := usedSource.url + ".sha256"
+	// SEC-P1-3 (fail-closed verification): the SHA-256 checksum and the
+	// Ed25519 signature are ALWAYS fetched from canonical GitHub release assets
+	// — never from a mirror, which must only ever supply opaque bytes. If the
+	// verification material is missing or mismatched, the update is ABORTED.
+	// (The binary itself may still be downloaded via a mirror for connectivity;
+	// its integrity is established by the checksum/signature pair below.)
+	checksumURL := directURL + ".sha256"
 	expectedHash, err := um.fetchChecksum(checksumURL)
-	if err != nil && usedSource.url != directURL {
-		// Mirror checksum failed; try direct GitHub for checksum.
-		slog.Warn("mirror checksum failed, trying direct", "error", err)
-		expectedHash, err = um.fetchChecksum(directURL + ".sha256")
-	}
 	if err != nil {
-		slog.Warn("checksum unavailable, skipping verification", "error", err)
-	} else if um.downloadHash != expectedHash {
+		_ = os.Remove(tmpPath)
+		um.setLocalFailed(fmt.Sprintf("无法获取 GitHub 官方 SHA-256 校验和，已中止更新: %v", err))
+		return
+	}
+	if um.downloadHash != expectedHash {
 		_ = os.Remove(tmpPath)
 		um.setLocalFailed(fmt.Sprintf("SHA-256 校验失败: 期望 %s, 实际 %s", expectedHash, um.downloadHash))
 		return
-	} else {
-		slog.Info("SHA-256 checksum verified", "hash", expectedHash)
 	}
+	slog.Info("SHA-256 checksum verified", "hash", expectedHash)
 
-	// P2: Verify Ed25519 signature if a .sig file is available in the release.
-	// This provides cryptographic integrity verification beyond SHA-256,
-	// protecting against scenarios where the GitHub repository is compromised.
+	// P2: Verify Ed25519 signature from the canonical GitHub release asset.
+	// SEC-P1-3: a missing or invalid signature also aborts the update.
 	sigURL := directURL + ".sig"
 	sigBytes, err := um.fetchSignature(sigURL)
 	if err != nil {
-		slog.Warn("Ed25519 signature unavailable, falling back to SHA-256 only", "error", err)
-	} else {
-		// Read the downloaded binary for signature verification
-		binaryData, err := os.ReadFile(tmpPath)
-		if err != nil {
-			_ = os.Remove(tmpPath)
-			um.setLocalFailed("无法读取已下载的二进制文件: " + err.Error())
-			return
-		}
-		if !ed25519.Verify(releaseSigningPubKey, binaryData, sigBytes) {
-			_ = os.Remove(tmpPath)
-			um.setLocalFailed("Ed25519 签名验证失败: 二进制文件可能被篡改")
-			return
-		}
-		slog.Info("Ed25519 signature verified", "version", target)
+		_ = os.Remove(tmpPath)
+		um.setLocalFailed(fmt.Sprintf("无法获取 GitHub 官方 Ed25519 签名，已中止更新: %v", err))
+		return
 	}
+	// Read the downloaded binary for signature verification
+	binaryData, err := os.ReadFile(tmpPath)
+	if err != nil {
+		_ = os.Remove(tmpPath)
+		um.setLocalFailed("无法读取已下载的二进制文件: " + err.Error())
+		return
+	}
+	if !ed25519.Verify(releaseSigningPubKey, binaryData, sigBytes) {
+		_ = os.Remove(tmpPath)
+		um.setLocalFailed("Ed25519 签名验证失败: 二进制文件可能被篡改")
+		return
+	}
+	slog.Info("Ed25519 signature verified", "version", target)
 
 	// Atomic replace.
 	um.setLocalPhase(PhaseReplacing, 80, "正在替换二进制文件…", "")

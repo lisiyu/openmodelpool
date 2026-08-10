@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -223,7 +222,7 @@ func (f *FreePoolManager) stop() { close(f.stopCh) }
 func (f *FreePoolManager) Sync() error {
 	slog.Info("free pool sync started", "source", f.sourceURL)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := GetSharedHTTPClientWithTimeout(30 * time.Second)
 	resp, err := client.Get(f.sourceURL)
 	if err != nil {
 		slog.Error("free pool sync: fetch failed", "error", err)

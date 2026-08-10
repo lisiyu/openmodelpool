@@ -28,7 +28,8 @@ func corsMiddleware(next http.Handler) http.Handler {
 			allowedOrigins = defaults
 		}
 
-		if origin != "" && isOriginAllowed(origin, allowedOrigins) {
+		originAllowed := origin != "" && isOriginAllowed(origin, allowedOrigins)
+		if originAllowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 		}
@@ -36,11 +37,75 @@ func corsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
 		w.Header().Set("Access-Control-Max-Age", "86400") // Cache preflight for 24h
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		// SEC-P2-17: only advertise Allow-Credentials when the origin actually
+		// matched the whitelist — never for arbitrary origins.
+		if originAllowed {
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(200)
 			return
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ============================================================
+// Internal request context (SEC-P0-1 / SEC-P0-2)
+// ============================================================
+//
+// Two values ride in the request context (never on the wire):
+//   - relayDispatch: set when handleRelayToLocal re-dispatches a request
+//     in-process. Middleware that trusts loopback/private RemoteAddr (the C3
+//     anonymous-admin fallback in withProxyAuth and localOnly) MUST treat a
+//     relay-dispatched request as an untrusted remote, because the relay
+//     preserves the original (possibly public-internet) RemoteAddr.
+//   - internalKeyType: the effective API key type derived by our own relay
+//     from a credential it already validated (e.g. guest→public conversion).
+//     It is the ONLY sanctioned replacement for the client-spoofable
+//     X-OMP-KeyType wire header (SEC-P0-2).
+
+type internalCtxKey int
+
+const (
+	ctxKeyRelayDispatch internalCtxKey = iota + 1
+	ctxKeyInternalKeyType
+)
+
+// isRelayDispatched reports whether the request was re-dispatched in-process
+// by our own relay (SEC-P0-1). Such requests must never be granted the
+// loopback/private-network trust that a genuine local request would receive.
+func isRelayDispatched(r *http.Request) bool {
+	v, _ := r.Context().Value(ctxKeyRelayDispatch).(bool)
+	return v
+}
+
+// withInternalKeyType returns a request whose context carries an internal API
+// key type derived by our own relay from a verified credential. This value can
+// never be supplied by a client over the wire.
+func withInternalKeyType(r *http.Request, keyType string) *http.Request {
+	if keyType == "" {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), ctxKeyInternalKeyType, keyType))
+}
+
+// internalKeyType returns the internal API key type set by our own relay, or ""
+// when none was set.
+func internalKeyType(r *http.Request) string {
+	if v, ok := r.Context().Value(ctxKeyInternalKeyType).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// stripInternalHeadersMiddleware removes client-supplied internal headers that
+// must never be trusted from the wire (SEC-P0-2). It runs before every handler
+// so that a forged X-OMP-KeyType can never reach RequestKeyType. Our own relay
+// communicates the effective key type via the context instead.
+func stripInternalHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Del("X-OMP-KeyType")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -68,8 +133,21 @@ func isOriginAllowed(origin, whitelist string) bool {
 // Accepts: public trial key, admin proxy API key, or consumer API key.
 // C3-fix: Anonymous admin access is only allowed from localhost/private networks.
 // Public internet requests without credentials are always rejected.
+// SEC-P0-1: a request re-dispatched by our own relay (with a validated internal
+// key type in the context) is accepted here and never granted the C3 anonymous
+// admin fallback — the relay preserved the original RemoteAddr, which may be a
+// public-internet client.
 func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// SEC-P0-1/SEC-P0-2: our own relay already validated the credential and
+		// derived the effective key type (guest→public conversion etc.). The
+		// internal value travels via context, never via a wire header, so it is
+		// safe to accept here without re-validating.
+		if kt := internalKeyType(r); kt != "" {
+			handler(w, r)
+			return
+		}
+
 		authHeader := r.Header.Get("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			key := authHeader[7:]
@@ -86,7 +164,9 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 			if proxyKey == "" && !multiUser.HasConsumers() {
 				// C3-fix: Only allow anonymous admin access from localhost/private networks
 				clientIP := extractClientIP(r.RemoteAddr)
-				if isLocalOrPrivateIP(clientIP) {
+				// SEC-P0-1: a relay-dispatched request is never anonymous admin,
+				// even if its preserved RemoteAddr looks local.
+				if !isRelayDispatched(r) && isLocalOrPrivateIP(clientIP) {
 					r.Header.Set("X-Request-Owner", "")
 					r.Header.Set("X-Request-Role", "admin")
 					handler(w, r)
@@ -132,7 +212,8 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 		if proxyKey == "" {
 			if !multiUser.HasConsumers() {
 				clientIP := extractClientIP(r.RemoteAddr)
-				if isLocalOrPrivateIP(clientIP) {
+				// SEC-P0-1: relay-dispatched requests are never anonymous admin.
+				if !isRelayDispatched(r) && isLocalOrPrivateIP(clientIP) {
 					r.Header.Set("X-Request-Owner", "")
 					r.Header.Set("X-Request-Role", "admin")
 					handler(w, r)
@@ -193,11 +274,14 @@ func extractToken(r *http.Request) string {
 
 // localOnly restricts access to localhost and private network IPs only.
 // Used for sensitive endpoints like password reset that should not be accessible from the public internet.
+// SEC-P0-1: a relay-dispatched request is treated as untrusted remote even if
+// its preserved RemoteAddr looks local, so /network/{selfID}/api/forgot-password
+// can never reach these endpoints from the public internet.
 func localOnly(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip := extractClientIP(r.RemoteAddr)
-		if !isLocalOrPrivateIP(ip) {
-			slog.Warn("blocked non-local access to sensitive endpoint", "ip", ip, "path", r.URL.Path)
+		if isRelayDispatched(r) || !isLocalOrPrivateIP(ip) {
+			slog.Warn("blocked non-local access to sensitive endpoint", "ip", ip, "path", r.URL.Path, "relay_dispatched", isRelayDispatched(r))
 			writeError(w, 403, "this endpoint is only accessible from localhost or private network")
 			return
 		}
@@ -216,12 +300,18 @@ func isLocalOrPrivateIP(ip string) bool {
 		return true
 	}
 	// Private networks: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+	// SEC-P3-21: also cover link-local (169.254.0.0/16), CGNAT
+	// (100.64.0.0/10) and IPv6 unique-local (fc00::/7) — SSRF guards must
+	// treat all of these as internal.
 	privateRanges := []struct {
 		network string
 	}{
 		{"10.0.0.0/8"},
 		{"172.16.0.0/12"},
 		{"192.168.0.0/16"},
+		{"169.254.0.0/16"},
+		{"100.64.0.0/10"},
+		{"fc00::/7"},
 	}
 	for _, r := range privateRanges {
 		_, cidr, _ := net.ParseCIDR(r.network)
@@ -269,8 +359,15 @@ func generateRequestID() string {
 
 // adminTimeoutMiddleware adds a request timeout for admin API endpoints.
 // B162: Prevents long-running admin operations from blocking connections.
+// PERF-P2-13: only /api/* admin endpoints get the 60s cap — streaming paths
+// (/v1/*, /events, /network/* relays) are exempt so long SSE/relay responses
+// are not killed mid-stream by a context cancel.
 func adminTimeoutMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
 		next.ServeHTTP(w, r.WithContext(ctx))

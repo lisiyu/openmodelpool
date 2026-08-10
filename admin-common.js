@@ -17,9 +17,23 @@ function escapeHtml(s) {
 function escapeAttr(s) { return escapeHtml(s); }
 // escapeJS escapes a value for safe embedding inside a single-quoted
 // JavaScript string literal (e.g. onclick="someFunc('...')").
+// SEC-P3-25: control characters use STANDARD escapes (\n, \r, \t) — the old
+// code emitted a raw backslash + newline, which is a JS line continuation
+// (an invalid escape / string-break) rather than a newline inside the literal.
 function escapeJS(s) {
   if (s === null || s === undefined) return '';
-  return String(s).replace(/[\\'"`\n\r\t]/g, function(c){ return '\\' + c; });
+  return String(s).replace(/[\\'"`\n\r\t]/g, function(c) {
+    switch (c) {
+      case '\\': return '\\\\';
+      case "'": return "\\'";
+      case '"': return '\\"';
+      case '`': return '\\`';
+      case '\n': return '\\n';
+      case '\r': return '\\r';
+      case '\t': return '\\t';
+      default: return c;
+    }
+  });
 }
 
 // safeUrl validates a URL before it is placed into an HTML href/src attribute.
@@ -89,22 +103,32 @@ async function authFetch(url, opts = {}) {
   const r = await fetch(url, opts);
   if (r.status === 401) {
     localStorage.removeItem('admin_token');
-    toast('login expired', 'error');
-    setTimeout(function() { location.href = '/login'; }, 1500);
+    authToken = '';
+    // UX-P1-4: Chinese message; the redirect delay gives the user time to
+    // copy any unsaved form content before the page navigates away.
+    toast('登录已过期，请重新登录', 'error', 2500);
+    setTimeout(function() { location.href = '/login'; }, 2500);
     throw new Error('not logged in');
+  }
+  if (!r.ok) {
+    // UX-P0-3: surface non-401 failures — callers previously received the
+    // response and toasted success even when the request failed.
+    throw new Error('HTTP ' + r.status);
   }
   return r;
 }
 
 function logout() { localStorage.removeItem('admin_token'); location.href = '/login'; }
 
-function toast(msg, type) {
+function toast(msg, type, duration) {
   type = type || 'success';
   var t = document.createElement('div');
   t.className = 'toast ' + type;
   t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(function() { t.remove(); }, 3000);
+  // UX-P1-6: honor an explicit duration; default 3000ms.
+  var ms = (typeof duration === 'number' && duration > 0) ? duration : 3000;
+  setTimeout(function() { t.remove(); }, ms);
 }
 
 function extractError(d) {
@@ -113,6 +137,61 @@ function extractError(d) {
   if (d.error && typeof d.error === 'object') return d.error.message || d.error.type || JSON.stringify(d.error);
   if (d.detail) return typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail);
   return 'unknown error';
+}
+
+// openApiKeyDialog opens a styled modal form and resolves with the collected
+// values (UX-P2-13: replaces the native prompt() chain for API-key editing,
+// which blocks the page and offers no validation). fields:
+//   [{name, label, value, type, placeholder}]
+// Resolves with an object of {name: value} or null when cancelled.
+function openApiKeyDialog(title, fields) {
+  return new Promise(function(resolve) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:var(--bg-primary,#1c2128);border:1px solid var(--border,#30363d);border-radius:10px;padding:20px;width:min(420px,90vw);max-height:90vh;overflow:auto';
+    var h = document.createElement('h3');
+    h.textContent = title;
+    h.style.cssText = 'margin:0 0 12px;font-size:15px;color:var(--text-primary,#e6edf3)';
+    box.appendChild(h);
+    var inputs = {};
+    fields.forEach(function(f) {
+      var label = document.createElement('label');
+      label.textContent = f.label;
+      label.style.cssText = 'display:block;font-size:12px;margin:8px 0 4px;color:var(--text-secondary,#8b949e)';
+      var input = document.createElement('input');
+      input.type = f.type || 'text';
+      input.value = (f.value !== undefined && f.value !== null) ? String(f.value) : '';
+      if (f.placeholder) input.placeholder = f.placeholder;
+      input.style.cssText = 'width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;border:1px solid var(--border,#30363d);background:var(--bg-secondary,#161b22);color:var(--text-primary,#e6edf3);font-size:13px';
+      box.appendChild(label);
+      box.appendChild(input);
+      inputs[f.name] = input;
+    });
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:16px';
+    var cancel = document.createElement('button');
+    cancel.textContent = '取消';
+    cancel.className = 'btn btn-secondary';
+    var ok = document.createElement('button');
+    ok.textContent = '确定';
+    ok.className = 'btn btn-primary';
+    ok.addEventListener('click', function() {
+      var out = {};
+      fields.forEach(function(f) { out[f.name] = inputs[f.name].value; });
+      document.body.removeChild(overlay);
+      resolve(out);
+    });
+    cancel.addEventListener('click', function() { document.body.removeChild(overlay); resolve(null); });
+    btnRow.appendChild(cancel);
+    btnRow.appendChild(ok);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) { document.body.removeChild(overlay); resolve(null); } });
+    document.body.appendChild(overlay);
+    var first = fields[0] && inputs[fields[0].name];
+    if (first) first.focus();
+  });
 }
 
 function formatTokens(n) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -490,7 +491,11 @@ func (a *Auth) VerifyResetToken(tok string) bool {
 // verifyResetTokenLocked checks reset token validity; caller must hold a.mu.
 func (a *Auth) verifyResetTokenLocked(tok string) bool {
 	r := a.data.Reset
-	if r == nil || r.Used || r.Token != tok {
+	if r == nil || r.Used {
+		return false
+	}
+	// SEC-P2-16: constant-time comparison to avoid token-timing side channels.
+	if subtle.ConstantTimeCompare([]byte(r.Token), []byte(tok)) != 1 {
 		return false
 	}
 	exp, err := time.Parse(time.RFC3339, r.Expire)

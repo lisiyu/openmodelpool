@@ -429,7 +429,7 @@ func handleCheckDiscoveredPlatform(w http.ResponseWriter, r *http.Request) {
 		modelsURL = baseURL + "/models"
 	}
 
-	client := &http.Client{Timeout: 8 * time.Second}
+	client := GetSharedHTTPClientWithTimeout(8 * time.Second)
 	req, err := http.NewRequestWithContext(r.Context(), "GET", modelsURL, nil)
 	if err != nil {
 		writeJSON(w, 200, map[string]any{

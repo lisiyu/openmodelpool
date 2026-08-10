@@ -76,8 +76,13 @@ func initLogger(dataDir string) {
 func (l *Logger) rotationLoop() {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		l.checkAndRotate()
+	for {
+		select {
+		case <-globalStopCh:
+			return
+		case <-ticker.C:
+			l.checkAndRotate()
+		}
 	}
 }
 

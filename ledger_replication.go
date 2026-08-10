@@ -29,14 +29,87 @@ type LedgerReplicator struct {
 	peers   []string // base URLs of federation peers (excluding self)
 	client  *http.Client
 	selfID  string
+
+	// PERF-P0-3: bounded fan-out worker pool. RecordContribution enqueues via
+	// EnqueueContribution instead of spawning one goroutine per record; at most
+	// ledgerReplicateWorkers goroutines perform the actual replication and the
+	// queue is bounded, so a burst can never create unbounded goroutines.
+	jobCh     chan *ContributionRecord
+	stopCh    chan struct{}
+	done      chan struct{}
+	stopOnce  sync.Once
+	startOnce sync.Once
 }
 
+const (
+	ledgerReplicateWorkers   = 4
+	ledgerReplicateQueueSize = 256
+	ledgerReplicateTimeout   = 10 * time.Second
+)
+
 func NewLedgerReplicator(primary *GossipLedger, selfID string, peers ...string) *LedgerReplicator {
-	return &LedgerReplicator{
+	r := &LedgerReplicator{
 		primary: primary,
 		peers:   append([]string{}, peers...),
 		selfID:  selfID,
-		client:  &http.Client{Timeout: 10 * time.Second},
+		// PERF-P1-8: reuse the shared connection-pooled client.
+		client: GetSharedHTTPClientWithTimeout(ledgerReplicateTimeout),
+		jobCh:  make(chan *ContributionRecord, ledgerReplicateQueueSize),
+		stopCh: make(chan struct{}),
+		done:   make(chan struct{}),
+	}
+	r.startWorkers()
+	return r
+}
+
+// startWorkers launches the bounded replication workers (idempotent).
+func (r *LedgerReplicator) startWorkers() {
+	r.startOnce.Do(func() {
+		var wg sync.WaitGroup
+		for i := 0; i < ledgerReplicateWorkers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-r.stopCh:
+						return
+					case rec := <-r.jobCh:
+						if rec == nil {
+							return
+						}
+						if _, err := r.replicateOne(rec); err != nil {
+							slog.Warn("ledger replicate failed", "id", rec.ID, "error", err)
+						}
+					}
+				}
+			}()
+		}
+		go func() {
+			wg.Wait()
+			close(r.done)
+		}()
+	})
+}
+
+// Stop shuts down the worker pool and waits for it to drain (idempotent).
+func (r *LedgerReplicator) Stop() {
+	r.stopOnce.Do(func() { close(r.stopCh) })
+	<-r.done
+}
+
+// EnqueueContribution submits a contribution to the bounded worker pool
+// (PERF-P0-3). Never blocks the caller for long: if the queue is full the job
+// is dropped (the source node stays authoritative). Nil-safe and additive.
+func (r *LedgerReplicator) EnqueueContribution(rec *ContributionRecord) {
+	if rec == nil {
+		return
+	}
+	select {
+	case r.jobCh <- rec:
+	case <-r.stopCh:
+	default:
+		slog.Warn("ledger replicate queue full, dropping contribution", "id", rec.ID)
 	}
 }
 
@@ -88,8 +161,14 @@ func mustJSON(v interface{}) json.RawMessage {
 }
 
 // ReplicateContribution pushes a freshly-recorded contribution to every known
-// federation peer. Returns how many peers accepted it.
+// federation peer (synchronous; used by callers that need the result).
+// Returns how many peers accepted it.
 func (r *LedgerReplicator) ReplicateContribution(rec *ContributionRecord) (int, error) {
+	return r.replicateOne(rec)
+}
+
+// replicateOne performs the actual fan-out to every known peer.
+func (r *LedgerReplicator) replicateOne(rec *ContributionRecord) (int, error) {
 	if rec == nil {
 		return 0, fmt.Errorf("nil contribution record")
 	}
@@ -105,10 +184,14 @@ func (r *LedgerReplicator) ReplicateContribution(rec *ContributionRecord) (int, 
 	if err != nil {
 		return 0, err
 	}
+	// PERF-P0-3: bound each peer request with a context deadline (in addition
+	// to the client timeout) so a stalled peer cannot pin a worker forever.
+	ctx, cancel := context.WithTimeout(context.Background(), ledgerReplicateTimeout)
+	defer cancel()
 	ok := 0
 	for _, base := range peers {
 		u := strings.TrimRight(base, "/") + "/ledger/__sync"
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, u, bytes.NewReader(payload))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
 		if err != nil {
 			continue
 		}
@@ -179,11 +262,16 @@ func (r *LedgerReplicator) fetchRecord(peerBase, id string) (string, json.RawMes
 // (present on the peer, absent here), and reports divergence (same id,
 // different content) for alerting. Divergent records are NOT auto-overwritten.
 func (r *LedgerReplicator) ReconcileWith(peerBase string) (ManifestDiff, int, error) {
+	return r.reconcileWithManifest(peerBase, BuildManifest(r.primary))
+}
+
+// reconcileWithManifest is ReconcileWith against a pre-computed local manifest
+// (PERF-P2-16: ReconcileAll builds it once instead of per peer).
+func (r *LedgerReplicator) reconcileWithManifest(peerBase string, local *LedgerManifest) (ManifestDiff, int, error) {
 	remote, err := r.FetchManifest(peerBase)
 	if err != nil {
 		return ManifestDiff{}, 0, err
 	}
-	local := BuildManifest(r.primary)
 	diff := DiffManifests(local, remote) // Missing = on peer, absent locally
 	healed := 0
 	for _, me := range diff.Missing {
@@ -208,26 +296,43 @@ type ReconcileResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// ReconcileAll reconciles against every known peer.
+// reconcileParallelism bounds concurrent per-peer reconciliations (PERF-P2-16).
+const reconcileParallelism = 4
+
+// ReconcileAll reconciles against every known peer with bounded parallelism
+// and a single locally-built manifest (PERF-P2-16).
 func (r *LedgerReplicator) ReconcileAll() []ReconcileResult {
 	peers := r.Peers()
 	if len(peers) == 0 {
 		r.refreshPeersFromRouteTable()
 		peers = r.Peers()
 	}
-	var out []ReconcileResult
-	for _, p := range peers {
-		res := ReconcileResult{Peer: p}
-		diff, healed, err := r.ReconcileWith(p)
-		if err != nil {
-			res.Error = err.Error()
-		} else {
-			res.Missing = len(diff.Missing)
-			res.Divergent = len(diff.Divergent)
-			res.Healed = healed
-		}
-		out = append(out, res)
+	if len(peers) == 0 {
+		return nil
 	}
+	local := BuildManifest(r.primary)
+	sem := make(chan struct{}, reconcileParallelism)
+	var wg sync.WaitGroup
+	out := make([]ReconcileResult, len(peers))
+	for i, p := range peers {
+		wg.Add(1)
+		go func(i int, peer string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			res := ReconcileResult{Peer: peer}
+			diff, healed, err := r.reconcileWithManifest(peer, local)
+			if err != nil {
+				res.Error = err.Error()
+			} else {
+				res.Missing = len(diff.Missing)
+				res.Divergent = len(diff.Divergent)
+				res.Healed = healed
+			}
+			out[i] = res
+		}(i, p)
+	}
+	wg.Wait()
 	return out
 }
 
@@ -373,13 +478,9 @@ func handleLedgerRecordFor(w http.ResponseWriter, r *http.Request, g *GossipLedg
 		rt, rec = "claim", v
 	} else if v, ok := g.penalties[id]; ok {
 		rt, rec = "penalty", v
-	} else {
-		for _, tx := range g.txs {
-			if tx.ID == id {
-				rt, rec = "tx", tx
-				break
-			}
-		}
+	} else if tx, ok := g.txIndex[id]; ok {
+		// PERF-P2-18: use the tx index instead of a linear scan.
+		rt, rec = "tx", tx
 	}
 	g.mu.RUnlock()
 	if rt == "" {

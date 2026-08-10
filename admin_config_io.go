@@ -144,22 +144,62 @@ func handleImportConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.Unmarshal(data, &importData); err != nil {
-		writeError(w, 400, "invalid config format: "+err.Error())
+		writeError(w, 400, "invalid config format")
 		return
 	}
 
-	// Import providers
+	// Import providers (SEC-P2-18): validate every BaseURL with the same
+	// scheme + SSRF guard as the create path, and MERGE (upsert) instead of
+	// truncating the whole provider set. Masked values from an export keep the
+	// existing live secrets.
 	if importData.Providers != nil {
+		// QA-minor: detect which import entries explicitly carry a
+		// access_control.share_to_pool value. Unlike the masked string fields
+		// above (which have a presence/"..." mask signal), ShareToPool is a
+		// bool — absent and false are otherwise indistinguishable. The official
+		// export omits share_to_pool, so a round-trip import must preserve the
+		// existing setting; only an explicit value in the import file is
+		// honored.
+		rawProviders := rawProvidersWithShareToPool(data)
+
 		pm.mu.Lock()
-		pm.providers = make(map[string]Provider)
-		for _, p := range importData.Providers {
+		if pm.providers == nil {
+			pm.providers = make(map[string]Provider)
+		}
+		for i, p := range importData.Providers {
 			if p.ID == "" {
 				p.ID = strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(p.Name, " ", "-"), "_", "-"))
 			}
+			if err := validateProviderBaseURL(p.BaseURL); err != nil {
+				pm.mu.Unlock()
+				writeError(w, 400, "provider '"+p.ID+"': "+err.Error())
+				return
+			}
+			if existing, ok := pm.providers[p.ID]; ok {
+				if p.APIKey == "" || strings.Contains(p.APIKey, "...") {
+					p.APIKey = existing.APIKey
+				}
+				if p.Proxy == "" || p.Proxy == "vmess://***" {
+					p.Proxy = existing.Proxy
+				}
+				if len(p.APIKeys) == 0 {
+					p.APIKeys = existing.APIKeys
+				}
+				// Preserve the existing share_to_pool unless the import file
+				// explicitly sets it (see rawProvidersWithShareToPool).
+				if len(rawProviders) <= i || !rawProviders[i] {
+					p.AccessControl.ShareToPool = existing.AccessControl.ShareToPool
+				}
+			}
 			pm.providers[p.ID] = p
 		}
-		pm.save()
 		pm.mu.Unlock()
+
+		// QA blocking fix: pm.save() re-acquires pm.mu via RLock; Go's RWMutex
+		// is NOT reentrant, so calling save() while holding the write lock
+		// self-deadlocks and blocks every provider operation. Always persist
+		// AFTER releasing the write lock.
+		pm.save()
 	}
 
 	// Import config
@@ -195,4 +235,36 @@ func handleImportConfig(w http.ResponseWriter, r *http.Request) {
 		"message":         "config imported successfully",
 		"providers_count": len(importData.Providers),
 	})
+}
+
+// rawProvidersWithShareToPool reports, per top-level "providers" entry in the
+// raw import payload (in array order), whether that entry explicitly carries an
+// access_control.share_to_pool value. Provider binds ShareToPool ONLY under
+// "access_control" (types.go Provider.AccessControl json:"access_control"), so
+// a top-level "share_to_pool" key would be silently ignored by unmarshal and is
+// therefore NOT treated as explicit. Used to honor an explicit import value
+// while preserving the existing setting on round-trips (the official export
+// omits share_to_pool, so absent must mean "keep the current value", not "turn
+// sharing off").
+func rawProvidersWithShareToPool(data []byte) []bool {
+	var holder struct {
+		Providers []map[string]json.RawMessage `json:"providers"`
+	}
+	if err := json.Unmarshal(data, &holder); err != nil {
+		return nil
+	}
+	out := make([]bool, len(holder.Providers))
+	for i, raw := range holder.Providers {
+		acRaw, ok := raw["access_control"]
+		if !ok {
+			continue
+		}
+		var ac map[string]json.RawMessage
+		if json.Unmarshal(acRaw, &ac) == nil {
+			if _, ok := ac["share_to_pool"]; ok {
+				out[i] = true
+			}
+		}
+	}
+	return out
 }

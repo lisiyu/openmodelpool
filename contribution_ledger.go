@@ -98,9 +98,13 @@ type GossipLedger struct {
 	penalties map[string]*PenaltyRecord
 	txs       []*SignedTransaction
 	txIndex   map[string]*SignedTransaction
-	seq       uint64
-	pub       ed25519.PublicKey
-	priv      ed25519.PrivateKey
+	// dailyContrib is an incremental per-(node,date) contribution counter
+	// (PERF-P0-2): key = nodeID + "|" + YYYY-MM-DD (local time), maintained in
+	// AppendTransaction so CheckShareBoundary never scans the whole ledger.
+	dailyContrib map[string]int64
+	seq          uint64
+	pub          ed25519.PublicKey
+	priv         ed25519.PrivateKey
 }
 
 func NewGossipLedger(peerID string) (*GossipLedger, error) {
@@ -109,16 +113,17 @@ func NewGossipLedger(peerID string) (*GossipLedger, error) {
 		return nil, err
 	}
 	return &GossipLedger{
-		peerID:    peerID,
-		hashStore: NewContentHashStore(),
-		recs:      make(map[string]*ContributionRecord),
-		trusts:    make(map[string]*TrustRecord),
-		claims:    make(map[string]*CapabilityClaim),
-		penalties: make(map[string]*PenaltyRecord),
-		txs:       make([]*SignedTransaction, 0),
-		txIndex:   make(map[string]*SignedTransaction),
-		pub:       pub,
-		priv:      priv,
+		peerID:       peerID,
+		hashStore:    NewContentHashStore(),
+		recs:         make(map[string]*ContributionRecord),
+		trusts:       make(map[string]*TrustRecord),
+		claims:       make(map[string]*CapabilityClaim),
+		penalties:    make(map[string]*PenaltyRecord),
+		txs:          make([]*SignedTransaction, 0),
+		txIndex:      make(map[string]*SignedTransaction),
+		dailyContrib: make(map[string]int64),
+		pub:          pub,
+		priv:         priv,
 	}, nil
 }
 
@@ -130,6 +135,10 @@ func (g *GossipLedger) Sign(data []byte) []byte {
 	return ed25519.Sign(g.priv, data)
 }
 
+// nextID returns a unique record id. PERF-P3-21: the seq counter is not
+// independently synchronized — the caller MUST already hold g.mu (write lock),
+// which every caller in this file does (RecordContribution/RecordTrust/
+// RecordClaim/RecordPenalty/AppendTransaction).
 func (g *GossipLedger) nextID(prefix string) string {
 	g.seq++
 	return fmt.Sprintf("%s-%s-%d", prefix, g.peerID, g.seq)
@@ -165,9 +174,11 @@ func (g *GossipLedger) RecordContribution(record *ContributionRecord) (string, e
 	}
 	// P1-3(ii): asynchronously mirror the contribution to federation peers so
 	// the record survives any single node's loss (nil replicator = no-op).
+	// PERF-P0-3: the replicator's bounded worker pool replaces the previous
+	// unbounded per-record goroutine.
 	if ledgerReplicator != nil {
 		recCopy := *record
-		go ledgerReplicator.ReplicateContribution(&recCopy)
+		ledgerReplicator.EnqueueContribution(&recCopy)
 	}
 	// P2-3(i): accrue the donor's public-welfare free-quota entitlement
 	// (1:1 with contributed tokens). Nil tracker = no-op (keeps unit tests
@@ -348,7 +359,28 @@ func (g *GossipLedger) AppendTransaction(txType, nodeID string, amount int64, mo
 
 	g.txs = append(g.txs, tx)
 	g.txIndex[tx.ID] = tx
+	// PERF-P0-2: maintain the incremental daily contribution counter so
+	// CheckShareBoundary does not rescan the full transaction slice per
+	// request. Only "contribution" transactions accrue the cap.
+	if txType == "contribution" && amount != 0 {
+		g.dailyContrib[dailyKey(nodeID, tx.Timestamp)] += amount
+	}
 	return tx, nil
+}
+
+// GetDailyContributions returns the total contributed by nodeID on the given
+// day (local timezone), maintained incrementally (PERF-P0-2). Lock order note:
+// this takes g.mu only — callers that already hold nm.mu (CheckShareBoundary)
+// keep the single nm.mu → g.mu order; no ledger code ever takes nm.mu.
+func (g *GossipLedger) GetDailyContributions(nodeID string, day time.Time) int64 {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.dailyContrib[dailyKey(nodeID, day)]
+}
+
+// dailyKey returns the per-day counter key for a node (local date).
+func dailyKey(nodeID string, t time.Time) string {
+	return nodeID + "|" + t.Format("2006-01-02")
 }
 
 func (g *GossipLedger) GetTransactionChain(nodeID string) []*SignedTransaction {
@@ -447,22 +479,40 @@ func (g *GossipLedger) GetTransparency() LedgerTransparency {
 	return t
 }
 
+// csvSafeCell neutralizes spreadsheet formula injection (SEC-P2-9): a cell
+// that begins with =, +, -, @, tab or CR is prefixed with a single quote so
+// spreadsheet software treats it as text instead of executing it as a formula.
+func csvSafeCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
+}
+
 // ExportContributionsCSV renders all contribution records as CSV (header +
 // one row per record) for researchers / public-welfare transparency (P4-1).
 func (g *GossipLedger) ExportContributionsCSV() (string, error) {
 	g.mu.RLock()
-	defer g.mu.RUnlock()
+	rows := make([]*ContributionRecord, 0, len(g.recs))
+	for _, r := range g.recs {
+		rows = append(rows, r)
+	}
+	g.mu.RUnlock()
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
 	if err := w.Write([]string{"id", "peer_id", "model_id", "provider", "tokens", "value_usd", "timestamp"}); err != nil {
 		return "", err
 	}
-	for _, r := range g.recs {
+	for _, r := range rows {
 		row := []string{
-			r.ID,
-			r.PeerID,
-			r.ModelID,
-			r.Provider,
+			csvSafeCell(r.ID),
+			csvSafeCell(r.PeerID),
+			csvSafeCell(r.ModelID),
+			csvSafeCell(r.Provider),
 			strconv.FormatInt(r.Tokens, 10),
 			strconv.FormatFloat(r.ValueUSD, 'f', 2, 64),
 			r.Timestamp.Format(time.RFC3339),
@@ -481,16 +531,17 @@ func (g *GossipLedger) ExportContributionsCSV() (string, error) {
 // ExportLedgerJSON renders the full ledger (contributions, trusts, claims,
 // penalties, transactions) as indented JSON for download / archival (P4-1).
 func (g *GossipLedger) ExportLedgerJSON() ([]byte, error) {
+	// PERF-P3-19: snapshot under the read lock, marshal outside it.
 	g.mu.RLock()
-	defer g.mu.RUnlock()
 	payload := map[string]interface{}{
-		"peer_id":      g.peerID,
-		"contributions": g.recs,
-		"trusts":       g.trusts,
-		"claims":       g.claims,
-		"penalties":    g.penalties,
-		"transactions": g.txs,
+		"peer_id":       g.peerID,
+		"contributions": cloneRecs(g.recs),
+		"trusts":        cloneTrusts(g.trusts),
+		"claims":        cloneClaims(g.claims),
+		"penalties":     clonePenalties(g.penalties),
+		"transactions":  append([]*SignedTransaction(nil), g.txs...),
 	}
+	g.mu.RUnlock()
 	return json.MarshalIndent(payload, "", "  ")
 }
 
@@ -577,14 +628,17 @@ type gossipLedgerData struct {
 }
 
 func (g *GossipLedger) Save(path string) error {
+	// PERF-P1-4: snapshot the maps under the read lock, then marshal the
+	// copies OUTSIDE the lock — the previous code marshalled the live map
+	// references after unlocking, racing concurrent writers.
 	g.mu.RLock()
 	data := gossipLedgerData{
 		PeerID:    g.peerID,
-		Recs:      g.recs,
-		Trusts:    g.trusts,
-		Claims:    g.claims,
-		Penalties: g.penalties,
-		Txs:       g.txs,
+		Recs:      cloneRecs(g.recs),
+		Trusts:    cloneTrusts(g.trusts),
+		Claims:    cloneClaims(g.claims),
+		Penalties: clonePenalties(g.penalties),
+		Txs:       append([]*SignedTransaction(nil), g.txs...),
 		Seq:       g.seq,
 		PubKey:    g.pub,
 		PrivKey:   g.priv,
@@ -598,6 +652,38 @@ func (g *GossipLedger) Save(path string) error {
 	return atomicWriteFile(path, raw, 0600)
 }
 
+func cloneRecs(m map[string]*ContributionRecord) map[string]*ContributionRecord {
+	out := make(map[string]*ContributionRecord, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneTrusts(m map[string]*TrustRecord) map[string]*TrustRecord {
+	out := make(map[string]*TrustRecord, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneClaims(m map[string]*CapabilityClaim) map[string]*CapabilityClaim {
+	out := make(map[string]*CapabilityClaim, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func clonePenalties(m map[string]*PenaltyRecord) map[string]*PenaltyRecord {
+	out := make(map[string]*PenaltyRecord, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 func LoadGossipLedger(path string) (*GossipLedger, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -608,21 +694,26 @@ func LoadGossipLedger(path string) (*GossipLedger, error) {
 		return nil, err
 	}
 	txIndex := make(map[string]*SignedTransaction, len(data.Txs))
+	daily := make(map[string]int64, len(data.Txs))
 	for _, tx := range data.Txs {
 		txIndex[tx.ID] = tx
+		if tx.Type == "contribution" {
+			daily[dailyKey(tx.NodeID, tx.Timestamp)] += tx.Amount
+		}
 	}
 	return &GossipLedger{
-		peerID:    data.PeerID,
-		hashStore: NewContentHashStore(),
-		recs:      data.Recs,
-		trusts:    data.Trusts,
-		claims:    data.Claims,
-		penalties: data.Penalties,
-		txs:       data.Txs,
-		txIndex:   txIndex,
-		seq:       data.Seq,
-		pub:       ed25519.PublicKey(data.PubKey),
-		priv:      ed25519.PrivateKey(data.PrivKey),
+		peerID:       data.PeerID,
+		hashStore:    NewContentHashStore(),
+		recs:         data.Recs,
+		trusts:       data.Trusts,
+		claims:       data.Claims,
+		penalties:    data.Penalties,
+		txs:          data.Txs,
+		txIndex:      txIndex,
+		dailyContrib: daily,
+		seq:          data.Seq,
+		pub:          ed25519.PublicKey(data.PubKey),
+		priv:         ed25519.PrivateKey(data.PrivKey),
 	}, nil
 }
 
@@ -630,6 +721,9 @@ type CapabilityVerifier struct {
 	mu           sync.RWMutex
 	probeFn      func(peerID, modelID string) (bool, int64, error)
 	crossResults map[string][]ProbeResult
+	// lastProbe is a per-(peer,model) index of the most recent probe timestamp
+	// (PERF-P1-6) so the scheduler does not rescan all history every tick.
+	lastProbe    map[string]time.Time
 	minVerifiers int
 }
 
@@ -640,6 +734,7 @@ func NewCapabilityVerifier(probeFn func(peerID, modelID string) (bool, int64, er
 	return &CapabilityVerifier{
 		probeFn:      probeFn,
 		crossResults: make(map[string][]ProbeResult),
+		lastProbe:    make(map[string]time.Time),
 		minVerifiers: minVerifiers,
 	}
 }
@@ -664,6 +759,8 @@ func (cv *CapabilityVerifier) Probe(peerID, modelID string) *ProbeResult {
 
 	cv.mu.Lock()
 	cv.crossResults[modelID] = append(cv.crossResults[modelID], result)
+	// PERF-P1-6: maintain the per-(peer,model) last-probe index.
+	cv.lastProbe[peerID+"|"+modelID] = result.Timestamp
 	cv.mu.Unlock()
 
 	return &result
@@ -740,34 +837,68 @@ func (cv *CapabilityVerifier) ProbeSchedulerLoop() {
 	slog.Info("capability probe scheduler started")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
-		if contributionLedger == nil {
+	for {
+		select {
+		case <-globalStopCh:
+			return
+		case <-ticker.C:
+			cv.probeDueClaims()
+		}
+	}
+}
+
+// probeDueClaims probes every claim whose per-(peer,model) interval has
+// elapsed. PERF-P1-6: last-probe timestamps come from a per-(peer,model)
+// index, so this is O(claims×models) instead of O(claims×models×history).
+func (cv *CapabilityVerifier) probeDueClaims() {
+	if contributionLedger == nil {
+		return
+	}
+	claims := contributionLedger.GetAllClaims()
+	for _, claim := range claims {
+		if claim.PeerID == "" || len(claim.Models) == 0 {
 			continue
 		}
-		claims := contributionLedger.GetAllClaims()
-		for _, claim := range claims {
-			if claim.PeerID == "" || len(claim.Models) == 0 {
+		for _, modelID := range claim.Models {
+			lastProbe := cv.lastProbeTime(claim.PeerID, modelID)
+			interval := probeSchedule(claim.PeerID)
+			if time.Since(lastProbe) < interval {
 				continue
 			}
-			for _, modelID := range claim.Models {
-				cv.mu.RLock()
-				results := cv.crossResults[modelID]
-				cv.mu.RUnlock()
-				lastProbe := time.Time{}
-				for _, r := range results {
-					if r.PeerID == claim.PeerID && r.Timestamp.After(lastProbe) {
-						lastProbe = r.Timestamp
-					}
-				}
-				interval := probeSchedule(claim.PeerID)
-				if time.Since(lastProbe) < interval {
-					continue
-				}
-				r := cv.Probe(claim.PeerID, modelID)
-				slog.Debug("scheduled probe completed",
-					"peer", claim.PeerID, "model", modelID,
-					"success", r.Success, "latency_ms", r.LatencyMS)
-			}
+			r := cv.Probe(claim.PeerID, modelID)
+			slog.Debug("scheduled probe completed",
+				"peer", claim.PeerID, "model", modelID,
+				"success", r.Success, "latency_ms", r.LatencyMS)
+		}
+	}
+}
+
+// lastProbeTime returns the most recent probe timestamp for (peerID, modelID)
+// from the per-(peer,model) index (PERF-P1-6), or zero time if never probed.
+func (cv *CapabilityVerifier) lastProbeTime(peerID, modelID string) time.Time {
+	cv.mu.RLock()
+	defer cv.mu.RUnlock()
+	key := peerID + "|" + modelID
+	if r, ok := cv.lastProbe[key]; ok {
+		return r
+	}
+	return time.Time{}
+}
+
+// cleanup bounds the transient probe history (PERF-P1-7): drops last-probe
+// index entries older than maxAge and caps each model's crossResults slice.
+func (cv *CapabilityVerifier) cleanup(maxAge time.Duration, maxPerModel int) {
+	cv.mu.Lock()
+	defer cv.mu.Unlock()
+	cutoff := time.Now().Add(-maxAge)
+	for key, ts := range cv.lastProbe {
+		if ts.Before(cutoff) {
+			delete(cv.lastProbe, key)
+		}
+	}
+	for modelID, results := range cv.crossResults {
+		if len(results) > maxPerModel {
+			cv.crossResults[modelID] = results[len(results)-maxPerModel:]
 		}
 	}
 }
@@ -842,7 +973,30 @@ func (c *ContentHashStore) StoreJSON(v interface{}) (string, error) {
 	h := sha256.Sum256(data)
 	cid := "sha256:" + fmt.Sprintf("%x", h[:])
 	c.mu.Lock()
+	// PERF-P1-7: bound the local content cache (content hashes are derivable
+	// from the records, so eviction is safe).
+	if len(c.localCache) >= contentHashCacheMax {
+		for k := range c.localCache {
+			delete(c.localCache, k)
+			break
+		}
+	}
 	c.localCache[cid] = data
 	c.mu.Unlock()
 	return cid, nil
+}
+
+// contentHashCacheMax caps the number of cached JSON blobs (PERF-P1-7).
+const contentHashCacheMax = 1024
+
+// Cleanup evicts cache entries above maxEntries (PERF-P1-7).
+func (c *ContentHashStore) Cleanup(maxEntries int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for len(c.localCache) > maxEntries {
+		for k := range c.localCache {
+			delete(c.localCache, k)
+			break
+		}
+	}
 }

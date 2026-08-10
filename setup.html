@@ -214,8 +214,8 @@ body {
 
     <div class="steps">
       <div class="step active" id="step1"></div>
-      <div class="step" id="step2"></div>
-      <div class="step" id="step3"></div>
+      <!-- UX-P1-12: the wizard has exactly ONE step; the 3-step indicator
+           previously implied steps that do not exist. -->
     </div>
 
     <form id="setupForm" onsubmit="handleSetup(event)">
@@ -417,7 +417,9 @@ async function handleSetup(e) {
         </div>
         </div>
       `;
-      setTimeout(() => { window.location.href = '/admin'; }, 1500);
+      // UX-P1-12: no silent auto-redirect — the setup completion page shows the
+      // access URLs, and an automatic jump would destroy them before the user
+      // has a chance to copy them. The user clicks the button when ready.
     } else {
       showToast(data.error?.message || '初始化失败', 'error');
       btn.disabled = false;

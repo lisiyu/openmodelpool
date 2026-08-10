@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -69,8 +70,13 @@ func (n *NATManager) stunLoop() {
 	n.discoverPublicAddr()
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		n.discoverPublicAddr()
+	for {
+		select {
+		case <-globalStopCh:
+			return
+		case <-ticker.C:
+			n.discoverPublicAddr()
+		}
 	}
 }
 
@@ -221,6 +227,18 @@ func (n *NATManager) recordProbe(nodeID string, ok bool, latencyMs float64) {
 	}
 }
 
+// cleanupProbeCache evicts probe results older than maxAge (PERF-P1-7).
+func (n *NATManager) cleanupProbeCache(maxAge time.Duration) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cutoff := time.Now().Add(-maxAge)
+	for id, r := range n.probeCache {
+		if r.ProbedAt.Before(cutoff) {
+			delete(n.probeCache, id)
+		}
+	}
+}
+
 // GetPublicAddr returns the discovered public address (may be empty).
 func (n *NATManager) GetPublicAddr() string {
 	n.mu.RLock()
@@ -284,6 +302,19 @@ func handleDirectProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SEC-P3-23: ProbeDirect issues HTTP GETs against the target URL, so it is
+	// an SSRF primitive. Restrict the scheme and reject private/loopback
+	// addresses (same guard as provider BaseURLs).
+	u, err := url.Parse(body.TargetURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		writeError(w, 400, "target_url must be a valid http/https URL")
+		return
+	}
+	if isLocalOrPrivateIP(u.Hostname()) {
+		writeError(w, 400, "target_url must not point to a private or loopback address")
+		return
+	}
+
 	ok := natMgr.ProbeDirect(body.NodeID, body.TargetURL)
 	natMgr.mu.RLock()
 	result, _ := natMgr.probeCache[body.NodeID]
@@ -305,9 +336,10 @@ func (n *NATManager) UDPConn() *net.UDPConn { return n.udpConn }
 func (n *NATManager) LocalUDP() string { return n.localUDP }
 
 // stunQueryOnConn performs a STUN binding request over the shared UDP socket so
-// the source port matches the one peers will punch against. Because the socket
-// also carries hole-punch datagrams, we may read a non-STUN packet first; we
-// retry until a valid STUN response arrives or the 3s deadline elapses.
+// the source port matches the one peers will punch against. The STUN response
+// is surfaced by udpRecvLoop — the SINGLE reader of the socket — on stunCh and
+// consumed here (PERF-P3-24); this function never reads the socket directly, so
+// the two-reader race (SetReadDeadline interference, datagram stealing) is gone.
 func (n *NATManager) stunQueryOnConn(serverAddr string) (string, error) {
 	if n.udpConn == nil {
 		return "", fmt.Errorf("udp socket unavailable")
@@ -326,22 +358,14 @@ func (n *NATManager) stunQueryOnConn(serverAddr string) (string, error) {
 	if _, err := n.udpConn.WriteToUDP(req, srv); err != nil {
 		return "", fmt.Errorf("write STUN request: %w", err)
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
 	for {
-		if time.Now().After(deadline) {
-			return "", fmt.Errorf("read STUN response: timeout")
-		}
-		_ = n.udpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-		buf := make([]byte, 576)
-		nn, _, rerr := n.udpConn.ReadFromUDP(buf)
-		if rerr != nil {
-			if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
-				continue
-			}
-			return "", fmt.Errorf("read STUN response: %w", rerr)
-		}
-		if addr, perr := parseSTUNResponse(buf[:nn]); perr == nil {
+		select {
+		case addr := <-n.stunCh:
 			return addr, nil
+		case <-deadline.C:
+			return "", fmt.Errorf("read STUN response: timeout")
 		}
 	}
 }

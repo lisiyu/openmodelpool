@@ -125,7 +125,7 @@ func forwardAuditWebhook(webhookURL, ts, username, clientIP, action, target, det
 		slog.Error("audit webhook marshal failed", "error", err)
 		return
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := GetSharedHTTPClientWithTimeout(10 * time.Second)
 	resp, err := client.Post(webhookURL, "application/json", bytes.NewReader(body))
 	if err != nil {
 		slog.Error("audit webhook send failed", "error", err)

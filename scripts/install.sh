@@ -151,9 +151,10 @@ fi
 SIZE=$(stat -c%s "$TMP_DIR/$ASSET" 2>/dev/null || stat -f%z "$TMP_DIR/$ASSET" 2>/dev/null)
 ok "已下载 $(( SIZE / 1024 / 1024 )) MB（via $USED_SOURCE）"
 
-# ─── 校验（多源兜底）───
+# ─── 校验（SEC-P2-12: fail-closed，仅从 GitHub 官方获取校验，镜像只信字节）───
 SHA_DOWNLOADED=false
-SHA_URLS=("${URL}.sha256" "https://ghfast.top/${URL}.sha256" "https://gh-proxy.com/${URL}.sha256")
+# 只使用 GitHub 官方 release 资产的 .sha256 —— 镜像的校验文件绝不作为校验源。
+SHA_URLS=("${URL}.sha256")
 for sha_url in "${SHA_URLS[@]}"; do
     if curl -sSL --connect-timeout 10 --max-time 30 "$sha_url" -o "$TMP_DIR/${ASSET}.sha256" 2>/dev/null; then
         if grep -qE '^[a-f0-9]{64}' "$TMP_DIR/${ASSET}.sha256" 2>/dev/null; then
@@ -163,16 +164,16 @@ for sha_url in "${SHA_URLS[@]}"; do
     fi
 done
 
-if $SHA_DOWNLOADED; then
-    EXPECTED=$(awk '{print $1}' < "$TMP_DIR/${ASSET}.sha256")
-    ACTUAL=$(sha256sum "$TMP_DIR/$ASSET" | awk '{print $1}')
-    if [[ "$EXPECTED" != "$ACTUAL" ]]; then
-        fail "SHA-256 校验失败！expected=$EXPECTED actual=$ACTUAL"
-    fi
-    ok "SHA-256 校验通过"
-else
-    warn "校验文件不可用，跳过"
+if ! $SHA_DOWNLOADED; then
+    fail "无法从 GitHub 官方获取 SHA-256 校验文件，已中止安装（fail-closed）"
 fi
+
+EXPECTED=$(awk '{print $1}' < "$TMP_DIR/${ASSET}.sha256")
+ACTUAL=$(sha256sum "$TMP_DIR/$ASSET" | awk '{print $1}')
+if [[ "$EXPECTED" != "$ACTUAL" ]]; then
+    fail "SHA-256 校验失败！expected=$EXPECTED actual=$ACTUAL"
+fi
+ok "SHA-256 校验通过"
 
 # ─── systemctl 可用性检测 ───
 # Coze 云主机等环境中 systemctl 可能被安全策略阻塞，需要主动探测

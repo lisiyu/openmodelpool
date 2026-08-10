@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1185,7 +1186,17 @@ func TestHB4_HandleNetworkToggle_InvalidBody(t *testing.T) {
 }
 
 func TestHB4_HandleNetworkConfigUpdate_InvalidBody(t *testing.T) {
-	setupTestEnv(t)
+	te := setupTestEnv(t)
+	// Self-contained: handleNetworkConfigUpdate returns 503 when netMgr is
+	// nil; the test previously depended on leftover global netMgr state from
+	// other tests (order-dependent flake).
+	origNetMgr := netMgr
+	netMgr = &NetworkManager{
+		dataPath: filepath.Join(te.dir, "net_cfgupd.json"),
+		config:   NetworkConfig{Peers: []PeerInfo{}},
+	}
+	defer func() { netMgr = origNetMgr }()
+
 	req := httptest.NewRequest("POST", "/api/network/config", strings.NewReader("bad"))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

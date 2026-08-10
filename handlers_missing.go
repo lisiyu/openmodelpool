@@ -87,10 +87,10 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 		if _, ok := fed.GetNode(senderNodeID); ok {
 			authed = true
 		}
-	} else if secret == "" && fed == nil {
-		// No auth mechanism configured at all — allow (best-effort open mesh).
-		authed = true
 	}
+	// SEC-P2-13: there is deliberately NO "no auth configured -> allow" branch.
+	// Heartbeat mutates peer liveness/region/global-pool state and must default
+	// to deny when no authentication mechanism is configured.
 	if !authed {
 		writeError(w, http.StatusForbidden, "federation authentication required")
 		return

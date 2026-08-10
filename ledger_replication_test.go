@@ -27,6 +27,7 @@ func TestLedgerReplicationPush(t *testing.T) {
 	defer bs.Close()
 
 	rep := NewLedgerReplicator(primary, "A", bs.URL)
+	t.Cleanup(rep.Stop)
 	n, err := rep.ReplicateContribution(&ContributionRecord{ID: "c1", PeerID: "A", ModelID: "gpt", Tokens: 50, Timestamp: time.Now()})
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +52,7 @@ func TestLedgerReconcileHeal(t *testing.T) {
 	peer.RecordContribution(&ContributionRecord{ID: "c2", PeerID: "B", Tokens: 1, Timestamp: time.Now()})
 
 	rep := NewLedgerReplicator(primary, "A", bs.URL)
+	t.Cleanup(rep.Stop)
 	diff, healed, err := rep.ReconcileWith(bs.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +81,7 @@ func TestLedgerReconcileDivergent(t *testing.T) {
 	peer.RecordContribution(&ContributionRecord{ID: "x1", PeerID: "B", Tokens: 2, Timestamp: ts})
 
 	rep := NewLedgerReplicator(primary, "A", bs.URL)
+	t.Cleanup(rep.Stop)
 	diff, healed, err := rep.ReconcileWith(bs.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -174,6 +177,7 @@ func TestLedgerReconcileAll(t *testing.T) {
 	peer.RecordContribution(&ContributionRecord{ID: "c2", PeerID: "B", Tokens: 1, Timestamp: time.Now()})
 
 	rep := NewLedgerReplicator(primary, "A", bs.URL)
+	t.Cleanup(rep.Stop)
 	results := rep.ReconcileAll()
 	if len(results) != 1 {
 		t.Fatalf("want 1 peer result, got %d", len(results))

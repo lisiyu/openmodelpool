@@ -102,6 +102,9 @@ func TestConfig_Masked(t *testing.T) {
 	}
 }
 
+// UX-P1-11: SetMany must STORE nil/empty values so "clear this setting" works
+// instead of being silently skipped (the previous behavior made clearing a
+// config value a silent no-op).
 func TestConfig_SetMany_EmptyValues(t *testing.T) {
 	env := setupTestEnv(t)
 
@@ -114,11 +117,15 @@ func TestConfig_SetMany_EmptyValues(t *testing.T) {
 	})
 	time.Sleep(200 * time.Millisecond)
 
-	// nil and empty string values should not overwrite existing (by SetMany logic)
-	got := env.cfgInst.Get("pre_existing", "")
-	// SetMany skips nil and "" values
-	if got != "old_value" {
-		t.Errorf("nil value should not overwrite existing: got %q", got)
+	// nil/"" now clears the value: Get falls back to the default.
+	if got := env.cfgInst.Get("pre_existing", ""); got != "" {
+		t.Errorf("nil value should clear existing: got %q, want \"\"", got)
+	}
+	if got := env.cfgInst.Get("pre_existing", "fallback"); got != "fallback" {
+		t.Errorf("cleared key should fall back to default: got %q, want %q", got, "fallback")
+	}
+	if got := env.cfgInst.Get("new_key", "def"); got != "def" {
+		t.Errorf("empty string value should be stored (clearing): got %q, want %q", got, "def")
 	}
 }
 

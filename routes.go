@@ -232,7 +232,7 @@ func setupRoutes() *http.ServeMux {
 	// P2P Shared Network API (Phase 1) — decentralized relay
 	mux.HandleFunc("GET /api/network/status", withAuth(handleNetworkStatus))
 	mux.HandleFunc("GET /api/network/stats", withAuth(handleNetworkStats))
-	mux.HandleFunc("POST /api/network/consent", rateLimitByIP(5, "network_consent")(handleNetworkConsent))
+	mux.HandleFunc("POST /api/network/consent", rateLimitByIP(5, "network_consent")(withAuth(handleNetworkConsent)))
 	mux.HandleFunc("GET /api/network/disclaimer", handleNetworkDisclaimer)
 	mux.HandleFunc("POST /api/network/enable", withAuth(handleNetworkEnable))
 	mux.HandleFunc("POST /api/network/disable", withAuth(handleNetworkDisable))
@@ -330,12 +330,14 @@ func setupRoutes() *http.ServeMux {
 
 	// P2P Relay: /network/{node_id}/{rest...} — any shared node can relay
 	// §10A: WAF is enforced on the relay proxy path (no-op until enabled).
-	mux.HandleFunc("GET /network/{id}/", wafMiddleware(handleNetworkRelay))
-	mux.HandleFunc("POST /network/{id}/", wafMiddleware(handleNetworkRelay))
-	mux.HandleFunc("PUT /network/{id}/", wafMiddleware(handleNetworkRelay))
-	mux.HandleFunc("DELETE /network/{id}/", wafMiddleware(handleNetworkRelay))
-	mux.HandleFunc("GET /network/{id}", wafMiddleware(handleNetworkRelay))
-	mux.HandleFunc("POST /network/{id}", wafMiddleware(handleNetworkRelay))
+	// SEC-P0-1: relay routes require a valid API key or signed relay forward;
+	// anonymous clients can no longer reach local-only endpoints via the relay.
+	mux.HandleFunc("GET /network/{id}/", relayAuthMiddleware(wafMiddleware(handleNetworkRelay)))
+	mux.HandleFunc("POST /network/{id}/", relayAuthMiddleware(wafMiddleware(handleNetworkRelay)))
+	mux.HandleFunc("PUT /network/{id}/", relayAuthMiddleware(wafMiddleware(handleNetworkRelay)))
+	mux.HandleFunc("DELETE /network/{id}/", relayAuthMiddleware(wafMiddleware(handleNetworkRelay)))
+	mux.HandleFunc("GET /network/{id}", relayAuthMiddleware(wafMiddleware(handleNetworkRelay)))
+	mux.HandleFunc("POST /network/{id}", relayAuthMiddleware(wafMiddleware(handleNetworkRelay)))
 
 	return mux
 }

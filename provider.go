@@ -403,10 +403,12 @@ type candidate struct {
 // RequestKeyType classifies the request key type for access control (v2.0).
 // Returns "admin", "guest", "public", or "proxy".
 func RequestKeyType(r *http.Request) string {
-	// P1-1: Only trust X-MK-KeyType if set by our own relay (prefixed with internal marker).
-	// Client-supplied X-MK-KeyType is ignored to prevent header spoofing.
-	if mkType := r.Header.Get("X-OMP-KeyType"); mkType != "" {
-		return mkType
+	// SEC-P0-2: Priority 1 is the internal key type derived by our own relay
+	// from a credential it already validated. It travels via the request
+	// context — never via a wire header — so a client-supplied X-OMP-KeyType
+	// (or the legacy X-MK-KeyType name) is always ignored.
+	if kt := internalKeyType(r); kt != "" {
+		return kt
 	}
 
 	// Priority 2: Check role header (set by withProxyAuth)
