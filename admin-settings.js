@@ -12,7 +12,10 @@ function generateApiKey() {
 async function saveProxyApiKey() {
   const key = document.getElementById('proxyApiKey').value.trim();
   if (key) {
-    await authFetch('/api/config', { method: 'POST', body: JSON.stringify({ proxy_api_key: key }) });
+    // UX-P0-3: only toast success when the request actually succeeded.
+    const r = await authFetch('/api/config', { method: 'POST', body: JSON.stringify({ proxy_api_key: key }) });
+    const d = await r.json();
+    if (d.success === false) { toast('❌ ' + (d.error || '保存失败'), 'error'); return; }
     toast('✅ API Key 认证已启用');
   } else {
     toast('请输入 API Key');
@@ -23,7 +26,9 @@ async function saveProxyApiKey() {
 }
 
 async function clearProxyApiKey() {
-  await authFetch('/api/config', { method: 'POST', body: JSON.stringify({ proxy_api_key: '' }) });
+  const r = await authFetch('/api/config', { method: 'POST', body: JSON.stringify({ proxy_api_key: '' }) });
+  const d = await r.json();
+  if (d.success === false) { toast('❌ ' + (d.error || '关闭失败'), 'error'); return; }
   document.getElementById('proxyApiKey').value = '';
   document.getElementById('proxyApiKey').placeholder = '留空表示不启用认证';
   toast('已关闭 API Key 认证');
@@ -40,7 +45,12 @@ async function loadProxyApiKey() {
     } else {
       el.placeholder = '留空表示不启用认证';
     }
-  } catch(e) {}
+  } catch(e) {
+    // UX-P2-15: surface load failures instead of leaving a blank form.
+    const el = document.getElementById('proxyApiKey');
+    if (el) el.placeholder = '加载配置失败，请刷新重试';
+    toast('❌ 加载 API Key 配置失败: ' + (e.message || '未知错误'), 'error');
+  }
 }
 
 // ===== SMTP =====
@@ -73,9 +83,28 @@ async function testSmtp() {
 }
 
 // ===== Account =====
-async function loadAdminInfo() { try { const r = await authFetch('/api/admin/info'); const d = await r.json(); document.getElementById('adminEmail').value = d.email||''; } catch(e) {} }
+async function loadAdminInfo() {
+  try {
+    const r = await authFetch('/api/admin/info');
+    const d = await r.json();
+    document.getElementById('adminEmail').value = d.email||'';
+  } catch(e) {
+    // UX-P2-15: surface load failures instead of a blank form.
+    const el = document.getElementById('adminEmail');
+    if (el) el.value = '';
+    toast('❌ 加载账户信息失败: ' + (e.message || '未知错误'), 'error');
+  }
+}
 
-async function updateEmail() { const e = document.getElementById('adminEmail').value.trim(); if (!e) return toast('邮箱不能为空','error'); await authFetch('/api/admin/update-email', {method:'POST', body:JSON.stringify({email:e})}); toast('邮箱已更新'); }
+async function updateEmail() {
+  const e = document.getElementById('adminEmail').value.trim();
+  if (!e) return toast('邮箱不能为空','error');
+  // UX-P0-3: only toast success when the update actually succeeded.
+  const r = await authFetch('/api/admin/update-email', {method:'POST', body:JSON.stringify({email:e})});
+  const d = await r.json();
+  if (d.success === false) { toast('❌ ' + (d.detail || d.error || '更新失败'), 'error'); return; }
+  toast('邮箱已更新');
+}
 
 async function changePassword() { const o = document.getElementById('oldPass').value; const n = document.getElementById('newPass').value; if (!o||!n) return toast('请填写密码','error'); try { const r = await authFetch('/api/admin/change-password', {method:'POST', body:JSON.stringify({old_password:o,new_password:n})}); const d = await r.json(); toast(d.success?'✅ 密码已修改':'❌ '+d.detail, d.success?'success':'error'); document.getElementById('oldPass').value=''; document.getElementById('newPass').value=''; } catch(e) { toast(e.message,'error'); } }
 
@@ -96,10 +125,31 @@ async function exportConfig() {
   } catch(e) { toast('❌ '+e.message, 'error'); }
 }
 
+// autoBackupConfigSnapshot downloads a timestamped snapshot of the current
+// configuration BEFORE an import overwrites it (UX-P1-9).
+async function autoBackupConfigSnapshot() {
+  try {
+    const r = await authFetch('/api/config/export');
+    if (!r.ok) return false;
+    const data = await r.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    a.download = `openmodelpool-config-backup-${ts}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    return true;
+  } catch(e) { return false; }
+}
+
 async function importConfig(input) {
   const file = input.files[0];
   if (!file) return;
-  if (!confirm(`确认导入 ${file.name}？\n这将覆盖当前所有平台和配置！`)) {
+  // UX-P1-9: automatically snapshot the current config before overwriting it.
+  const backedUp = await autoBackupConfigSnapshot();
+  if (!confirm(`${backedUp ? '已自动备份当前配置。' : '备份当前配置失败，仍要' }确认导入 ${file.name}？\n导入将合并平台配置，现有配置会被覆盖！`)) {
     input.value = '';
     return;
   }

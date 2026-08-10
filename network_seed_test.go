@@ -183,12 +183,18 @@ func TestHandleSeedPeersFiltersOldNodes(t *testing.T) {
 }
 
 func TestHandleSeedRegister(t *testing.T) {
+	env := setupTestEnv(t)
+	_ = env
+	// SEC-P1-5: registration is fail-closed when seed_secret is unset; configure
+	// a secret so the positive path is exercised.
+	cfg.Set("seed_secret", "test-secret")
+
 	oldRT := routeTable
 	rt := newTestRouteTable()
 	routeTable = rt
 	defer func() { routeTable = oldRT }()
 
-	body := `{"node_id":"mmx-new","node_name":"New Node","addresses":["https://new.example.com"],"models":["gpt-4"]}`
+	body := `{"node_id":"mmx-new","node_name":"New Node","addresses":["https://new.example.com"],"models":["gpt-4"],"secret":"test-secret"}`
 	req := httptest.NewRequest("POST", "/api/register", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -196,7 +202,7 @@ func TestHandleSeedRegister(t *testing.T) {
 	handleSeedRegister(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200", w.Code)
+		t.Errorf("status = %d, want 200 (body=%s)", w.Code, w.Body.String())
 	}
 
 	// Verify node was added to route table
@@ -206,6 +212,63 @@ func TestHandleSeedRegister(t *testing.T) {
 	}
 	if entry.NodeName != "New Node" {
 		t.Errorf("NodeName = %q, want %q", entry.NodeName, "New Node")
+	}
+}
+
+// TestHandleSeedRegisterFailClosedNoSecret verifies SEC-P1-5: when no
+// seed_secret is configured, registration is rejected (403) instead of being
+// open — otherwise anyone could poison the route table with arbitrary
+// node_ids/addresses.
+func TestHandleSeedRegisterFailClosedNoSecret(t *testing.T) {
+	env := setupTestEnv(t)
+	_ = env
+	// Ensure seed_secret is unset (default).
+	cfg.Set("seed_secret", "")
+
+	oldRT := routeTable
+	rt := newTestRouteTable()
+	routeTable = rt
+	defer func() { routeTable = oldRT }()
+
+	body := `{"node_id":"mmx-poison","node_name":"Evil","addresses":["https://evil.example.com"],"models":["gpt-4"]}`
+	req := httptest.NewRequest("POST", "/api/register", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleSeedRegister(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 (fail-closed without seed_secret)", w.Code)
+	}
+	if rt.Get("mmx-poison") != nil {
+		t.Errorf("node must NOT be registered when seed_secret is unset")
+	}
+}
+
+// TestHandleSeedRegisterWrongSecret verifies SEC-P1-5: a mismatched secret is
+// rejected with 401 and does not touch the route table.
+func TestHandleSeedRegisterWrongSecret(t *testing.T) {
+	env := setupTestEnv(t)
+	_ = env
+	cfg.Set("seed_secret", "right-secret")
+
+	oldRT := routeTable
+	rt := newTestRouteTable()
+	routeTable = rt
+	defer func() { routeTable = oldRT }()
+
+	body := `{"node_id":"mmx-wrong","node_name":"Evil","addresses":["https://evil.example.com"],"secret":"wrong-secret"}`
+	req := httptest.NewRequest("POST", "/api/register", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleSeedRegister(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401 (wrong secret)", w.Code)
+	}
+	if rt.Get("mmx-wrong") != nil {
+		t.Errorf("node must NOT be registered with a wrong secret")
 	}
 }
 

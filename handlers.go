@@ -786,19 +786,9 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(candidates) == 0 {
-		models := pm.AllModels()
-		var names []string
-		for i, m := range models {
-			if i >= 20 {
-				break
-			}
-			names = append(names, m.ID)
-		}
-		hint := ""
-		if len(names) > 0 {
-			hint = ", available models: " + strings.Join(names, ", ")
-		}
-		writeError(w, 404, fmt.Sprintf("no provider found for model '%s'%s", model, hint))
+		// UX-P2-14: generic error — do not leak the full local model list to a
+		// remote/unknown caller.
+		writeError(w, 404, fmt.Sprintf("no provider available for model '%s'", model))
 		return
 	}
 
@@ -999,7 +989,10 @@ func handleNetworkIdentityGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 	mnemonic, err := node.GenerateWithMnemonic(body.WordCount)
 	if err != nil {
-		writeError(w, 400, "生成助记词失败："+err.Error())
+		// SEC-P3-24: do not leak the underlying error (path, key material
+		// details) to the client.
+		slog.Error("network identity generate failed", "error", err)
+		writeError(w, 400, "生成助记词失败，请重试")
 		return
 	}
 	writeJSON(w, 200, map[string]any{
@@ -1242,9 +1235,17 @@ func handleSecurityCheck(w http.ResponseWriter, r *http.Request) {
 
 // handleGoroutineDump returns goroutine stack traces for debugging.
 // F28: Debug endpoint for diagnosing goroutine leaks.
+// SEC-P2-10: gated behind debug_goroutine_dump=true (default off) — an
+// unauthenticated-by-design stack dump can leak secrets held in goroutine
+// locals. Also uses runtime.Stack(buf, false) to avoid the STW pause of a
+// full-process dump.
 func handleGoroutineDump(w http.ResponseWriter, r *http.Request) {
+	if cfg.Get("debug_goroutine_dump", "false") != "true" {
+		writeError(w, 403, "goroutine dump disabled")
+		return
+	}
 	buf := make([]byte, 1<<20) // 1MB buffer
-	n := runtime.Stack(buf, true)
+	n := runtime.Stack(buf, false)
 	writeJSON(w, 200, map[string]any{
 		"count":      runtime.NumGoroutine(),
 		"stack_dump": string(buf[:n]),

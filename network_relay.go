@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -20,6 +21,80 @@ import (
 // allowLocalRelayForTest disables SSRF protection for relay targets in tests.
 // This allows httptest servers (127.0.0.1) to be used as relay targets.
 var allowLocalRelayForTest = false
+
+// relayDispatchHandler is the in-process mux used to serve relay-to-self
+// requests (SEC-P0-1). It is set by runServer() (and by tests that exercise
+// the relay-to-local path) to the raw mux returned by setupRoutes(), so a
+// relayed request is dispatched without a loopback HTTP hop — preserving the
+// original RemoteAddr for downstream auth decisions.
+var relayDispatchHandler http.Handler
+
+// relayAuthMiddleware requires a valid credential on /network/{id} relay routes
+// (SEC-P0-1). Accepted credentials:
+//   - a recognized API key (public/guest/proxy) or a local consumer API key;
+//   - a cryptographically signed relay forward from a trusted peer (X-Node-ID +
+//     ed25519 signature over the request path and body).
+//
+// The punch-offer exchange endpoint (/network/__punch) is exempt — it is a
+// best-effort peer-discovery primitive and carries no secrets.
+func relayAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/network/__punch") {
+			next(w, r)
+			return
+		}
+
+		// 1. A recognized API key / consumer key.
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			key := authHeader[7:]
+			switch ClassifyKey(key) {
+			case KeyTypePublic, KeyTypeGuest, KeyTypeProxy:
+				next(w, r)
+				return
+			}
+			if multiUser != nil {
+				if _, ok := multiUser.ValidateAPIKey(key); ok {
+					next(w, r)
+					return
+				}
+			}
+		}
+
+		// 2. A signed relay forward from a trusted peer. The signature is bound
+		//    to the request path as seen by this node and the body hash, so a
+		//    replayed or relabeled forward cannot authenticate.
+		nodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
+		if nodeID == "" {
+			nodeID = sanitizeNodeID(r.Header.Get("X-Node-Auth"))
+		}
+		if nodeID != "" && r.Header.Get(headerRelaySig) != "" {
+			body, err := io.ReadAll(io.LimitReader(r.Body, maxGatewayBodySize+1))
+			if err == nil && len(body) <= maxGatewayBodySize {
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				if status, msg := verifyRelayForwardAuth(r, body); status == 0 {
+					next(w, r)
+					return
+				} else {
+					slog.Warn("relay route: signed forward rejected", "from", nodeID, "status", status, "reason", msg)
+				}
+			}
+		}
+
+		writeError(w, 401, "relay requires authentication")
+	}
+}
+
+// isAllowedRelayPath is the relay-to-local path whitelist (SEC-P0-1). Only
+// OpenAI-compatible /v1/* endpoints and the node heartbeat ping are reachable
+// through the relay; all admin/control-plane paths (e.g. /api/forgot-password,
+// /api/config) are refused at the relay boundary.
+func isAllowedRelayPath(restPath string) bool {
+	if restPath == "/api/network/heartbeat/ping" {
+		return true
+	}
+	return strings.HasPrefix(restPath, "/v1/")
+}
 
 // ============================================================
 // Decentralized Relay Handler
@@ -136,8 +211,10 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 		if guestNodeID != "" && targetNodeID != guestNodeID {
 			// Key is not for this node
 			if accessPublicPool {
-				// Guest key with public pool access — allow relay to proceed (treat like public key)
-				r.Header.Set("X-OMP-KeyType", "public")
+				// Guest key with public pool access — allow relay to proceed (treat like public key).
+				// SEC-P0-2: the effective key type is NOT propagated via a wire
+				// header; the destination derives it from the verified token
+				// (and the relay-forward signature).
 				r.Header.Set("X-MK-GuestPublicPool", "true")
 			} else {
 				// Guest key without public pool access — only valid at issuing node
@@ -183,7 +260,19 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRelayToLocal handles requests targeting this node itself
-// Strips /network/{node_id} prefix and serves the remaining path locally
+// Strips /network/{node_id} prefix and serves the remaining path locally.
+//
+// SEC-P0-1 hardening:
+//   - The remaining path is restricted to the relay whitelist
+//     (/v1/*, /api/network/heartbeat/ping); everything else is refused.
+//   - The request is dispatched IN-PROCESS to the main mux instead of being
+//     reverse-proxied to 127.0.0.1, so the original RemoteAddr is preserved.
+//     A context marker makes withProxyAuth's C3 anonymous-admin fallback and
+//     localOnly treat the request as an untrusted remote — a public-internet
+//     client can no longer reach loopback-trusted endpoints via the relay.
+//   - The effective key type derived from the validated credential is carried
+//     via context (withInternalKeyType), never via the X-OMP-KeyType wire
+//     header (SEC-P0-2).
 func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, hopCount int) {
 	netMgr.RecordReceived()
 
@@ -192,11 +281,15 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 	bearerKey := strings.TrimPrefix(authHeader, "Bearer ")
 	keyType := ClassifyKey(bearerKey)
 
+	// Effective key type for the inner handler, derived from the verified
+	// credential below and carried via context.
+	internalKeyType := ""
+
 	switch keyType {
 	case KeyTypePublic:
 		// sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1 — public key validated; always routes to shared pool.
 		// No additional validation needed at relay level.
-		r.Header.Set("X-OMP-KeyType", "public")
+		internalKeyType = "public"
 
 	case KeyTypeGuest:
 		// sk-guest-{node_id}-{random}
@@ -208,19 +301,19 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 		r.Header.Del("Authorization")
 		if accessPublicPool {
 			// Guest key with public pool access — treat like public key
-			r.Header.Set("X-OMP-KeyType", "public")
+			internalKeyType = "public"
 			r.Header.Set("X-MK-GuestPublicPool", "true")
 			slog.Info("guest key with public pool access, routing as public", "node_id", nodeID)
 		} else {
 			// Regular guest key — local resources only
-			r.Header.Set("X-OMP-KeyType", "guest")
+			internalKeyType = "guest"
 			r.Header.Set("X-MK-Guest-Node", nodeID)
 			slog.Info("guest key validated for local relay", "node_id", nodeID)
 		}
 
 	case KeyTypeProxy:
 		// sk-{random} — proxy API key, pass through
-		r.Header.Set("X-OMP-KeyType", "proxy")
+		internalKeyType = "proxy"
 
 	default:
 		// Unknown key — pass through, let the local handler validate
@@ -234,6 +327,14 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 		restPath = "/"
 	}
 
+	// SEC-P0-1: relay-to-local path whitelist — never expose control-plane
+	// endpoints (password reset, config, consumers, …) through the relay.
+	if !isAllowedRelayPath(restPath) {
+		slog.Warn("relay-to-local path not whitelisted", "path", restPath)
+		writeError(w, 403, "relay path not allowed")
+		return
+	}
+
 	// Rewrite the request path
 	r.URL.Path = restPath
 	r.RequestURI = restPath
@@ -243,30 +344,23 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 
 	slog.Info("relay to local", "target", "self", "path", restPath, "hops", hopCount)
 
-	// Serve the rewritten request using the main handler
-	// We re-dispatch to the main mux by calling the server's handler
-	// The simplest way: construct a new request and serve it
-	localPort := cfg.Get("service_port", "8000")
-	target, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%s", localPort))
-
-	proxy := &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			req.URL.Scheme = target.Scheme
-			req.URL.Host = target.Host
-			req.URL.Path = restPath
-			req.URL.RawQuery = r.URL.RawQuery
-			req.Host = target.Host
-			// Remove relay headers for local delivery
-			req.Header.Del(headerRelayHop)
-			req.Header.Del(headerRelayFrom)
-		},
-		ErrorHandler: func(w2 http.ResponseWriter, r2 *http.Request, err error) {
-			slog.Error("local relay proxy error", "error", err)
-			writeError(w2, 502, "local relay failed")
-		},
+	if relayDispatchHandler == nil {
+		slog.Error("relay-to-local dispatch handler not initialized")
+		writeError(w, 503, "relay not available")
+		return
 	}
 
-	proxy.ServeHTTP(w, r)
+	// SEC-P0-1/SEC-P0-2: strip hop-internal and spoofable headers, then
+	// dispatch in-process with the original RemoteAddr preserved and the
+	// relay-dispatched marker + internal key type in the context.
+	r.Header.Del(headerRelayHop)
+	r.Header.Del(headerRelayFrom)
+	r.Header.Del("X-OMP-KeyType")
+	ctx := context.WithValue(r.Context(), ctxKeyRelayDispatch, true)
+	if internalKeyType != "" {
+		ctx = context.WithValue(ctx, ctxKeyInternalKeyType, internalKeyType)
+	}
+	relayDispatchHandler.ServeHTTP(w, r.WithContext(ctx))
 }
 
 // relayToRemote forwards a request to a remote node via reverse proxy
@@ -375,6 +469,11 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 			// S-4/V-3: Remove original Authorization to prevent Consumer Key leakage
 			req.Header.Del("Authorization")
 
+			// SEC-P0-2: strip any client-supplied key-type header; the receiving
+			// node derives the effective key type from its own verification of
+			// the relay-forward signature, never from a wire header.
+			req.Header.Del("X-OMP-KeyType")
+
 			// G1 hardening: attach the ed25519-signed relay auth so the
 			// receiving node can verify this forwarding-node identity.
 			attachRelayAuth(req, relayFrom, sig, ts)
@@ -387,7 +486,7 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 			if lbInstance != nil {
 				lbInstance.RecordRequest(entry.NodeID, time.Since(relayStart), false)
 			}
-			writeError(w2, 502, fmt.Sprintf("relay to %s failed: %v", entry.NodeID, err))
+			writeError(w2, 502, "relay to remote node failed")
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			success := resp.StatusCode < 400
@@ -441,7 +540,7 @@ func ExchangePunchWithPeer(peerBase string, offer PunchOffer) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := GetSharedHTTPClientWithTimeout(5 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		slog.Debug("punch exchange: POST failed", "peer", peerBase, "error", err)
@@ -933,10 +1032,11 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	// Copy query parameters
 	outReq.URL.RawQuery = r.URL.RawQuery
 
-	// Copy headers but strip original Authorization (S-4/V-3)
+	// Copy headers but strip original Authorization (S-4/V-3) and any
+	// client-supplied key-type header (SEC-P0-2).
 	for key, vals := range r.Header {
-		if key == "Authorization" {
-			continue // do not forward consumer key to remote node
+		if key == "Authorization" || key == "X-OMP-KeyType" {
+			continue // do not forward consumer key or spoofed key type to remote node
 		}
 		for _, val := range vals {
 			outReq.Header.Add(key, val)
@@ -969,7 +1069,7 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 		if lbInstance != nil {
 			lbInstance.RecordRequest(entry.NodeID, time.Since(relayStart), false)
 		}
-		writeError(w, 502, fmt.Sprintf("relay to %s failed: %v", entry.NodeID, err))
+		writeError(w, 502, "relay to remote node failed")
 		return
 	}
 	defer resp.Body.Close()

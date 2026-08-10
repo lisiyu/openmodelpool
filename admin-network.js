@@ -592,8 +592,13 @@ let _shareFilter = 'all';
     // 加密导出（浏览器端包装为 .json 下载，明文不留盘）
     async function exportMnemonic() {
       if (!_wizardMnemonic) { toast('暂无助记词可导出', 'warning'); return; }
-      const pass = prompt('请设置导出文件的保护密码（用于本地加密备份 .json）：', '');
-      if (pass === null) return;
+      // UX-P2-13: modal form instead of native prompt().
+      const vals = await openApiKeyDialog('设置导出保护密码', [
+        { name: 'pass', label: '保护密码（用于本地加密备份 .json）', value: '', type: 'password' }
+      ]);
+      if (!vals) return;
+      const pass = (vals.pass || '').trim();
+      if (!pass) return toast('请输入保护密码', 'error');
       try {
         const r = await authFetch('/api/network/status');
         const d = await r.json().catch(() => ({}));

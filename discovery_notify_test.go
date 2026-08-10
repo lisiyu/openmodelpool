@@ -64,6 +64,10 @@ func setupDiscoveryTestEnv(t *testing.T) {
 // a valid ed25519 signature (over node_id|addresses|timestamp) with an embedded
 // public key is accepted, the sender is registered locally, and the addition is
 // bridged into the federation trust pool (P0-2).
+//
+// SEC-P1-4: the receiver verifies against the sender's AUTHORITATIVE public key
+// (fetched from the advertised /api/node/pubkey) and never falls back to the
+// payload-embedded key, so the test serves that endpoint.
 func TestPeersNotify_ValidSignature_RegistersPeer(t *testing.T) {
 	setupDiscoveryTestEnv(t)
 
@@ -72,7 +76,22 @@ func TestPeersNotify_ValidSignature_RegistersPeer(t *testing.T) {
 		t.Fatalf("genkey: %v", err)
 	}
 	peerID := "mmx-" + hex.EncodeToString(peerPub)
-	addrs := []string{"https://peer-b.example.com"}
+
+	// Serve the peer's authoritative pubkey + heartbeat ping so the fail-closed
+	// fetch succeeds and the optional ping is clean.
+	pubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/node/pubkey":
+			writeJSON(w, 200, map[string]any{"pub_key": base64.StdEncoding.EncodeToString(peerPub)})
+		case "/api/network/heartbeat/ping":
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer pubSrv.Close()
+
+	addrs := []string{pubSrv.URL}
 	ts := time.Now().UTC().Format(time.RFC3339)
 	canonical := fmt.Sprintf("%s|%s|%s", peerID, strings.Join(addrs, ","), ts)
 	rawSig := ed25519.Sign(peerPriv, []byte(canonical))
@@ -114,6 +133,53 @@ func TestPeersNotify_ValidSignature_RegistersPeer(t *testing.T) {
 		t.Errorf("notify did not bridge into trust pool")
 	} else if n.Status != "active" {
 		t.Errorf("bridged node status = %q, want active", n.Status)
+	}
+}
+
+// TestPeersNotify_FetchFail_Rejected verifies SEC-P1-4 fail-closed behavior:
+// when the sender's authoritative /api/node/pubkey cannot be fetched, the
+// notify is rejected even though the payload embeds a (plausible) public key.
+// This closes the "advertise an unreachable address, sign with a self-chosen
+// key" poisoning vector.
+func TestPeersNotify_FetchFail_Rejected(t *testing.T) {
+	setupDiscoveryTestEnv(t)
+
+	peerPub, peerPriv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("genkey: %v", err)
+	}
+	peerID := "mmx-" + hex.EncodeToString(peerPub)
+	// Unreachable address: the authoritative pubkey fetch will fail.
+	addrs := []string{"https://peer-unreachable.invalid"}
+	ts := time.Now().UTC().Format(time.RFC3339)
+	canonical := fmt.Sprintf("%s|%s|%s", peerID, strings.Join(addrs, ","), ts)
+	rawSig := ed25519.Sign(peerPriv, []byte(canonical))
+	sig := base64.StdEncoding.EncodeToString(rawSig)
+
+	payload := PeerNotifyPayload{
+		NodeID:     peerID,
+		Addresses:  addrs,
+		PubKey:     base64.StdEncoding.EncodeToString(peerPub),
+		Timestamp:  ts,
+		Signature:  sig,
+		Propagated: true,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/network/peers/notify", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handleNetworkPeersNotify(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 when authoritative pubkey fetch fails, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	for _, p := range netMgr.GetPeers() {
+		if p.NodeID == peerID {
+			t.Errorf("failed-fetch notify must NOT register peer")
+		}
+	}
+	if _, ok := fed.GetNode(peerID); ok {
+		t.Errorf("failed-fetch notify must NOT bridge into trust pool")
 	}
 }
 
@@ -232,6 +298,22 @@ func TestAddPeer_TriggersNotifyNoLoop(t *testing.T) {
 	}))
 	defer aSrv.Close()
 
+	// SEC-P1-4: A's notify advertises a reachable authoritative pubkey endpoint
+	// (federation_endpoint), so B's fail-closed pubkey fetch succeeds and the
+	// reverse registration (and trust-pool bridge) completes.
+	pubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/node/pubkey":
+			writeJSON(w, 200, map[string]any{"pub_key": node.PubKeyB64()})
+		case "/api/network/heartbeat/ping":
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer pubSrv.Close()
+	cfg.Set("federation_endpoint", pubSrv.URL)
+
 	// Human (A) adds B. B's address is bSrv.
 	body := strings.NewReader(fmt.Sprintf(`{"addresses":["%s"],"node_id":"mmx-B","name":"B"}`, bSrv.URL))
 	req := httptest.NewRequest(http.MethodPost, "/api/network/peers", body)
@@ -259,11 +341,6 @@ func TestAddPeer_TriggersNotifyNoLoop(t *testing.T) {
 	}
 
 	// B should have bridged A into its trust pool after the notify.
-	// Allow a generous window: in this single-process simulation the notify
-	// receiver's best-effort pubkey/ping fetches (each a 3s-timeout, by design,
-	// see network.go handleNetworkPeersNotify) run against the sender's
-	// unreachable LAN address, so the local AddPeer (and thus the bridge) can
-	// land several seconds after the notify is first received.
 	bridged := false
 	deadline = time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
@@ -317,6 +394,21 @@ func TestAddPeer_ConcurrentMutualAddNoInfiniteLoop(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer aSrv.Close()
+
+	// SEC-P1-4: advertise a reachable authoritative pubkey endpoint so B's
+	// fail-closed pubkey fetch succeeds for every concurrent notify.
+	pubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/node/pubkey":
+			writeJSON(w, 200, map[string]any{"pub_key": node.PubKeyB64()})
+		case "/api/network/heartbeat/ping":
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer pubSrv.Close()
+	cfg.Set("federation_endpoint", pubSrv.URL)
 
 	const n = 10
 	var wg sync.WaitGroup

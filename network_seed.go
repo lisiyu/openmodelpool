@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"log/slog"
 	"net"
 	"net/http"
@@ -173,12 +174,20 @@ func handleSeedRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate shared secret (if configured)
+	// Validate shared secret (if configured).
+	// SEC-P1-5: fail-closed — when no seed_secret is configured, registration is
+	// REJECTED (open registration would let anyone poison the route table with
+	// arbitrary node_ids/addresses). The comparison is constant-time.
 	expectedSecret := ""
 	if cfg != nil {
 		expectedSecret = cfg.Get("seed_secret", "")
 	}
-	if expectedSecret != "" && req.Secret != expectedSecret {
+	if expectedSecret == "" {
+		slog.Warn("seed registration rejected: seed_secret not configured (fail-closed)", "node_id", req.NodeID)
+		writeError(w, http.StatusForbidden, "seed registration disabled")
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(req.Secret), []byte(expectedSecret)) != 1 {
 		writeError(w, http.StatusUnauthorized, "invalid secret")
 		return
 	}

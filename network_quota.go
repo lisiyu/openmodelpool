@@ -220,8 +220,13 @@ func (m *OpenKeyQuotaManager) RefreshAllQuotas() {
 func (m *OpenKeyQuotaManager) startAutoRefresh() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		m.RefreshAllQuotas()
+	for {
+		select {
+		case <-globalStopCh:
+			return
+		case <-ticker.C:
+			m.RefreshAllQuotas()
+		}
 	}
 }
 

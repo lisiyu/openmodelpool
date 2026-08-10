@@ -2,9 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"log/slog"
-	"crypto/tls"
 	"net/http"
 	"runtime"
 	"sync"
@@ -226,6 +227,10 @@ func (wp *WorkerPool) TotalSubmitted() int64 {
 
 const defaultMaxConcurrentRequests = 100
 
+// semaphoreAcquireTimeout bounds how long a request waits for a concurrency
+// slot before the server sheds load with a 503 (PERF-P2-14).
+const semaphoreAcquireTimeout = 5 * time.Second
+
 var requestSemaphore chan struct{}
 
 func initConcurrencyLimiter(maxConcurrent int) {
@@ -236,9 +241,21 @@ func initConcurrencyLimiter(maxConcurrent int) {
 	slog.Info("concurrency limiter initialized", "max_concurrent", maxConcurrent)
 }
 
-// acquireSemaphore blocks until a slot is available. Returns false if context expires.
-func acquireSemaphore() {
-	requestSemaphore <- struct{}{}
+// acquireSemaphore waits for a concurrency slot, honoring the request context
+// and a bounded acquisition timeout. Returns false when the slot cannot be
+// obtained in time (server busy / client gone), so the caller can shed load
+// with a 503 instead of blocking forever.
+func acquireSemaphore(ctx context.Context) bool {
+	timer := time.NewTimer(semaphoreAcquireTimeout)
+	defer timer.Stop()
+	select {
+	case requestSemaphore <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return false
+	}
 }
 
 // releaseSemaphore frees a concurrency slot.
@@ -250,7 +267,15 @@ func releaseSemaphore() {
 func concurrencyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		totalRequestCount.Add(1)
-		acquireSemaphore()
+		if !acquireSemaphore(r.Context()) {
+			// PERF-P2-14: shed load instead of queueing without bound.
+			writeJSON(w, 503, ErrorResponse{Error: ErrorDetail{
+				Message: "服务器繁忙，请稍后重试",
+				Type:    "server_busy",
+				Code:    "concurrency_limit",
+			}})
+			return
+		}
 		defer releaseSemaphore()
 		next.ServeHTTP(w, r)
 	})
@@ -320,12 +345,25 @@ func runCleanup() {
 	// P-4: Clean up stale IP rate limiters (older than 10 minutes)
 	cleanupIPRateLimiters(10 * time.Minute)
 
-	// 5. Force GC if memory is above threshold
-	mem := getMemoryUsage()
-	if mem.AllocMB > 150 {
-		runtime.GC()
-		slog.Debug("cleanup: forced GC due to high memory", "alloc_mb", mem.AllocMB)
+	// PERF-P1-7: bound transient maps that previously grew without limit.
+	if capabilityVerifier != nil {
+		capabilityVerifier.cleanup(24*time.Hour, 100)
 	}
+	if natMgr != nil {
+		natMgr.cleanupProbeCache(time.Hour)
+	}
+	if contributionLedger != nil && contributionLedger.hashStore != nil {
+		contributionLedger.hashStore.Cleanup(contentHashCacheMax)
+	}
+	if fed != nil && fed.dht != nil {
+		if expired := fed.dht.ExpireRecords(); expired > 0 {
+			slog.Debug("cleanup: purged expired DHT records", "count", expired)
+		}
+	}
+
+	// 5. PERF-P3-22: memory reclamation is left to GOGC's adaptive pacing; a
+	//    forced runtime.GC() on a fixed 5-minute schedule fights the runtime
+	//    and provides no benefit for well-behaved allocations.
 }
 
 // cleanupStaleEntries removes models/providers with zero requests from metrics maps

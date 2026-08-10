@@ -13,6 +13,24 @@ import (
 // Provider handlers
 // ============================================================
 
+// validateProviderBaseURL validates a provider BaseURL for scheme + SSRF
+// (SEC-P3-22 / SEC-P2-18): it must be http/https and must not point at a
+// private/loopback/link-local address. Shared by create, update and config
+// import so every write path applies the same guard.
+func validateProviderBaseURL(baseURL string) error {
+	if baseURL == "" {
+		return nil
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("invalid BaseURL: must be a valid http/https URL")
+	}
+	if isLocalOrPrivateIP(u.Hostname()) {
+		return fmt.Errorf("invalid BaseURL: must not point to a private or loopback address")
+	}
+	return nil
+}
+
 func handleListProviders(w http.ResponseWriter, r *http.Request) {
 	owner := getRequestOwner(r)
 	providers := pm.GetVisible(owner)
@@ -129,18 +147,10 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// B25: Validate BaseURL format to prevent SSRF
-	if p.BaseURL != "" {
-		u, err := url.Parse(p.BaseURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-			writeError(w, 400, "invalid BaseURL: must be a valid http/https URL")
-			return
-		}
-		// P2-3: Block private/loopback IPs to prevent SSRF
-		if isLocalOrPrivateIP(u.Hostname()) {
-			writeError(w, 400, "invalid BaseURL: must not point to a private or loopback address")
-			return
-		}
+	// B25 + P2-3: Validate BaseURL format + SSRF guard (SEC-P3-22)
+	if err := validateProviderBaseURL(p.BaseURL); err != nil {
+		writeError(w, 400, err.Error())
+		return
 	}
 
 	// Set owner
@@ -295,13 +305,11 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// B25: Validate BaseURL format to prevent SSRF
-	if merged.BaseURL != "" {
-		u, err := url.Parse(merged.BaseURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-			writeError(w, 400, "invalid BaseURL: must be a valid http/https URL")
-			return
-		}
+	// B25 + P2-3: Validate BaseURL format + SSRF guard (SEC-P3-22) — the update
+	// path previously skipped the private-IP check that create enforces.
+	if err := validateProviderBaseURL(merged.BaseURL); err != nil {
+		writeError(w, 400, err.Error())
+		return
 	}
 
 	// Auto-migrate: if api_key is set but APIKeys is empty, create first key entry

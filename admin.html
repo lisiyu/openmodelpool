@@ -2115,16 +2115,25 @@ async function loadApiKeys(pid) {
   }
 }
 async function showAddApiKey(pid) {
-  const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
-  const key = prompt('请输入 API Key:');
-  if (!key) return;
-  const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
-  const access = prompt('访问权限 (private/shared):', 'private') || 'private';
-  const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
+  // UX-P2-13: single modal form instead of a chain of native prompt() dialogs.
+  // (Also fixes a latent bug where quota_daily/quota_monthly were referenced
+  // but never collected.)
+  const vals = await openApiKeyDialog('添加 API Key', [
+    { name: 'alias', label: '别名（可选，用于标识此Key）', value: '' },
+    { name: 'key', label: 'API Key', value: '' },
+    { name: 'quota', label: '总额度限制 (tokens, 0=无限)', value: '0' },
+    { name: 'quotaDaily', label: '日额度限制 (tokens, 0=无限)', value: '0' },
+    { name: 'quotaMonthly', label: '月额度限制 (tokens, 0=无限)', value: '0' },
+    { name: 'access', label: '访问权限 (private/shared)', value: 'private' },
+    { name: 'priority', label: '优先级 (数字越大越优先)', value: '1' }
+  ]);
+  if (!vals) return;
+  const key = (vals.key || '').trim();
+  if (!key) return toast('请输入 API Key', 'error');
   try {
     const r = await authFetch('/api/providers/' + pid + '/keys', {
       method: 'POST',
-      body: JSON.stringify({ key: key, alias: alias, quota: quota, quota_daily: quotaDaily, quota_monthly: quotaMonthly, access_control: access, priority: priority, enabled: true })
+      body: JSON.stringify({ key: key, alias: (vals.alias||'').trim(), quota: parseInt(vals.quota,10)||0, quota_daily: parseInt(vals.quotaDaily,10)||0, quota_monthly: parseInt(vals.quotaMonthly,10)||0, access_control: (vals.access||'private').trim(), priority: parseInt(vals.priority,10)||1, enabled: true })
     });
     const d = await r.json();
     if (d.success) {
@@ -2152,7 +2161,12 @@ async function toggleKeyEnabled(pid, keyId, enabled) {
   } catch(e) { toast('操作失败: ' + e.message, 'error'); }
 }
 async function editKeyAccessControl(pid, keyId, currentAccess) {
-  const newAccess = prompt('修改 Key 访问权限\n\n当前: ' + currentAccess + '\n\n可选值:\n- private: 私有（额度仅自用）\n- shared: 共享（额度贡献到共享池）', currentAccess);
+  // UX-P2-13: modal form instead of native prompt().
+  const vals = await openApiKeyDialog('修改 Key 访问权限', [
+    { name: 'access', label: '访问权限（private: 私有仅自用 / shared: 共享到共享池）', value: currentAccess }
+  ]);
+  if (!vals) return;
+  const newAccess = (vals.access || '').trim();
   if (!newAccess || newAccess === currentAccess) return;
   if (!['private', 'shared'].includes(newAccess)) {
     toast('无效权限值，请输入 private/shared', 'error');

@@ -150,6 +150,13 @@ func (e *WAFEngine) Enabled() bool {
 // clientIPs returns the candidate client IPs for a request, honoring
 // X-Forwarded-For and X-Real-IP before falling back to RemoteAddr. This makes
 // the IP blacklist effective even behind a trusted reverse proxy.
+//
+// SEC-P1-7: X-Forwarded-For / X-Real-IP are ONLY trusted when the deployment
+// opts in via OMP_TRUSTED_PROXY=1 (trustedReverseProxy). Otherwise an attacker
+// could spoof the header to bypass the WAF IP controls. When trusted, XFF is
+// parsed from RIGHT to LEFT — the rightmost entry is the one appended by our
+// trusted proxy (the real client), while leftward entries may be
+// client-supplied spoofing.
 func clientIPs(r *http.Request) []string {
 	seen := make(map[string]bool)
 	var out []string
@@ -161,13 +168,16 @@ func clientIPs(r *http.Request) []string {
 		seen[ip] = true
 		out = append(out, ip)
 	}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		for _, part := range strings.Split(xff, ",") {
-			add(strings.TrimSpace(part))
+	if trustedReverseProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			for i := len(parts) - 1; i >= 0; i-- {
+				add(parts[i])
+			}
 		}
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		add(xri)
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			add(xri)
+		}
 	}
 	add(extractClientIP(r.RemoteAddr))
 	return out

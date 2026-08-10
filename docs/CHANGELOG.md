@@ -1,5 +1,31 @@
 # Changelog
 
+## v4.4.44 (2026-08-11)
+
+Security, reliability and honesty pass: 72 findings from an independent external code review triaged and fixed (a full-team triage record is in `docs/reference/REVIEW-TRIAGE-2026-08-10.md`).
+
+### Security (P0)
+- **Closed the relay-to-self authentication bypass.** `/network/{id}/...` routes are now gated by `relayAuthMiddleware`; `handleRelayToLocal` dispatches in-process while preserving the original `RemoteAddr` and marking the request as untrusted, so the "localhost anonymous admin" fallback in `withProxyAuth` and the `localOnly` guard can no longer be reached via a loopback re-dispatch. Relayable paths are whitelisted to `/v1/*` and `/api/network/heartbeat/ping`.
+- **Stopped trusting client-supplied `X-OMP-KeyType`.** It is stripped at the earliest middleware and in both relay Directors; `RequestKeyType` derives the key type from the verified token/context instead. The CHANGELOG's earlier claim that this header was already stripped was itself a false record — the strip had never been implemented (the header was only renamed). Corrected.
+- **Fixed the federation trust-pool poisoning.** `peers/notify` no longer falls back to the attacker-supplied `PubKey` from the payload when key fetch fails; verification now fails closed.
+- **Seed registration is now fail-closed** when no `seed_secret` is configured; secret comparison uses constant-time compare.
+
+### Security (high/medium)
+- Update pipeline is fail-closed: checksum and signature are fetched only from canonical GitHub (never mirrors), and a missing or mismatched artifact aborts the update instead of warn-and-continue.
+- Provider config import validates each provider with the shared `validateProviderBaseURL` (scheme + private-IP check), merges instead of truncating, and no longer deadlocks (see below).
+- Plus: CSV formula-injection neutralisation, X-Forwarded-For gated behind `OMP_TRUSTED_PROXY`, heartbeat defaults to deny, `ReadHeaderTimeout: 10s`, constant-time reset-token compare, conditional CORS credentials, extended private-range CIDRs for the SSRF guard, goroutine-dump gated behind a debug flag, `restart.sh` ownership/permission check, `install.sh` fail-closed checksum, `handleDirectProbe` URL validation, generic error messages, fixed `escapeJS` escaping.
+
+### Reliability
+- **Fixed two deadlocks that shipped in v4.3.32** (config import and governance `Propose`/`Ratify` both called `save()` while holding the write lock; `save()` then re-acquired an RLock on a non-reentrant RWMutex). Both are fixed with lock-safe save paths (`saveLocked`), and both now have tests that run with a real `dataPath` — the tests hang on the old code and pass in milliseconds on the new.
+- Removed a leaking read-lock in `CheckShareBoundary` (`defer RUnlock`), converted the per-request O(n) ledger scan to an O(1) daily counter, bounded replication fan-out with a worker pool, added `globalStopCh` shutdown paths to seven background loops, bounded unbounded maps, shared the HTTP client pool, and made the concurrency semaphore time out with a 503 instead of blocking forever.
+
+### Usability
+- `authFetch` throws on non-401 errors and success toasts are gated on the actual response; restart failure is reported instead of fake success; the log panel gained pagination, filtering and an error column; update-check failures are visible; `prompt()` chains were replaced with a modal; the setup wizard no longer destroys the access URL.
+
+### Documentation honesty
+- `docs/FEATURES.md`: node-identity section corrected (it is implemented, not stubbed); removed false Plumtree/Scuttlebutt and mDNS claims; replication section updated to the delivered P1-3 state; undocumented live endpoints (Gemini/Azure entry, governance, transparency/export, ledger replication, `/network/__punch`, `X-OMP-Quota-Source`) recorded in FEATURES and API docs.
+- `docs/BACKLOG.md`: split DHT transport bridging, UDP data-carrying protocol, governance execution hooks, transparency UI panel and the no-op region-sync loop into honest open items.
+
 ## v4.3.32 (2026-08-10)
 
 CI: align the test gate with what contributors actually run locally.
@@ -393,10 +419,9 @@ Functional closure release: decentralization (P1), contribution transparency & g
 
 ### 🟠 P1 Security Fixes (High)
 
-- **P1-1**: Access control header spoofing fixed:
-  - `RequestKeyType()` no longer trusts client-supplied `X-MK-KeyType` header. Renamed internal header to `X-OMP-KeyType` (only set by our own relay code).
-  - `FilterByAccessControl()` default branch changed from fail-open (allow all) to fail-closed (deny all) for unknown key types.
-  - `relayToRemote()` now strips `X-OMP-KeyType` from forwarded requests to prevent header injection across nodes.
+- **P1-1**: Access control header spoofing **partially** fixed (record corrected in v4.3.32 — the original entry overstated the fix):
+  - `RequestKeyType()` no longer trusts the old client-supplied `X-MK-KeyType` header — the internal header was **renamed** to `X-OMP-KeyType`. **However, the strip was never actually implemented**: as of v4.3.32, `RequestKeyType()` still trusts any inbound `X-OMP-KeyType` at Priority 1, and neither `relayToRemote()` nor `handleRelayToLocal()` deletes it before forwarding. **Resolved in v4.4.44** (strip at the earliest middleware + both relay Directors; key type now derived from the verified token).
+  - `FilterByAccessControl()` default branch changed from fail-open (allow all) to fail-closed (deny all) for unknown key types. — this part is accurate.
 
 ### 🟡 P2 Security Fixes (Medium)
 

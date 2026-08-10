@@ -19,6 +19,9 @@ import (
 // runServer sets up HTTP routes, starts the server, and handles graceful shutdown.
 func runServer() {
 	mux := setupRoutes()
+	// SEC-P0-1: relay-to-self requests are dispatched in-process to this mux
+	// (preserving the original RemoteAddr) instead of looping back over TCP.
+	relayDispatchHandler = mux
 
 	port := cfg.Get("service_port", "8000")
 	addr := ":" + port
@@ -30,13 +33,16 @@ func runServer() {
 	}
 	initTunnel(portNum)
 
-	handler := requestIDMiddleware(corsMiddleware(requestLogMiddleware(concurrencyMiddleware(adminTimeoutMiddleware(mux)))))
+	// SEC-P0-2: the outermost middleware strips client-supplied internal
+	// headers (X-OMP-KeyType) before any handler can trust them.
+	handler := stripInternalHeadersMiddleware(requestIDMiddleware(corsMiddleware(requestLogMiddleware(concurrencyMiddleware(adminTimeoutMiddleware(mux))))))
 
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      handler,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 300 * time.Second, // long for streaming
+		ReadHeaderTimeout: 10 * time.Second, // SEC-P2-15: bound slow-header attacks
+		WriteTimeout: 300 * time.Second,     // long for streaming
 		IdleTimeout:  120 * time.Second,
 	}
 
@@ -90,6 +96,7 @@ func setupHTTPS(server *http.Server, handler http.Handler) {
 			MinVersion:     tls.VersionTLS12, // B14: reject TLS 1.0/1.1
 		},
 		ReadTimeout:  30 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second, // SEC-P2-15
 		WriteTimeout: 300 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
@@ -161,6 +168,18 @@ func gracefulShutdown(server *http.Server) {
 				gossip.stop()
 			}
 			saveContributionLedger()
+			flushContributionLedger() // PERF-P1-4: final synchronous ledger flush before exit
+			// PERF-P1-5: stop the ledger reconcile loop + replication workers.
+			if ledgerReconcileStop != nil {
+				select {
+				case <-ledgerReconcileStop:
+				default:
+					close(ledgerReconcileStop)
+				}
+			}
+			if ledgerReplicator != nil {
+				ledgerReplicator.Stop()
+			}
 			if netMgr != nil {
 				netMgr.stopRefreshLoop()
 			}

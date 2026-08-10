@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -66,10 +67,51 @@ func initContributionLedger(dataDir string) {
 	go notarizeLoop()
 }
 
+// saveContributionLedgerDebounce is the coalescing window for ledger writes
+// (PERF-P1-4): hot-path callers (relay, gossip, notify) mark the ledger dirty
+// and at most one disk write happens per window instead of one per record.
+const saveContributionLedgerDebounce = 2 * time.Second
+
+var (
+	ledgerSaveMu    sync.Mutex
+	ledgerSaveTimer *time.Timer
+)
+
+// saveContributionLedger persists the contribution ledger, debounced
+// (PERF-P1-4). Concurrent hot-path callers coalesce into a single write.
+// gracefulShutdown must call flushContributionLedger() for a final sync flush.
 func saveContributionLedger() {
 	if contributionLedger == nil {
 		return
 	}
+	ledgerSaveMu.Lock()
+	if ledgerSaveTimer == nil {
+		ledgerSaveTimer = time.AfterFunc(saveContributionLedgerDebounce, func() {
+			ledgerSaveMu.Lock()
+			ledgerSaveTimer = nil
+			ledgerSaveMu.Unlock()
+			if contributionLedger != nil {
+				if err := contributionLedger.Save("data/ledger.json"); err != nil {
+					slog.Warn("failed to save contribution ledger", "error", err)
+				}
+			}
+		})
+	}
+	ledgerSaveMu.Unlock()
+}
+
+// flushContributionLedger synchronously persists any pending ledger changes
+// (used at shutdown; idempotent).
+func flushContributionLedger() {
+	if contributionLedger == nil {
+		return
+	}
+	ledgerSaveMu.Lock()
+	if ledgerSaveTimer != nil {
+		ledgerSaveTimer.Stop()
+		ledgerSaveTimer = nil
+	}
+	ledgerSaveMu.Unlock()
 	if err := contributionLedger.Save("data/ledger.json"); err != nil {
 		slog.Warn("failed to save contribution ledger", "error", err)
 	}

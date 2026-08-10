@@ -134,7 +134,9 @@ func (g *GovernanceLedger) Propose(proposer, ptype, title string, payload json.R
 	g.proposalList = append(g.proposalList, p)
 	g.proposalIndex[p.ID] = p
 	g.openByProp[proposer]++
-	g.save()
+	// saveLocked: caller already holds g.mu (save() would re-acquire RLock and
+	// self-deadlock).
+	g.saveLocked()
 	return p, nil
 }
 
@@ -177,7 +179,9 @@ func (g *GovernanceLedger) Ratify(proposalID, nodeID string, approve bool) (*Gov
 
 	// Auto-close once a supermajority is reached either way.
 	g.recompute(p)
-	g.save()
+	// saveLocked: caller already holds g.mu (save() would re-acquire RLock and
+	// self-deadlock).
+	g.saveLocked()
 	return r, nil
 }
 
@@ -321,11 +325,22 @@ func supermajority(n int) int {
 
 // ---- persistence (best-effort; never fatal) ----
 
+// save persists the governance ledger to disk. Callers must NOT hold g.mu
+// (it acquires the read lock itself).
 func (g *GovernanceLedger) save() {
+	g.mu.RLock()
+	g.saveLocked()
+	g.mu.RUnlock()
+}
+
+// saveLocked writes the governance ledger to disk. The caller MUST already
+// hold g.mu (write lock). Split from save() so locked callers (Propose/Ratify)
+// can persist without re-acquiring the RWMutex — calling save() while holding
+// g.mu.Lock() would self-deadlock on its g.mu.RLock() when dataPath != "".
+func (g *GovernanceLedger) saveLocked() {
 	if g.dataPath == "" {
 		return
 	}
-	g.mu.RLock()
 	snap := struct {
 		Proposals     []*GovernanceProposal  `json:"proposals"`
 		Ratifications []byte                 `json:"-"`
@@ -340,7 +355,6 @@ func (g *GovernanceLedger) save() {
 		LastRHash:     g.lastRHash,
 		Seq:           g.proposalSeq,
 	}
-	g.mu.RUnlock()
 	b, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
 		return

@@ -232,8 +232,25 @@ func (c *Config) Get(key, def string) string {
 	return def
 }
 
-// Set updates a config key and persists.
+// validateConfigValue reports whether a config value can be safely persisted
+// to the JSON config file (UX-P1-11). Functions, channels, complex numbers and
+// arbitrary structs would corrupt the file on save.
+func validateConfigValue(value any) bool {
+	switch value.(type) {
+	case string, bool, float64, float32, int, int64, int32, uint, uint64, uint32, uintptr, []any, []string, map[string]any, nil:
+		return true
+	default:
+		return false
+	}
+}
+
+// Set updates a config key and persists (UX-P1-11: rejects unserializable
+// values so the config file can never be corrupted).
 func (c *Config) Set(key string, value any) {
+	if !validateConfigValue(value) {
+		slog.Warn("config Set rejected unserializable value", "key", key)
+		return
+	}
 	c.mu.Lock()
 	c.data[key] = value
 	c.data["updated_at"] = time.Now().Format(time.RFC3339)
@@ -241,13 +258,20 @@ func (c *Config) Set(key string, value any) {
 	c.save()
 }
 
-// SetMany updates multiple keys at once.
+// SetMany updates multiple keys at once (UX-P1-11: values are validated; nil
+// and empty-string values are STORED so "clear this setting" works instead of
+// being silently skipped; unserializable values are rejected with a warning).
 func (c *Config) SetMany(m map[string]any) {
 	c.mu.Lock()
 	for k, v := range m {
-		if v != nil && v != "" {
-			c.data[k] = v
+		if k == "" {
+			continue
 		}
+		if !validateConfigValue(v) {
+			slog.Warn("config SetMany rejected unserializable value", "key", k)
+			continue
+		}
+		c.data[k] = v
 	}
 	c.data["updated_at"] = time.Now().Format(time.RFC3339)
 	c.mu.Unlock()

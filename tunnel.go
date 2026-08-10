@@ -1061,7 +1061,7 @@ func probeDomainHealth(domain string) (bool, string) {
 	if domain == "" || domain == "localhost" {
 		return false, "未配置可探测的域名"
 	}
-	client := &http.Client{Timeout: 4 * time.Second}
+	client := GetSharedHTTPClientWithTimeout(4 * time.Second)
 	probeURL := "https://" + domain + "/health"
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()

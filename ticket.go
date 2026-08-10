@@ -87,9 +87,14 @@ func (ts *TicketStore) Cleanup(maxAge time.Duration) {
 func startTicketCleanup() {
 	ticker := time.NewTicker(2 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
-		if ticketStore != nil {
-			ticketStore.Cleanup(24 * time.Hour)
+	for {
+		select {
+		case <-globalStopCh:
+			return
+		case <-ticker.C:
+			if ticketStore != nil {
+				ticketStore.Cleanup(24 * time.Hour)
+			}
 		}
 	}
 }
@@ -235,31 +240,36 @@ func (ts *TicketStore) NotarizeBatch(seedURL string) (int, error) {
 func notarizeLoop() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
-		if ticketStore == nil || fed == nil {
-			continue
-		}
-		nodes := fed.GetActiveNodes()
-		for _, n := range nodes {
-			if routeTable != nil {
-				e := routeTable.Get(n.NodeID)
-				if e == nil || !e.IsSeed {
+	for {
+		select {
+		case <-globalStopCh:
+			return
+		case <-ticker.C:
+			if ticketStore == nil || fed == nil {
+				continue
+			}
+			nodes := fed.GetActiveNodes()
+			for _, n := range nodes {
+				if routeTable != nil {
+					e := routeTable.Get(n.NodeID)
+					if e == nil || !e.IsSeed {
+						continue
+					}
+				}
+				addrs := knownNodeAddresses(n)
+				if len(addrs) == 0 {
 					continue
 				}
+				count, err := ticketStore.NotarizeBatch(addrs[0])
+				if err != nil {
+					slog.Debug("notarization failed", "seed", n.NodeID, "error", err)
+					continue
+				}
+				if count > 0 {
+					slog.Info("notarized tickets", "count", count, "seed", n.NodeID)
+				}
+				break
 			}
-			addrs := knownNodeAddresses(n)
-			if len(addrs) == 0 {
-				continue
-			}
-			count, err := ticketStore.NotarizeBatch(addrs[0])
-			if err != nil {
-				slog.Debug("notarization failed", "seed", n.NodeID, "error", err)
-				continue
-			}
-			if count > 0 {
-				slog.Info("notarized tickets", "count", count, "seed", n.NodeID)
-			}
-			break
 		}
 	}
 }

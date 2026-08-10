@@ -81,6 +81,28 @@ Legacy completions endpoint (same handler as chat/completions).
 
 Embeddings endpoint (same handler, supports embedding models).
 
+### `POST /v1beta/models/{model}` — Gemini native compatibility
+
+Accepts Google Gemini API format at `:generateContent` and `:streamGenerateContent`; the request is translated to OpenAI format and routed through the same provider pool, then the response is translated back to Gemini format (including streaming SSE, `usageMetadata`, `finishReason`). Auth accepts `x-goog-api-key` header or `?key=` query (the query token is stripped after auth).
+
+```bash
+curl http://localhost:8000/v1beta/models/gemini-2.0-flash:generateContent \
+  -H "x-goog-api-key: YOUR_PROXY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"contents":[{"parts":[{"text":"Hello!"}]}]}'
+```
+
+### `POST /openai/deployments/{deployment}/chat/completions` — Azure URL compatibility
+
+Accepts the Azure OpenAI URL style (`api-key` header converted to Bearer); the `deployment` path segment is injected as the model and the path is rewritten to `/v1/chat/completions`. The response stays OpenAI format.
+
+```bash
+curl http://localhost:8000/openai/deployments/deepseek-chat/chat/completions \
+  -H "api-key: YOUR_PROXY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Hello!"}]}'
+```
+
 ---
 
 ## Authentication
@@ -265,6 +287,32 @@ Embeddings endpoint (same handler, supports embedding models).
 | `GET` | `/api/network/global-pool/nodes` | Pool nodes |
 | `GET` | `/api/network/global-pool/stats` | Pool statistics |
 
+### Community Co-governance (P2-1)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/governance/propose` | Propose (admit_node / allow_model / param_change) — `withFederationAuth` + rate-limited |
+| `POST` | `/api/governance/ratify` | Ratify / reject a proposal — `withFederationAuth` + rate-limited |
+| `GET` | `/api/governance/proposals` | List proposals + `chain_valid` (public read-only) |
+
+> **Honest note:** governance is an append-only, hash-chained **audit ledger**. Ratified proposals set `Status="ratified"` but have **no execution hook** today (see BACKLOG).
+
+### Ledger Transparency / Quota / Export (Admin, P2-2 / P2-3 / P4-1)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/admin/ledger/transparency` | Aggregated contribution transparency (by peer / by model, chain validity) |
+| `GET` | `/api/admin/ledger/contribution-quota` | Per-contributor "contributed ↔ earned free quota" view |
+| `GET` | `/api/admin/ledger/export?format=csv\|json` | Download contributions CSV or full ledger JSON (attachment) |
+
+### Ledger Federation Replication (P1-3)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/ledger/__manifest` | Content-hash manifest of local ledger — `withFederationAuth` |
+| `POST` | `/ledger/__sync` | Push a contribution record — `withFederationAuth` |
+| `GET` | `/ledger/__record?id=...` | Pull one record by id — `withFederationAuth` |
+
 ### Algorithm Governance ⚠️
 
 > **⚠️ Local-only.** The `propose` / `vote` endpoints **accept requests locally and return a status**, but **on-chain / decentralized DAO voting is not implemented**. Governance is currently a local parameter store (current / history / propose / vote / validate), not a distributed consensus.
@@ -317,6 +365,9 @@ Embeddings endpoint (same handler, supports embedding models).
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET/POST/PUT/DELETE` | `/network/{id}/` | Relay requests to target node |
+| `POST` | `/network/__punch` | Punch-offer exchange (NAT hole punching; dispatched from the relay path, no standalone auth — see review backlog) |
+
+> **Response header `X-OMP-Quota-Source`**: on public-key gateway requests, the node sets `contributor` or `community` to indicate which free-quota channel was charged (`ledger_quota_consume.go`).
 
 ### Real-time & Monitoring
 

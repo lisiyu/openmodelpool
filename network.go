@@ -1244,18 +1244,19 @@ func (nm *NetworkManager) UpdateShareBoundary(boundary *ShareBoundaryConfig) err
 
 func (nm *NetworkManager) CheckShareBoundary(model string, estimatedTokens int64) (bool, string) {
 	nm.mu.RLock()
-	defer nm.mu.RLock()
+	defer nm.mu.RUnlock()
 	b := nm.config.ShareBoundary
 
 	if b.DailyContribCap > 0 {
 		var todayContributed int64
 		if contributionLedger != nil {
-			selfID := nm.GetNodeID()
-			for _, tx := range contributionLedger.GetAllTransactions() {
-				if tx.NodeID == selfID && tx.Type == "contribution" {
-					todayContributed += tx.Amount
-				}
-			}
+			// Lock already held: read NodeID directly instead of calling
+			// GetNodeID() which would re-acquire nm.mu.RLock (recursive RLock
+			// can deadlock once a writer is queued).
+			// PERF-P0-2: the ledger maintains an incremental per-(node,date)
+			// counter, so this is O(1) instead of a full ledger scan.
+			selfID := nm.config.NodeID
+			todayContributed = contributionLedger.GetDailyContributions(selfID, time.Now())
 		}
 		if todayContributed+estimatedTokens > b.DailyContribCap {
 			return false, "daily contribution cap exceeded"
@@ -1745,7 +1746,7 @@ func resolvePeerNodeID(addr string) (string, error) {
 
 	client := internalHTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		client = GetSharedHTTPClientWithTimeout(5 * time.Second)
 	}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, pingURL, nil)
 	if err != nil {
@@ -1887,14 +1888,17 @@ func handleNetworkPeersNotify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Signature verification. Prefer the authoritative public key served by
-	//    the claimant at /api/node/pubkey (defeats payload pubkey substitution,
-	//    see ARCH §9 D1); fall back to the key embedded in the payload if the
-	//    fetch fails or returns nothing.
+	// 3. Signature verification. The authoritative public key served by the
+	//    claimant at /api/node/pubkey is the ONLY key accepted (defeats payload
+	//    pubkey substitution, see ARCH §9 D1). SEC-P1-4: if the fetch fails or
+	//    returns nothing, the notify is REJECTED (fail-closed) — we never fall
+	//    back to the attacker-controlled pub_key embedded in the payload.
 	canonical := fmt.Sprintf("%s|%s|%s", p.NodeID, strings.Join(p.Addresses, ","), p.Timestamp)
 	pubKey := fetchNodePubKey(p.Addresses[0])
 	if pubKey == "" {
-		pubKey = p.PubKey
+		slog.Warn("peers/notify: failed to fetch authoritative pubkey; rejecting (fail-closed)", "from", p.NodeID, "addr", p.Addresses[0])
+		writeError(w, http.StatusUnauthorized, "cannot verify node public key")
+		return
 	}
 	if !VerifySignature(pubKey, []byte(canonical), p.Signature) {
 		slog.Warn("peers/notify: signature verification failed", "from", p.NodeID)
@@ -1908,13 +1912,14 @@ func handleNetworkPeersNotify(w http.ResponseWriter, r *http.Request) {
 
 	// 5. Locally register the sender as a peer. AddPeer bridges it into the
 	//    federation trust pool (P0-2). By design this does NOT trigger a
-	//    reciprocal notify (R1).
+	//    reciprocal notify (R1). The stored public key is the authoritative one
+	//    fetched above, never the payload-supplied value.
 	peer := PeerInfo{
 		NodeID:     p.NodeID,
 		Name:       p.Name,
 		Addresses:  p.Addresses,
 		Status:     "online",
-		PubKey:     p.PubKey,
+		PubKey:     pubKey,
 		LastSeen:   time.Now().Format(time.RFC3339),
 		TrustScore: 0.5,
 	}
@@ -1948,7 +1953,7 @@ func handleNetworkPeersNotify(w http.ResponseWriter, r *http.Request) {
 // blocks registration (P0-1c: silent failure must not block the local add).
 func pingPeerOnce(addr string) {
 	pingURL := strings.TrimRight(addr, "/") + "/api/network/heartbeat/ping"
-	client := &http.Client{Timeout: 3 * time.Second}
+	client := GetSharedHTTPClientWithTimeout(3 * time.Second)
 	resp, err := client.Get(pingURL)
 	if err != nil {
 		slog.Warn("peers/notify: optional ping failed (non-blocking)", "peer", addr, "error", err)
@@ -1967,21 +1972,44 @@ func pingPeerOnce(addr string) {
 // human-initiated add path (handleNetworkAddPeer) for a freshly-added peer. The
 // notify receiving path (handleNetworkPeersNotify) deliberately never calls back
 // into sendNotifyToPeer, so a peer never re-notifies the originator.
+// pubKeyCacheEntry caches a node's authoritative public key (PERF-P1-9).
+type pubKeyCacheEntry struct {
+	pubKey    string
+	fetchedAt time.Time
+}
+
+// pubKeyCacheTTL bounds how long a fetched pubkey is trusted without refresh.
+const pubKeyCacheTTL = 10 * time.Minute
+
+var (
+	pubKeyCacheMu sync.Mutex
+	pubKeyCache   = map[string]pubKeyCacheEntry{}
+)
+
 // fetchNodePubKey performs a best-effort retrieval of a node's authoritative
 // ed25519 public key from its public /api/node/pubkey endpoint (P0-1). It is
 // used to verify a /api/network/peers/notify signature against a key the
 // claimant actually controls, defeating payload pubkey substitution (ARCH §9 D1).
-// Returns "" on any failure; the caller then falls back to the key embedded in
-// the notify payload. A short timeout bounds the call so it never blocks.
+// Returns "" on any failure; the caller decides whether to fail closed.
+// PERF-P1-9: results are cached per address (with a TTL) so the peer-notify
+// hot path does not re-fetch on every notify, and the fetch reuses the shared
+// connection-pooled client.
 func fetchNodePubKey(addr string) string {
 	if addr == "" {
 		return ""
 	}
+	pubKeyCacheMu.Lock()
+	if e, ok := pubKeyCache[addr]; ok && time.Since(e.fetchedAt) < pubKeyCacheTTL {
+		pubKeyCacheMu.Unlock()
+		return e.pubKey
+	}
+	pubKeyCacheMu.Unlock()
+
 	u := strings.TrimRight(addr, "/") + "/api/node/pubkey"
-	client := &http.Client{Timeout: 3 * time.Second}
+	client := GetSharedHTTPClientWithTimeout(3 * time.Second)
 	resp, err := client.Get(u)
 	if err != nil {
-		slog.Debug("peers/notify: failed to fetch authoritative pubkey (fallback to payload)", "addr", addr, "error", err)
+		slog.Debug("peers/notify: failed to fetch authoritative pubkey (fail-closed decision by caller)", "addr", addr, "error", err)
 		return ""
 	}
 	defer resp.Body.Close()
@@ -1993,6 +2021,11 @@ func fetchNodePubKey(addr string) string {
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return ""
+	}
+	if out.PubKey != "" {
+		pubKeyCacheMu.Lock()
+		pubKeyCache[addr] = pubKeyCacheEntry{pubKey: out.PubKey, fetchedAt: time.Now()}
+		pubKeyCacheMu.Unlock()
 	}
 	return out.PubKey
 }
