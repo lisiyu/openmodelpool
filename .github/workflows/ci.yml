@@ -46,8 +46,17 @@ jobs:
         with:
           version: latest
 
-  # P2: Unit tests — hard gate (no continue-on-error).
-  # Runs only short tests (excludes integration tests tagged with //go:build integration).
+  # P2: Test gate — hard gate (no continue-on-error).
+  #
+  # Same scope as what a contributor runs locally (`go test ./...`), plus -race.
+  # This repository has no `//go:build integration` files and no `testing.Short()`
+  # branches, so there is no short/full split to honour: passing `-short` here
+  # would exclude nothing while implying a tier that does not exist. If a future
+  # test needs an external service, gate it behind a build tag and enable it in
+  # the soft-gate job below — do not reintroduce a no-op flag.
+  #
+  # -count=1 disables the test result cache: a cached PASS from an earlier run
+  # cannot vouch for the current one, and flaky tests hide behind cache hits.
   test-unit:
     name: Unit tests (with coverage)
     needs: build-gate
@@ -58,8 +67,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Run unit tests
-        run: go test -race -short -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Run test suite
+        run: go test -race -count=1 -timeout 25m -coverprofile=coverage.out -covermode=atomic ./...
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
         with:
@@ -67,10 +76,21 @@ jobs:
           path: coverage.out
           retention-days: 7
 
-  # P2: Integration tests — soft gate (continue-on-error).
-  # Runs full test suite including chromedp and network-dependent tests.
-  # Chrome/Chromium install is now fixed; continue-on-error retained for
-  # network-dependent tests that may fail due to external service unavailability.
+  # P2: Second run — soft gate (continue-on-error).
+  #
+  # Deliberately overlaps with the hard gate above. Two reasons it earns its
+  # minutes rather than duplicating them:
+  #   1. Flaky detection. A race that fails one run in three passes a single
+  #      run two times out of three; an independent second run doubles the
+  #      chance of catching it before a contributor does. This is not
+  #      hypothetical — BACKLOG P5-1 was exactly that failure mode, and it took
+  #      three consecutive local runs to reproduce.
+  #   2. Browser environment. Chrome is installed here, so any test that grows a
+  #      real chromedp dependency fails visibly instead of silently skipping.
+  #      (Today `browser_login_test.go` only validates allocator options and
+  #      never launches a browser.)
+  # Soft gate on purpose: a second-run failure is a signal to investigate, not a
+  # reason to block a PR whose hard gate is green.
   test-integration:
     name: Integration tests
     needs: build-gate
@@ -94,10 +114,8 @@ jobs:
             echo "Chrome install failed; falling back to Chromium"
             sudo apt-get install -y chromium-browser || sudo apt-get install -y chromium
           }
-      - name: Run integration tests
-        run: go test -race -timeout 30m ./...
-        env:
-          OMP_TEST_INTEGRATION: "1"
+      - name: Run test suite again (independent run)
+        run: go test -race -count=1 -timeout 30m ./...
 
   build:
     name: Build (linux/amd64)

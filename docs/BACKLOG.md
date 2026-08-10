@@ -84,7 +84,11 @@
   - 新增 `SECURITY.md`（私密上报走 GitHub Security Advisories、in-scope 与 out-of-scope、**并诚实写明本项目不承诺什么**：API key 明文落盘、联邦信任是声誉而非诚实性证明、勿把管理面暴露公网）
   - 新增 `.github/ISSUE_TEMPLATE/bug_report.yml`（强制版本/模式/OS/复现步骤 + 脱敏确认）、`feature_request.yml`（含公益红线勾选，冲突提案直接闭环到 CONTRIBUTING）、`config.yml`（安全问题引流到 Advisories、公开路线图、文档索引）、`PULL_REQUEST_TEMPLATE.md`
   - README 贡献表接模板直链 + 补安全上报行 + 注明测试离线约 2 分钟；`docs/INDEX.md` 贡献者区补 CONTRIBUTING / SECURITY / 模板三项
-- [ ] P5-3 CI 与本地门禁口径不一致：CI 硬门禁跑 `-race -short`，README 让贡献者跑不带 `-short` 的全量——P5-1 的 flaky 正藏在这条缝里（CI 绿、本地随机红）。待评估是否让 CI 也跑一轮非 short，或在 CONTRIBUTING 标注差异（当前已用后者兜底）
+- [x] P5-3 CI 与本地门禁口径对齐（2026-08-10）
+  - **评估结论：所谓"short 分层"根本不存在。** 全仓库 `grep` 零命中 `testing.Short()`、零命中 `//go:build` 任何标签、零命中 `OMP_TEST_INTEGRATION`。也就是说 CI 硬门禁那个 `-short` **一个用例都没排除**，`test-integration` job 的环境变量 `OMP_TEST_INTEGRATION=1` 也没有任何代码读取，注释里"excludes integration tests tagged with //go:build integration"是虚构的。缝隙不是"CI 跑得少"，而是**CI 声称的分层是纸面上的**——恰好踩中本项目"文档不得与代码背离"的红线。
+  - 修法（`.github/workflows/ci.yml`）：① 硬门禁去掉 no-op 的 `-short`，改为 `go test -race -count=1 -timeout 25m -coverprofile=... ./...`，与贡献者本地 `go test ./...` 同口径（仅多 `-race`）；② 加 `-count=1` 关掉测试结果缓存——缓存命中的 PASS 无法为本次提交背书，flaky 正好藏在缓存后面；③ `test-integration` 不再伪装成另一层，改为**独立第二轮复跑**（软门禁）：P5-1 那种 1/3 概率的 flaky，单跑一轮有 2/3 概率漏过，跑两轮显著提高在贡献者踩到之前被抓住的概率；Chrome 仍预装，保证将来真用上 chromedp 的用例不会静默跳过；删掉无人消费的 `OMP_TEST_INTEGRATION`。注释全部改写为与代码一致的表述。
+  - 文档同步：`CONTRIBUTING.md` 改为"CI 跑的就是你本地那套，只多 `-race`/`-count=1`，不存在短/全分层"；`README.md` 贡献段补"CI gates on the same suite (with -race), so a green local run means a green CI run"。
+  - 两个 job 的**显示名保持不变**（`Unit tests (with coverage)` / `Integration tests`），避免改名导致分支保护里可能配置的 required status check 匹配不上而永久 pending。若确认未设为 required，可把后者改名为更贴切的 `Second run (flaky watch)`。
 
 ## Promotion（稳定后）
 

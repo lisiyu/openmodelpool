@@ -1,5 +1,16 @@
 # Changelog
 
+## v4.3.32 (2026-08-10)
+
+CI: align the test gate with what contributors actually run locally.
+
+### Changed
+- **Removed a test tier that never existed.** The hard gate ran `go test -race -short ./...`, and the second job set `OMP_TEST_INTEGRATION=1` with a comment claiming it covered "integration tests tagged with `//go:build integration`". None of that was real: the repository contains no `testing.Short()` branches, no build tags, and no code reading that environment variable. The `-short` flag excluded exactly zero tests while implying a tier that was never written — so the gate was rewritten rather than extended. It now runs `go test -race -count=1 -timeout 25m ./...`, the same suite a contributor runs locally with `-race` added. `-count=1` disables the test result cache, because a cached PASS vouches for an earlier commit rather than the current one, which is where flaky tests hide.
+- **The second CI job is now an honest flaky watch.** Instead of posing as a different test tier, it re-runs the identical suite as a soft gate. A test that fails one run in three survives a single run two times out of three; an independent second run materially improves the odds of catching it before a contributor does — the v4.3.30 flaky test took three consecutive local runs to reproduce. Chrome remains preinstalled so that any test which grows a real chromedp dependency fails visibly instead of skipping silently.
+
+### Documentation
+- `CONTRIBUTING.md` and `README.md` now state the gate accurately: CI runs the same suite with `-race` on top, so it can only be stricter than a local run. Neither claims a green local run guarantees a green CI run — race-only failures are precisely the gap `-race` exists to close.
+
 ## v4.3.31 (2026-08-09)
 
 Scripts: region-aware smart mirror selection for one-click install/update scripts.

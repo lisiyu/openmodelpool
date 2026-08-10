@@ -8,7 +8,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v4.3.31-blue)](#)
+[![Version](https://img.shields.io/badge/version-v4.3.32-blue)](#)
 [![Non-profit](https://img.shields.io/badge/non--profit-no%20token%20%C2%B7%20no%20skim-2f855a)](docs/PUBLIC-WELFARE.en.md)
 
 ---
@@ -151,7 +151,7 @@ Both manager scripts provide an interactive menu: install / upgrade / uninstall 
 | Report a security issue | **Not via issues** — see [SECURITY.md](SECURITY.md) |
 | Understand the codebase first | Start with [docs/reference/openmodelpool-v4-design.md](docs/reference/openmodelpool-v4-design.md), then [docs/reference/REVIEW-2026-08-08.md](docs/reference/REVIEW-2026-08-08.md) |
 
-**Before a PR:** `go build ./...` · `go test ./...` · `go vet ./...` must pass. The suite runs offline in about two minutes — no API keys or network needed.
+**Before a PR:** `go build ./...` · `go test ./...` · `go vet ./...` must pass. The suite runs offline in about two minutes — no API keys or network needed. CI gates on the same suite with `-race` on top, so it can only be stricter than your local run — nothing is held back from you.
 
 **Keep the dependency footprint small.** No web framework, no ORM, no DI container — Go stdlib for everything structural. The five direct dependencies (`golang-jwt`, `x/crypto`, `x/net`, `go-bip39`, `chromedp`) each exist because stdlib has no equivalent.
 
