@@ -411,7 +411,7 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 	// configured", which would make the admin panel wrongly toast "未配置任何 Key".
 	if len(p.APIKeys) == 0 {
 		if isFreePoolProvider(p) {
-			testResult := testConnectionWithKey(p, p.APIKey)
+			testResult := testKeylessConnectivity(p)
 			keylessOK := false
 			if b, ok := testResult["success"].(bool); ok {
 				keylessOK = b
@@ -424,7 +424,7 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 				"success": keylessOK,
 			}
 			if errMsg, ok := testResult["error"].(string); ok && errMsg != "" {
-				keylessResult["error"] = "upstream error"
+				keylessResult["error"] = errMsg
 			}
 			if msg, ok := testResult["message"].(string); ok {
 				keylessResult["message"] = msg

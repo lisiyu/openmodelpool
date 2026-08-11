@@ -1322,7 +1322,56 @@ func testConnection(p Provider) map[string]any {
 		}
 		p.APIKey = decrypted
 	}
+	// Anonymous/free-pool providers (APIKey=="free-anonymous") serve their API
+	// without any authentication. Probing them with "Bearer free-anonymous" makes
+	// the upstream reject the request (HTTP 401/403), so test anonymously instead.
+	if isFreePoolProvider(p) && p.APIKey == "free-anonymous" {
+		return testKeylessConnectivity(p)
+	}
 	return testConnectionWithKey(p, p.APIKey)
+}
+
+// testKeylessConnectivity verifies that an anonymous/free-pool provider is
+// reachable without any API key. These providers (e.g. OVHcloud AI Endpoints,
+// Kilo Code) are seeded with APIKey=="free-anonymous" and serve their API with
+// no authentication; the normal keyed probe would wrongly fail with HTTP 401/403
+// because it sends "Bearer free-anonymous". We probe without a token instead.
+func testKeylessConnectivity(p Provider) map[string]any {
+	client := proxyHTTPClient(p, 15*time.Second)
+	baseURL := strings.TrimRight(p.BaseURL, "/")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/models", nil)
+	if err != nil {
+		return map[string]any{"success": false, "error": err.Error()}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return map[string]any{"success": false, "error": err.Error()}
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		var md struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		n := 0
+		if json.Unmarshal(body, &md) == nil {
+			n = len(md.Data)
+		}
+		return map[string]any{"success": true, "message": fmt.Sprintf("匿名端点可达（%d 个模型）", n)}
+	case resp.StatusCode == 401 || resp.StatusCode == 403:
+		// Server answered but demands auth even without a token: the provider is
+		// mislabeled as anonymous, or its free tier now requires a key.
+		return map[string]any{"success": false, "error": fmt.Sprintf("端点要求鉴权 (HTTP %d) — 该免费/匿名 provider 可能已需要 Key", resp.StatusCode)}
+	default:
+		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", resp.StatusCode, truncate(string(body), 200))}
+	}
 }
 
 // testConnectionWithKey tests the provider connection with a specific API key.
