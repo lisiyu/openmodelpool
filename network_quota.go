@@ -63,9 +63,14 @@ func (m *OpenKeyQuotaManager) CalculateGlobalQuota() int64 {
 	// Sum up all nodes' available tokens
 	var totalResources int64
 
-	// Self resources
-	if netMgr.config.ContribPoints > 0 {
-		totalResources += netMgr.config.ContribPoints * 1000 // contribution points ~ tokens
+	// Self resources — count the node's VERIFIED contribution ledger, not a
+	// self-declared "contrib_points" figure. The old figure was unverifiable
+	// and could be inflated to grab quota; public-welfare accounting only
+	// counts tokens that were actually donated to the commons.
+	if contribQuotaTracker != nil {
+		if q := contribQuotaTracker.GetQuota(netMgr.config.NodeID); q != nil {
+			totalResources += q.ContributedTokens
+		}
 	}
 
 	// Peer resources

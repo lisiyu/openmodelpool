@@ -808,7 +808,7 @@ select.form-input{appearance:none;cursor:pointer}
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
           <div style="text-align:center;padding:12px;background:rgba(255,255,255,.04);border-radius:10px">
             <div style="font-size:28px;font-weight:800;color:var(--success);line-height:1" id="netCredits">0</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">贡献积分</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">公益额度</div>
           </div>
           <div style="text-align:center;padding:12px;background:rgba(255,255,255,.04);border-radius:10px">
             <div style="font-size:28px;font-weight:800;color:var(--accent-start);line-height:1" id="netRelayRequests">0</div>
@@ -924,6 +924,33 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
     </div>
   </div>
+  <!-- 贡献账本透明度（P2-2(ii)）：算力从哪来、到哪去 -->
+  <div class="card" id="ledgerTransparencyCard">
+    <div class="card-title" style="justify-content:space-between">
+      <span>贡献账本透明度</span>
+      <span style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="loadLedgerTransparency()">刷新</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportLedger('csv')">导出 CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportLedger('json')">导出 JSON</button>
+      </span>
+    </div>
+    <div class="section-note" style="font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.7">
+      算力从哪来、到哪去：按节点 / 按模型聚合本节点账本，并校验交易链是否被篡改。导出的 CSV / JSON 可直接给研究者使用。
+    </div>
+    <div id="ledgerPanelBody"><div style="color:var(--text-muted);font-size:13px">正在加载账本…</div></div>
+  </div>
+  <script>
+  // 自初始化（与 admin-update.js 约定一致：DOMContentLoaded 触发首次加载）
+  // 面板脚本在文档末尾加载，因此这里只在 DOM 就绪后调用；若已就绪则延后一拍，
+  // 避免在 /admin-ledger.js 解析完成前引用到未定义的函数。
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { loadLedgerTransparency(); });
+  } else {
+    setTimeout(function() {
+      if (typeof loadLedgerTransparency === 'function') loadLedgerTransparency();
+    }, 0);
+  }
+  </script>
   <!-- 项目介绍 & GitHub -->
   <div style="margin-top:32px;padding:24px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius);text-align:center">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">🚀 OpenModelPool — 开源 AI 聚合网关</div>
@@ -944,7 +971,7 @@ select.form-input{appearance:none;cursor:pointer}
       </a>
     </div>
     <div style="margin-top:16px;font-size:11px;color:var(--text-muted);opacity:.6">
-      OpenModelPool v4.1 · Made with ❤️ · 开源协议 MIT
+      OpenModelPool <span id="footerVersion">-</span> · 公益开源 · 开源协议 MIT
     </div>
   </div>
   <!-- 🔄 版本更新（一键更新 · 增量功能） -->
@@ -1106,8 +1133,8 @@ select.form-input{appearance:none;cursor:pointer}
             <div style="color:var(--text-secondary)">所有密钥仅存储在你的设备上，网络中传输的请求经过加密通道。</div>
           </div>
           <div style="padding:12px 14px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:8px;font-size:13px;line-height:1.6">
-            <div style="font-weight:600;color:var(--warning);margin-bottom:4px">贡献积分不可提现/交易，仅用于网络内权益</div>
-            <div style="color:var(--text-secondary)">积分反映你的贡献程度，决定你在网络中的优先级和额度。</div>
+            <div style="font-weight:600;color:var(--warning);margin-bottom:4px">公益额度不可提现/交易，仅作记账凭证（非货币、无经济价值）</div>
+            <div style="color:var(--text-secondary)">公益额度按你的实际贡献 1:1 记账，决定你在网络中的优先级与可用额度。</div>
           </div>
           <div style="padding:12px 14px;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:8px;font-size:13px;line-height:1.6">
             <div style="font-weight:600;color:var(--info);margin-bottom:4px">你可以随时退出，退出后个人版功能不受影响</div>
@@ -1126,7 +1153,7 @@ select.form-input{appearance:none;cursor:pointer}
       <!-- Step 2: 助记词生成与备份 -->
       <div id="onboardingStep2" style="display:none">
         <div style="font-weight:600;font-size:14px;margin-bottom:6px">备份您的节点助记词</div>
-        <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;line-height:1.6">这是恢复节点身份与贡献积分的唯一方式。请离线抄写并妥善保存，<b style="color:var(--warning)">此助记词仅显示一次</b>。</p>
+        <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;line-height:1.6">这是恢复节点身份与公益额度的唯一方式。请离线抄写并妥善保存，<b style="color:var(--warning)">此助记词仅显示一次</b>。</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
           <span style="font-size:12px">词数</span>
           <select id="mnemonicWordCount" class="form-input" style="width:auto;padding:4px 8px;font-size:12px" onchange="generateIdentity()">
@@ -1147,7 +1174,7 @@ select.form-input{appearance:none;cursor:pointer}
         <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-color)">
           <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;margin-bottom:14px;line-height:1.6">
             <input type="checkbox" id="backupConfirmCheck" onchange="toggleBackupConfirmBtn()" style="margin-top:3px;width:16px;height:16px;flex-shrink:0">
-            <span>我已安全抄写并妥善保管好助记词，理解<b>丢失助记词将导致节点身份与贡献积分无法恢复</b>。</span>
+            <span>我已安全抄写并妥善保管好助记词，理解<b>丢失助记词将导致节点身份与公益额度无法恢复</b>。</span>
           </label>
         </div>
         <div style="text-align:right">
@@ -1213,6 +1240,7 @@ select.form-input{appearance:none;cursor:pointer}
 <script src="/admin-share.js?v=344"></script>
 <script src="/admin-update.js?v=346"></script>
 <script src="/admin-logs.js?v=344"></script>
+<script src="/admin-ledger.js?v=348"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async></script>
 
 <!-- Sub-page Modal (iframe) -->
@@ -1306,6 +1334,9 @@ async function loadStatus() {
   document.getElementById('providerCount').textContent = `${d.providers?.enabled || 0} / ${d.providers?.preset_total || d.providers?.total || 0}`;
   document.getElementById('modelCount').textContent = d.models || 0;
   document.getElementById('versionText').textContent = d.version || '-';
+  // 页脚版本此前硬编码为 v4.1（与 AppVersion 长期漂移），改为与状态接口同源。
+  const footerVer = document.getElementById('footerVersion');
+  if (footerVer) footerVer.textContent = d.version ? ('v' + String(d.version).replace(/^v/, '')) : '';
 }
 // ===== Usage & Routing =====
 async function refreshUsage() {

@@ -198,6 +198,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /admin-share.js", handleAdminShareJS)
 	mux.HandleFunc("GET /admin-update.js", handleAdminUpdateJS)
 	mux.HandleFunc("GET /admin-logs.js", handleAdminLogsJS)
+	mux.HandleFunc("GET /admin-ledger.js", handleAdminLedgerJS)
 
 	// Federation API (v3.0)
 	mux.HandleFunc("GET /api/federation/status", withAuth(handleFederationStatus))

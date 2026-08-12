@@ -59,7 +59,6 @@ type NetworkConfig struct {
 	BootstrapNodes    []string        `json:"bootstrap_nodes"`
 	SharedModels      []string        `json:"shared_models"`
 	MaxDailyRequests  int             `json:"max_daily_requests"`
-	ContribPoints     int64           `json:"contrib_points"`
 	ContribRecords    []ContribRecord `json:"contrib_records"`
 	Peers             []PeerInfo      `json:"peers"`
 	Stats             NetworkStats    `json:"stats"`
@@ -921,6 +920,15 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		}
 	}
 
+	// Public-welfare contribution quota: the node's VERIFIED donated tokens
+	// (replaces the old self-declared, unverifiable "contrib_points").
+	var selfContributed int64
+	if contribQuotaTracker != nil && nm.config.NodeID != "" {
+		if q := contribQuotaTracker.GetQuota(nm.config.NodeID); q != nil {
+			selfContributed = q.ContributedTokens
+		}
+	}
+
 	status := map[string]any{
 		"mode":               nm.config.Mode,
 		"consent_accepted":   nm.config.ConsentAccepted,
@@ -929,7 +937,7 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		"node_id":            nodeID,
 		"shared_models":      nm.config.SharedModels,
 		"max_daily_requests": nm.config.MaxDailyRequests,
-		"contrib_points":     nm.config.ContribPoints,
+		"contrib_quota":      selfContributed,
 		"bootstrap_nodes":    nm.config.BootstrapNodes,
 		"stats":              nm.config.Stats,
 		"peers_count":        len(nm.config.Peers),
@@ -1441,7 +1449,7 @@ func GetDisclaimer() DisclaimerResponse {
 			},
 			{
 				Heading: "启用后将发生什么？",
-				Content: "• 您的节点将对外公开（节点名称、可用模型列表、大致地区）\n• 您的节点自动成为 relay 节点，可以为其他节点转发请求\n• 消费者可以通过任意 relay 节点使用 URL 格式 https://{relay地址}/network/{NodeID}/v1 访问目标节点\n• 您的 API Key 不会被暴露，请求通过 relay 反向代理转发\n• 您将开始积累贡献积分（积分仅为参与激励，不可变现、不可交易）",
+				Content: "• 您的节点将对外公开（节点名称、可用模型列表、大致地区）\n• 您的节点自动成为 relay 节点，可以为其他节点转发请求\n• 消费者可以通过任意 relay 节点使用 URL 格式 https://{relay地址}/network/{NodeID}/v1 访问目标节点\n• 您的 API Key 不会被暴露，请求通过 relay 反向代理转发\n• 您将开始按实际贡献积累公益额度（记账非货币，1:1，不可变现、不可交易）",
 			},
 			{
 				Heading: "关于模型能力的安全责任",
@@ -1450,7 +1458,7 @@ func GetDisclaimer() DisclaimerResponse {
 			{
 				Heading: "⚠️ 风险警告",
 				IsRisk:  true,
-				Content: "• 部分 AI 平台的服务条款可能限制 API 代理行为，启用共享网络可能导致您的 API 账号受限\n• 系统已实施速率限制和行为模拟，但无法完全消除平台检测风险\n• 您分享的计算资源可能被他人生成不当内容，您需承担相应平台的风控后果\n• 不同区域的法律法规可能对 AI 服务的使用有不同要求\n• 贡献积分仅作为参与网络的激励记录，不具有任何货币价值，不可交易或变现",
+				Content: "• 部分 AI 平台的服务条款可能限制 API 代理行为，启用共享网络可能导致您的 API 账号受限\n• 系统已实施速率限制和行为模拟，但无法完全消除平台检测风险\n• 您分享的计算资源可能被他人生成不当内容，您需承担相应平台的风控后果\n• 不同区域的法律法规可能对 AI 服务的使用有不同要求\n• 公益额度仅作为参与网络的激励记录，不具有任何货币价值，不可交易或变现",
 			},
 		},
 		ConfirmationText: "我已阅读并理解以上说明，自愿承担相关风险",

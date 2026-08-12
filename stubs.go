@@ -199,28 +199,13 @@ func postHeartbeatToPeer(client *http.Client, peerURL, selfNodeID, selfEndpoint,
 	return nil
 }
 
-// startRegionSyncLoop periodically synchronizes region assignments across the
-// federation. The local RegionManager is already authoritative per-node: nodes
-// register their region on join (RegisterNodeSelfReport) and on every heartbeat
-// (ProcessHeartbeatRegion). This loop is the future hook for cross-node region
-// reconciliation once the gossip/federation layer exposes a region-state channel.
-//
-// TODO(region-sync): replace the sleep-only loop with real cross-node region
-// reconciliation. For now it only keeps the goroutine alive on a 30s cadence.
-func startRegionSyncLoop() {
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				// No-op today; see TODO above.
-			case <-globalStopCh:
-				return
-			}
-		}
-	}()
-}
+// startRegionSyncLoop is implemented in region_sync.go (P5-4). The earlier
+// version here was a sleep-only goroutine whose body was a TODO — it ran
+// forever doing nothing while its comment claimed it "synchronizes region
+// assignments across the federation". The real implementation reconciles the
+// region table locally over gaps that the join/heartbeat channel does not
+// cover (peers that never heartbeat us, our own region, long-gone entries),
+// without performing any network I/O or DNS lookups.
 
 // registerWithBootstraps registers this node with bootstrap/seed nodes.
 // TODO: implement federation bootstrap registration when the federation

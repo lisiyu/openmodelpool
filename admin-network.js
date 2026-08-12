@@ -8,9 +8,9 @@ async function loadNodeQuotaInfo() {
     const r = await authFetch('/api/network/status');
     const d = await r.json();
     if (d.network_enabled) {
-      const cp = d.contrib_points || 0;
-      const quota = cp > 0 ? (cp * 10).toLocaleString() + ' tokens' : '需先积累贡献积分';
-      el.innerHTML = '🌐 节点可用额度: ' + quota + ' <span style="margin-left:12px">📡 已广播到网络</span>';
+      const cp = d.contrib_quota || 0;
+      const quota = cp > 0 ? cp.toLocaleString() + ' tokens（公益额度）' : '需先贡献算力以积累公益额度';
+      el.innerHTML = '🌐 节点公益额度: ' + quota + ' <span style="margin-left:12px">📡 已广播到网络</span>';
     } else {
       el.innerHTML = '🌐 节点可用额度: 本地模式（未加入共享网络）';
       el.style.background = 'rgba(108,99,255,.04)';
@@ -194,7 +194,7 @@ let _shareFilter = 'all';
         setText('netUptime', formatUptime(s.uptime_seconds || 0));
         setText('netPeers', (s.peers_count || 0) + ' / ' + ((s.stats && s.stats.online_peers) || 0) + ' 在线');
         setText('netMode', '共享网络');
-        setText('netCredits', (s.contrib_points || 0).toLocaleString());
+        setText('netCredits', (s.contrib_quota || 0).toLocaleString());
         setText('netRelayRequests', ((s.stats && s.stats.requests_relayed) || 0).toLocaleString());
         setText('netRequestsReceived', ((s.stats && s.stats.requests_received) || 0).toLocaleString());
         // REQ-S2-4 (S5 恢复入口): 已加入态也提供「使用已有助记词恢复身份」入口
@@ -304,8 +304,8 @@ let _shareFilter = 'all';
     function renderDisclaimer(d) {
       const el = document.getElementById('disclaimerContent');
       const defaultSections = [
-        {heading: '📢 共享网络说明', content: '• 您的 Provider 将被贡献到全网资源池，其他节点的用户可通过 Public Key 或 Guest Key 调用您的 Provider\n• 您将获得访问其他节点 Provider 的权限\n• 您将获得贡献积分（Contribution Credit），积分不可提现/交易\n• 退出网络后，您的 Provider 不再被共享', is_risk: false},
-        {heading: '⚠️ 风险提示', content: '• 其他节点可能不稳定，请求可能失败\n• 您的 API Key 将在加密通道中传输，但无法完全保证安全\n• 贡献积分仅作为声誉指标，无经济价值\n• 请仅贡献您愿意共享的 Provider', is_risk: true},
+        {heading: '📢 共享网络说明', content: '• 您的 Provider 将被贡献到全网资源池，其他节点的用户可通过 Public Key 或 Guest Key 调用您的 Provider\n• 您将获得访问其他节点 Provider 的权限\n• 您将按实际贡献获得公益额度（记账非货币，1:1，不可提现/交易）\n• 退出网络后，您的 Provider 不再被共享', is_risk: false},
+        {heading: '⚠️ 风险提示', content: '• 其他节点可能不稳定，请求可能失败\n• 您的 API Key 将在加密通道中传输，但无法完全保证安全\n• 公益额度仅作为声誉指标，无经济价值\n• 请仅贡献您愿意共享的 Provider', is_risk: true},
         {heading: '📊 声誉系统', content: '• 节点声誉等级：S≥95 / A≥80 / B≥60 / C≥40 / D<40\n• 高声誉节点获得更多路由优先权\n• 持续稳定贡献可提升声誉等级', is_risk: false}
       ];
       const sections = (d && d.sections && d.sections.length > 0) ? d.sections : defaultSections;
@@ -770,7 +770,7 @@ let _shareFilter = 'all';
       if (!hint) return;
       if (networkStatus && networkStatus.needs_migration) {
         hint.style.display = '';
-        hint.textContent = '⚠️ 检测到旧格式（mm-）节点身份，已自动迁移为新的 mmx- 格式。您的节点身份与贡献积分保持不变。';
+        hint.textContent = '⚠️ 检测到旧格式（mm-）节点身份，已自动迁移为新的 mmx- 格式。您的节点身份与公益额度保持不变。';
       } else {
         hint.style.display = 'none';
       }
@@ -860,7 +860,7 @@ let _shareFilter = 'all';
         const backupMsg = `⚠️ 退出共享网络提醒
 您的节点身份信息将被清除：
 NodeID: ${nodeId}
-请备份以上 NodeID，重新加入时可用于恢复节点身份和贡献积分。
+请备份以上 NodeID，重新加入时可用于恢复节点身份和公益额度。
 确定要退出吗？`;
         if (!confirm(backupMsg)) {
           document.getElementById('networkEnabledToggle').checked = true;
@@ -1177,7 +1177,7 @@ async function loadContributionLedger() {
     const totalTxs = txs.total || 0;
 
     let html = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px">';
-    html += '<div style="font-size:12px">积分余额: <strong>' + bal.toLocaleString() + '</strong></div>';
+    html += '<div style="font-size:12px">已记录贡献 (token): <strong>' + bal.toLocaleString() + '</strong></div>';
     html += '<div style="font-size:12px">交易笔数: ' + totalTxs + '</div>';
     html += '<div style="font-size:12px">链完整性: ' + (chainValid ? '<span style="color:var(--success)">有效</span>' : '<span style="color:var(--danger)">异常</span>') + '</div>';
     html += '</div>';

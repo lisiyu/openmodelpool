@@ -405,7 +405,43 @@ func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	p, _ := pm.GetRaw(id)
 
+	// Keyless providers (e.g. the public free pool whose APIKey=="free-anonymous"
+	// and whose APIKeys slice is intentionally empty) have no operator key but are
+	// still reachable. Test connectivity directly instead of reporting "no API keys
+	// configured", which would make the admin panel wrongly toast "未配置任何 Key".
 	if len(p.APIKeys) == 0 {
+		if isFreePoolProvider(p) {
+			testResult := testKeylessConnectivity(p)
+			keylessOK := false
+			if b, ok := testResult["success"].(bool); ok {
+				keylessOK = b
+			}
+			keylessResult := map[string]any{
+				"index":   1,
+				"keyless": true,
+				"key_id":  "",
+				"alias":   "免 Key 免费通道 (" + p.ID + ")",
+				"success": keylessOK,
+			}
+			if errMsg, ok := testResult["error"].(string); ok && errMsg != "" {
+				keylessResult["error"] = errMsg
+			}
+			if msg, ok := testResult["message"].(string); ok {
+				keylessResult["message"] = msg
+			}
+			failedCount := 0
+			if !keylessOK {
+				failedCount = 1
+			}
+			writeJSON(w, 200, map[string]any{
+				"success":      keylessOK,
+				"keyless":      true,
+				"results":      []map[string]any{keylessResult},
+				"total":        1,
+				"failed_count": failedCount,
+			})
+			return
+		}
 		writeJSON(w, 200, map[string]any{
 			"success": false,
 			"error":   "no API keys configured",

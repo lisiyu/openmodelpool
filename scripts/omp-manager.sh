@@ -450,16 +450,61 @@ except: pass
         return 1
     fi
 
-    # SHA256 校验（失败不致命，仅跳过）
-    curl_dl "${asset_url}.sha256" "${tmp_dir}/${asset_name}.sha256" 2>/dev/null || true
-    if [ -s "${tmp_dir}/${asset_name}.sha256" ] && command -v sha256sum >/dev/null 2>&1; then
+    # v4.4.44 信任模型（fail-closed）：校验和与签名必须仅从 canonical GitHub 官方发布资产
+    # 获取（绝不走镜像）；缺失或不匹配即中止安装/更新。二进制本体仍允许经镜像下载以提升
+    # 连通性，但其完整性由下方 canonical 校验和/签名背书。
+    local canonical_base="https://github.com/${GITHUB_REPO}/releases/download/${tag}"
+    local canonical_sha_url="${canonical_base}/${asset_name}.sha256"
+    local canonical_sig_url="${canonical_base}/${asset_name}.sig"
+
+    # 仅从 canonical GitHub 直连获取校验和（不经镜像）。
+    if ! curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+            --max-time "$CURL_DL_MAX_TIME" \
+            --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+            "$canonical_sha_url" -o "${tmp_dir}/${asset_name}.sha256" 2>/dev/null \
+       || [ ! -s "${tmp_dir}/${asset_name}.sha256" ]; then
+        write_err "无法从 GitHub 官方获取 SHA256 校验和，已中止（fail-closed）"
+        return 1
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
         (cd "$tmp_dir" && sha256sum -c "${asset_name}.sha256") || {
-            write_err "SHA256 校验失败"
+            write_err "SHA256 校验失败，二进制可能被篡改，已中止"
             return 1
         }
-        write_ok "SHA256 校验通过"
+        write_ok "SHA256 校验通过（来源：GitHub 官方）"
     else
-        echo -e "  ${YELLOW}⚠️ 跳过 SHA256 校验（无校验文件）${NC}"
+        write_err "缺少 sha256sum，无法校验完整性，已中止（fail-closed）"
+        return 1
+    fi
+
+    # Ed25519 签名（v4.4.44）：仅从 canonical GitHub 获取 .sig；缺失即中止（fail-closed），
+    # 除非显式 OMP_ALLOW_UNSIGNED=1（仅用于无签名的旧版本紧急安装）。提供官方公钥时验签。
+    if ! curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+            --max-time "$CURL_DL_MAX_TIME" \
+            --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+            "$canonical_sig_url" -o "${tmp_dir}/${asset_name}.sig" 2>/dev/null \
+       || [ ! -s "${tmp_dir}/${asset_name}.sig" ]; then
+        if [ -z "${OMP_ALLOW_UNSIGNED:-}" ]; then
+            write_err "无法从 GitHub 官方获取 Ed25519 签名，已中止（fail-closed）；旧版本可设 OMP_ALLOW_UNSIGNED=1"
+            return 1
+        fi
+        write_err "未提供签名且 OMP_ALLOW_UNSIGNED=1，跳过签名校验（不安全）"
+    elif [ -n "${OMP_RELEASE_PUBKEY:-}" ]; then
+        if command -v openssl >/dev/null 2>&1; then
+            if ! openssl pkeyutl -verify -pubin -inkey <(printf '%s' "$OMP_RELEASE_PUBKEY") \
+                 -rawin -digest sha256 \
+                 -in "${tmp_dir}/${asset_name}" \
+                 -sigfile "${tmp_dir}/${asset_name}.sig" 2>/dev/null; then
+                write_err "Ed25519 签名验证失败，已中止"
+                return 1
+            fi
+            write_ok "Ed25519 签名验证通过（来源：GitHub 官方）"
+        else
+            write_err "缺少 openssl，无法验证 Ed25519 签名，已中止（fail-closed）"
+            return 1
+        fi
+    else
+        write_info "未提供 OMP_RELEASE_PUBKEY，跳过 Ed25519 验签（仅 SHA256 已校验）"
     fi
 
     # 如果是压缩包，解压提取二进制

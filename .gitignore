@@ -21,6 +21,8 @@ scripts/omp-tunnel-reset.ps1
 # Binary (renamed from modelmux to openmodelpool)
 openmodelpool
 openmodelpool.bak
+openmodelpool-*-*
+!openmodelpool-*.md
 
 # Monkeycode AI planning files
 .monkeycode/

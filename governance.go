@@ -12,7 +12,8 @@ import (
 )
 
 // ============================================================
-// Community co-governance (P2-1) — lightweight, trust-through-audit
+// Community co-governance (P2-1) — lightweight, trust-through-audit, with
+// additive execution (P2-1(iv))
 //
 // Governance philosophy (2026-08-09, decided by Lei Gong):
 //   - Assume good intent by default. The system ONLY guards against
@@ -83,6 +84,17 @@ type GovernanceLedger struct {
 	lastPHash     string
 	lastRHash     string
 	dataPath      string
+
+	// Effective curation rosters (P2-1(iv), option C). Populated ONLY from
+	// RATIFIED proposals of type admit_node / allow_model. These are additive
+	// allowlists used purely for labelling/curation — they never revoke
+	// anyone's existing access (good-intent default: anyone may still join,
+	// every model is still served). Rebuilt from the ledger on load so the
+	// roster can never diverge from the tamper-evident record. param_change
+	// proposals are audit-only and do NOT mutate runtime (applying them would
+	// let a 2/3 contributor coalition flip security-sensitive settings).
+	admittedNodes map[string]bool
+	allowedModels map[string]bool
 }
 
 // NewGovernanceLedger creates a ledger. voters may be nil (falls back to the
@@ -210,6 +222,10 @@ func (g *GovernanceLedger) recompute(p *GovernanceProposal) {
 		if g.openByProp[p.Proposer] < 0 {
 			g.openByProp[p.Proposer] = 0
 		}
+		// Apply the ratified proposal to the effective curation rosters
+		// (P2-1(iv)). admit_node/allow_model take effect; param_change is a
+		// no-op by design.
+		g.executeRatified(p)
 	} else if reject >= need {
 		p.Status = "rejected"
 		g.openByProp[p.Proposer]--
@@ -217,6 +233,101 @@ func (g *GovernanceLedger) recompute(p *GovernanceProposal) {
 			g.openByProp[p.Proposer] = 0
 		}
 	}
+}
+
+// executeRatified applies a freshly-ratified proposal to the effective
+// curation rosters. Caller must hold g.mu (write lock). Malformed or empty
+// payloads are ignored silently — ratification already succeeded, we simply
+// have nothing actionable to record.
+func (g *GovernanceLedger) executeRatified(p *GovernanceProposal) {
+	switch p.Type {
+	case GovTypeAdmitNode:
+		var pl struct {
+			NodeID string `json:"node_id"`
+		}
+		if err := json.Unmarshal(p.Payload, &pl); err != nil || pl.NodeID == "" {
+			return
+		}
+		if g.admittedNodes == nil {
+			g.admittedNodes = make(map[string]bool)
+		}
+		g.admittedNodes[pl.NodeID] = true
+	case GovTypeAllowModel:
+		var pl struct {
+			ModelID string `json:"model_id"`
+		}
+		if err := json.Unmarshal(p.Payload, &pl); err != nil || pl.ModelID == "" {
+			return
+		}
+		if g.allowedModels == nil {
+			g.allowedModels = make(map[string]bool)
+		}
+		g.allowedModels[pl.ModelID] = true
+	case GovTypeParam:
+		// Audit-only by design (P2-1(iv), option C): the proposal is recorded
+		// on the tamper-evident ledger but is deliberately NOT applied to
+		// runtime. Mutating parameters via governance would let a 2/3
+		// contributor coalition alter security-sensitive settings.
+	}
+}
+
+// rebuildEffect reconstructs the curation rosters from every ratified proposal
+// on the ledger. The ledger is the single source of truth, so this guarantees
+// the in-memory rosters can never drift from the persisted record (and makes
+// hand-editing a roster pointless). Called after load().
+func (g *GovernanceLedger) rebuildEffect() {
+	for _, p := range g.proposalList {
+		if p.Status == "ratified" {
+			g.executeRatified(p)
+		}
+	}
+}
+
+// AdmittedNodes returns the community-admitted node IDs (from ratified
+// admit_node proposals). Additive curation roster only.
+func (g *GovernanceLedger) AdmittedNodes() []string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	out := make([]string, 0, len(g.admittedNodes))
+	for id := range g.admittedNodes {
+		out = append(out, id)
+	}
+	return out
+}
+
+// AllowedModels returns the community-curated model IDs (from ratified
+// allow_model proposals). Additive curation roster only.
+func (g *GovernanceLedger) AllowedModels() []string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	out := make([]string, 0, len(g.allowedModels))
+	for id := range g.allowedModels {
+		out = append(out, id)
+	}
+	return out
+}
+
+// IsCommunityAdmitted reports whether nodeID is on the ratified admit_node
+// roster. Pure read; safe for callers that want to label/curate a node.
+func (g *GovernanceLedger) IsCommunityAdmitted(nodeID string) bool {
+	if nodeID == "" {
+		return false
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.admittedNodes[nodeID]
+}
+
+// IsCommunityCuratedModel reports whether modelID is on the ratified
+// allow_model roster. Pure read; safe for callers that want to label/curate a
+// model in listings.
+func (g *GovernanceLedger) IsCommunityCuratedModel(modelID string) bool {
+	if modelID == "" {
+		return false
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.allowedModels[modelID]
 }
 
 // Tally returns the current standing of a proposal.
@@ -400,6 +511,7 @@ func (g *GovernanceLedger) load() {
 		}
 		g.ratIndex[r.ProposalID][r.NodeID] = true
 	}
+	g.rebuildEffect()
 }
 
 // governanceLedger is the process-wide co-governance ledger (P2-1).
@@ -483,7 +595,9 @@ func handleGovernanceProposals(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	list := governanceLedger.List(status)
 	writeJSON(w, 200, map[string]any{
-		"proposals":   list,
-		"chain_valid": governanceLedger.VerifyChain(),
+		"proposals":      list,
+		"chain_valid":    governanceLedger.VerifyChain(),
+		"admitted_nodes": governanceLedger.AdmittedNodes(),
+		"allowed_models": governanceLedger.AllowedModels(),
 	})
 }
