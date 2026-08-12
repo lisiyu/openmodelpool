@@ -626,7 +626,7 @@ Functional closure release: decentralization (P1), contribution transparency & g
 - **Two-Level Switch** — `network_enabled` + `share_to_pool`
 
 **🟠 Network System (New)**
-- **P2P Node Discovery** (Peer Seed + DHT + Gossip) · **Reputation** (S/A/B/C/D) · **Contribution Credit** · **Guest/Public Key** · **WAF 4-Layer** · **Token Estimation** · **Auto Discovery** · **Load Balancer** · **Data Integrity** · **Global Pool** · **Algorithm Governance**
+- **P2P Node Discovery** (Peer Seed + DHT + Gossip) · **Reputation** (S/A/B/C/D) · **non-currency contribution ledger** · **Guest/Public Key** · **WAF 4-Layer** · **Token Estimation** · **Auto Discovery** · **Load Balancer** · **Data Integrity** · **Global Pool** · **Algorithm Governance**
 
 **🟢 Platform Updates** — 34 → **36** platforms (Agnes AI, AIHubMix)
 

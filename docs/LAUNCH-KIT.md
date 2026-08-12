@@ -29,9 +29,9 @@ Non-profit OpenAI-compatible gateway that pools multiple LLM APIs into one endpo
 | 副标题下新增一段 | 明确"无商业模式 / 无代币 / 无积分经济 / 无抽成"，并链接中英文公益宣言 |
 | 版本徽章 | v4.1.6 → v4.3.24（此前与 `AppVersion` 漂移） |
 | 新增徽章 | non-profit · no token · no skim |
-| "What Is It?" 引用块 | 把"赚取 Contribution Credits / 兑换资源"的经济学措辞，改写为"账本记账、1:1 归还、可不领取"的公益表述，并补一段"这是记账不是货币"的澄清 |
+| "What Is It?" 引用块 | 把"赚取 公益额度·贡献记账（非货币） / 兑换资源"的经济学措辞，改写为"账本记账、1:1 归还、可不领取"的公益表述，并补一段"这是记账不是货币"的澄清 |
 | "Our Belief" 章节末 | 新增 **The pledge, in four lines**（不收钱 / 默认善意 / 不吹没做的 / 贡献者共治） |
-| Contribution Credit System | Earn/Spend 两条改写：明确 1:1 无手续费；额度用尽**不是拒绝**，回落到对所有人开放的社区免费池 |
+| Contribution Ledger (Non-Currency) | Earn/Spend 两条改写：明确 1:1 无手续费；额度用尽**不是拒绝**，回落到对所有人开放的社区免费池 |
 
 发布前建议再人工确认两点：
 
