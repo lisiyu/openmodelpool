@@ -1,5 +1,27 @@
 # Changelog
 
+## v4.5.2 (2026-08-12)
+
+Maintenance release (fold in-flight work into mainline):
+
+- **Admin ledger transparency panel (P2-2(ii))** and **region sync local reconciliation (P5-4)** landed on mainline.
+- **Governance / network-quota modules** added.
+- **Security regression tests**: ticket double-sign, update fail-closed, discovery poisoning.
+- **omp-manager checksum trust fix** (canonical-GitHub-only artifact fetch).
+- AppVersion bumped to 4.5.2; folds in the v4.5.0 / v4.5.1 keyless free-pool provider fixes.
+
+## v4.5.1 (2026-08-12)
+
+Bug fix (anonymous free-pool providers, follow-up to v4.5.0):
+
+- **Free-pool providers no longer report a false "key failed" on connectivity test.** v4.5.0 fixed the empty-`APIKeys` misreport but still probed these providers with `Authorization: Bearer free-anonymous`, which the upstream rejects (OVHcloud `/v1/models` returns HTTP 403 for a bogus token but 200 with no token at all — verified). Added `testKeylessConnectivity`, which probes `/models` **without any token** and treats HTTP 2xx as reachable; both `handleTestAllKeys` (keyless branch) and `testConnection` (single-test path) now route anonymous providers (`APIKey=="free-anonymous"`) through it. Failure messages are no longer collapsed to a generic "upstream error", so a genuinely unreachable endpoint still surfaces the real reason. Regression coverage: test-plan case **T-P1-6b**.
+
+## v4.5.0 (2026-08-12)
+
+Bug fix (keyless free-pool providers):
+
+- **Admin panel no longer misreports keyless free-pool providers as "未配置任何 Key".** `handleTestAllKeys` (`admin_providers.go:408`) returned `success:false` + an empty `results` array whenever a provider had no API keys in its `APIKeys` slice — which is exactly the case for the out-of-the-box public free-pool providers whose `APIKey` is the literal `free-anonymous`. The admin UI (`admin.html:2281`, `admin-provider.html:1391`) then toasted "未配置任何 Key" on every "测试全部 Key" click. The handler now detects keyless providers via `isFreePoolProvider` and verifies upstream connectivity through `testConnectionWithKey(p, p.APIKey)`, returning a single `keyless:true` result so the panel reports the true connectivity state instead of a false "no keys" error. Regression coverage tracked as test-plan case **T-P1-6b**.
+
 ## v4.4.44 (2026-08-11)
 
 Security, reliability and honesty pass: 72 findings from an independent external code review triaged and fixed (a full-team triage record is in `docs/reference/REVIEW-TRIAGE-2026-08-10.md`).

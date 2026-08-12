@@ -361,18 +361,72 @@ function Download-OMPRelease {
     }
     Write-OK "已下载: $assetName ($Tag)"
     
-    # SHA256 校验
-    $shaUrl = "$assetUrl.sha256"
+    # v4.4.44 信任模型（fail-closed）：校验和与签名必须仅从 canonical GitHub 官方发布资产获取
+    # （绝不走镜像）；缺失或不匹配即中止安装/更新。二进制本体仍允许经镜像下载以提升连通性。
+    $canonicalBase = "https://github.com/$GITHUB_REPO/releases/download/$Tag"
+    $canonicalShaUrl = "$canonicalBase/$assetName.sha256"
+    $canonicalSigUrl = "$canonicalBase/$assetName.sig"
     $tmpSha = Join-Path $TmpDir "$assetName.sha256"
-    Invoke-DownloadWithRetry $shaUrl $tmpSha | Out-Null
-    if (Test-Path $tmpSha) {
-        $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
-        $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
-        if ($expectedHash.ToLower() -ne $actualHash) {
-            Write-Err "SHA256 校验失败"
+    $tmpSig = Join-Path $TmpDir "$assetName.sig"
+
+    # 仅从 canonical GitHub 直连获取校验和（不经镜像）。
+    $shaOk = $false
+    for ($i = 1; $i -le $NET_RETRIES; $i++) {
+        try {
+            Invoke-WebRequest -Uri $canonicalShaUrl -OutFile $tmpSha -UseBasicParsing `
+                -TimeoutSec $NET_TIMEOUT_SEC -ErrorAction Stop | Out-Null
+            $shaOk = $true; break
+        } catch {
+            if ($i -lt $NET_RETRIES) { Start-Sleep -Milliseconds $NET_RETRY_DELAY_MS }
+        }
+    }
+    if (-not $shaOk -or -not (Test-Path $tmpSha)) {
+        Write-Err "无法从 GitHub 官方获取 SHA256 校验和，已中止（fail-closed）"
+        return $null
+    }
+    $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
+    $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
+    if ($expectedHash.ToLower() -ne $actualHash) {
+        Write-Err "SHA256 校验失败，二进制可能被篡改，已中止"
+        return $null
+    }
+    Write-OK "SHA256 校验通过（来源：GitHub 官方）"
+
+    # Ed25519 签名（v4.4.44）：仅从 canonical GitHub 获取 .sig；缺失即中止（fail-closed），
+    # 除非显式 $env:OMP_ALLOW_UNSIGNED=1（仅用于无签名的旧版本紧急安装）。提供官方公钥时验签。
+    $sigOk = $false
+    for ($i = 1; $i -le $NET_RETRIES; $i++) {
+        try {
+            Invoke-WebRequest -Uri $canonicalSigUrl -OutFile $tmpSig -UseBasicParsing `
+                -TimeoutSec $NET_TIMEOUT_SEC -ErrorAction Stop | Out-Null
+            $sigOk = $true; break
+        } catch {
+            if ($i -lt $NET_RETRIES) { Start-Sleep -Milliseconds $NET_RETRY_DELAY_MS }
+        }
+    }
+    if (-not $sigOk -or -not (Test-Path $tmpSig)) {
+        if (-not $env:OMP_ALLOW_UNSIGNED) {
+            Write-Err "无法从 GitHub 官方获取 Ed25519 签名，已中止（fail-closed）；旧版本可设 `$env:OMP_ALLOW_UNSIGNED=1"
             return $null
         }
-        Write-OK "SHA256 校验通过"
+        Write-Err "未提供签名且 OMP_ALLOW_UNSIGNED=1，跳过签名校验（不安全）"
+    } elseif ($env:OMP_RELEASE_PUBKEY) {
+        # 验签依赖 openssl；缺失公钥时仅 SHA256 已校验。
+        try {
+            $pubPem = "$env:OMP_RELEASE_PUBKEY"
+            $verify = & openssl pkeyutl -verify -pubin -inkey $pubPem `
+                -rawin -digest sha256 -in $tmpFile -sigfile $tmpSig 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Err "Ed25519 签名验证失败，已中止"
+                return $null
+            }
+            Write-OK "Ed25519 签名验证通过（来源：GitHub 官方）"
+        } catch {
+            Write-Err "缺少 openssl，无法验证 Ed25519 签名，已中止（fail-closed）"
+            return $null
+        }
+    } else {
+        Write-Info "未提供 OMP_RELEASE_PUBKEY，跳过 Ed25519 验签（仅 SHA256 已校验）"
     }
     
     # 压缩包则解压

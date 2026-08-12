@@ -74,3 +74,10 @@ func handleAdminShareJS(w http.ResponseWriter, r *http.Request) {
 func handleAdminLogsJS(w http.ResponseWriter, r *http.Request) {
 	serveEmbeddedJS(w, r, "admin-logs.js")
 }
+
+// handleAdminLedgerJS serves the contribution-ledger transparency panel script
+// (P2-2(ii)). The script itself carries no data — every value it renders comes
+// from the admin-authenticated /api/admin/ledger/* endpoints.
+func handleAdminLedgerJS(w http.ResponseWriter, r *http.Request) {
+	serveEmbeddedJS(w, r, "admin-ledger.js")
+}
