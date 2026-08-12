@@ -94,7 +94,7 @@ Full detail, examples and endpoint tables: **[docs/FEATURES.md](docs/FEATURES.md
 - 🩺 **Provider Auto Health Check** (5-min probe) · 🛡️ **WAF 4-Layer Protection** (real, default-on) · 🔐 **AES-256-GCM + bcrypt + JWT** · 📝 Request Logging · 📊 Usage Archiving · 📧 SMTP · 🌐 VMess Proxy · 🖥️ Web Admin Panel
 
 **Network Mode (opt-in — P2P capability sharing):**
-- 🔑 Identity (BIP39 ⚠️) · 🌍 P2P Discovery (triple-layer ⚠️) · 🔗 Federation config · 🏆 Reputation (S/A/B/C/D) · 💎 Contribution Credits (⚠️ local-only) · 🔑 Key System · 🔄 Quota Allocation · ⚖️ Health-Aware Load Balancer · 🌐 Public Access (Cloudflare Tunnel) · 📡 Network API
+- 🔑 Identity (BIP39 ⚠️) · 🌍 P2P Discovery (triple-layer ⚠️) · 🔗 Federation config · 🏆 Reputation (S/A/B/C/D) · 💎 公益额度记账（非货币 · 1:1） · 🔑 Key System · 🔄 Quota Allocation · ⚖️ Health-Aware Load Balancer · 🌐 Public Access (Cloudflare Tunnel) · 📡 Network API
 
 > **⚠️ Network Mode is disabled by default.** Personal Mode does all local proxying without any network activity.
 

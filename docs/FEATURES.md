@@ -117,7 +117,7 @@ Failed requests automatically switch to the next available Provider, forming a f
 
 > **⚠️ Network Mode is disabled by default.** Personal Mode does all local proxying without any network activity.
 
-When you opt in, your node joins the **AI Capability Sharing Network** — a decentralized P2P network where nodes share AI model access and exchange Contribution Credits.
+When you opt in, your node joins the **AI Capability Sharing Network** — a decentralized P2P network where nodes share AI model access and keep a non-currency contribution ledger (1:1 accounting, non-withdrawable, non-transferable).
 
 ### 🔑 Identity System (BIP39 Mnemonic)
 
@@ -178,7 +178,7 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 **Scoring formula**: `Score = Success Rate × 40% + Avg Latency × 25% + Uptime × 20% + Peer Rating × 15%`
 **EWMA smoothing**: `New Score = 0.3 × Current + 0.7 × Previous` (α=0.3)
 
-### 💎 Contribution Credit System ⚠️
+### 💎 Contribution Ledger (Non-Currency) ⚠️
 
 > **⚠️ Ledger is local-first with federation replication (P1-3 delivered).** Contribution records are persisted locally with a **verifiable content hash** (`sha256:` prefix via `ContentHashStore`) — there is **no IPFS / distributed persistence** yet. Since v4.3.x, records are **push-replicated** to federation peers (`ledger_replication.go`, `/ledger/__manifest|__sync|__record`, `withFederationAuth`) and a **60s background reconcile loop** (`startLedgerReconcileLoop`) heals missing records from peers. Contribution credits are still computed from the local view; the anti-double-spend chain is backed by signed records. IPFS-style global persistence remains a future phase.
 
@@ -189,7 +189,7 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 - **Bound to Node ID**: Credits follow identity, not device
 - **Anti-double-spend**: Each transaction includes predecessor hash, chain verification
 
-### Contribution Credit eligibility (consumer-side draw)
+### Contribution Ledger eligibility (consumer-side draw)
 
 `tryContributorDraw` lets a verified contributor spend their own entitlement in place of the anonymous per-IP abuse guard. `settle` refunds any unused portion and clamps the balance to zero (no negative quota). The draw is **non-exclusive**: if the contributor still has remaining personal balance, that is consumed first and the per-IP gate is skipped; otherwise the request falls back to the community free pool.
 
