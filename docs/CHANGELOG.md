@@ -1,5 +1,16 @@
 # Changelog
 
+## v4.5.5 (2026-08-15)
+
+Bug fix release (self-update is now strictly per-node):
+
+- **Self-update is local-only — no implicit federation broadcast.** `handleAdminUpdateStart` no longer calls `BroadcastUpdateSignal`; clicking "更新" on one node updates only that node. The broadcast machinery (`BroadcastUpdateSignal` / `HandleUpdateSignal` / `HandleUpdateReport`, the `/api/federation/update-signal` and `/api/federation/update-report` endpoints) is retained for a future explicit opt-in "push to all peers" admin action, but is never triggered implicitly. Frontend `admin-update.js` now renders only the local node's status (removed the "共 N 个节点" aggregation and peer rows), so each node's update card shows only its own progress.
+- AppVersion bumped to 4.5.5.
+
+## v4.5.4 (2026-08-15)
+
+Automated baseline bump (daily evolution). No user-facing changelog maintained for this build.
+
 ## v4.5.3 (2026-08-15)
 
 Bug fix release (self-update card correctness + China-region update reachability):
