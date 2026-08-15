@@ -279,34 +279,17 @@
   function renderStatusArea() {
     var el = document.getElementById('updateStatusArea');
     if (!el) return;
-    if (!_statusList || _statusList.length === 0) {
+
+    // Each node updates independently — show only local status here.
+    // Federation peer entries are ignored in this view.
+    var local = (_statusList || []).filter(function(s) { return s.is_local; });
+    if (local.length === 0) {
       el.innerHTML = '';
       return;
     }
 
-    var total = _statusList.length;
-    var done = 0, inflight = 0, failed = 0, unsupported = 0;
-    for (var i = 0; i < total; i++) {
-      switch (_statusList[i].phase) {
-        case 'success': done++; break;
-        case 'failed': failed++; break;
-        case 'unsupported': unsupported++; break;
-        case 'downloading':
-        case 'replacing':
-        case 'restarting': inflight++; break;
-      }
-    }
-
-    var summary = '共 ' + total + ' 个节点';
-    if (inflight > 0) summary += ' · <span style="color:var(--primary,#58a6ff)">' + inflight + ' 进行中</span>';
-    if (done > 0) summary += ' · <span style="color:var(--success,#3fb950)">' + done + ' 已完成</span>';
-    if (failed > 0) summary += ' · <span style="color:var(--danger,#e5484d)">' + failed + ' 失败</span>';
-    if (unsupported > 0) summary += ' · <span style="color:var(--text-muted,#8b949e)">' + unsupported + ' 不支持</span>';
-
-    var rows = _statusList.map(statusRowHTML).join('');
-    el.innerHTML =
-      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">更新进度（本机 + 联邦对端）：' + summary + '</div>' +
-      rows;
+    var rows = local.map(statusRowHTML).join('');
+    el.innerHTML = rows;
   }
 
   // -------------------------------------------------------------------------

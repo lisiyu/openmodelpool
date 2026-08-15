@@ -1417,9 +1417,12 @@ func handleAdminUpdateStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Accept immediately; perform the update asynchronously.
+	// Each node updates independently — no automatic broadcast to federation
+	// peers.  The BroadcastUpdateSignal / HandleUpdateSignal / HandleUpdateReport
+	// machinery remains available for a future explicit "push to all peers"
+	// admin action, but must be opt-in (never implicit on local self-update).
 	writeJSON(w, 200, map[string]any{"accepted": true, "target": target})
 	go func() {
-		updateManager.BroadcastUpdateSignal(target)
 		updateManager.TriggerSelfUpdate(target)
 	}()
 }
