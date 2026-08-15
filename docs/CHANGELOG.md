@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.5.3 (2026-08-15)
+
+Bug fix release (self-update card correctness + China-region update reachability):
+
+- **Update card double-v label and false "不一致" warning fixed.** `admin-update.js` compared versions by raw string (GitHub tag `v4.5.2` vs `AppVersion` `4.5.2`), which raised a spurious "vv4.5.2 与当前运行 v4.5.2 不一致" warning and a `vv` prefix. Now uses the same semantic `compareVersionStr` as the version card plus `vLabel()` for display.
+- **Stale "failed" update status auto-cleared on restart.** `update.go::reconcilePending` now resets a `failed` local status whose recorded target already equals the running `AppVersion` (e.g. an aborted in-app self-update later achieved via external deploy), preventing a permanent misleading "失败" badge.
+- **Verification files now fall back to mirrors.** `.sig` / `.sha256` are fetched from canonical GitHub FIRST and fall back to the region-aware mirrors (`githubDownloadMirrors`) only when the official source is unreachable, fixing the China-region self-update failure (`无法获取 GitHub 官方 Ed25519 签名 ... context deadline exceeded`). Security is unchanged: the checksum is still verified by SHA-256 against the downloaded binary and the signature by the hardcoded Ed25519 public key, so a poisoned mirror cannot forge a valid signature or a matching checksum.
+- AppVersion bumped to 4.5.3.
+
 ## v4.5.2 (2026-08-12)
 
 Maintenance release (fold in-flight work into mainline):
