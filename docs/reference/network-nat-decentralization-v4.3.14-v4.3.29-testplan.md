@@ -166,11 +166,11 @@ go test ./... -run 'TestPickBestAddress|TestRelayHopCountValidation|TestSelectBe
 | Gossip 五消息循环内部：`pingLoop`/`getPeersLoop`/`announceLoop`/`sendToRandomPeers`/`doAnnounceRound`/`processPeerHints` | `gossip.go` | `TestPingLoop_RespondsPong`、`TestGetPeersLoop_MergesHints`、`TestAnnounceLoop_BroadcastsProviders`、`TestProcessPeerHints_Merge` |
 | AddrMan 方法：`RecordSuccess`/`RecordFail`/`GetGateways`/`GetSeeds`/`PurgeStale`/`MarkGateway`/`MarkSeed`/`routeTableHealthLoop` | `network.go` | `TestRouteTable_RecordSuccess_UpdatesUptimeScore`、`TestRouteTable_RecordFail_MarksUnreachableAt3`、`TestRouteTable_GetGateways`、`TestRouteTable_GetSeeds`、`TestRouteTable_PurgeStale_Removes7DayOld`、`TestRouteTable_MarkGateway`、`TestRouteTable_MarkSeed`、`TestRouteTableHealthLoop_CallsPurgeStale` |
 | NAT 端点：`/api/nat/status`、`/api/nat/probe`，`ProbeDirect`/`ShouldUseDirect`/`stunLoop` 行为 | `nat_traversal.go`、`routes.go` | `TestNATStatusHandler`、`TestNATProbeHandler`、`TestProbeDirect_CachesSuccess`、`TestShouldUseDirect_StaleExpiry` |
-| 主动探测交叉验证：`ProbeSchedulerLoop`/`probeSchedule`/`CrossVerifyWithQuorum`/`realProbeFn` 替换 | `contribution_ledger.go`、`contribution_ledger_init.go` | `TestProbeSchedule_IntervalsByReputation`、`TestCrossVerifyWithQuorum_FlagsLatencyDeviation`、`TestProbeSchedulerLoop_Starts` |
+| ~~主动探测交叉验证~~ ✅ 已补（2026-08-15）：`probeSchedule`/`CrossVerify`/`VerifyClaim`（`CapabilityVerifier`） | `contribution_ledger.go`、`capability_probe_test.go` | `TestProbeSchedule_IntervalsByReputation`、`TestCapabilityVerifier_CrossVerifyQuorum`、`TestCapabilityVerifier_VerifyClaim` |
 | Ticket 防双花：`UsageTicket` 双签名、`TicketFingerprint`、`TicketStore.issue/countersign/double-spend/notarize`、`AntiCollusionCheck` 三层、`Cleanup` 内存泄漏修复、`handleNotarize` 不洗白、`flaggedSet` 去重 | `ticket.go`、`relay.go`、`contribution_ledger_init.go`、`routes.go` | `TestTicketStore_IssueAndCountersign`、`TestTicketFingerprint_Deterministic`、`TestTicketStore_DetectsDoubleSpend`、`TestTicketStore_Notarize`、`TestAntiCollusionCheck_ThreeLayers`、`TestTicketStore_Cleanup_NoLeak`、`TestHandleNotarize_RejectsDoubleSpend`、`TestAntiCollusionCheck_FlaggedSetDedup`、`TestRecordContributionToLedger_IssuesTicket` |
 | 账本 reconciliation 定时器：60s 自动 reconciliation 调度（非手动触发） | `contribution_ledger.go` | `TestLedgerAutoReconcile_Ticked60s` |
 
-> 最大测试缺口：**Ticket 防双花系统（v4.3.18/19）与主动探测交叉验证（v4.3.17）完全没有自动化单测**——二者均为 P0 安全相关能力（存证防双花、贡献真实性交叉验证），却无任何 `Test*` 覆盖，属最高优先补齐项。
+> 最大测试缺口（更新于 2026-08-15）：**Ticket 防双花系统（v4.3.18/19）** 已随 v4.5.2 测试补齐获 `ticket_test.go` ×7 覆盖；**主动探测交叉验证（v4.3.17）** 已获 `capability_probe_test.go` ×3 覆盖（见上表 ✅ 已补）。二者 P0 安全能力现已均有自动化单测。
 
 ---
 
