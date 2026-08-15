@@ -249,9 +249,15 @@
     // the server is actually running, surface it instead of silently trusting
     // a stale "updated to vX" record (e.g. after an external deploy).
     var mismatchWarn = '';
-    if (s.is_local && s.target_version && _currentVersion && s.target_version !== _currentVersion) {
-      mismatchWarn = '<div style="margin-top:6px;font-size:11px;color:var(--warning,#f5a623)">⚠️ 记录的更新目标 v' +
-        escapeHtml(s.target_version) + ' 与当前运行 v' + escapeHtml(_currentVersion) +
+    // Compare semantically (strip the optional "v" prefix) so that "v4.5.2"
+    // and "4.5.2" are treated as equal. A raw string compare would raise a
+    // false "不一致" warning purely because GitHub tags carry a "v" prefix
+    // while main.go AppVersion does not. Only a genuinely different version
+    // (e.g. after an external deploy to another build) should surface this.
+    var targetSem = compareVersionStr(s.target_version, _currentVersion);
+    if (s.is_local && s.target_version && _currentVersion && targetSem !== 0 && !isNaN(targetSem)) {
+      mismatchWarn = '<div style="margin-top:6px;font-size:11px;color:var(--warning,#f5a623)">⚠️ 记录的更新目标 ' +
+        escapeHtml(vLabel(s.target_version)) + ' 与当前运行 ' + escapeHtml(vLabel(_currentVersion)) +
         ' 不一致（可能经外部部署）</div>';
     }
 

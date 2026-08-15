@@ -441,6 +441,7 @@ func (um *UpdateManager) reconcilePending() {
 			um.local.Log = ""
 		}
 		um.reconcileLocalStaleSuccessLocked()
+		um.reconcileLocalStaleFailedLocked()
 		um.mu.Unlock()
 		return
 	}
@@ -456,6 +457,7 @@ func (um *UpdateManager) reconcilePending() {
 			um.local.Log = ""
 		}
 		um.reconcileLocalStaleSuccessLocked()
+		um.reconcileLocalStaleFailedLocked()
 		um.mu.Unlock()
 		return
 	}
@@ -479,6 +481,7 @@ func (um *UpdateManager) reconcilePending() {
 	// Even when a pending marker exists, the running binary may have been
 	// changed by an external deploy (git pull + go build, Codespace rebuild).
 	um.reconcileLocalStaleSuccessLocked()
+	um.reconcileLocalStaleFailedLocked()
 }
 
 // reconcileLocalStaleSuccessLocked corrects the local status when it claims a
@@ -493,6 +496,23 @@ func (um *UpdateManager) reconcileLocalStaleSuccessLocked() {
 		um.local.Error = ""
 		um.local.Log = fmt.Sprintf("当前运行 v%s（外部部署）", AppVersion)
 		um.local.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		um.persistLocked()
+	}
+}
+
+// reconcileLocalStaleFailedLocked resets a "failed" local status whose
+// recorded target version is already the version now running. This occurs
+// when an in-app self-update aborted (e.g. the GitHub signature/checksum
+// fetch timed out on a restricted network, fail-closed) but the node was
+// subsequently brought to that same target via an external deploy or a manual
+// retry — leaving a stale, misleading "失败" badge even though the node is
+// already on the target. Caller must hold um.mu (write lock).
+func (um *UpdateManager) reconcileLocalStaleFailedLocked() {
+	if um.local.Phase == PhaseFailed && compareVersion(um.local.TargetVersion, AppVersion) == 0 {
+		um.local.Phase = PhaseIdle
+		um.local.Progress = 0
+		um.local.Error = ""
+		um.local.Log = ""
 		um.persistLocked()
 	}
 }
