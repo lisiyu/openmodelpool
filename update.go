@@ -688,8 +688,14 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 	}
 
 	// SEC-P1-3 (fail-closed verification): the SHA-256 checksum and the
-	// Ed25519 signature are ALWAYS fetched from canonical GitHub release assets
-	// — never from a mirror, which must only ever supply opaque bytes. If the
+	// Ed25519 signature are verified against the downloaded binary and the
+	// hardcoded Ed25519 public key. Because a poisoned mirror cannot forge a
+	// valid signature or a checksum matching a binary it did not sign, the
+	// verification material is fetched from canonical GitHub FIRST and falls
+	// back to region-aware mirrors ONLY when the official source is
+	// unreachable (see verificationSources). This keeps the official source
+	// authoritative while restoring updates on networks where github.com is
+	// blocked, without weakening the fail-closed guarantee. If the
 	// verification material is missing or mismatched, the update is ABORTED.
 	// (The binary itself may still be downloaded via a mirror for connectivity;
 	// its integrity is established by the checksum/signature pair below.)
@@ -697,7 +703,7 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 	expectedHash, err := um.fetchChecksum(checksumURL)
 	if err != nil {
 		_ = os.Remove(tmpPath)
-		um.setLocalFailed(fmt.Sprintf("无法获取 GitHub 官方 SHA-256 校验和，已中止更新: %v", err))
+		um.setLocalFailed(fmt.Sprintf("无法获取 SHA-256 校验和（官方 GitHub 及镜像均不可达）: %v", err))
 		return
 	}
 	if um.downloadHash != expectedHash {
@@ -713,7 +719,7 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 	sigBytes, err := um.fetchSignature(sigURL)
 	if err != nil {
 		_ = os.Remove(tmpPath)
-		um.setLocalFailed(fmt.Sprintf("无法获取 GitHub 官方 Ed25519 签名，已中止更新: %v", err))
+		um.setLocalFailed(fmt.Sprintf("无法获取 Ed25519 签名（官方 GitHub 及镜像均不可达）: %v", err))
 		return
 	}
 	// Read the downloaded binary for signature verification
@@ -913,30 +919,136 @@ func (um *UpdateManager) downloadFile(url, dest string) error {
 	return fmt.Errorf("下载失败（已重试 %d 次）: %w", maxAttempts, lastErr)
 }
 
+// verificationSources returns the ordered URLs to fetch a verification file
+// (.sha256 / .sig) for the given canonical GitHub release asset URL.
+//
+// SECURITY: verification material is ALWAYS verified — the checksum by SHA-256
+// against the downloaded binary, the signature by the hardcoded Ed25519 public
+// key. A poisoned mirror therefore cannot forge a valid signature or a checksum
+// that matches a binary it did not sign, so allowing mirror fallback here does
+// NOT weaken the fail-closed guarantee; it only restores reachability for nodes
+// behind networks where github.com is unreachable (e.g. mainland China).
+//
+// We try the canonical GitHub asset FIRST (the default trust path) and fall back
+// to the region-aware mirrors only when it is unreachable, preserving the
+// original "official source is authoritative" intent while fixing the
+// China-region update failure reported on 2026-08-15.
+func (um *UpdateManager) verificationSources(canonicalURL string) []string {
+	srcs := []string{canonicalURL} // canonical GitHub first
+	for _, mirror := range githubDownloadMirrors {
+		srcs = append(srcs, mirror+canonicalURL)
+	}
+	return srcs
+}
+
+// verificationHTTPClient is a dedicated client for small verification-file
+// fetches. The overall attempt is bounded by a per-request context (see
+// fetchTextWithFallbacks) so a frozen connection to one source cannot stall
+// the whole self-update.
+var verificationHTTPClient = &http.Client{Timeout: 25 * time.Second}
+
+// fetchTextWithFallbacks fetches a small text asset, trying the canonical
+// GitHub URL first and falling back to mirrors on network failure. It returns
+// the trimmed body, a canonicalNotFound flag (true ONLY when the canonical URL
+// itself responded 404, i.e. the release asset genuinely does not exist), and
+// any error. Callers turn canonicalNotFound into the appropriate
+// "... not found (release may predate ... signing)" message; network errors on
+// the canonical URL do NOT set it, so they fall through to the mirrors.
+func (um *UpdateManager) fetchTextWithFallbacks(ctx context.Context, canonicalURL string) (string, bool, error) {
+	urls := um.verificationSources(canonicalURL)
+	var lastErr error
+	for i, u := range urls {
+		body, status, err := um.httpGetText(ctx, u)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		switch status {
+		case http.StatusOK:
+			return body, false, nil
+		case http.StatusNotFound:
+			if i == 0 {
+				return "", true, nil // canonical genuinely missing
+			}
+			lastErr = fmt.Errorf("404 from %s", u)
+			continue
+		default:
+			lastErr = fmt.Errorf("HTTP %d from %s", status, u)
+			continue
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no sources tried")
+	}
+	return "", false, fmt.Errorf("fetch %s: all %d sources failed, last error: %w", canonicalURL, len(urls), lastErr)
+}
+
+// httpGetText performs a single bounded GET of a small text asset, retrying
+// once on a transient network error. Returns the body, the HTTP status (0 on
+// transport error), and any error.
+func (um *UpdateManager) httpGetText(ctx context.Context, url string) (string, int, error) {
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+		if err != nil {
+			cancel()
+			return "", 0, err
+		}
+		req.Header.Set("User-Agent", "OpenModelPool/"+AppVersion)
+		resp, err := verificationHTTPClient.Do(req)
+		if err != nil {
+			cancel()
+			lastErr = err
+			if attempt == 0 {
+				continue // transient: one retry before giving up on this source
+			}
+			return "", 0, err
+		}
+		code := resp.StatusCode
+		if code == http.StatusOK {
+			data, rerr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+			resp.Body.Close()
+			cancel()
+			if rerr != nil {
+				lastErr = rerr
+				if attempt == 0 {
+					continue
+				}
+				return "", 0, rerr
+			}
+			return string(data), http.StatusOK, nil
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		cancel()
+		if code == http.StatusNotFound {
+			return "", http.StatusNotFound, nil
+		}
+		lastErr = fmt.Errorf("HTTP %d", code)
+		if attempt == 0 {
+			continue
+		}
+		return "", code, lastErr
+	}
+	return "", 0, lastErr
+}
+
 // fetchChecksum downloads a .sha256 checksum file and returns the hex hash.
+// Canonical GitHub is tried first; region-aware mirrors are used as fallback
+// only when the official source is unreachable (see verificationSources).
 func (um *UpdateManager) fetchChecksum(url string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
+	body, canonicalNotFound, err := um.fetchTextWithFallbacks(ctx, url)
+	if canonicalNotFound {
+		return "", fmt.Errorf("checksum file not found (release may predate Ed25519 signing)")
 	}
-	req.Header.Set("User-Agent", "OpenModelPool/"+AppVersion)
-	client := GetSharedHTTPClient()
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("checksum HTTP %d", resp.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 256))
 	if err != nil {
 		return "", err
 	}
 	// SHA-256 checksum files typically: "<hash>  <filename>" or just "<hash>"
-	parts := strings.Fields(strings.TrimSpace(string(data)))
+	parts := strings.Fields(strings.TrimSpace(body))
 	if len(parts) == 0 || len(parts[0]) != 64 {
 		return "", fmt.Errorf("invalid checksum format")
 	}
@@ -944,40 +1056,27 @@ func (um *UpdateManager) fetchChecksum(url string) (string, error) {
 }
 
 // fetchSignature downloads a .sig file containing the Ed25519 signature of
-// the release binary. The signature file is a base64-encoded raw Ed25519
-// signature (64 bytes). Returns an error if the .sig file is not available
-// (for backward compatibility with releases that don't include signatures).
+// the release binary. Canonical GitHub is tried first; region-aware mirrors are
+// used as fallback only when the official source is unreachable. The signature
+// file is a base64-encoded raw Ed25519 signature (64 bytes). Returns an error
+// if the .sig file is not available (for backward compatibility with releases
+// that don't include signatures).
 func (um *UpdateManager) fetchSignature(url string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	client := GetSharedHTTPClient()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create signature request: %w", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch signature: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
+	body, canonicalNotFound, err := um.fetchTextWithFallbacks(ctx, url)
+	if canonicalNotFound {
 		return nil, fmt.Errorf("signature file not found (release may predate Ed25519 signing)")
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signature HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 256))
 	if err != nil {
-		return nil, fmt.Errorf("read signature response: %w", err)
+		return nil, err
 	}
 
 	// Signature is base64-encoded raw Ed25519 signature
-	sig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(body)))
+	sig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(body))
 	if err != nil {
 		// Try raw bytes if not base64
-		sig = body
+		sig = []byte(body)
 	}
 	if len(sig) != ed25519.SignatureSize {
 		return nil, fmt.Errorf("invalid signature size: got %d, want %d", len(sig), ed25519.SignatureSize)
