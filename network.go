@@ -142,10 +142,10 @@ type DisclaimerResponse struct {
 
 // RouteEntry maps a NodeID to its reachable addresses
 type RouteEntry struct {
-	NodeID    string    `json:"node_id"`
-	NodeName  string    `json:"node_name"`
-	Addresses []string  `json:"addresses"`
-	Status    string    `json:"status"` // online/offline/degraded/unreachable
+	NodeID    string   `json:"node_id"`
+	NodeName  string   `json:"node_name"`
+	Addresses []string `json:"addresses"`
+	Status    string   `json:"status"` // online/offline/degraded/unreachable
 
 	// Gateway routing fields
 	Models    []string  `json:"models,omitempty"`
@@ -1286,6 +1286,7 @@ func (nm *NetworkManager) CheckShareBoundary(model string, estimatedTokens int64
 
 	return true, ""
 }
+
 // v3.1: This controls whether the node contributes its providers to the shared pool.
 // Independent from network participation — a node can be in the network without sharing.
 // If enabling share_to_pool auto-activates the network, the full activation path runs.
@@ -1687,10 +1688,10 @@ func handleNetworkConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		NodeName      string              `json:"node_name"`
-		SharedModels  []string            `json:"shared_models"`
-		MaxDaily      int                 `json:"max_daily_requests"`
-		RelayEnabled  *bool               `json:"relay_enabled,omitempty"`
+		NodeName      string               `json:"node_name"`
+		SharedModels  []string             `json:"shared_models"`
+		MaxDaily      int                  `json:"max_daily_requests"`
+		RelayEnabled  *bool                `json:"relay_enabled,omitempty"`
 		ShareBoundary *ShareBoundaryConfig `json:"share_boundary,omitempty"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
@@ -1841,14 +1842,14 @@ func handleNetworkAddPeer(w http.ResponseWriter, r *http.Request) {
 // embeds its public key so the receiver can verify locally without a round-trip
 // (which would be a chicken-and-egg problem on first contact).
 type PeerNotifyPayload struct {
-	NodeID    string   `json:"node_id"`
-	Name      string   `json:"name"`
-	Addresses []string `json:"addresses"`
-	PubKey    string   `json:"pub_key"`
-	Timestamp string   `json:"timestamp"`
-	Signature string   `json:"signature"`
-	Propagated bool `json:"propagated"`
-	Claims    []CapabilityClaimEntry `json:"claims,omitempty"`
+	NodeID     string                 `json:"node_id"`
+	Name       string                 `json:"name"`
+	Addresses  []string               `json:"addresses"`
+	PubKey     string                 `json:"pub_key"`
+	Timestamp  string                 `json:"timestamp"`
+	Signature  string                 `json:"signature"`
+	Propagated bool                   `json:"propagated"`
+	Claims     []CapabilityClaimEntry `json:"claims,omitempty"`
 }
 
 type CapabilityClaimEntry struct {
@@ -1891,7 +1892,14 @@ func handleNetworkPeersNotify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid timestamp")
 		return
 	}
-	if age := time.Since(ts); age < 0 || age > 5*time.Minute {
+	// 2. Timestamp freshness (anti-replay): must be within the last 5 minutes.
+	//    We allow a small FUTURE skew (notifyMaxFutureSkew) because in a
+	//    distributed mesh clocks are never perfectly synchronized (NTP jitter,
+	//    different strata, transient steps). Rejecting any timestamp that is
+	//    even 1ms in the future (`age < 0`) broke the P0-1 notify path whenever
+	//    a sender's clock was marginally ahead of the receiver — a common,
+	//    benign condition, not an attack. Past-window (>5min) is still rejected.
+	if age := time.Since(ts); age < -notifyMaxFutureSkew || age > 5*time.Minute {
 		writeError(w, http.StatusBadRequest, "timestamp outside acceptable window")
 		return
 	}
@@ -1989,6 +1997,12 @@ type pubKeyCacheEntry struct {
 // pubKeyCacheTTL bounds how long a fetched pubkey is trusted without refresh.
 const pubKeyCacheTTL = 10 * time.Minute
 
+// notifyMaxFutureSkew is the clock-skew tolerance applied to incoming
+// /api/network/peers/notify timestamps. The receiver rejects a timestamp that
+// is more than this far in the FUTURE (anti-replay), but tolerates small
+// future skew so a sender with a marginally-ahead clock is not wrongly 400'd.
+const notifyMaxFutureSkew = 30 * time.Second
+
 var (
 	pubKeyCacheMu sync.Mutex
 	pubKeyCache   = map[string]pubKeyCacheEntry{}
@@ -2024,18 +2038,28 @@ func fetchNodePubKey(addr string) string {
 	if resp.StatusCode != http.StatusOK {
 		return ""
 	}
+	// NOTE: the live /api/node/pubkey endpoint (handleNodePubKey in
+	// handlers_missing.go) serves the key under "public_key". Unit tests mock
+	// it under "pub_key". Decode BOTH so the handler works against the real
+	// endpoint and stays compatible with the existing test fixtures.
 	var out struct {
-		PubKey string `json:"pub_key"`
+		NodeID    string `json:"node_id"`
+		PubKey    string `json:"pub_key"`
+		PubKeyAlt string `json:"public_key"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return ""
 	}
-	if out.PubKey != "" {
+	pk := out.PubKey
+	if pk == "" {
+		pk = out.PubKeyAlt
+	}
+	if pk != "" {
 		pubKeyCacheMu.Lock()
-		pubKeyCache[addr] = pubKeyCacheEntry{pubKey: out.PubKey, fetchedAt: time.Now()}
+		pubKeyCache[addr] = pubKeyCacheEntry{pubKey: pk, fetchedAt: time.Now()}
 		pubKeyCacheMu.Unlock()
 	}
-	return out.PubKey
+	return pk
 }
 
 func sendNotifyToPeer(peer PeerInfo) {

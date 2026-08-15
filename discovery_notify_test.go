@@ -136,6 +136,61 @@ func TestPeersNotify_ValidSignature_RegistersPeer(t *testing.T) {
 	}
 }
 
+// TestPeersNotify_ValidSignature_RealPubKeyFieldName is a REGRESSION for the
+// v4.5.x notify outage: the live /api/node/pubkey endpoint serves the key under
+// "public_key" (handleNodePubKey in handlers_missing.go), but fetchNodePubKey
+// historically decoded "pub_key" — so the decoded key was always empty and
+// EVERY notify was fail-closed 401 "cannot verify node public key" across the
+// whole mesh. The earlier test fixture mocked "pub_key", which masked the bug.
+// This test serves the REAL field name and asserts the notify now succeeds.
+func TestPeersNotify_ValidSignature_RealPubKeyFieldName(t *testing.T) {
+	setupDiscoveryTestEnv(t)
+
+	peerPub, peerPriv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("genkey: %v", err)
+	}
+	peerID := "mmx-" + hex.EncodeToString(peerPub)
+
+	pubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/node/pubkey":
+			// REAL wire format returned by handleNodePubKey.
+			writeJSON(w, 200, map[string]any{"public_key": base64.StdEncoding.EncodeToString(peerPub)})
+		case "/api/network/heartbeat/ping":
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer pubSrv.Close()
+
+	addrs := []string{pubSrv.URL}
+	ts := time.Now().UTC().Format(time.RFC3339)
+	canonical := fmt.Sprintf("%s|%s|%s", peerID, strings.Join(addrs, ","), ts)
+	rawSig := ed25519.Sign(peerPriv, []byte(canonical))
+	sig := base64.StdEncoding.EncodeToString(rawSig)
+
+	payload := PeerNotifyPayload{
+		NodeID:     peerID,
+		Name:       "peer-b",
+		Addresses:  addrs,
+		PubKey:     base64.StdEncoding.EncodeToString(peerPub),
+		Timestamp:  ts,
+		Signature:  sig,
+		Propagated: true,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/network/peers/notify", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handleNetworkPeersNotify(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for real 'public_key' field, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
 // TestPeersNotify_FetchFail_Rejected verifies SEC-P1-4 fail-closed behavior:
 // when the sender's authoritative /api/node/pubkey cannot be fetched, the
 // notify is rejected even though the payload embeds a (plausible) public key.
