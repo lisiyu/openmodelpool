@@ -668,9 +668,12 @@ func canonicalNodeID() string {
 }
 
 // assertNodeIDInvariant verifies that config.NodeID matches the canonical
-// identity Node ID. If they diverge (e.g. a stale cached value), it logs a
-// warning and returns the canonical value so callers always broadcast/serve
-// the truth rather than a corrupted value. It never panics.
+// identity Node ID. If they diverge (e.g. a stale cached value left behind
+// after node.key was regenerated), it SELF-HEALS: it rewrites config.NodeID to
+// the canonical value and persists it to disk, so the route table, the served
+// /api/network/status and every peer link all agree on the one true id. It then
+// returns the canonical value so callers always broadcast/serve the truth
+// rather than a corrupted value. It never panics.
 func (nm *NetworkManager) assertNodeIDInvariant() string {
 	canonical := canonicalNodeID()
 	if canonical == "" {
@@ -678,8 +681,12 @@ func (nm *NetworkManager) assertNodeIDInvariant() string {
 		return ""
 	}
 	if nm.config.NodeID != canonical {
-		slog.Warn("node id invariant violated: config.NodeID diverges from canonical identity NodeID; using canonical for broadcast",
+		slog.Warn("node id invariant violated: config.NodeID diverges from canonical identity NodeID; repairing cached value",
 			"cached", nm.config.NodeID, "canonical", canonical)
+		nm.mu.Lock()
+		nm.config.NodeID = canonical
+		nm.mu.Unlock()
+		nm.doSave()
 	}
 	return canonical
 }

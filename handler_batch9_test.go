@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 )
@@ -1652,6 +1653,43 @@ func TestHB9_NetworkManager_assertNodeIDInvariant_NilNode(t *testing.T) {
 	result := nm.assertNodeIDInvariant()
 	if result != "" {
 		t.Fatalf("expected empty, got %s", result)
+	}
+}
+
+// TestHB9_assertNodeIDInvariant_SelfHealsStaleCache verifies the REQ-S2-3
+// invariant repair: when config.NodeID caches a stale value that diverges from
+// the canonical identity (node.key) NodeID, assertNodeIDInvariant rewrites the
+// canonical id into config AND persists it to network.json, so the divergence
+// is gone after a single activation (no manual JSON surgery required).
+func TestHB9_assertNodeIDInvariant_SelfHealsStaleCache(t *testing.T) {
+	setupDiscoveryTestEnv(t)
+	canonical := node.NodeID()
+	if canonical == "" {
+		t.Fatal("test node identity has empty NodeID")
+	}
+	// Force a stale cached value that diverges from the canonical identity.
+	stale := "mmx-stale00000000000000000000000000000000000000000000000000000000000000"
+	netMgr.config.NodeID = stale
+
+	got := netMgr.assertNodeIDInvariant()
+	if got != canonical {
+		t.Fatalf("assertNodeIDInvariant() = %q, want canonical %q", got, canonical)
+	}
+	// In-memory config must be repaired.
+	if netMgr.config.NodeID != canonical {
+		t.Fatalf("self-heal left cached NodeID = %q, want %q", netMgr.config.NodeID, canonical)
+	}
+	// Repair must be persisted to disk (network.json).
+	b, err := os.ReadFile(netMgr.dataPath)
+	if err != nil {
+		t.Fatalf("read network.json: %v", err)
+	}
+	var saved NetworkConfig
+	if err := json.Unmarshal(b, &saved); err != nil {
+		t.Fatalf("unmarshal network.json: %v", err)
+	}
+	if saved.NodeID != canonical {
+		t.Fatalf("network.json NodeID = %q, want canonical %q", saved.NodeID, canonical)
 	}
 }
 
