@@ -463,6 +463,40 @@ func messageHash(msg *GossipMessage) string {
 	return hex.EncodeToString(h[:])
 }
 
+// gossipBackfillPubKey tries to fetch a sender's authoritative ed25519 public
+// key from its endpoint so a trust-pool node with an empty pub_key can still be
+// verified. Returns "" when no usable endpoint exists or the fetch fails.
+func gossipBackfillPubKey(sender *NodeInfo) string {
+	if sender == nil {
+		return ""
+	}
+	for _, addr := range []string{sender.Endpoint, gossipPreferredAddr(sender)} {
+		if addr == "" {
+			continue
+		}
+		if pk := fetchNodePubKey(addr); pk != "" {
+			slog.Info("backfilled gossip sender pub_key",
+				"from", sender.NodeID, "addr", addr)
+			return pk
+		}
+	}
+	return ""
+}
+
+// gossipPreferredAddr resolves the best outbound address for a sender node.
+func gossipPreferredAddr(sender *NodeInfo) string {
+	if sender == nil {
+		return ""
+	}
+	if len(sender.Addresses) > 0 {
+		return sender.Addresses[0]
+	}
+	if sender.Endpoint != "" {
+		return sender.Endpoint
+	}
+	return ""
+}
+
 // ---------------------------------------------------------------------------
 // HTTP Handlers
 // ---------------------------------------------------------------------------
@@ -496,8 +530,19 @@ func handleFederationGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the message signature
-	if !VerifyJSONSig(sender.PubKey, msg, msg.Signature) {
+	// Verify the message signature. If the trust pool carries an empty pub_key
+	// (nodes that entered the pool before key propagation existed), backfill it
+	// from the peer's authoritative /api/node/pubkey endpoint and retry once —
+	// this is exactly the deployment state that produced a 403 flood.
+	valid := sender.PubKey != "" && VerifyJSONSig(sender.PubKey, msg, msg.Signature)
+	if !valid && fed.IsEnabled() {
+		if pk := gossipBackfillPubKey(sender); pk != "" {
+			sender.PubKey = pk
+			fed.UpdateNodeInfo(*sender)
+			valid = VerifyJSONSig(sender.PubKey, msg, msg.Signature)
+		}
+	}
+	if !valid {
 		slog.Warn("gossip signature verification failed",
 			"from", msg.FromNode, "type", msg.Type)
 		writeError(w, http.StatusForbidden, "invalid signature")

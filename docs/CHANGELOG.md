@@ -1,5 +1,20 @@
 # Changelog
 
+## v4.5.9 (2026-08-16)
+
+Bug fix release (trust pool pub_key backfill ends residual gossip 403):
+
+- **Gossip sender signature verification now backfills the trust pool's missing `pub_key`.** The deployment trust pool contains nodes whose `pub_key` is empty (entered before key propagation existed), so `handleFederationGossip`'s `VerifyJSONSig("" , ...)` rejected every in-pool peer with a 403 ("gossip signature verification failed"), even after v4.5.7's secret auth fixed the transport-level 403. On verification failure the handler now fetches the sender's authoritative key from its endpoint (`GET /api/node/pubkey`, `gossipBackfillPubKey`) and retries once; the backfilled key is persisted into the trust pool (`UpdateNodeInfo`) so subsequent rounds verify immediately without the fetch.
+- **Security unchanged**: a sender that is NOT in the trust pool is still rejected ("unknown sender node") — backfill only fills in the key for an already-trusted node ID, never admits an unregistered one.
+- AppVersion bumped to 4.5.9.
+
+## v4.5.8 (2026-08-16)
+
+Bug fix release (node identity invariant self-heals):
+
+- **`assertNodeIDInvariant` now persists the canonical node identity.** When `config.NodeID` diverges from the `node.key` canonical NodeID (e.g. after the identity was regenerated via the admin UI, as happened on the cc node), the mismatch is no longer just a warning: the config value is rewritten to the canonical ID and persisted to network.json. This makes the route table, `/api/network/status` and every peer link agree on the single true id without manual JSON surgery on the next activation.
+- AppVersion bumped to 4.5.8.
+
 ## v4.5.7 (2026-08-16)
 
 Bug fix release (cross-node federation requests now authenticate):
