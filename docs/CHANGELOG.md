@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.5.14 (2026-08-16)
+
+Bug fix (global public key can now actually use the community free pool in shared mode):
+
+- **Chat routing now matches model listing for the public key.** The global public key (`sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1`) could list community free-pool models via `/v1/models`, but `/v1/chat/completions` returned `404 no provider available`. `FilterByAccessControl` (chat path) only kept `ShareToPool` providers in shared mode and dropped free-pool providers (`ShareToPool=false`), diverging from `providerAllowsKeyType` (model-listing filter) which accepts free-pool providers at any node in any mode. The public branch now also accepts `isFreePoolProvider`, so the free tier is routable and consistent with the visible model list.
+- AppVersion bumped to 4.5.14.
+
 ## v4.5.13 (2026-08-16)
 
 Bug fix (federation model list survives restart):

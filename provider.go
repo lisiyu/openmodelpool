@@ -477,7 +477,10 @@ func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 		case "public":
 			// Public key (sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1) accesses all providers shared to the pool.
 			// ShareToPool defaults to true for all providers on shared-network nodes.
-			if ac.ShareToPool {
+			if ac.ShareToPool || isFreePoolProvider(c.Provider) {
+				// Community free-pool providers are always reachable by the
+				// global public key at any node in any mode, consistent with
+				// providerAllowsKeyType (P3-2: free pool out of the box).
 				filtered = append(filtered, c)
 			}
 		default:
