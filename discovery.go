@@ -103,9 +103,7 @@ func (f *FederationManager) fetchFromPeers() {
 			}
 			// R5: identify ourselves via X-Node-ID so the peer's withFederationAuth
 			// admits us (we are in its trust pool via P0-2 on first contact).
-			if node != nil {
-				req.Header.Set("X-Node-ID", node.NodeID())
-			}
+			attachFederationAuth(req)
 			resp, err := client.Do(req)
 			if err != nil {
 				slog.Debug("failed to fetch pool from peer",
@@ -178,9 +176,7 @@ func (f *FederationManager) fetchFromSeedNodes() (*TrustPool, error) {
 				return nil, false
 			}
 			// R5: identify ourselves via X-Node-ID (see fetchFromPeers for rationale).
-			if node != nil {
-				req.Header.Set("X-Node-ID", node.NodeID())
-			}
+			attachFederationAuth(req)
 			resp, err := client.Do(req)
 			if err != nil {
 				slog.Debug("seed node unreachable", "url", bootstrapURL, "error", err)

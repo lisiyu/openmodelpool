@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.5.6 (2026-08-16)
+
+Bug fix release (cross-node federation requests now authenticate):
+
+- **All outbound cross-node federation requests now attach `X-Federation-Secret`** (plus `X-Node-ID` / `X-Node-Timestamp`), so `withFederationAuth` path-3 admits them on the receiving node. Previously these clients sent only `X-Node-ID`, which fails every auth path whenever the trust pool lacks a populated `pub_key` (the deployment reality), producing a 403 flood on `/api/federation/gossip`, `/api/federation/pool`, `/api/federation/announce`, `/ledger/__sync`, `/ledger/__manifest`, `/ledger/__record`, and the update signal/report endpoints. A single `attachFederationAuth` helper (federation_auth_client.go) is now applied uniformly across gossip.go, discovery.go, ledger_replication.go, and update.go.
+- **Operators should set a shared `FEDERATION_SECRET`** (e.g. via systemd `Environment=`) on every node so path-3 has a non-empty secret to compare against; without it the header is a no-op (auth still rejects).
+- AppVersion bumped to 4.5.6.
+
 ## v4.5.5 (2026-08-15)
 
 Bug fix release (self-update is now strictly per-node):

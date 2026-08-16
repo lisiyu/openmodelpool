@@ -241,9 +241,7 @@ func (g *GossipManager) exchange(peer NodeInfo, msg GossipMessage) (*GossipMessa
 			// R5: identify ourselves via X-Node-ID so the receiver's
 			// withFederationAuth path-1 (X-Node-ID in trust pool) can admit us
 			// (we are bridged into the peer's trust pool by P0-2 on first contact).
-			if node != nil {
-				req.Header.Set("X-Node-ID", node.NodeID())
-			}
+			attachFederationAuth(req)
 			resp, err := client.Do(req)
 			if err != nil {
 				return nil, false, fmt.Errorf("POST to %s: %w", addr, err)
@@ -414,9 +412,7 @@ func (g *GossipManager) fetchFullPoolFromPeer(peer NodeInfo) {
 				return false
 			}
 			// R5: identify ourselves via X-Node-ID (see exchange for rationale).
-			if node != nil {
-				req.Header.Set("X-Node-ID", node.NodeID())
-			}
+			attachFederationAuth(req)
 			resp, err := client.Do(req)
 			if err != nil {
 				slog.Debug("failed to fetch pool from peer address",
@@ -684,9 +680,7 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 					req.Header.Set("Content-Type", "application/json")
 					// R5: identify ourselves via X-Node-ID so the receiver's
 					// withFederationAuth admits us (we are in its trust pool via P0-2).
-					if node != nil {
-						req.Header.Set("X-Node-ID", node.NodeID())
-					}
+					attachFederationAuth(req)
 					resp, err := client.Do(req)
 					if err != nil {
 						return false

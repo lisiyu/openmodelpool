@@ -1255,9 +1255,7 @@ func (um *UpdateManager) sendUpdateSignalToPeer(peer NodeInfo, body []byte, clie
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if node != nil {
-			req.Header.Set("X-Node-ID", node.NodeID())
-		}
+		attachFederationAuth(req)
 		resp, err := client.Do(req)
 		if err != nil {
 			continue // try next address
@@ -1376,7 +1374,7 @@ func (um *UpdateManager) reportToOrigin(sig UpdateSignal, phase UpdatePhase, pro
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Node-ID", node.NodeID())
+		attachFederationAuth(req)
 		resp, err := client.Do(req)
 		if err != nil {
 			continue

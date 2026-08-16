@@ -196,6 +196,7 @@ func (r *LedgerReplicator) replicateOne(rec *ContributionRecord) (int, error) {
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
+		attachFederationAuth(req)
 		resp, err := r.client.Do(req)
 		if err != nil {
 			slog.Warn("ledger replicate failed", "peer", base, "error", err)
@@ -217,6 +218,7 @@ func (r *LedgerReplicator) FetchManifest(peerBase string) (*LedgerManifest, erro
 	if err != nil {
 		return nil, err
 	}
+	attachFederationAuth(req)
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -239,6 +241,7 @@ func (r *LedgerReplicator) fetchRecord(peerBase, id string) (string, json.RawMes
 	if err != nil {
 		return "", nil, err
 	}
+	attachFederationAuth(req)
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return "", nil, err
