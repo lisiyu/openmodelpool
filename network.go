@@ -1723,7 +1723,66 @@ func handleNetworkPeers(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"peers": []PeerInfo{}, "message": "shared network not active"})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"peers": netMgr.GetPeers()})
+	writeJSON(w, 200, map[string]any{"peers": buildUnifiedPeerList()})
+}
+
+// buildUnifiedPeerList returns the union of the federation trust pool (minus
+// this node) and the locally configured manual peers, deduplicated by node_id.
+// The trust pool is the single source of truth for the mesh, so every node
+// renders the same connected-node list; local peers (added via the manual
+// "添加节点" flow) are merged in on top so operators still see explicitly added
+// endpoints even before they land in the pool.
+func buildUnifiedPeerList() []PeerInfo {
+	byID := map[string]PeerInfo{}
+
+	if fed != nil && fed.IsEnabled() {
+		pool := fed.GetTrustPool()
+		for i := range pool.Nodes {
+			n := pool.Nodes[i]
+			if node != nil && n.NodeID == node.NodeID() {
+				continue // never list self
+			}
+			byID[n.NodeID] = peerInfoFromNodeInfo(n)
+		}
+	}
+
+	for _, p := range netMgr.GetPeers() {
+		if node != nil && p.NodeID == node.NodeID() {
+			continue
+		}
+		if _, ok := byID[p.NodeID]; ok {
+			continue // trust pool entry wins
+		}
+		byID[p.NodeID] = p
+	}
+
+	out := make([]PeerInfo, 0, len(byID))
+	for _, p := range byID {
+		out = append(out, p)
+	}
+	return out
+}
+
+// peerInfoFromNodeInfo maps a federation NodeInfo into the PeerInfo shape the
+// network dashboard renders.
+func peerInfoFromNodeInfo(n NodeInfo) PeerInfo {
+	status := "online"
+	switch n.Status {
+	case "inactive", "suspended":
+		status = "degraded"
+	case "":
+		status = "online"
+	}
+	return PeerInfo{
+		NodeID:    n.NodeID,
+		Name:      n.GitHubUser,
+		Models:    n.SharedModels,
+		Status:    status,
+		LastSeen:  n.LastSeen,
+		JoinedAt:  n.JoinedAt,
+		Addresses: n.Addresses,
+		Unlocked:  n.Status == "active",
+	}
 }
 
 // resolvePublicEndpoint resolves the best publicly-reachable base endpoint for
