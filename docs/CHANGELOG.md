@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.5.13 (2026-08-16)
+
+Bug fix (federation model list survives restart):
+
+- **Trust pool is now persisted after each provider announcement.** `handleFederationAnnounce` updated a sender's `SharedProviders` in memory via `UpdateNodeInfo` but never saved the pool, so a peer's aggregated model list was lost on restart until the next 300s announcement cycle re-converged. It now calls `fed.save()` after applying an announcement.
+- AppVersion bumped to 4.5.13.
+
 ## v4.5.12 (2026-08-16)
 
 Improvement (federation-wide model list):
