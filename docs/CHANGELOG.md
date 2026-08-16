@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.5.12 (2026-08-16)
+
+Improvement (federation-wide model list):
+
+- **`/v1/models` now aggregates the whole federation, not just local models.** Previously every node returned only its own providers (the route-table aggregation existed but was never populated), so a 5-node mesh each showed only ~45 local models. Now `handleGatewayModels` merges the trust pool's `SharedProviders`/`SharedModels` (excluding self) with local models, deduplicated.
+- **Nodes now advertise their shared providers.** A new `gossip.broadcastLocalProviders()` signs and sends one `ProviderAnnouncement` per locally shared provider to all active peers; the receiver's `handleFederationAnnounce` stores them into the trust pool entry. It runs each federation refresh, so the mesh model view converges within a refresh interval and self-heals after restart.
+- **Security**: only providers whose access control allows sharing (share_to_pool / per-provider gate / relay enabled) are advertised — the same gate governing outbound resource sharing. Announcements are signature-verified and the sender must already be in the trust pool.
+- AppVersion bumped to 4.5.12.
+
 ## v4.5.11 (2026-08-16)
 
 Improvement (network dashboard shows a single consistent mesh view):
