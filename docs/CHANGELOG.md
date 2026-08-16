@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.5.11 (2026-08-16)
+
+Improvement (network dashboard shows a single consistent mesh view):
+
+- **`/api/network/peers` now returns the federation trust pool (minus self) merged with locally configured manual peers, deduplicated by node_id.** Previously the "已连接节点" list rendered each node's own persisted `network.json` peers, so nodes disagreed on what was connected (each had learned a different subset over time). Now every node displays the same mesh: all trust-pool peers except itself, with `online`/`degraded` status derived from pool state and GitHub user / shared models carried over. Manual peers added via the "添加节点" flow still appear, and a node never lists itself.
+- AppVersion bumped to 4.5.11.
+
 ## v4.5.10 (2026-08-16)
 
 Bug fix release (internal transport prefers IPv4; large SSE lines no longer break streams):
