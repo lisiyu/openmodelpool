@@ -1152,21 +1152,36 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 // handleGatewayModels returns an aggregated list of all models available across the network.
 // Models from all route table entries are deduplicated and merged with local models.
 func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
-	// Collect models from all route table entries
+	// Collect models advertised by federation trust-pool peers. This is the
+	// single source of truth for the mesh: every node's SharedProviders carry
+	// the model names it chose to share, learned via the announce channel.
 	modelSet := make(map[string]bool)
 
-	if routeTable != nil {
-		entries := routeTable.GetAll()
-		for _, entry := range entries {
-			for _, m := range entry.Models {
+	if fed != nil && fed.IsEnabled() {
+		pool := fed.GetTrustPool()
+		selfID := ""
+		if node != nil {
+			selfID = node.NodeID()
+		}
+		for i := range pool.Nodes {
+			n := pool.Nodes[i]
+			if n.NodeID == selfID {
+				continue
+			}
+			for _, sp := range n.SharedProviders {
+				for _, m := range sp.Models {
+					modelSet[m] = true
+				}
+			}
+			for _, m := range n.SharedModels {
 				modelSet[m] = true
 			}
 		}
 	}
 
-	// Also include local models
+	// Also include local models (respecting the caller's key type).
 	if pm != nil {
-		localModels := pm.AllModels()
+		localModels := pm.AllModelsFiltered(RequestKeyType(r))
 		for _, m := range localModels {
 			modelSet[m.ID] = true
 		}

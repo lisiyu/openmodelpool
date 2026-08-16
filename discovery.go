@@ -272,6 +272,13 @@ func (f *FederationManager) doRefresh() {
 
 	// 3. Try active peers (P2P fallback)
 	f.fetchFromPeers()
+
+	// Advertise our own shared providers so peers learn our model list. This is
+	// what feeds the federation-wide /v1/models aggregation. Best-effort and
+	// non-blocking; if gossip is not running this is a no-op.
+	if gossip != nil {
+		gossip.broadcastLocalProviders()
+	}
 }
 
 // handleFederationPool is the HTTP handler for GET /federation/pool.

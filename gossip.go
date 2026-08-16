@@ -679,6 +679,28 @@ func handleFederationAnnounce(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 }
 
+// broadcastLocalProviders signs and sends a provider announcement for every
+// provider this node currently shares (via getLocalSharedProviders) to all
+// active federation peers. The receiver's handleFederationAnnounce stores the
+// provider/model list into the trust pool entry, which is what makes the
+// federation-wide /v1/models aggregation work. Called on federation refresh so
+// model lists converge within a refresh interval.
+func (g *GossipManager) broadcastLocalProviders() {
+	if fed == nil || !fed.IsEnabled() || node == nil || !node.IsInitialized() {
+		return
+	}
+	_, providers := fed.getLocalSharedProviders()
+	for _, sp := range providers {
+		g.broadcastAnnouncement(ProviderAnnouncement{
+			NodeID:     node.NodeID(),
+			ProviderID: sp.ProviderID,
+			Platform:   sp.Platform,
+			Models:     sp.Models,
+			Capacity:   sp.Capacity,
+		})
+	}
+}
+
 // broadcastAnnouncement sends a ProviderAnnouncement to all known active peers
 // asynchronously. Tries all available addresses per peer. The announcement is signed before broadcasting.
 func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
