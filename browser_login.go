@@ -396,6 +396,28 @@ func cleanupSession(providerID string) {
 	}
 }
 
+// isExecNotFound reports whether a chromedp launch error is caused by a missing
+// Chrome/Chromium executable (as opposed to a runtime crash), so the start
+// handler can surface an actionable message instead of a raw exec error.
+func isExecNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, probe := range []string{
+		"executable file not found",
+		"no such file or directory",
+		"exec:",
+		"chrome: not found",
+		"chromium: not found",
+	} {
+		if strings.Contains(msg, probe) {
+			return true
+		}
+	}
+	return false
+}
+
 // ============ HTTP Handlers ============
 
 // recoverHandler recovers from panics in a browser HTTP handler and writes a
@@ -423,17 +445,26 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for existing session
+	// Check for existing session. A terminal (error/canceled) session must NOT
+	// block a retry — otherwise a single failed launch (e.g. Chrome missing on
+	// the host) sticks the admin on the stale error status for the full 10-min
+	// auto-cleanup window and the "浏览器登录" feature becomes unusable. Only a
+	// live/active session short-circuits; a terminal one is cleared so a fresh
+	// launch can proceed immediately.
 	if sess, ok := getSession(id); ok {
-		sess.mu.Lock()
-		resp := map[string]any{
-			"status":     sess.status,
-			"message":    sess.message,
-			"screenshot": sess.screenshot,
+		if sess.status == "error" || sess.status == "canceled" {
+			cleanupSession(id)
+		} else {
+			sess.mu.Lock()
+			resp := map[string]any{
+				"status":     sess.status,
+				"message":    sess.message,
+				"screenshot": sess.screenshot,
+			}
+			sess.mu.Unlock()
+			writeJSON(w, 200, resp)
+			return
 		}
-		sess.mu.Unlock()
-		writeJSON(w, 200, resp)
-		return
 	}
 
 	browserSessionsMu.RLock()
@@ -528,7 +559,11 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 		sess.update("navigating", "正在启动浏览器...", nil)
 		err := chromedp.Run(sess.ctx, chromedp.Navigate("about:blank"))
 		if err != nil {
-			sess.update("error", "浏览器启动失败: "+err.Error(), nil)
+			msg := "浏览器启动失败: " + err.Error()
+			if isExecNotFound(err) {
+				msg = "浏览器启动失败：未找到 Chrome/Chromium 可执行文件。请在运行 OMP 的服务器安装 Chrome 或 Chromium，或通过环境变量 OMP_CHROME_PATH 指定其路径后重试。"
+			}
+			sess.update("error", msg, nil)
 			return
 		}
 

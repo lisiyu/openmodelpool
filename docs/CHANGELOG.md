@@ -1,5 +1,15 @@
 # Changelog
 
+## v4.5.10 (2026-08-16)
+
+Bug fix release (internal transport prefers IPv4; large SSE lines no longer break streams):
+
+- **Internal HTTP transport now prefers IPv4.** `internalTransport` uses a new `dialPreferIPv4` DialContext that dials `tcp4` first and only falls back to `tcp6` when IPv4 is unavailable. On hosts whose IPv6 egress is dead (AAAA resolves but the connection never completes) Go's `net/http` does not reliably fall back the way `curl` does, so ledger reconcile / gossip / federation relay / discovery / self-update were hanging until the 10s client timeout. The fix is transport-level and tunnel-agnostic, so it applies uniformly to every peer — nodes reached without a tunnel are unaffected.
+- **`openaiStream` SSE scanner buffer raised 1 MiB → 16 MiB.** A single upstream SSE line larger than 1 MiB (big `tool_calls`, long `reasoning`, inline media) tripped `bufio.ErrTooLong` and broke the client stream; the cap now covers realistic payloads. Added regression test `TestProxyKeyClient_StreamLargeLine` (2 MiB single line).
+- **Built-in browser exec hardened** (`browser_login.go`): terminal-session retry, explicit "Chrome/Chromium not found" error, and an `isExecNotFound` helper. Added `browser_exec_test.go`.
+- **Governance wording unification:** `docs/FEATURES.md` and `docs/FEDERATION.md` "积分 / 贡献积分" → "公益额度·贡献记账（非货币）" to match the no-token/no-points red line.
+- AppVersion bumped to 4.5.10.
+
 ## v4.5.9 (2026-08-16)
 
 Bug fix release (trust pool pub_key backfill ends residual gossip 403):

@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime"
 	"sync"
@@ -74,7 +75,41 @@ var internalTransport = &http.Transport{
 	ExpectContinueTimeout: 1 * time.Second,
 	ForceAttemptHTTP2:     true,
 	TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, // #nosec G402 -- internalTransport only talks to mutually-trusted pool nodes; self-signed certs are expected
+	DialContext:       dialPreferIPv4,
 }
+
+// dialPreferIPv4 is the DialContext used by internalTransport. Some pool hosts
+// have a dead IPv6 egress path (e.g. AAAA resolves but the connection never
+// completes), while their IPv4 path is healthy. Go's net/http does NOT reliably
+// fall back to IPv4 the way curl's Happy-Eyeballs does, so outbound internal
+// calls (gossip, ledger reconcile, federation relay, discovery, update) would
+// hang until the client timeout. We therefore dial tcp4 first and only fall
+// back to tcp6 when IPv4 is unavailable. This is transport-level and applies
+// uniformly to every peer, regardless of whether the node is reached via a
+// tunnel or a direct public address — non-tunneled nodes are unaffected.
+func dialPreferIPv4(ctx context.Context, network, addr string) (net.Conn, error) {
+	d := net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	switch network {
+	case "tcp", "tcp4", "tcp6":
+		if network != "tcp6" {
+			if conn, err := d.DialContext(ctx, "tcp4", addr); err == nil {
+				return conn, nil
+			}
+		}
+		if network != "tcp4" {
+			return d.DialContext(ctx, "tcp6", addr)
+		}
+		return nil, errNoIPv4
+	default:
+		return d.DialContext(ctx, network, addr)
+	}
+}
+
+var errNoIPv4 = &net.OpError{Op: "dial", Net: "tcp", Err: errNoIPv4Inner{}}
+
+type errNoIPv4Inner struct{}
+
+func (errNoIPv4Inner) Error() string { return "no usable IP family (tcp4 unavailable)" }
 
 var internalHTTPClient *http.Client
 

@@ -594,7 +594,12 @@ func openaiStream(ctx context.Context, p Provider, model string, messages []Chat
 	// Stream with idle timeout: if no data received for 90 seconds, abort
 	const streamIdleTimeout = 90 * time.Second
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	// B-cap: a single SSE `data:` line may exceed the default 64 KiB scanner
+	// token (1 MiB hard cap) when an upstream emits a large delta in one chunk
+	// — e.g. a big tool_calls argument, a long reasoning delta, or inline
+	// media. Without this, Scan() returns bufio.ErrTooLong and the client sees
+	// a truncated/errored stream. 16 MiB covers realistic single-chunk payloads.
+	scanner.Buffer(make([]byte, 0, 256*1024), 16*1024*1024)
 
 	done := make(chan error, 1)
 	go func() {

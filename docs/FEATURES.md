@@ -128,7 +128,7 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 | **BIP39 Mnemonic** | Generated when joining the network (12/24 words), manually backed up, never uploaded; generation `node.go GenerateWithMnemonic`, restore `RestoreFromMnemonic` |
 | **Ed25519 Key Pair** | Derived from mnemonic (BIP32/SLIP-0010); private key never leaves this node; public key served at `/api/node/pubkey` and broadcast network-wide |
 | **Node ID** | Unique identifier: `mmx-` + Base58(Ed25519 public key first 16 bytes) |
-| **Signing** | All broadcast data (Providers, scores, credit transactions) signed by node private key |
+| **Signing** | All broadcast data (Providers, scores, contribution-ledger transactions) signed by node private key |
 
 ### 🌍 P2P Node Discovery (Triple-Layer) ⚠️
 
@@ -180,13 +180,13 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 
 ### 💎 Contribution Ledger (Non-Currency) ⚠️
 
-> **⚠️ Ledger is local-first with federation replication (P1-3 delivered).** Contribution records are persisted locally with a **verifiable content hash** (`sha256:` prefix via `ContentHashStore`) — there is **no IPFS / distributed persistence** yet. Since v4.3.x, records are **push-replicated** to federation peers (`ledger_replication.go`, `/ledger/__manifest|__sync|__record`, `withFederationAuth`) and a **60s background reconcile loop** (`startLedgerReconcileLoop`) heals missing records from peers. Contribution credits are still computed from the local view; the anti-double-spend chain is backed by signed records. IPFS-style global persistence remains a future phase.
+> **⚠️ Ledger is local-first with federation replication (P1-3 delivered).** Contribution records are persisted locally with a **verifiable content hash** (`sha256:` prefix via `ContentHashStore`) — there is **no IPFS / distributed persistence** yet. Since v4.3.x, records are **push-replicated** to federation peers (`ledger_replication.go`, `/ledger/__manifest|__sync|__record`, `withFederationAuth`) and a **60s background reconcile loop** (`startLedgerReconcileLoop`) heals missing records from peers. Contribution-ledger entries (公益额度·贡献记账, non-currency) are still computed from the local view; the anti-double-spend chain is backed by signed records. IPFS-style global persistence remains a future phase.
 
 - **Earn**: Provide Provider resources that other nodes consume → the ledger credits you 1:1 with what you gave (requests without request-id are not counted). No fee, no interest, no inflation
 - **Spend**: A verified contributor draws on its own entitlement instead of the anonymous per-IP abuse guard. Running out is **not** a rejection — the request falls through to the community free pool like anyone else's
 - **Non-withdrawable**: Cannot be exchanged for fiat or financial assets
 - **Non-transferable**: Cannot be transferred between nodes
-- **Bound to Node ID**: Credits follow identity, not device
+- **Bound to Node ID**: Entitlement (公益额度·贡献记账) follows identity, not device
 - **Anti-double-spend**: Each transaction includes predecessor hash, chain verification
 
 ### Contribution Ledger eligibility (consumer-side draw)
