@@ -143,6 +143,12 @@ func initAllNetwork() {
 
 	// Dynamic load balancer (Phase 4)
 	initLoadBalancer(context.Background())
+
+	// P1-1(ii): bridge the real UDP DHT transport into production for
+	// decentralized node discovery. Runs only when joined to the shared network
+	// (network_enabled) and a NodeID is derived. Nil-safe; a bind failure logs
+	// and continues without crashing startup.
+	startDHTNode()
 }
 
 // startBackgroundTasks launches long-running goroutines for periodic tasks.

@@ -141,6 +141,7 @@ func gracefulShutdown(server *http.Server) {
 		case syscall.SIGINT, syscall.SIGTERM:
 			slog.Info("shutting down...")
 			closeGlobalStopCh() // signal all background goroutines
+			stopDHTNode()       // P1-1(ii): close the DHT UDP socket promptly
 			cfg.stop()
 			cfg.saveSync()
 			tracker.Stop()
@@ -181,8 +182,7 @@ func gracefulShutdown(server *http.Server) {
 				ledgerReplicator.Stop()
 			}
 			if netMgr != nil {
-				netMgr.stopRefreshLoop()
-			}
+				netMgr.stopRefreshLoop()			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			server.Shutdown(ctx)

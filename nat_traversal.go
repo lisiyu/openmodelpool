@@ -397,6 +397,13 @@ func (n *NATManager) udpRecvLoop() {
 			default:
 			}
 		}
+		// P1-2b-2(iv): data frames (distinct "OMP2" magic) are handed to the UDP
+		// data bearer, which reassembles relay requests/responses carried over
+		// the verified direct link. The copy is required because buf is reused.
+		if udpDataBearer != nil && isDataFrame(buf[:nn]) {
+			udpDataBearer.HandleInbound(append([]byte(nil), buf[:nn]...), addr)
+			continue
+		}
 	}
 }
 
@@ -410,6 +417,13 @@ func ensureDirectLinkMgr() {
 		return
 	}
 	directLinkMgr = NewDirectLinkManager(natMgr.udpConn, netMgr.GetNodeID(), natMgr.localUDP, natMgr.publicAddr, false)
+	// P1-2b-2(iv): the same shared socket also carries relay data frames over
+	// verified direct links. Enabled by default; opt out with
+	// udp_data_bearer_enabled=false. nil when disabled or socket unavailable.
+	if cfg.Get("udp_data_bearer_enabled", "true") != "false" {
+		udpDataBearer = NewUDPDataBearer(natMgr.udpConn, netMgr.GetNodeID())
+		slog.Info("udp data bearer initialized (direct-link relay)", "node_id", netMgr.GetNodeID())
+	}
 }
 
 func init() {

@@ -448,6 +448,22 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 	}
 	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
+	// P1-2b-2(iv): if a verified direct UDP link exists to this peer, actually
+	// carry the request over that link instead of the HTTPS reverse proxy. Any
+	// failure (timeout, fragmentation gap, decode error) returns false and we
+	// fall through to the proven HTTPS path below — no partial write occurs
+	// because the response is fully reassembled before touching w.
+	if directLinkMgr != nil && directLinkMgr.HasDirect(entry.NodeID) && udpDataBearer != nil {
+		rest := "/"
+		if len(parts) > 1 {
+			rest = "/" + parts[1]
+		}
+		if udpDataBearer.RelayOverUDP(w, r, entry.NodeID, rest, bodyBytes, hopCount) {
+			return
+		}
+		slog.Warn("relay: UDP data bearer failed; falling back to HTTPS relay", "peer", entry.NodeID)
+	}
+
 	// Sign the forward over the *forwarded* path (restPath) so the receiving
 	// node, which sees the stripped path, reconstructs an identical envelope.
 	sig, ts := signRelayForward(relayFrom, r.Method, restPath, bodyBytes)

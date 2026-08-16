@@ -243,6 +243,19 @@ func (d *DirectLinkManager) DirectAddr(nodeID string) *net.UDPAddr {
 	return a
 }
 
+// RegisterDirectLink records an established direct address for a peer without
+// running the punch handshake. It is used when a direct route is known a priori
+// (e.g. a configured/admin-pinned peer) so the data bearer can send before a
+// punch session has opened. It is nil-safe and idempotent.
+func (d *DirectLinkManager) RegisterDirectLink(nodeID string, addr *net.UDPAddr) {
+	if addr == nil {
+		return
+	}
+	d.mu.Lock()
+	d.links[nodeID] = addr
+	d.mu.Unlock()
+}
+
 // Stop cancels all punches. It does NOT close conn — the socket lifetime is
 // owned by NATManager (or the test, which closes its own).
 func (d *DirectLinkManager) Stop() {

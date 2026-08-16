@@ -90,8 +90,17 @@ func NewDHTNode(selfID, addr string, net DHTTransport) *DHTNode {
 // ID returns the node's 256-bit identifier.
 func (n *DHTNode) ID() DHTNodeID { return n.id }
 
+// idHex returns the hex encoding of the node ID (used for log lines and for
+// deriving unique outbound message IDs in the UDP transport).
+func (n *DHTNode) idHex() string { return hex.EncodeToString(n.id[:]) }
+
 // Addr returns the node's address.
 func (n *DHTNode) Addr() string { return n.addr }
+
+// SetTransport attaches the delivery transport after construction. It exists so
+// a node can be created before its transport is built (the transport needs the
+// node reference to dispatch inbound requests, creating a construction cycle).
+func (n *DHTNode) SetTransport(t DHTTransport) { n.net = t }
 
 // TableSize returns the number of nodes currently in the routing table.
 func (n *DHTNode) TableSize() int { return n.dht.TotalNodes() }
