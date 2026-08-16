@@ -670,6 +670,9 @@ func handleFederationAnnounce(w http.ResponseWriter, r *http.Request) {
 	}
 	updated.LastSeen = time.Now().UTC().Format(time.RFC3339)
 	fed.UpdateNodeInfo(updated)
+	// Persist the updated shared providers so a restart doesn't lose the
+	// peer's model list before the next announcement cycle converges.
+	fed.save()
 
 	slog.Info("processed provider announcement",
 		"from", ann.NodeID,
