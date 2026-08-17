@@ -1155,7 +1155,18 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 	// Collect models advertised by federation trust-pool peers. This is the
 	// single source of truth for the mesh: every node's SharedProviders carry
 	// the model names it chose to share, learned via the announce channel.
-	modelSet := make(map[string]bool)
+	modelSrc := make(map[string]map[string]bool)
+
+	// sourceName picks a human-friendly label for a peer node.
+	sourceName := func(n NodeInfo) string {
+		if n.GitHubUser != "" {
+			return n.GitHubUser
+		}
+		if n.Endpoint != "" {
+			return n.Endpoint
+		}
+		return n.NodeID
+	}
 
 	if fed != nil && fed.IsEnabled() {
 		pool := fed.GetTrustPool()
@@ -1168,13 +1179,20 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 			if n.NodeID == selfID {
 				continue
 			}
+			src := sourceName(n)
 			for _, sp := range n.SharedProviders {
 				for _, m := range sp.Models {
-					modelSet[m] = true
+					if modelSrc[m] == nil {
+						modelSrc[m] = make(map[string]bool)
+					}
+					modelSrc[m][src] = true
 				}
 			}
 			for _, m := range n.SharedModels {
-				modelSet[m] = true
+				if modelSrc[m] == nil {
+					modelSrc[m] = make(map[string]bool)
+				}
+				modelSrc[m][src] = true
 			}
 		}
 	}
@@ -1183,19 +1201,29 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 	if pm != nil {
 		localModels := pm.AllModelsFiltered(RequestKeyType(r))
 		for _, m := range localModels {
-			modelSet[m.ID] = true
+			if modelSrc[m.ID] == nil {
+				modelSrc[m.ID] = make(map[string]bool)
+			}
+			modelSrc[m.ID]["local"] = true
 		}
 	}
 
-	// Build deduplicated list
-	models := make([]ModelInfo, 0, len(modelSet))
-	for id := range modelSet {
-		models = append(models, ModelInfo{
+	// Build deduplicated list with per-model source annotation.
+	models := make([]ModelInfo, 0, len(modelSrc))
+	for id, srcs := range modelSrc {
+		mi := ModelInfo{
 			ID:      id,
 			Object:  "model",
 			Created: time.Now().Unix(),
 			OwnedBy: "network",
-		})
+		}
+		if len(srcs) > 0 {
+			mi.MeshSources = make([]string, 0, len(srcs))
+			for s := range srcs {
+				mi.MeshSources = append(mi.MeshSources, s)
+			}
+		}
+		models = append(models, mi)
 	}
 
 	writeJSON(w, 200, ModelListResponse{Object: "list", Data: models})

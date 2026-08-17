@@ -82,3 +82,75 @@ func TestHandleGatewayModels_NoTrustPoolStillServesLocal(t *testing.T) {
 		t.Errorf("object = %q, want list", out.Object)
 	}
 }
+
+// TestHandleGatewayModels_MeshSourcesAnnotated verifies that each aggregated
+// model carries the node source(s) it came from (GitHubUser / local).
+func TestHandleGatewayModels_MeshSourcesAnnotated(t *testing.T) {
+	setupDiscoveryTestEnv(t)
+
+	fed.AddKnownNode(NodeInfo{
+		NodeID:          "mmx-peer-1",
+		GitHubUser:      "peer-user",
+		Status:          "active",
+		SharedProviders: []SharedProvider{{ProviderID: "peer-llm", Models: []string{"peer-gpt4"}}},
+	})
+	fed.AddKnownNode(NodeInfo{
+		NodeID:   "mmx-peer-2",
+		Endpoint: "https://n2.example.com",
+		Status:   "active",
+		SharedModels: []string{"peer-extra"},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	handleGatewayModels(rec, req)
+
+	var out ModelListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	sources := map[string][]string{}
+	for _, m := range out.Data {
+		sources[m.ID] = m.MeshSources
+	}
+
+	// peer-gpt4 comes from mmx-peer-1 (GitHubUser label).
+	got, ok := sources["peer-gpt4"]
+	if !ok {
+		t.Fatal("peer-gpt4 missing from aggregated list")
+	}
+	found := false
+	for _, s := range got {
+		if s == "peer-user" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("peer-gpt4 sources = %v, want to include peer-user", got)
+	}
+
+	// peer-extra comes from mmx-peer-2 (Endpoint label).
+	got2, ok := sources["peer-extra"]
+	if !ok {
+		t.Fatal("peer-extra missing from aggregated list")
+	}
+	found2 := false
+	for _, s := range got2 {
+		if s == "https://n2.example.com" {
+			found2 = true
+		}
+	}
+	if !found2 {
+		t.Errorf("peer-extra sources = %v, want to include https://n2.example.com", got2)
+	}
+
+	// No self node (node.NodeID()) may appear in any source list.
+	for id, srcs := range sources {
+		for _, s := range srcs {
+			if s == node.NodeID() {
+				t.Errorf("model %s lists self node_id %q as a source", id, s)
+			}
+		}
+	}
+}

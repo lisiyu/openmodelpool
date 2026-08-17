@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.5.16 (2026-08-16)
+
+Feature (federated model catalog transparency):
+
+- **Aggregated `/v1/models` now annotates each model with `mesh_sources`** — the list of nodes (`GitHubUser` or endpoint label, or `local`) that advertise it. The federated catalog is now self-describing: tooling can see whether a model comes from the local node, a specific peer, or several peers, and operators can audit the mesh at a glance. `omitempty` keeps the payload OpenAI-compatible.
+- AppVersion bumped to 4.5.16.
+
 ## v4.5.15 (2026-08-16)
 
 Feature (free-pool rate-limit resilience):

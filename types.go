@@ -151,6 +151,10 @@ type ModelInfo struct {
 	Object  string `json:"object"`
 	Created int64  `json:"created"`
 	OwnedBy string `json:"owned_by"`
+	// MeshSources lists which federation nodes (or "local") advertise this
+	// model. Omitempty keeps the OpenAI-compatible payload stable for clients
+	// that reject unknown fields.
+	MeshSources []string `json:"mesh_sources,omitempty"`
 }
 
 type ModelListResponse struct {
