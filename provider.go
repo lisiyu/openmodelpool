@@ -556,8 +556,67 @@ func (m *ProviderManager) OrderedCandidates(model, mode string) []candidate {
 	if len(cands) == 0 {
 		return nil
 	}
+	cands = filterCooldownProviders(cands)
 	m.sortCandidates(&cands, mode)
 	return cands
+}
+
+// ---- Provider rate-limit cooldown (429 circuit breaker) ----
+// When an upstream returns 429, the provider is temporarily cooled down so
+// subsequent routing prefers other candidates (e.g. the same model on a
+// different free-pool node/provider) instead of hammering the same limiter.
+
+var (
+	cooldownMu   sync.Mutex
+	cooldownMap  = make(map[string]time.Time)
+	cooldownTime = 30 * time.Second
+)
+
+// recordProviderCooldown marks a provider as rate-limited until now+cooldown.
+func recordProviderCooldown(providerID string) {
+	cooldownMu.Lock()
+	defer cooldownMu.Unlock()
+	cooldownMap[providerID] = time.Now().Add(cooldownTime)
+}
+
+// providerInCooldown reports whether the provider is currently cooled down.
+func providerInCooldown(providerID string) bool {
+	cooldownMu.Lock()
+	defer cooldownMu.Unlock()
+	until, ok := cooldownMap[providerID]
+	if !ok {
+		return false
+	}
+	if time.Now().After(until) {
+		delete(cooldownMap, providerID)
+		return false
+	}
+	return true
+}
+
+// filterCooldownProviders drops cooled-down candidates, unless doing so would
+// empty the list (then the original candidates are kept so the caller still
+// gets a real upstream error to report).
+func filterCooldownProviders(cands []candidate) []candidate {
+	var out []candidate
+	for _, c := range cands {
+		if !providerInCooldown(c.Provider.ID) {
+			out = append(out, c)
+		}
+	}
+	if len(out) == 0 {
+		return cands
+	}
+	return out
+}
+
+// isRateLimitError reports whether an upstream error is a 429 rate limit.
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "(429)") || strings.Contains(msg, "429 Too Many Requests") || strings.Contains(msg, "rate limit")
 }
 
 func isOrgPrefix(s string) bool {

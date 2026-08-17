@@ -830,6 +830,9 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			// No data sent yet — safe to try next provider
 			slog.Warn("stream failed before data sent, trying next provider", "provider", p.Name, "error", err)
 			lastErr = err
+			if isRateLimitError(err) {
+				recordProviderCooldown(p.ID)
+			}
 		} else {
 			IncrConn(p.ID, accessType)
 			resp, err := doNonStream(r.Context(), p, actualModel, req.Messages, extra)
@@ -837,6 +840,9 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				slog.Warn("non-stream provider failed", "provider", p.Name, "model", actualModel, "error", err)
 				lastErr = err
+				if isRateLimitError(err) {
+					recordProviderCooldown(p.ID)
+				}
 				tracker.RecordWithAccessType(p.ID, p.Name, model, 0, 0, float64(time.Since(startTime).Milliseconds()), false, err.Error(), false, 0, accessType)
 				continue
 			}
@@ -854,6 +860,13 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, resp)
 			return
 		}
+	}
+
+	if lastErr != nil && isRateLimitError(lastErr) {
+		// Rate-limited upstream: surface 429 so the client knows to back off
+		// and retry later (instead of a generic 502).
+		writeError(w, 429, "上游限流，请稍后重试 (rate limited)")
+		return
 	}
 
 	writeError(w, 502, fmt.Sprintf("all providers failed: %v", lastErr))

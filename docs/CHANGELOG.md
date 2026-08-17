@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.5.15 (2026-08-16)
+
+Feature (free-pool rate-limit resilience):
+
+- **Provider 429 cooldown.** After an upstream `429` error, the provider is cooled down for 30s and `OrderedCandidates` drops it, so routing prefers other candidates (same model via another free provider / node) instead of hammering the same limiter. If all candidates are cooled the originals are kept so the caller still gets a truthful error.
+- **429 instead of 502 for rate limits.** When every candidate failed and the last error is rate-limit-classified, the gateway returns `429 上游限流，请稍后重试` so clients back off and retry.
+- AppVersion bumped to 4.5.15.
+
 ## v4.5.14 (2026-08-16)
 
 Bug fix (global public key can now actually use the community free pool in shared mode):
