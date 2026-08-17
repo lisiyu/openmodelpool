@@ -62,6 +62,14 @@ func handleFreePoolPage(w http.ResponseWriter, r *http.Request) {
 	serveEmbeddedHTML(w, r, "admin-free-pool.html", true)
 }
 
+func handleFederationHealthPage(w http.ResponseWriter, r *http.Request) {
+	if !auth.Initialized() {
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
+	serveEmbeddedHTML(w, r, "federation-health.html", true)
+}
+
 func handleAdminCommonJS(w http.ResponseWriter, r *http.Request) {
 	serveEmbeddedJS(w, r, "admin-common.js")
 }

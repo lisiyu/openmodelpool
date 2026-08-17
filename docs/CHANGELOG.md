@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.5.17 (2026-08-16)
+
+Feature (federation health visibility):
+
+- **New `/api/federation/health`** (admin auth) returns a node-level mesh snapshot: per-node status, last-seen freshness (`fresh`/`stale`/`dead`), version, reputation, and what each peer shares (providers / models), plus pool version and self identity. Builds on the trust pool, so it needs no extra polling.
+- **New `/admin/federation-health` dashboard page** (embedded HTML, auto-refreshes every 15s) renders the mesh as an at-a-glance table with badges. Added to the go:embed set.
+- AppVersion bumped to 4.5.17.
+
 ## v4.5.16 (2026-08-16)
 
 Feature (federated model catalog transparency):

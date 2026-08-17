@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-//go:embed admin.html admin-provider.html admin-models.html admin-browser-login.html admin-free-pool.html admin-common.js admin-settings.js admin-network.js admin-share.js admin-logs.js admin-update.js admin-ledger.js setup.html login.html
+//go:embed admin.html admin-provider.html admin-models.html admin-browser-login.html admin-free-pool.html admin-common.js admin-settings.js admin-network.js admin-share.js admin-logs.js admin-update.js admin-ledger.js federation-health.html setup.html login.html
 var htmlFS embed.FS
 
 // serveEmbeddedHTML serves an HTML file from the embedded filesystem.

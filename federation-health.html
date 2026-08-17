@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenModelPool - 联邦健康面板</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg-primary:#0f0f23;--bg-secondary:#1a1a2e;--bg-card:#16213e;--border-color:#2a2a4a;--text-primary:#e8e8f0;--text-secondary:#a0a0b8;--text-muted:#6a6a8a;--accent-start:#6c63ff;--accent-end:#b24bf3;--success:#22c55e;--error:#ef4444;--warning:#f59e0b;--info:#3b82f6;--radius:12px;--shadow:0 4px 24px rgba(0,0,0,.3)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;min-height:100vh}
+.container{max-width:1100px;margin:0 auto;padding:24px 20px 60px}
+.header{text-align:center;padding:32px 0 28px;position:relative}
+.header::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:120px;height:3px;background:linear-gradient(90deg,var(--accent-start),var(--accent-end));border-radius:2px}
+.logo{font-size:26px;font-weight:700;background:linear-gradient(135deg,var(--accent-start),var(--accent-end));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:6px}
+.logo-sub{font-size:13px;color:var(--text-muted);letter-spacing:1px}
+.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:24px}
+.status-item{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius);padding:16px 18px}
+.status-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+.status-value{font-size:20px;font-weight:600;margin-top:4px}
+.status-value .sub{font-size:12px;color:var(--text-muted);font-weight:400;margin-left:6px}
+.card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:20px;margin-bottom:20px;box-shadow:var(--shadow)}
+.card-title{font-size:15px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid rgba(0,0,0,.04);vertical-align:middle}
+tr:hover td{background:rgba(108,99,255,.04)}
+.badge{display:inline-flex;align-items:center;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+.badge-green{background:rgba(34,197,94,.15);color:var(--success);border:1px solid rgba(34,197,94,.3)}
+.badge-red{background:rgba(239,68,68,.15);color:var(--error);border:1px solid rgba(239,68,68,.3)}
+.badge-yellow{background:rgba(245,158,11,.15);color:var(--warning);border:1px solid rgba(245,158,11,.3)}
+.badge-blue{background:rgba(59,130,246,.15);color:var(--info);border:1px solid rgba(59,130,246,.3)}
+.badge-gray{background:rgba(160,160,184,.12);color:var(--text-muted);border:1px solid rgba(160,160,184,.25)}
+.mono{font-family:Consolas,Menlo,monospace;font-size:12px;color:var(--text-secondary)}
+.footer{text-align:center;font-size:12px;color:var(--text-muted);margin-top:12px}
+.refresh-hint{color:var(--text-muted);font-size:12px;text-align:center;margin-top:4px}
+.error-banner{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:var(--error);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:none}
+@media(max-width:640px){.container{padding:16px 12px 40px}.logo{font-size:20px}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo">Federation Health</div>
+    <div class="logo-sub">OpenModelPool 联邦节点健康面板 · 每 15s 自动刷新</div>
+  </div>
+
+  <div class="error-banner" id="errBanner"></div>
+
+  <div class="status-grid" id="overview">
+    <div class="status-item"><div class="status-label">Federation</div><div class="status-value" id="stEnabled">…</div></div>
+    <div class="status-item"><div class="status-label">Relay</div><div class="status-value" id="stRelay">…</div></div>
+    <div class="status-item"><div class="status-label">Nodes</div><div class="status-value" id="stNodes">…</div></div>
+    <div class="status-item"><div class="status-label">Active</div><div class="status-value" id="stActive">…</div></div>
+    <div class="status-item"><div class="status-label">Pool v</div><div class="status-value" id="stPoolVer">…</div></div>
+    <div class="status-item"><div class="status-label">Self Version</div><div class="status-value" id="stSelfVer">…</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">节点清单</div>
+    <table>
+      <thead>
+        <tr>
+          <th>节点</th><th>GitHub</th><th>状态</th><th>新鲜度</th><th>版本</th><th>信誉</th><th>提供者</th><th>共享模型</th><th>最后心跳</th>
+        </tr>
+      </thead>
+      <tbody id="nodesBody"></tbody>
+    </table>
+  </div>
+
+  <div class="footer" id="footer"></div>
+  <div class="refresh-hint" id="refreshHint"></div>
+</div>
+
+<script>
+let lastData = null;
+
+async function refresh() {
+  const el = document.getElementById('errBanner');
+  el.style.display = 'none';
+  try {
+    const res = await fetch('/api/federation/health', { credentials: 'include' });
+    if (!res.ok) {
+      if (res.status === 401) { location.href = '/login.html'; return; }
+      throw new Error('HTTP ' + res.status);
+    }
+    lastData = await res.json();
+    render();
+  } catch (e) {
+    el.textContent = '加载失败: ' + e.message;
+    el.style.display = 'block';
+  }
+}
+
+function badge(status) {
+  switch (status) {
+    case 'active': return '<span class="badge badge-green">active</span>';
+    case 'suspended': return '<span class="badge badge-red">suspended</span>';
+    case 'inactive': return '<span class="badge badge-gray">inactive</span>';
+    default: return '<span class="badge badge-gray">' + (status || '?') + '</span>';
+  }
+}
+
+function freshnessBadge(f) {
+  switch (f) {
+    case 'fresh': return '<span class="badge badge-green">fresh</span>';
+    case 'stale': return '<span class="badge badge-yellow">stale</span>';
+    case 'dead': return '<span class="badge badge-red">dead</span>';
+    default: return '<span class="badge badge-gray">?</span>';
+  }
+}
+
+function render() {
+  const d = lastData;
+  if (!d) return;
+
+  const fmt = (v) => v === undefined || v === null || v === '' ? '—' : v;
+  const enabled = d.enabled;
+  document.getElementById('stEnabled').innerHTML = enabled
+    ? '<span class="badge badge-green">enabled</span>' : '<span class="badge badge-red">disabled</span>';
+  document.getElementById('stRelay').innerHTML = d.relay
+    ? '<span class="badge badge-green">on</span>' : '<span class="badge badge-gray">off</span>';
+  document.getElementById('stNodes').textContent = d.total_nodes;
+  document.getElementById('stActive').textContent = d.active_nodes;
+  document.getElementById('stPoolVer').textContent = fmt(d.pool_version);
+  document.getElementById('stSelfVer').textContent = fmt(d.self_version);
+
+  const rows = (d.nodes || []).map(n => {
+    const who = n.self ? n.node_id + ' <span class="badge badge-blue">self</span>' : n.node_id;
+    const user = fmt(n.github_user);
+    const ver = fmt(n.version);
+    return '<tr>' +
+      '<td><span class="mono">' + who + '</span><br><span class="mono" style="font-size:11px;color:var(--text-muted)">' + fmt(n.endpoint) + '</span></td>' +
+      '<td>' + user + '</td>' +
+      '<td>' + badge(n.status) + '</td>' +
+      '<td>' + freshnessBadge(n.freshness) + '</td>' +
+      '<td><span class="mono">' + ver + '</span></td>' +
+      '<td>' + fmt(n.reputation) + '</td>' +
+      '<td>' + fmt(n.shared_providers) + '</td>' +
+      '<td>' + fmt(n.shared_models) + '</td>' +
+      '<td><span class="mono" style="font-size:11px">' + fmt(n.last_seen) + '</span></td>' +
+      '</tr>';
+  }).join('');
+  document.getElementById('nodesBody').innerHTML = rows;
+
+  document.getElementById('footer').textContent =
+    'self: ' + fmt(d.self_node_id) + ' · 数据生成于 ' + fmt(d.generated_at);
+  document.getElementById('refreshHint').textContent = '最后刷新: ' + new Date().toLocaleTimeString() +
+    ' · 下一轮 15s 后';
+}
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

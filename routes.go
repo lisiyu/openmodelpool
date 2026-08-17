@@ -192,6 +192,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /admin/models", handleModelsPage)
 	mux.HandleFunc("GET /admin/browser-login", handleBrowserLoginPage)
 	mux.HandleFunc("GET /admin/free-pool", handleFreePoolPage)
+	mux.HandleFunc("GET /admin/federation-health", handleFederationHealthPage)
 	mux.HandleFunc("GET /admin-common.js", handleAdminCommonJS)
 	mux.HandleFunc("GET /admin-settings.js", handleAdminSettingsJS)
 	mux.HandleFunc("GET /admin-network.js", handleAdminNetworkJS)
@@ -208,6 +209,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/federation/relay", rateLimitByIP(60, "federation_relay")(withProxyAuth(handleRelayRequest)))
 	mux.HandleFunc("GET /api/federation/reputations", withAuth(handleGetReputations))
 	mux.HandleFunc("POST /api/federation/score", withAuth(handlePostScore))
+	mux.HandleFunc("GET /api/federation/health", withAuth(handleFederationHealth))
 
 	// v2.0: Quota allocation (replaces old credits system)
 	mux.HandleFunc("GET /api/network/quota-allocation", withAuth(handleGetQuotaAllocation))
