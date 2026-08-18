@@ -213,6 +213,15 @@ func TestHandleSeedRegister(t *testing.T) {
 	if entry.NodeName != "New Node" {
 		t.Errorf("NodeName = %q, want %q", entry.NodeName, "New Node")
 	}
+	// P1-3 regression: models + online status must be written back to the live
+	// route entry (previously RouteTable.Get's copy was mutated and the change
+	// was silently lost).
+	if len(entry.Models) != 1 || entry.Models[0] != "gpt-4" {
+		t.Errorf("Models = %v, want [gpt-4] (P1-3 write-back)", entry.Models)
+	}
+	if entry.Status != "online" {
+		t.Errorf("Status = %q, want online (P1-3 write-back)", entry.Status)
+	}
 }
 
 // TestHandleSeedRegisterFailClosedNoSecret verifies SEC-P1-5: when no

@@ -261,6 +261,18 @@ func (rt *RouteTable) Remove(nodeID string) {
 	}
 }
 
+// UpdateEntry applies mutate to the live entry under the lock (P1-3). RouteTable.Get
+// returns a copy so a caller that mutates its result silently loses the change
+// (e.g. seed registration writing Models/LastSeen). Use UpdateEntry when the
+// goal is to persist changes back into the table.
+func (rt *RouteTable) UpdateEntry(nodeID string, mutate func(*RouteEntry)) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if e, ok := rt.entries[nodeID]; ok && mutate != nil {
+		mutate(e)
+	}
+}
+
 // GetAll returns all non-expired entries
 func (rt *RouteTable) GetAll() []*RouteEntry {
 	rt.mu.RLock()

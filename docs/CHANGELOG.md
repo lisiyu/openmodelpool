@@ -1,5 +1,16 @@
 # Changelog
 
+## v4.5.19 (2026-08-19)
+
+Security & correctness (post-audit hardening, batch 2):
+
+- **P1-1 (inter-node forwarding could never complete):** `/v1/*` gateway routes are wrapped by `withProxyAuth`, which previously 401'd any request without an `Authorization` header — but `gatewayForwardToRemote` forwards *without* the origin credential (consumer keys never leave the node) and authenticates via `X-Node-ID` + ed25519 relay signature. The signed-forward path now verifies inside `withProxyAuth` (body read once, restored, re-verified by `handleGatewayRequest`) so legitimate inter-node forwarding succeeds; forged or unsigned relay claims are still rejected.
+- **P1-2 (federation state corruption):** `FederationManager.GetNode` returned the internal `*NodeInfo` pointer; a caller mutating the result silently corrupted live federation state. It now returns a deep copy (`cloneNodeInfo` re-allocates `SharedModels`/`Addresses`/`SharedProviders`).
+- **P1-3 (seed registration updates silently lost):** `RouteTable.Get` returns a copy, so the seed-register and self-register paths that mutated `Models`/`LastSeen`/`Status` on that copy lost every change. New `RouteTable.UpdateEntry` mutates the live entry under the lock; both seed paths now use it.
+- **P1-4 (long SSE streams truncated at 30s):** `gatewayForwardToRemote` used the shared 30s-default HTTP client for streaming forwards too, cutting long responses mid-stream. Streams now use `GetSharedHTTPClientWithTimeout(relayStreamTimeout)` (5 min, same connection pool); non-streaming keeps 30s.
+- **P1-5 (guest-key quota bypass over relay):** `handleRelayToLocal` strips the `Authorization` header for guest keys before in-process dispatch, which starved the D-4 per-key quota check. The verified key now travels via request context (`withGuestKey`/`relayGuestKey`), so the quota is enforced over the relay path too.
+- AppVersion bumped to 4.5.19.
+
 ## v4.5.18 (2026-08-18)
 
 Security (post-audit hardening, batch 1):

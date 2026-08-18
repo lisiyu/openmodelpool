@@ -196,13 +196,15 @@ func handleSeedRegister(w http.ResponseWriter, r *http.Request) {
 	if routeTable != nil {
 		routeTable.Put(req.NodeID, req.NodeName, req.Addresses)
 
-		// Update models and gateway info
-		entry := routeTable.Get(req.NodeID)
-		if entry != nil {
+		// Update models and gateway info.
+		// P1-3: RouteTable.Get returns a COPY, so mutating that result would be
+		// silently lost. UpdateEntry applies the change to the live entry under
+		// the lock.
+		routeTable.UpdateEntry(req.NodeID, func(entry *RouteEntry) {
 			entry.Models = req.Models
 			entry.LastSeen = time.Now()
 			entry.Status = "online"
-		}
+		})
 	}
 
 	slog.Info("node registered via seed endpoint",
@@ -364,12 +366,12 @@ func startSeedServer() {
 			nodeID := netMgr.GetNodeID()
 			nodeName := cfg.Get("node_name", "OpenModelPool")
 			routeTable.Put(nodeID, nodeName, selfAddrs)
-			// Update the entry with gateway info
-			entry := routeTable.Get(nodeID)
-			if entry != nil {
+			// Update the entry with gateway info.
+			// P1-3: RouteTable.Get returns a copy — mutate via UpdateEntry.
+			routeTable.UpdateEntry(nodeID, func(entry *RouteEntry) {
 				entry.LastSeen = time.Now()
 				entry.Status = "online"
-			}
+			})
 			slog.Info("self-registered in route table", "node_id", nodeID, "addresses", selfAddrs)
 		}
 	}()

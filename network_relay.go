@@ -156,6 +156,10 @@ const (
 	// maxGatewayBodySize is the maximum request body size for gateway/relay
 	// endpoints (10MB — AI model requests may include large conversations + images).
 	maxGatewayBodySize = 10 << 20
+	// relayStreamTimeout is the per-request deadline for STREAMING relay
+	// forwards. SSE responses can legitimately run for minutes; the 30s
+	// shared-client default truncated long streams mid-response (P1-4).
+	relayStreamTimeout = 5 * time.Minute
 )
 
 // handleNetworkRelay handles relay requests: /network/{node_id}/{rest...}
@@ -315,6 +319,10 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 			writeError(w, 401, "invalid guest key")
 			return
 		}
+		// P1-5: the Authorization header is stripped below (the key must not
+		// travel to provider code) — carry it via context so the D-4 per-key
+		// quota check can still account for this request.
+		r = withGuestKey(r, bearerKey)
 		r.Header.Del("Authorization")
 		if accessPublicPool {
 			// Guest key with public pool access — treat like public key
@@ -1114,8 +1122,15 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	outReq.ContentLength = int64(len(bodyBytes))
 	outReq.Host = target.Host
 
-	// Execute the request
+	// Execute the request.
+	// P1-4: streaming (SSE) responses legitimately run far longer than the 30s
+	// shared-client default, which truncated long streams mid-response. Use the
+	// connection-pool-sharing client with a generous per-request deadline for
+	// streams; non-streaming requests keep the 30s default.
 	client := GetSharedHTTPClient()
+	if stream {
+		client = GetSharedHTTPClientWithTimeout(relayStreamTimeout)
+	}
 	resp, err := client.Do(outReq)
 	if err != nil {
 		slog.Error("gateway: relay to remote failed", "target", entry.NodeID, "addr", targetAddr, "error", err)

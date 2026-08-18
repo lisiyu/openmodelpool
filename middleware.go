@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -70,6 +72,11 @@ type internalCtxKey int
 const (
 	ctxKeyRelayDispatch internalCtxKey = iota + 1
 	ctxKeyInternalKeyType
+	// ctxKeyGuestKey carries the verified guest API key through a relay
+	// dispatch. handleRelayToLocal strips the Authorization header (the key
+	// must not travel to provider code), but the per-key quota check still
+	// needs the key — so it is propagated via context instead (P1-5).
+	ctxKeyGuestKey
 )
 
 // isRelayDispatched reports whether the request was re-dispatched in-process
@@ -94,6 +101,24 @@ func withInternalKeyType(r *http.Request, keyType string) *http.Request {
 // when none was set.
 func internalKeyType(r *http.Request) string {
 	if v, ok := r.Context().Value(ctxKeyInternalKeyType).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// withGuestKey returns a request whose context carries the verified guest API
+// key (P1-5). Only set by handleRelayToLocal after the key was validated.
+func withGuestKey(r *http.Request, key string) *http.Request {
+	if key == "" {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), ctxKeyGuestKey, key))
+}
+
+// relayGuestKey returns the guest API key verified by our relay, or "" when
+// the request is not a relay-dispatched guest request.
+func relayGuestKey(r *http.Request) string {
+	if v, ok := r.Context().Value(ctxKeyGuestKey).(string); ok {
 		return v
 	}
 	return ""
@@ -146,6 +171,32 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 		if kt := internalKeyType(r); kt != "" {
 			handler(w, r)
 			return
+		}
+
+		// P1-1: accept a signed relay/gateway forward from a trusted federation
+		// node. gatewayForwardToRemote / relayToRemote forward to the destination
+		// WITHOUT the origin Authorization header (consumer keys never leave the
+		// node) and instead authenticate via X-Node-ID + an ed25519 signature.
+		// Previously this request hit the anonymous/unknown-key path and got a
+		// spurious 401 before the inner gateway handler could verify the
+		// signature — so inter-node forwarding could never complete. The body is
+		// read once for signature verification and restored so the inner handler
+		// (handleGatewayRequest re-verifies and then routes) sees it unchanged.
+		nodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
+		if nodeID == "" {
+			nodeID = sanitizeNodeID(r.Header.Get("X-Node-Auth"))
+		}
+		if nodeID != "" && r.Header.Get(headerRelaySig) != "" {
+			body, err := io.ReadAll(io.LimitReader(r.Body, maxGatewayBodySize+1))
+			if err == nil && len(body) <= maxGatewayBodySize {
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				if status, msg := verifyRelayForwardAuth(r, body); status == 0 {
+					handler(w, r)
+					return
+				} else {
+					slog.Warn("proxy route: signed forward rejected", "from", nodeID, "status", status, "reason", msg)
+				}
+			}
 		}
 
 		authHeader := r.Header.Get("Authorization")

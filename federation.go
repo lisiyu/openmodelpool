@@ -218,15 +218,45 @@ func (f *FederationManager) GetNode(nodeID string) (*NodeInfo, bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
+	// P1-2: return a deep copy, never the internal pointer. Callers (withAuth
+	// path-1, verifyRelayForwardAuth, federation health) must not be able to
+	// mutate live federation state through a returned *NodeInfo.
 	for i := range f.trustPool.Nodes {
 		if f.trustPool.Nodes[i].NodeID == nodeID {
-			return &f.trustPool.Nodes[i], true
+			n := f.trustPool.Nodes[i]
+			return cloneNodeInfo(&n), true
 		}
 	}
 	if n, ok := f.localPeers[nodeID]; ok {
-		return n, true
+		return cloneNodeInfo(n), true
 	}
 	return nil, false
+}
+
+// cloneNodeInfo returns a deep copy of n (slices are re-allocated) so the
+// caller cannot mutate shared federation state (P1-2).
+func cloneNodeInfo(n *NodeInfo) *NodeInfo {
+	if n == nil {
+		return nil
+	}
+	c := *n
+	if n.SharedModels != nil {
+		c.SharedModels = append([]string(nil), n.SharedModels...)
+	}
+	if n.Addresses != nil {
+		c.Addresses = append([]string(nil), n.Addresses...)
+	}
+	if n.SharedProviders != nil {
+		c.SharedProviders = make([]SharedProvider, len(n.SharedProviders))
+		for i := range n.SharedProviders {
+			p := n.SharedProviders[i]
+			if p.Models != nil {
+				p.Models = append([]string(nil), p.Models...)
+			}
+			c.SharedProviders[i] = p
+		}
+	}
+	return &c
 }
 
 // UpdateTrustPool merges the incoming pool into the local cache.

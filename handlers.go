@@ -726,6 +726,13 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if keyType == "guest" && guestKeyUsage != nil && guestKeyStore != nil {
 		auth := r.Header.Get("Authorization")
 		guestKey := strings.TrimPrefix(auth, "Bearer ")
+		// P1-5: on a relay-dispatched request handleRelayToLocal stripped the
+		// Authorization header and carries the verified key via context —
+		// otherwise the per-key quota would be silently bypassed over the relay
+		// path. Prefer the context key, fall back to the header for direct calls.
+		if ctxKey := relayGuestKey(r); ctxKey != "" {
+			guestKey = ctxKey
+		}
 		record := guestKeyStore.GetGuestKeyRecord(guestKey)
 		if record != nil && record.Quota > 0 {
 			estimated := int64(4096)
