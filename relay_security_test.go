@@ -108,13 +108,27 @@ func TestRelayAuthMiddleware(t *testing.T) {
 		t.Fatalf("public-key relay expected 200, got %d", rec2.Code)
 	}
 
-	// Proxy key (structural sk-{random}) -> allowed.
+	// Proxy key: a structural sk-{random} key is NOT accepted at the relay
+	// boundary unless it equals the configured proxy_api_key (SEC-P0-3).
+	// A random sk- key must be rejected — otherwise any sk-anything becomes
+	// the node operator (full provider access).
 	proxy := httptest.NewRequest(http.MethodGet, "/network/mmx-self/v1/models", nil)
 	proxy.Header.Set("Authorization", "Bearer sk-some-proxy-key")
 	rec3 := httptest.NewRecorder()
 	relayAuthMiddleware(ok)(rec3, proxy)
-	if rec3.Code != http.StatusOK {
-		t.Fatalf("proxy-key relay expected 200, got %d", rec3.Code)
+	if rec3.Code != http.StatusUnauthorized {
+		t.Fatalf("unconfigured proxy-key relay expected 401, got %d", rec3.Code)
+	}
+
+	// A proxy key that EXACTLY matches proxy_api_key is accepted.
+	cfg.Set("proxy_api_key", "sk-operator-real-key")
+	t.Cleanup(func() { cfg.Set("proxy_api_key", "") })
+	realProxy := httptest.NewRequest(http.MethodGet, "/network/mmx-self/v1/models", nil)
+	realProxy.Header.Set("Authorization", "Bearer sk-operator-real-key")
+	rec3b := httptest.NewRecorder()
+	relayAuthMiddleware(ok)(rec3b, realProxy)
+	if rec3b.Code != http.StatusOK {
+		t.Fatalf("matching proxy-key relay expected 200, got %d", rec3b.Code)
 	}
 
 	// Guest key -> allowed at the middleware layer (relay handler validates it).

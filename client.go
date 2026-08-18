@@ -6,12 +6,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +39,12 @@ var sharedHTTPClient = &http.Client{
 	Transport: sharedTransport,
 	Timeout:   5 * time.Minute, // B12: global timeout to prevent hung connections
 }
+
+// allowLocalProviderForTest disables SSRF blocking (private/local providers)
+// inside the test binary, which legitimately spins up httptest servers on
+// loopback. Production code paths keep the fail-closed guard; only TestMain
+// flips this on. Mirror of allowLocalRelayForTest in network_relay.go.
+var allowLocalProviderForTest = false
 
 // proxiedTransportCache caches HTTP transports per proxy address for connection reuse.
 // Key: proxy address (e.g. "socks5://127.0.0.1:20801"), Value: *http.Transport
@@ -69,9 +77,21 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 	}
 
 	if proxy == "" {
-		if isPrivateHost(p.BaseURL) {
+		if !allowLocalProviderForTest && isPrivateHost(p.BaseURL) {
+			// SEC-SSRF-1: a provider BaseURL that resolves to a private/loopback
+			// address (or cannot be resolved — fail-closed) must NOT be dialed.
+			// Previously this only logged a warning and returned a *working*
+			// client (fail-open), so the SSRF guard was dead code. Now we return
+			// a client whose dial always fails, closing the hole at every call site.
 			slog.Warn("blocked SSRF attempt: provider BaseURL resolves to private IP", "provider", p.ID, "url", p.BaseURL)
-			return &http.Client{Timeout: timeout}
+			return &http.Client{
+				Timeout: timeout,
+				Transport: &http.Transport{
+					DialContext: func(context.Context, string, string) (net.Conn, error) {
+						return nil, errors.New("ssrf blocked: provider BaseURL resolves to a private/internal address")
+					},
+				},
+			}
 		}
 		return &http.Client{Transport: sharedTransport, Timeout: timeout}
 	}
@@ -117,30 +137,64 @@ func mustParseURL(rawurl string) *url.URL {
 }
 
 // isPrivateHost checks if a hostname resolves to a private/loopback IP.
-// Returns true if the host is private or unresolvable (fail-closed).
+// Returns true if the host is private OR unresolvable (fail-closed).
+// SEC-SSRF-1: callers pass either a full URL ("https://api.example.com") or a
+// bare "host:port"; this parses both forms via url.Parse and never trusts a
+// raw string split that would mis-parse the scheme as the host.
 func isPrivateHost(host string) bool {
-	h := host
+	if allowLocalProviderForTest {
+		// Tests spin up loopback servers on purpose; do not block them.
+		return false
+	}
+	h := strings.TrimSpace(host)
+	if h == "" {
+		return true // fail-closed: no host at all is never routable
+	}
+	// Strip scheme via url.Parse so "https://10.0.0.1" yields host "10.0.0.1".
+	// A bare "host:port" with no scheme is parsed as scheme="host", so detect
+	// that case and fall back to the raw string.
+	if u, err := url.Parse(h); err == nil && u.Scheme != "" && u.Host != "" {
+		h = u.Host
+	} else if u != nil && u.Scheme != "" && u.Host == "" && strings.Contains(h, ":") {
+		// "host:port" form — url.Parse treats the whole thing as scheme+opaque.
+		h = u.Scheme
+	}
+	// Strip any remaining port suffix.
 	if i := strings.LastIndex(h, ":"); i >= 0 {
-		h = h[:i]
+		if _, err := strconv.Atoi(h[i+1:]); err == nil {
+			h = h[:i]
+		}
 	}
 	if h == "localhost" || h == "" {
 		return true
 	}
-	ip := net.ParseIP(h)
-	if ip != nil {
-		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+	if ip := net.ParseIP(h); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || isCGNAT(ip)
 	}
 	ips, err := net.LookupHost(h)
 	if err != nil || len(ips) == 0 {
-		return false
+		// Fail-closed: if we cannot resolve the host, refuse to dial rather
+		// than allow a DNS-rebinding / internal-hostname attack through.
+		return true
 	}
 	for _, ipStr := range ips {
 		parsed := net.ParseIP(ipStr)
-		if parsed != nil && (parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast() || parsed.IsLinkLocalMulticast()) {
+		if parsed != nil && (parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast() || parsed.IsLinkLocalMulticast() || isCGNAT(parsed)) {
 			return true
 		}
 	}
 	return false
+}
+
+// isCGNAT reports whether ip falls in the carrier-grade NAT range
+// 100.64.0.0/10 (RFC 6598). net.IP.IsPrivate only covers RFC 1918, so this
+// must be checked explicitly for SSRF guards.
+func isCGNAT(ip net.IP) bool {
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return false
+	}
+	return ip4[0] == 100 && ip4[1]&0xc0 == 0x40
 }
 
 // doNonStream sends a non-streaming request and returns the OpenAI-format response.

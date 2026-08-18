@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.5.18 (2026-08-18)
+
+Security (post-audit hardening, batch 1):
+
+- **SEC-P0-3 (relay proxy-key bypass closed):** `relayAuthMiddleware` and `handleRelayToLocal` no longer treat *any* structural `sk-` key as the node operator. A proxy key is accepted only when it constant-time equals the configured `proxy_api_key`; everything else falls through to consumer validation (`multiUser.ValidateAPIKey`) with key type `consumer`, so a raw `sk-{random}` can no longer impersonate the operator with full provider access over `/network/…/v1/*`.
+- **SEC-SSRF-1 (SSRF guard now fail-closed):** `isPrivateHost` parses URLs properly (the historical `https://10.0.0.1` mis-parse), treats **unresolvable hosts as internal** (DNS-rebinding / internal-hostname protection), and covers CGNAT `100.64.0.0/10` (RFC 6598). `proxyHTTPClient` returns a client whose dial **always fails** for private provider `BaseURL`s instead of silently logging and proceeding. `validateProviderBaseURL` (admin create/update/import) now shares the same hardened check so private/internal/unresolvable `BaseURL`s are rejected on every write path.
+- AppVersion bumped to 4.5.18.
+
 ## v4.5.17 (2026-08-16)
 
 Feature (federation health visibility):

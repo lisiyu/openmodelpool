@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -45,13 +46,29 @@ func relayAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// 1. A recognized API key / consumer key.
+		// SEC-P0-3 (relay auth bypass fix): a raw `sk-*` key is NOT enough to
+		// enter the relay. `KeyTypeProxy` merely means "starts with sk-"; a proxy
+		// key must equal the configured proxy_api_key (constant-time), and any
+		// other sk- key is only admitted if it is a valid local consumer key.
+		// Otherwise an attacker could send `sk-anything` and be treated as the
+		// node operator (proxy ⇒ admin-level access to every provider).
 		authHeader := r.Header.Get("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			key := authHeader[7:]
 			switch ClassifyKey(key) {
-			case KeyTypePublic, KeyTypeGuest, KeyTypeProxy:
+			case KeyTypePublic, KeyTypeGuest:
 				next(w, r)
 				return
+			case KeyTypeProxy:
+				proxyKey := ""
+				if cfg != nil {
+					proxyKey = cfg.Get("proxy_api_key", "")
+				}
+				if proxyKey != "" && subtle.ConstantTimeCompare([]byte(key), []byte(proxyKey)) == 1 {
+					next(w, r)
+					return
+				}
+				// Not the configured proxy key — fall through to consumer check.
 			}
 			if multiUser != nil {
 				if _, ok := multiUser.ValidateAPIKey(key); ok {
@@ -312,8 +329,31 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 		}
 
 	case KeyTypeProxy:
-		// sk-{random} — proxy API key, pass through
-		internalKeyType = "proxy"
+		// sk-{random} — must equal the configured proxy_api_key (SEC-P0-3).
+		// A mismatching sk- key is a consumer key, not an operator proxy key:
+		// validate it against multiUser and map to the consumer key type so a
+		// consumer can never escalate to proxy (full-access) via the relay path.
+		proxyKey := ""
+		if cfg != nil {
+			proxyKey = cfg.Get("proxy_api_key", "")
+		}
+		if proxyKey != "" && subtle.ConstantTimeCompare([]byte(bearerKey), []byte(proxyKey)) == 1 {
+			internalKeyType = "proxy"
+		} else {
+			if multiUser != nil {
+				if consumer, ok := multiUser.ValidateAPIKey(bearerKey); ok {
+					internalKeyType = "consumer"
+					r.Header.Set("X-Request-Owner", consumer.ID)
+					r.Header.Set("X-Consumer-Name", consumer.Name)
+				} else {
+					writeError(w, 401, "invalid API key")
+					return
+				}
+			} else {
+				writeError(w, 401, "invalid API key")
+				return
+			}
+		}
 
 	default:
 		// Unknown key — pass through, let the local handler validate

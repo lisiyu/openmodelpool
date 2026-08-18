@@ -25,8 +25,12 @@ func validateProviderBaseURL(baseURL string) error {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return fmt.Errorf("invalid BaseURL: must be a valid http/https URL")
 	}
-	if isLocalOrPrivateIP(u.Hostname()) {
-		return fmt.Errorf("invalid BaseURL: must not point to a private or loopback address")
+	// SEC-SSRF-1: reject any host that resolves to a private/loopback/link-local
+	// address, and fail closed when the host cannot be resolved (DNS rebinding
+	// / internal hostname protection). isPrivateHost handles both bare IPs and
+	// hostnames.
+	if isPrivateHost(u.Hostname()) {
+		return fmt.Errorf("invalid BaseURL: must not point to a private, loopback or unresolvable address")
 	}
 	return nil
 }

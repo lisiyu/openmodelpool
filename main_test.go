@@ -20,5 +20,9 @@ import (
 // instant.
 func TestMain(m *testing.M) {
 	configDebounceOverride = 5 * time.Millisecond
+	// Tests legitimately create providers on loopback httptest servers; the
+	// fail-closed SSRF guard (isPrivateHost/proxyHTTPClient) would otherwise
+	// block every one of them. Production keeps the guard fully enabled.
+	allowLocalProviderForTest = true
 	os.Exit(m.Run())
 }
