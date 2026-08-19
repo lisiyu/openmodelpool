@@ -104,7 +104,7 @@ func setupRoutes() *http.ServeMux {
 	// Provider access control (admin only)
 	mux.HandleFunc("GET /api/providers/{id}/access-control", withAuth(handleGetProviderAccessControl))
 	mux.HandleFunc("PUT /api/providers/{id}/access-control", rateLimitByIP(20, "access_control")(withAuth(handleUpdateProviderAccessControl)))
-	mux.HandleFunc("POST /api/providers/sync-all-urls", withConsumerOrAdminAuth(handleSyncAllURLs))
+	mux.HandleFunc("POST /api/providers/sync-all-urls", rateLimitByIP(5, "sync_all_urls")(withAuth(handleSyncAllURLs)))
 
 	// Provider multi API key management (admin + consumer)
 	mux.HandleFunc("GET /api/providers/{id}/keys", withConsumerOrAdminAuth(handleListAPIKeys))

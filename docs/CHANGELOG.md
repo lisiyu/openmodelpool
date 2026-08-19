@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.5.21 (2026-08-20)
+
+Security hardening (post-audit review, batch 4):
+
+- **SEC-B4-1 (provider ownership bypass over sync/models endpoints):** `GET /api/providers/{id}/models`, `POST /api/providers/{id}/sync-url` and `POST /api/providers/{id}/sync-models` looked up the provider with `pm.GetRaw` directly and never enforced ownership, so any registered consumer could read the model list of (and mutate URL/models on) another consumer's provider — including triggering outbound fetches that used the victim's decrypted API key. All three now go through `checkProviderAccess` (owner-only, admin/sys-presets unaffected). `POST /api/providers/sync-all-urls`, which rewrites every provider's URL, is now admin-only (was consumer-reachable) and IP rate-limited (5/min).
+- AppVersion bumped to 4.5.21.
+
 ## v4.5.20 (2026-08-19)
 
 Security hardening (post-audit review, batch 3):
