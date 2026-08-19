@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"time"
 )
@@ -81,7 +82,11 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 	authed := false
 	if secret != "" {
 		// Secret-protected mesh: require the matching header.
-		authed = r.Header.Get("X-Federation-Secret") == secret
+		// SEC-B3-4: constant-time comparison so the shared secret is not
+		// recoverable via timing across many heartbeat attempts.
+		if supplied := r.Header.Get("X-Federation-Secret"); supplied != "" {
+			authed = subtle.ConstantTimeCompare([]byte(supplied), []byte(secret)) == 1
+		}
 	} else if fed != nil && senderNodeID != "" {
 		// Open mesh: require a node known to the federation manager.
 		if _, ok := fed.GetNode(senderNodeID); ok {

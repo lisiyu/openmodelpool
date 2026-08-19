@@ -1259,6 +1259,9 @@ func TestHB3_AllRegions_Four(t *testing.T) {
 }
 
 func TestHB3_ExtractRemoteIP_XFF(t *testing.T) {
+	old := trustedReverseProxy
+	trustedReverseProxy = true
+	t.Cleanup(func() { trustedReverseProxy = old })
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
 	ip := extractRemoteIP(req)
@@ -1268,6 +1271,9 @@ func TestHB3_ExtractRemoteIP_XFF(t *testing.T) {
 }
 
 func TestHB3_ExtractRemoteIP_XRealIP(t *testing.T) {
+	old := trustedReverseProxy
+	trustedReverseProxy = true
+	t.Cleanup(func() { trustedReverseProxy = old })
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Real-IP", "9.8.7.6")
 	ip := extractRemoteIP(req)

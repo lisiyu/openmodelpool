@@ -496,6 +496,12 @@ func TestProcessHeartbeatRegion_EmptyInfoWithEmptyIP(t *testing.T) {
 // ============================================================
 
 func TestExtractRemoteIP(t *testing.T) {
+	// XFF/X-Real-IP assertions below assume an opted-in reverse proxy
+	// (SEC-B3-4: headers are otherwise ignored).
+	old := trustedReverseProxy
+	trustedReverseProxy = true
+	t.Cleanup(func() { trustedReverseProxy = old })
+
 	tests := []struct {
 		name       string
 		xff        string

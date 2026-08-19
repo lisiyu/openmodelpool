@@ -1988,6 +1988,26 @@ func handleNetworkPeersNotify(w http.ResponseWriter, r *http.Request) {
 	//    returns nothing, the notify is REJECTED (fail-closed) — we never fall
 	//    back to the attacker-controlled pub_key embedded in the payload.
 	canonical := fmt.Sprintf("%s|%s|%s", p.NodeID, strings.Join(p.Addresses, ","), p.Timestamp)
+
+	// SEC-B3-1: SSRF guard BEFORE any outbound request. fetchNodePubKey and
+	// pingPeerOnce dial the claimant-supplied address; if the address were a
+	// private / link-local / unresolvable host we would blind-probe internal
+	// infrastructure before signature verification. Reject such addresses
+	// up front (isPrivateHost is fail-closed on unresolvable hosts). The
+	// public-key fetch and reachability ping are the only dials we allow, and
+	// they now only ever target a public address.
+	if len(p.Addresses) == 0 {
+		writeError(w, http.StatusBadRequest, "missing addresses")
+		return
+	}
+	for _, addr := range p.Addresses {
+		if isPrivateHost(addr) {
+			slog.Warn("peers/notify: refusing private/internal address (SSRF guard)", "from", p.NodeID, "addr", addr)
+			writeError(w, http.StatusBadRequest, "peer address must be public")
+			return
+		}
+	}
+
 	pubKey := fetchNodePubKey(p.Addresses[0])
 	if pubKey == "" {
 		slog.Warn("peers/notify: failed to fetch authoritative pubkey; rejecting (fail-closed)", "from", p.NodeID, "addr", p.Addresses[0])

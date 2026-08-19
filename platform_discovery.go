@@ -429,6 +429,20 @@ func handleCheckDiscoveredPlatform(w http.ResponseWriter, r *http.Request) {
 		modelsURL = baseURL + "/models"
 	}
 
+	// SEC-B3-2: SSRF guard — never let the check endpoint dial a private,
+	// loopback, link-local, or unresolvable host. The BaseURL can originate
+	// from external sources (GitHub list parsing) or presets that include
+	// localhost entries, and a consumer can trigger this endpoint.
+	if isPrivateHost(modelsURL) {
+		slog.Warn("discovery check: refusing private/internal models URL (SSRF guard)", "id", id, "url", modelsURL)
+		writeJSON(w, 200, map[string]any{
+			"compatible": false,
+			"message":    "URL 指向私有地址，已跳过自动检测",
+			"skipped":    true,
+		})
+		return
+	}
+
 	client := GetSharedHTTPClientWithTimeout(8 * time.Second)
 	req, err := http.NewRequestWithContext(r.Context(), "GET", modelsURL, nil)
 	if err != nil {

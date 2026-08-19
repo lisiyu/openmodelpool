@@ -738,11 +738,14 @@ func handleNetworkKeyValidate(w http.ResponseWriter, r *http.Request) {
 			"key_type": "public",
 		})
 	case KeyTypeGuest:
-		nodeID, valid := ValidateGuestKey(body.Key)
+		// SEC-B3-3: this endpoint is unauthenticated (rate-limited only). A
+		// guest key is a bearer credential; confirming its validity and
+		// disclosing the issuing node_id would hand an attacker a key-confirmation
+		// / enumeration oracle. Report neutrally instead — validation only ever
+		// happens through the real auth flow (relay / gateway).
 		writeJSON(w, 200, map[string]any{
-			"valid":    valid,
+			"valid":    false,
 			"key_type": "guest",
-			"node_id":  nodeID,
 		})
 	case KeyTypeProxy:
 		// Proxy keys are validated via the normal auth flow

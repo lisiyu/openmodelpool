@@ -497,3 +497,53 @@ func TestAddPeer_ConcurrentMutualAddNoInfiniteLoop(t *testing.T) {
 		t.Errorf("A must not receive any回发 notify (no loop), got %d", ac)
 	}
 }
+
+// SEC-B3-1: /api/network/peers/notify must refuse a claimant address that is
+// private / loopback / link-local BEFORE any outbound request (pubkey fetch or
+// reachability ping). With the SSRF guard active, a payload pointing at
+// 127.0.0.1 must be rejected with 400 and must never dial out.
+func TestPeersNotify_PrivateAddress_RejectedBeforeOutbound(t *testing.T) {
+	setupDiscoveryTestEnv(t)
+
+	// Flip the SSRF guard ON for this test (TestMain leaves it off so the
+	// loopback httptest fixtures in the other tests keep working).
+	oldAllow := allowLocalProviderForTest
+	allowLocalProviderForTest = false
+	defer func() { allowLocalProviderForTest = oldAllow }()
+
+	// An httptest server whose handler FAILS the test if it is ever hit — the
+	// whole point is that the guard must short-circuit before any dial.
+	var dialed int32
+	pubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&dialed, 1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer pubSrv.Close()
+
+	peerPub, peerPriv, _ := ed25519.GenerateKey(nil)
+	peerID := "mmx-" + hex.EncodeToString(peerPub)
+	addrs := []string{"http://127.0.0.1:1"}
+	ts := time.Now().UTC().Format(time.RFC3339)
+	canonical := fmt.Sprintf("%s|%s|%s", peerID, strings.Join(addrs, ","), ts)
+	sig := base64.StdEncoding.EncodeToString(ed25519.Sign(peerPriv, []byte(canonical)))
+
+	payload := PeerNotifyPayload{
+		NodeID:    peerID,
+		Addresses: addrs,
+		PubKey:    base64.StdEncoding.EncodeToString(peerPub),
+		Timestamp: ts,
+		Signature: sig,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/network/peers/notify", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handleNetworkPeersNotify(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("private address notify expected 400, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	if atomic.LoadInt32(&dialed) != 0 {
+		t.Fatal("SSRF guard must reject BEFORE any outbound dial; pubkey/ping server was hit")
+	}
+}

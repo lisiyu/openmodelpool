@@ -1786,6 +1786,9 @@ func TestHB5_HandlePostScore_MissingFields(t *testing.T) {
 }
 
 func TestHB5_ExtractRemoteIP_XFF(t *testing.T) {
+	old := trustedReverseProxy
+	trustedReverseProxy = true
+	t.Cleanup(func() { trustedReverseProxy = old })
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
 	ip := extractRemoteIP(req)
@@ -1795,6 +1798,9 @@ func TestHB5_ExtractRemoteIP_XFF(t *testing.T) {
 }
 
 func TestHB5_ExtractRemoteIP_XRealIP(t *testing.T) {
+	old := trustedReverseProxy
+	trustedReverseProxy = true
+	t.Cleanup(func() { trustedReverseProxy = old })
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Real-IP", "9.8.7.6")
 	ip := extractRemoteIP(req)

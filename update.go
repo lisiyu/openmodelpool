@@ -123,8 +123,11 @@ func detectRegion() string {
 		return detectedRegion
 	}
 
-	// Query IP geolocation
-	geoURL := fmt.Sprintf("http://ip-api.com/line/%s?fields=countryCode", publicIP)
+	// Query IP geolocation.
+	// SEC-B3-5: HTTPS only — the plaintext HTTP endpoint would let a network
+	// MITM observe the node's public IP and forge the geo response (which
+	// decides mirror-first vs direct-first download).
+	geoURL := fmt.Sprintf("https://ip-api.com/line/%s?fields=countryCode", publicIP)
 	req, err := http.NewRequest("GET", geoURL, nil)
 	if err != nil {
 		return detectedRegion

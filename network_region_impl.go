@@ -375,15 +375,21 @@ func AllRegions() []Region {
 }
 
 // extractRemoteIP extracts the client IP from a request.
+// SEC-B3-4: X-Forwarded-For / X-Real-IP are ONLY trusted when the deployment
+// opts in via OMP_TRUSTED_PROXY=1 (trustedReverseProxy) — consistent with the
+// WAF's clientIPs (SEC-P1-7). Otherwise an attacker spoofs them to poison
+// region/liveness data. Falls back to the real RemoteAddr.
 func extractRemoteIP(req *http.Request) string {
-	if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.IndexByte(xff, ','); idx >= 0 {
-			return strings.TrimSpace(xff[:idx])
+	if trustedReverseProxy {
+		if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
+			if idx := strings.IndexByte(xff, ','); idx >= 0 {
+				return strings.TrimSpace(xff[:idx])
+			}
+			return strings.TrimSpace(xff)
 		}
-		return strings.TrimSpace(xff)
-	}
-	if xri := req.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
+		if xri := req.Header.Get("X-Real-IP"); xri != "" {
+			return strings.TrimSpace(xri)
+		}
 	}
 	if req.RemoteAddr != "" {
 		if host, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {

@@ -143,17 +143,17 @@ func handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	s := auth.GetSMTP()
 	adminEmail := auth.GetEmail()
 
-	// Build reset URL from configured public_url (trusted) or request Host.
-	// Prefer public_url to prevent Host header injection in password reset links.
+	// Build reset URL from configured public_url (trusted). SEC-B3-6: never
+	// trust the request Host header — an attacker can forge it to point the
+	// admin's reset link at a phishing origin. Without public_url we fall back
+	// to the local listen address (loopback + configured port), which is only
+	// correct for same-host admin access.
 	resetURL := ""
 	if pubURL := cfg.Get("public_url", ""); pubURL != "" {
 		resetURL = pubURL + "/forgot-password"
 	} else {
-		scheme := "https"
-		if r.TLS == nil {
-			scheme = "http"
-		}
-		resetURL = fmt.Sprintf("%s://%s/forgot-password", scheme, r.Host)
+		port := cfg.Get("port", "8000")
+		resetURL = fmt.Sprintf("http://127.0.0.1:%s/forgot-password", port)
 	}
 
 	subject := "OpenModelPool Agent 密码重置"

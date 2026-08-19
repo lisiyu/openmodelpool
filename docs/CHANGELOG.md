@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.5.20 (2026-08-19)
+
+Security hardening (post-audit review, batch 3):
+
+- **SEC-B3-1 (SSRF via `/api/network/peers/notify`):** the notify handler dialed a claimant-supplied address *before* verifying the peer signature / fetching the authoritative pubkey. A private/loopback/link-local/unresolvable claimant address is now rejected with `400` before any outbound request (shared `isPrivateHost` guard). A forged signed notify can no longer be used to probe the internal network.
+- **SEC-B3-2 (SSRF via `/api/discovery/platforms/{id}/check`):** the compatibility check endpoint unconditionally dialed the stored `BaseURL` (originating from GitHub list parsing and presets that include localhost entries) on an authenticated consumer request. It now refuses private/internal/unresolvable `modelsURL`s (skipped, no dial).
+- **SEC-B3-3 (unauthenticated key oracle):** `/api/network/keys/validate` (rate-limited only) confirmed guest-key validity and disclosed the issuing `node_id` to unauthenticated callers — a key-confirmation / enumeration oracle for a bearer credential. Guest keys now always report `valid:false` neutrally (no `node_id`); real validation only happens inside the authenticated relay/gateway flow.
+- **SEC-B3-4 (heartbeat auth + IP spoofing):** the federation heartbeat secret was compared with `==` (non constant-time). It now uses `crypto/subtle`. Separately, `extractRemoteIP` trusted `X-Forwarded-For`/`X-Real-IP` unconditionally, so any client could poison region/liveness data; those headers are now only honored when the deployment opts in via `OMP_TRUSTED_PROXY=1` (consistent with the WAF).
+- **SEC-B3-5 (plaintext geo lookup):** region detection called `http://ip-api.com/...` in the clear, letting a network MITM observe the node's public IP and forge the geo response that decides mirror-first vs direct-first downloads. Now HTTPS-only.
+- **SEC-B3-6 (Host header injection in password reset):** the reset link fell back to the request `Host` header when `public_url` was unset, letting an attacker forge the link origin. It now uses `public_url` when set and otherwise the local listen address; the request `Host` is never trusted.
+- AppVersion bumped to 4.5.20.
+
 ## v4.5.19 (2026-08-19)
 
 Security & correctness (post-audit hardening, batch 2):
