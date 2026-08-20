@@ -558,6 +558,8 @@ func routeTableHealthLoop() {
 	slog.Info("route table health check loop started", "interval", "30m")
 	for {
 		select {
+		case <-globalStopCh:
+			return
 		case <-ticker.C:
 			if routeTable == nil {
 				return

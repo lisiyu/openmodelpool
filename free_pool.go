@@ -138,12 +138,12 @@ func initFreePool() {
 
 	// Initial sync on startup (delayed to let other components initialize)
 	if freePool.autoSync {
-		go func() {
+		goSafe("free-pool-initial-sync", func() {
 			time.Sleep(10 * time.Second)
 			if err := freePool.Sync(); err != nil {
 				slog.Warn("free pool initial sync failed", "error", err)
 			}
-		}()
+		})
 	}
 
 	// Start periodic sync loop

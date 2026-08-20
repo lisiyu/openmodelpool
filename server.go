@@ -35,7 +35,9 @@ func runServer() {
 
 	// SEC-P0-2: the outermost middleware strips client-supplied internal
 	// headers (X-OMP-KeyType) before any handler can trust them.
-	handler := stripInternalHeadersMiddleware(requestIDMiddleware(corsMiddleware(requestLogMiddleware(concurrencyMiddleware(adminTimeoutMiddleware(mux))))))
+	// B6-3: recoverMiddleware wraps everything so a panicking handler returns
+	// a JSON 500 instead of tearing down the connection (or process).
+	handler := recoverMiddleware(stripInternalHeadersMiddleware(requestIDMiddleware(corsMiddleware(requestLogMiddleware(concurrencyMiddleware(adminTimeoutMiddleware(mux)))))))
 
 	server := &http.Server{
 		Addr:         addr,
@@ -153,6 +155,7 @@ func gracefulShutdown(server *http.Server) {
 				multiUser.StopBatchSave()
 			}
 			stopConnTracker() // B11: stop conn tracker goroutine
+			StopBalanceLoop() // B6-8: stop balance engine cycle (was never wired into shutdown)
 			if freePool != nil {
 				freePool.stop() // B11: stop free pool sync goroutine
 			}

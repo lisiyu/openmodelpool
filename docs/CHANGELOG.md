@@ -1,5 +1,20 @@
 # Changelog
 
+## v4.5.23 (2026-08-21)
+
+Reliability & integrity hardening (post-audit review, batch 6):
+
+- **B6-1 (concurrency semaphore DoS):** the global request semaphore wrapped every route, so public-key SSE streams (up to 5 min each) could exhaust all slots and force management endpoints (`/api/config`, `/api/login`, …) into 503s. Model traffic (`/v1/*`, `/v1beta/*`, `/openai/*`, `/api/federation/relay`) now shares the main pool while everything else gets a dedicated management pool that can never be starved.
+- **B6-2 (audit system was dead code):** `auditRecord` had zero call sites and the `username` context key was never populated — every admin action was unattributable. `withAuth` now propagates the verified JWT identity into the request context, and config save/import, gateway mark, and provider create/update/delete write audit records.
+- **B6-3 (no panic recovery):** a panic in any spawned goroutine (contribution ledger, NAT punch, health checks, free-pool sync) killed the whole process, and handler panics tore down connections without a response. Added an outermost `recoverMiddleware` (JSON 500 + stack log) and a `goSafe` wrapper for high-risk background goroutines.
+- **B6-4 (stream watchdog killed active streams):** the SSE idle timer fired once at 90 s regardless of activity, truncating any stream longer than 90 s even while producing output. Replaced with an activity-timestamp + ticker watchdog: continuous streams are never aborted, genuine stalls are still detected.
+- **B6-5 (federation signatures did not bind bodies):** path-1 ed25519 verification covered only `nodeID:method:path`, leaving gossip/ledger/governance payloads tamperable inside the replay window. Outbound requests are now signed over `nodeID:method:path:sha256(body)`; verification prefers the body-bound format with legacy fallback for rolling deploys.
+- **B6-6 (forwarded header leakage):** inter-node forwards passed client-controlled `Cookie`, `X-Forwarded-For` and `X-Real-IP` through to peers — leaking session state and poisoning peer-side per-IP rate limiting behind trusted proxies. Forwards now strip these headers.
+- **B6-extra (anonymous admin propagation):** the private-network anonymous-admin fallback produced `X-Request-Role: admin` which was forwarded verbatim, granting remote nodes admin treatment; the receiving node also trusted any asserted role. Send-side now downgrades credential-less admin to public, and receive-side caps forwarded roles at consumer/public.
+- **B6-7 (rate limiter data race):** `rateLimitByIP` refreshed `lastSeen` outside the map lock while cleanup read it under the lock (undefined behavior under `-race`). The timestamp is now atomic.
+- **B6-8 (background loops ignored shutdown):** `routeTableHealthLoop` had no stop channel and `StopBalanceLoop` was never called; both now honor graceful shutdown.
+- AppVersion bumped to 4.5.23.
+
 ## v4.5.22 (2026-08-20)
 
 Security hardening (post-audit review, batch 5):

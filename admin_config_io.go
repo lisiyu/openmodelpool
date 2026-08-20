@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"golang.org/x/crypto/bcrypt"
 	"io"
 	"log/slog"
@@ -237,6 +238,8 @@ func handleImportConfig(w http.ResponseWriter, r *http.Request) {
 		auth.UpdateEmail(importData.Admin.Email)
 	}
 
+	// B6-2: audit the import (who replaced config/providers).
+	auditRecord(r, "config.import", "config", fmt.Sprintf("%d providers", len(importData.Providers)), true)
 	writeJSON(w, 200, map[string]any{
 		"success":         true,
 		"message":         "config imported successfully",

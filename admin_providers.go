@@ -212,6 +212,7 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 
 	result := pm.Add(p)
 	safeCheckProviderNow(p.ID)
+	auditRecord(r, "provider.create", p.ID, "base_url="+p.BaseURL, true)
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
 
@@ -332,6 +333,7 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 
 	result := pm.Add(merged)
 	safeCheckProviderNow(id)
+	auditRecord(r, "provider.update", id, fmt.Sprintf("%d fields", len(updates)), true)
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
 
@@ -345,6 +347,7 @@ func handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}
+	auditRecord(r, "provider.delete", id, "", true)
 	writeJSON(w, 200, map[string]bool{"success": true})
 }
 

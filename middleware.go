@@ -10,9 +10,33 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"time"
 )
+
+// recoverMiddleware is the outermost safety net (B6-3): a panic escaping any
+// handler is logged with a stack trace and answered with a JSON 500 instead of
+// net/http silently closing the connection mid-response.
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("panic recovered in HTTP handler",
+					"method", r.Method, "path", r.URL.Path,
+					"panic", rec, "stack", string(debug.Stack()))
+				// If the response was already started (e.g. mid-stream) this
+				// write fails silently — acceptable, the log entry is what matters.
+				writeJSON(w, 500, ErrorResponse{Error: ErrorDetail{
+					Message: "internal server error",
+					Type:    "internal_error",
+					Code:    "panic_recovered",
+				}})
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
 
 // corsMiddleware handles CORS headers based on configured allowed origins.
 func corsMiddleware(next http.Handler) http.Handler {
@@ -191,6 +215,14 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 			if err == nil && len(body) <= maxGatewayBodySize {
 				r.Body = io.NopCloser(bytes.NewReader(body))
 				if status, msg := verifyRelayForwardAuth(r, body); status == 0 {
+					// B6-extra: a forwarded request inherits at most consumer
+					// identity from the forwarding node — never admin. The peer
+					// rewrites these headers from its own verified auth, but a
+					// compromised/misconfigured peer must not grant admin here.
+					if r.Header.Get("X-Request-Role") == "admin" {
+						r.Header.Set("X-Request-Role", "public")
+						r.Header.Set("X-Request-Owner", "")
+					}
 					handler(w, r)
 					return
 				} else {
@@ -295,7 +327,7 @@ func withAuth(handler http.HandlerFunc) http.HandlerFunc {
 			}})
 			return
 		}
-		_, err := auth.VerifyToken(token)
+		username, err := auth.VerifyToken(token)
 		if err != nil {
 			writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
 				Message: "token expired",
@@ -304,6 +336,9 @@ func withAuth(handler http.HandlerFunc) http.HandlerFunc {
 			}})
 			return
 		}
+		// B6-2: propagate the verified identity so auditRecord can attribute
+		// admin actions (audit.go reads the "username" context key).
+		r = r.WithContext(context.WithValue(r.Context(), "username", username))
 		r.Header.Set("X-Request-Owner", "")
 		r.Header.Set("X-Request-Role", "admin")
 		handler(w, r)

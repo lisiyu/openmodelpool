@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -24,6 +26,36 @@ func sanitizeNodeID(id string) string {
 		return ""
 	}
 	return id
+}
+
+// maxFederationSigBody caps how much of the request body participates in the
+// path-1 signature. Federation payloads (gossip records, ledger sync,
+// governance proposals) are small JSON documents; handlers reject larger
+// bodies anyway.
+const maxFederationSigBody = 1 << 20 // 1 MiB
+
+// federationSigValid verifies a withFederationAuth path-1 signature.
+// B6-5: the preferred format binds the SHA-256 of the request body so an
+// on-path attacker cannot tamper with gossip/ledger/governance payloads
+// inside the replay window. The legacy body-less format is still accepted for
+// rolling-deploy compatibility with older peers.
+func federationSigValid(r *http.Request, pubKey, nodeID, sig string) bool {
+	var body []byte
+	if r.Body != nil {
+		b, err := io.ReadAll(io.LimitReader(r.Body, maxFederationSigBody))
+		if err != nil {
+			b = nil
+		}
+		body = b
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	}
+
+	payload := []byte(fmt.Sprintf("%s:%s:%s:%s", nodeID, r.Method, r.URL.Path, sha256Hex(body)))
+	if VerifySignature(pubKey, payload, sig) {
+		return true
+	}
+	legacy := []byte(fmt.Sprintf("%s:%s:%s", nodeID, r.Method, r.URL.Path))
+	return VerifySignature(pubKey, legacy, sig)
 }
 
 // withFederationAuth restricts access to known federation nodes or authenticated requests.
@@ -59,8 +91,7 @@ func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 					if err == nil {
 						elapsed := time.Now().Unix() - ts
 						if elapsed >= 0 && elapsed <= 300 {
-							payload := []byte(fmt.Sprintf("%s:%s:%s", nodeID, r.Method, r.URL.Path))
-							if VerifySignature(n.PubKey, payload, sig) {
+							if federationSigValid(r, n.PubKey, nodeID, sig) {
 								handler(w, r)
 								return
 							}

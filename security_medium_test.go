@@ -113,14 +113,12 @@ func TestSA10_ExtractClientIP(t *testing.T) {
 func TestSA10_CleanupIPRateLimiters(t *testing.T) {
 	// Add some entries
 	ipRateLimiters.Lock()
-	ipRateLimiters.limiters["test1"] = &ipRateLimitEntry{
-		limiter:  NewRateLimiter(1),
-		lastSeen: time.Now().Add(-2 * time.Hour), // stale
-	}
-	ipRateLimiters.limiters["test2"] = &ipRateLimitEntry{
-		limiter:  NewRateLimiter(1),
-		lastSeen: time.Now(), // fresh
-	}
+	stale := &ipRateLimitEntry{limiter: NewRateLimiter(1)}
+	stale.lastSeen.Store(time.Now().Add(-2 * time.Hour).UnixNano()) // stale
+	ipRateLimiters.limiters["test1"] = stale
+	fresh := &ipRateLimitEntry{limiter: NewRateLimiter(1)}
+	fresh.lastSeen.Store(time.Now().UnixNano()) // fresh
+	ipRateLimiters.limiters["test2"] = fresh
 	ipRateLimiters.Unlock()
 
 	// Cleanup entries older than 1 hour

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -262,29 +263,56 @@ func (wp *WorkerPool) TotalSubmitted() int64 {
 
 const defaultMaxConcurrentRequests = 100
 
+// adminMaxConcurrentRequests caps the dedicated management pool (B6-1).
+// Model traffic can hold a slot for minutes while streaming; without a
+// separate pool a public-key flood on /v1/* starves /api/config, /api/login
+// and every other management endpoint (5s wait → 503).
+const adminMaxConcurrentRequests = 20
+
 // semaphoreAcquireTimeout bounds how long a request waits for a concurrency
 // slot before the server sheds load with a 503 (PERF-P2-14).
 const semaphoreAcquireTimeout = 5 * time.Second
 
 var requestSemaphore chan struct{}
+var adminRequestSemaphore chan struct{}
 
 func initConcurrencyLimiter(maxConcurrent int) {
 	if maxConcurrent <= 0 {
 		maxConcurrent = defaultMaxConcurrentRequests
 	}
 	requestSemaphore = make(chan struct{}, maxConcurrent)
-	slog.Info("concurrency limiter initialized", "max_concurrent", maxConcurrent)
+	admin := maxConcurrent / 5
+	if admin < 5 {
+		admin = 5
+	}
+	if admin > adminMaxConcurrentRequests {
+		admin = adminMaxConcurrentRequests
+	}
+	adminRequestSemaphore = make(chan struct{}, admin)
+	slog.Info("concurrency limiter initialized",
+		"max_concurrent", maxConcurrent, "admin_concurrent", admin)
+}
+
+// isModelTrafficPath reports whether the path carries LLM traffic: the local
+// gateway endpoints and the inter-node federation relay. These requests may
+// stream for minutes, so they share the main pool and can never exhaust the
+// dedicated management pool (B6-1).
+func isModelTrafficPath(path string) bool {
+	return strings.HasPrefix(path, "/v1/") ||
+		strings.HasPrefix(path, "/v1beta/") ||
+		strings.HasPrefix(path, "/openai/") ||
+		path == "/api/federation/relay"
 }
 
 // acquireSemaphore waits for a concurrency slot, honoring the request context
 // and a bounded acquisition timeout. Returns false when the slot cannot be
 // obtained in time (server busy / client gone), so the caller can shed load
 // with a 503 instead of blocking forever.
-func acquireSemaphore(ctx context.Context) bool {
+func acquireSemaphoreFrom(sem chan struct{}, ctx context.Context) bool {
 	timer := time.NewTimer(semaphoreAcquireTimeout)
 	defer timer.Stop()
 	select {
-	case requestSemaphore <- struct{}{}:
+	case sem <- struct{}{}:
 		return true
 	case <-ctx.Done():
 		return false
@@ -294,15 +322,19 @@ func acquireSemaphore(ctx context.Context) bool {
 }
 
 // releaseSemaphore frees a concurrency slot.
-func releaseSemaphore() {
-	<-requestSemaphore
+func releaseSemaphoreFrom(sem chan struct{}) {
+	<-sem
 }
 
 // concurrencyMiddleware limits concurrent request processing.
 func concurrencyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		totalRequestCount.Add(1)
-		if !acquireSemaphore(r.Context()) {
+		sem := adminRequestSemaphore
+		if isModelTrafficPath(r.URL.Path) {
+			sem = requestSemaphore
+		}
+		if !acquireSemaphoreFrom(sem, r.Context()) {
 			// PERF-P2-14: shed load instead of queueing without bound.
 			writeJSON(w, 503, ErrorResponse{Error: ErrorDetail{
 				Message: "服务器繁忙，请稍后重试",
@@ -311,7 +343,7 @@ func concurrencyMiddleware(next http.Handler) http.Handler {
 			}})
 			return
 		}
-		defer releaseSemaphore()
+		defer releaseSemaphoreFrom(sem)
 		next.ServeHTTP(w, r)
 	})
 }

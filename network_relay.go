@@ -441,9 +441,11 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 	} else if directLinkMgr != nil && directLinkMgr.HasDirect(entry.NodeID) {
 		slog.Info("relay: direct UDP link verified, bypassing TCP probe", "peer", entry.NodeID)
 	} else if natMgr != nil && !natMgr.ShouldUseDirect(entry.NodeID) {
-		go natMgr.ProbeDirect(entry.NodeID, targetAddr)
+		goSafe("nat-probe-direct", func() {
+			natMgr.ProbeDirect(entry.NodeID, targetAddr)
+		})
 		if directLinkMgr != nil && entry.ReflexiveUDP != "" {
-			go func() {
+			goSafe("nat-punch-offer", func() {
 				offer, err := directLinkMgr.Offer()
 				if err != nil {
 					return
@@ -453,7 +455,7 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 				// so both NAT mappings open concurrently.
 				ExchangePunchWithPeer(targetAddr, offer)
 				directLinkMgr.BeginPunch(PunchOffer{NodeID: entry.NodeID, ReflexiveAddr: entry.ReflexiveUDP}, time.Second, 20)
-			}()
+			})
 		}
 	}
 
@@ -544,6 +546,10 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 			// node derives the effective key type from its own verification of
 			// the relay-forward signature, never from a wire header.
 			req.Header.Del("X-OMP-KeyType")
+
+			// B6-6 / B6-extra: drop client-controlled identity/IP headers and
+			// rewrite X-Request-* from the locally verified auth result.
+			sanitizeForwardedHeaders(req.Header, r)
 
 			// G1 hardening: attach the ed25519-signed relay auth so the
 			// receiving node can verify this forwarding-node identity.
@@ -737,6 +743,42 @@ func sha256Hex(b []byte) string {
 // node's ed25519 key via SignJSON so the receiver can verify with VerifyJSONSig.
 // Returns empty strings when signing is impossible (e.g. uninitialized node),
 // in which case the caller must NOT claim a relay identity.
+// sanitizeForwardedHeaders prepares dst (a copy of r's headers) for an
+// outbound federation forward (B6-6 / B6-extra):
+//   - Authorization / X-OMP-KeyType: consumer keys and internal key type never
+//     leave the node (S-4/V-3, SEC-P0-2).
+//   - Cookie: client-controlled session state must not leak across nodes.
+//   - X-Forwarded-For / X-Real-IP: attacker-forgeable; when the peer runs
+//     behind a trusted proxy they would poison its per-IP rate-limit key.
+//   - X-Request-Owner / X-Request-Role are REWRITTEN from the locally verified
+//     auth result instead of passed through. An anonymous private-network
+//     admin fallback (no Authorization credential on the request) is
+//     downgraded to public so unauthenticated local admin never propagates.
+func sanitizeForwardedHeaders(dst http.Header, r *http.Request) {
+	dst.Del("Authorization")
+	dst.Del("X-Omp-Keytype")
+	dst.Del("Cookie")
+	dst.Del("X-Forwarded-For")
+	dst.Del("X-Real-Ip")
+
+	owner := r.Header.Get("X-Request-Owner")
+	role := r.Header.Get("X-Request-Role")
+	if role == "admin" && r.Header.Get("Authorization") == "" {
+		role = "public"
+		owner = ""
+	}
+	if owner == "" {
+		dst.Del("X-Request-Owner")
+	} else {
+		dst.Set("X-Request-Owner", owner)
+	}
+	if role == "" {
+		dst.Del("X-Request-Role")
+	} else {
+		dst.Set("X-Request-Role", role)
+	}
+}
+
 func signRelayForward(nodeID string, method string, path string, body []byte) (sig string, ts string) {
 	if nodeID == "" || node == nil {
 		return "", ""
@@ -1103,16 +1145,14 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	// Copy query parameters
 	outReq.URL.RawQuery = r.URL.RawQuery
 
-	// Copy headers but strip original Authorization (S-4/V-3) and any
-	// client-supplied key-type header (SEC-P0-2).
+	// Copy all client headers, then strip sensitive/spoofable ones and
+	// rewrite the identity headers via sanitizeForwardedHeaders below.
 	for key, vals := range r.Header {
-		if key == "Authorization" || key == "X-OMP-KeyType" {
-			continue // do not forward consumer key or spoofed key type to remote node
-		}
 		for _, val := range vals {
 			outReq.Header.Add(key, val)
 		}
 	}
+	sanitizeForwardedHeaders(outReq.Header, r)
 
 	// Set relay headers
 	outReq.Header.Set(headerRelayHop, strconv.Itoa(hopCount+1))
@@ -1162,7 +1202,7 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	}
 
 	if success && contributionLedger != nil {
-		go func() {
+		goSafe("contribution-record", func() {
 			selfID := ""
 			if netMgr != nil {
 				selfID = netMgr.GetNodeID()
@@ -1174,7 +1214,7 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 			})
 			contributionLedger.AppendTransaction("contribution", selfID, 0, model, "")
 			saveContributionLedger()
-		}()
+		})
 	}
 
 	// Copy response headers, filtering out hop-internal headers

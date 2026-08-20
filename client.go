@@ -2,6 +2,7 @@ package main
 
 import (
 	"sync"
+	"sync/atomic"
 	"bufio"
 	"bytes"
 	"context"
@@ -645,7 +646,10 @@ func openaiStream(ctx context.Context, p Provider, model string, messages []Chat
 		return err
 	}
 
-	// Stream with idle timeout: if no data received for 90 seconds, abort
+	// Stream with idle timeout: if no data received for 90 seconds, abort.
+	// B6-4: track last-activity explicitly instead of a one-shot timer — the
+	// previous NewTimer was never Reset, so any stream longer than 90s was
+	// killed even while actively producing output.
 	const streamIdleTimeout = 90 * time.Second
 	scanner := bufio.NewScanner(resp.Body)
 	// B-cap: a single SSE `data:` line may exceed the default 64 KiB scanner
@@ -655,25 +659,32 @@ func openaiStream(ctx context.Context, p Provider, model string, messages []Chat
 	// a truncated/errored stream. 16 MiB covers realistic single-chunk payloads.
 	scanner.Buffer(make([]byte, 0, 256*1024), 16*1024*1024)
 
+	var lastActivity atomic.Int64
+	lastActivity.Store(time.Now().UnixNano())
+
 	done := make(chan error, 1)
 	go func() {
 		for scanner.Scan() {
 			line := scanner.Text()
 			fmt.Fprint(w, line+"\n")
 			flusher.Flush()
+			lastActivity.Store(time.Now().UnixNano())
 		}
 		done <- scanner.Err()
 	}()
 
-	// Watchdog: detect if stream stalls
-	idleTimer := time.NewTimer(streamIdleTimeout)
-	defer idleTimer.Stop()
+	// Watchdog: poll activity periodically so continuous streams are never
+	// aborted, while a genuine stall is detected shortly after the deadline.
+	watchdog := time.NewTicker(streamIdleTimeout / 4)
+	defer watchdog.Stop()
 	for {
 		select {
 		case err := <-done:
 			return err
-		case <-idleTimer.C:
-			return fmt.Errorf("stream idle timeout: no data received for %v", streamIdleTimeout)
+		case <-watchdog.C:
+			if time.Since(time.Unix(0, lastActivity.Load())) > streamIdleTimeout {
+				return fmt.Errorf("stream idle timeout: no data received for %v", streamIdleTimeout)
+			}
 		}
 	}
 }

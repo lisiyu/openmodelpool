@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -202,8 +203,11 @@ var ipRateLimiters = struct {
 }{limiters: make(map[string]*ipRateLimitEntry)}
 
 type ipRateLimitEntry struct {
-	limiter  *RateLimiter
-	lastSeen time.Time
+	limiter *RateLimiter
+	// lastSeen is atomic (unix nano) because it is refreshed on every request
+	// outside the map lock; cleanupIPRateLimiters reads it under the lock.
+	// B6-7: plain time.Time here was a data race between refresh and cleanup.
+	lastSeen atomic.Int64
 }
 
 // rateLimitByIP returns a middleware that limits requests per client IP.
@@ -239,9 +243,9 @@ func rateLimitByIP(maxRequestsPerMinute float64, endpointName string) func(http.
 				entry, exists = ipRateLimiters.limiters[ip+endpointName]
 				if !exists {
 					if len(ipRateLimiters.limiters) >= ipRateLimitersMaxEntries {
-						cutoff := time.Now().Add(-5 * time.Minute)
-						for k, e := range ipRateLimiters.limiters {
-							if e.lastSeen.Before(cutoff) {
+					cutoff := time.Now().Add(-5 * time.Minute)
+					for k, e := range ipRateLimiters.limiters {
+						if time.Unix(0, e.lastSeen.Load()).Before(cutoff) {
 								delete(ipRateLimiters.limiters, k)
 							}
 						}
@@ -256,16 +260,16 @@ func rateLimitByIP(maxRequestsPerMinute float64, endpointName string) func(http.
 						}})
 						return
 					}
-					entry = &ipRateLimitEntry{
-						limiter:  NewRateLimiterWithBurst(qps, maxRequestsPerMinute),
-						lastSeen: time.Now(),
-					}
-					ipRateLimiters.limiters[ip+endpointName] = entry
+				entry = &ipRateLimitEntry{
+					limiter: NewRateLimiterWithBurst(qps, maxRequestsPerMinute),
 				}
-				ipRateLimiters.Unlock()
+				entry.lastSeen.Store(time.Now().UnixNano())
+				ipRateLimiters.limiters[ip+endpointName] = entry
 			}
+			ipRateLimiters.Unlock()
+		}
 
-			entry.lastSeen = time.Now()
+		entry.lastSeen.Store(time.Now().UnixNano())
 			if !entry.limiter.Allow() {
 				slog.Warn("IP rate limit exceeded", "ip", ip, "endpoint", endpointName, "remote", r.RemoteAddr)
 				w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", maxRequestsPerMinute))
@@ -299,7 +303,7 @@ func cleanupIPRateLimiters(maxAge time.Duration) {
 	defer ipRateLimiters.Unlock()
 	cutoff := time.Now().Add(-maxAge)
 	for key, entry := range ipRateLimiters.limiters {
-		if entry.lastSeen.Before(cutoff) {
+		if time.Unix(0, entry.lastSeen.Load()).Before(cutoff) {
 			delete(ipRateLimiters.limiters, key)
 		}
 	}

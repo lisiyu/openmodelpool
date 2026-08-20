@@ -222,6 +222,8 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.SetMany(update)
 	// §10A: re-read WAF configuration if any WAF keys were updated.
 	reloadWAF()
+	// B6-2: audit the mutation (who changed what).
+	auditRecord(r, "config.save", "config", fmt.Sprintf("%d keys", len(update)), true)
 	writeJSON(w, 200, cfg.Masked())
 }
 
@@ -257,5 +259,6 @@ func handleSetGateway(w http.ResponseWriter, r *http.Request) {
 	cfg.saveSync()
 	isGateway := cfg.Get("is_gateway", "false") == "true"
 	slog.Info("gateway mark updated", "is_gateway", isGateway)
+	auditRecord(r, "gateway.set", "is_gateway", fmt.Sprintf("%v", isGateway), true)
 	writeJSON(w, 200, map[string]any{"success": true, "is_gateway": isGateway})
 }

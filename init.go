@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,21 @@ var globalStopOnce sync.Once
 // closeGlobalStopCh safely closes globalStopCh (idempotent via sync.Once).
 func closeGlobalStopCh() {
 	globalStopOnce.Do(func() { close(globalStopCh) })
+}
+
+// goSafe runs fn in a new goroutine, recovering from panics so a background
+// task can never take down the whole process (B6-3: net/http only recovers
+// handler goroutines, anything spawned with `go func()` is on its own).
+func goSafe(name string, fn func()) {
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("panic recovered in background goroutine",
+					"task", name, "panic", rec, "stack", string(debug.Stack()))
+			}
+		}()
+		fn()
+	}()
 }
 
 // initCore initializes core components: encryption, config, logging, providers, auth, multi-user.

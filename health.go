@@ -73,10 +73,11 @@ func (h *HealthChecker) checkAll() {
 	var wg sync.WaitGroup
 	for _, p := range providers {
 		wg.Add(1)
-		go func(p Provider) {
+		// B6-3: goSafe so one panicking provider check cannot kill the process.
+		goSafe("health-check-"+p.ID, func() {
 			defer wg.Done()
 			h.checkProvider(p)
-		}(p)
+		})
 	}
 	wg.Wait()
 }
