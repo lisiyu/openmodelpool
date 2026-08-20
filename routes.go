@@ -126,7 +126,7 @@ func setupRoutes() *http.ServeMux {
 
 	// Platform discovery (admin + consumer)
 	mux.HandleFunc("GET /api/discovery/platforms", withConsumerOrAdminAuth(handleGetDiscoveredPlatforms))
-	mux.HandleFunc("PUT /api/discovery/platforms/{id}", withConsumerOrAdminAuth(handleUpdateDiscoveredPlatform))
+	mux.HandleFunc("PUT /api/discovery/platforms/{id}", withAuth(handleUpdateDiscoveredPlatform))
 	mux.HandleFunc("POST /api/discovery/scan", withConsumerOrAdminAuth(handleTriggerDiscovery))
 	mux.HandleFunc("POST /api/discovery/platforms/{id}/check", withConsumerOrAdminAuth(handleCheckDiscoveredPlatform))
 

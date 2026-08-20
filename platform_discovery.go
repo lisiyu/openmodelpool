@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,7 +31,7 @@ type DiscoveredPlatform struct {
 var (
 	discoveredMu        sync.RWMutex
 	discoveredPlatforms []DiscoveredPlatform
-	discoveryRunning    bool
+	discoveryRunning    atomic.Bool
 )
 
 const discoveredPlatformsFile = "data/discovered_platforms.json"
@@ -179,7 +180,7 @@ func handleUpdateDiscoveredPlatform(w http.ResponseWriter, r *http.Request) {
 
 // handleTriggerDiscovery triggers a background scan for new platforms.
 func handleTriggerDiscovery(w http.ResponseWriter, r *http.Request) {
-	if discoveryRunning {
+	if !discoveryRunning.CompareAndSwap(false, true) {
 		writeJSON(w, 200, map[string]any{"status": "already_running", "message": "\u626b\u63cf\u5df2\u5728\u8fdb\u884c\u4e2d"})
 		return
 	}
@@ -190,8 +191,7 @@ func handleTriggerDiscovery(w http.ResponseWriter, r *http.Request) {
 
 // runDiscovery scans known sources for free AI platforms.
 func runDiscovery() {
-	discoveryRunning = true
-	defer func() { discoveryRunning = false }()
+	defer func() { discoveryRunning.Store(false) }()
 
 	slog.Info("platform discovery scan started")
 	start := time.Now()
@@ -335,7 +335,9 @@ func fetchGitHubLists() []DiscoveredPlatform {
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		// SEC-B5-4: cap the response size — a hostile/unexpected GitHub raw
+		// file must not balloon memory on a consumer-triggerable scan.
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
 		if err != nil || resp.StatusCode != 200 {
 			continue

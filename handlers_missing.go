@@ -2,6 +2,8 @@ package main
 
 import (
 	"crypto/subtle"
+	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 )
@@ -64,6 +66,10 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 	// Read the (optional) heartbeat body once. Region info is self-reported and,
 	// when present, is used to register/refresh the node's region in the
 	// RegionManager (see the wiring below, after authentication).
+	// Parse the (optional) heartbeat body directly. SEC-B5-9: readJSON writes an
+	// error response on malformed input; ignoring that error here then writing a
+	// second response would produce a corrupted "superfluous WriteHeader"
+	// response. Parse independently so a bad body is simply treated as empty.
 	var hbBody struct {
 		NodeID    string  `json:"node_id"`
 		Endpoint  string  `json:"endpoint"`
@@ -72,7 +78,9 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`
 	}
-	_ = readJSON(w, r, &hbBody)
+	if bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 4096)); err == nil {
+		_ = json.Unmarshal(bodyBytes, &hbBody)
+	}
 
 	senderNodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 	if senderNodeID == "" {
@@ -109,12 +117,13 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 	// Register / refresh the sender's region from the self-reported heartbeat.
 	// This is the heartbeat half of the Region Manager wiring: nodes that include
 	// a "region" field in their heartbeat are tracked for region-aware routing.
+	// SEC-B5-5: the region string is NOT part of the authenticated payload, so
+	// only the coarse region label (normalized by regionCanonical) is trusted;
+	// self-reported latitude/longitude are discarded to prevent a peer from
+	// claiming an arbitrary coordinate that could skew region-aware routing.
 	if regionManager != nil && hbBody.Region != "" {
 		info := &HeartbeatRegionInfo{
-			Region:    hbBody.Region,
-			SubRegion: hbBody.SubRegion,
-			Latitude:  hbBody.Latitude,
-			Longitude: hbBody.Longitude,
+			Region: hbBody.Region,
 		}
 		regionManager.ProcessHeartbeatRegion(senderNodeID, info, extractRemoteIP(r))
 	}

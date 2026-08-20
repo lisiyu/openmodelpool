@@ -596,15 +596,14 @@ func (a *Auth) HasResetCode() bool {
 }
 
 // randomString generates a cryptographically random string of length n.
-// m2-fix: Log fatal instead of panic on rand.Read failure for graceful shutdown.
+// SEC-B5-6: fail-closed — if the entropy source fails, abort the process
+// instead of falling back to a timestamp-derived value that an attacker could
+// predict (used for JWT secrets and reset tokens).
 func randomString(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		// crypto/rand.Read should never fail on modern OS, but handle it gracefully
-		slog.Error("crypto/rand.Read failed — system entropy source unavailable", "err", err)
-		// Fallback: use timestamp-based string to avoid crashing the entire process
-		// This is not cryptographically strong but prevents service outage
-		return fmt.Sprintf("%d%s", time.Now().UnixNano(), base64.URLEncoding.EncodeToString(b))[:n]
+		slog.Error("crypto/rand.Read failed — system entropy source unavailable; aborting (fail-closed)", "err", err)
+		os.Exit(1)
 	}
 	return base64.URLEncoding.EncodeToString(b)[:n]
 }

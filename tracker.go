@@ -134,8 +134,20 @@ func (t *Tracker) RecordWithAccessType(providerID, providerName, model string, p
 	t.RecordWithRetry(providerID, providerName, model, promptTokens, completionTokens, latencyMS, success, errMsg, isStream, retryCount, accessType)
 }
 
+// RecordWithOwner logs one API call with access type and an owning consumer ID.
+// The owner is recorded so usage endpoints can scope results to a single
+// consumer (SEC-B5-1); empty owner means public/guest/admin traffic.
+func (t *Tracker) RecordWithOwner(providerID, providerName, model string, promptTokens, completionTokens int, latencyMS float64, success bool, errMsg string, isStream bool, retryCount int, accessType, owner string) {
+	t.RecordWithRetryOwner(providerID, providerName, model, promptTokens, completionTokens, latencyMS, success, errMsg, isStream, retryCount, accessType, owner)
+}
+
 // RecordWithRetry logs one API call with retry and stream info.
 func (t *Tracker) RecordWithRetry(providerID, providerName, model string, promptTokens, completionTokens int, latencyMS float64, success bool, errMsg string, isStream bool, retryCount int, accessType string) {
+	t.RecordWithRetryOwner(providerID, providerName, model, promptTokens, completionTokens, latencyMS, success, errMsg, isStream, retryCount, accessType, "")
+}
+
+// RecordWithRetryOwner is RecordWithRetry plus a consumer owner for scoping.
+func (t *Tracker) RecordWithRetryOwner(providerID, providerName, model string, promptTokens, completionTokens int, latencyMS float64, success bool, errMsg string, isStream bool, retryCount int, accessType, owner string) {
 	cost := 0.0
 	if success {
 		cost = estimateCost(model, promptTokens, completionTokens, providerID)
@@ -157,6 +169,7 @@ func (t *Tracker) RecordWithRetry(providerID, providerName, model string, prompt
 		Success:          success,
 		Error:            errMsg,
 		AccessType:       accessType,
+		Owner:            owner,
 	}
 
 	t.mu.Lock()
@@ -264,6 +277,23 @@ func (t *Tracker) tokensUsedByProvider(providerID string) int64 {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.tokenUsageByProvider[providerID]
+}
+
+// CountOwned returns the number of usage records scoped to a consumer owner.
+// An empty owner (admin) counts all records.
+func (t *Tracker) CountOwned(owner string) int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if owner == "" {
+		return len(t.records)
+	}
+	n := 0
+	for _, rec := range t.records {
+		if rec.Owner == owner {
+			n++
+		}
+	}
+	return n
 }
 
 // sendBudgetAlert sends a token budget alert email if SMTP is configured.
@@ -374,6 +404,14 @@ func (t *Tracker) TotalTokensByProvider() map[string]int64 {
 
 // ProviderStats returns per-provider aggregated stats for the last N days.
 func (t *Tracker) ProviderStats(days int) map[string]map[string]any {
+	return t.ProviderStatsOwned(days, "")
+}
+
+// ProviderStatsOwned returns per-provider aggregation scoped to a single
+// consumer owner. An empty owner returns all records (used by admin). Records
+// with an empty Owner field (public/guest/admin traffic) are only visible to
+// admin queries.
+func (t *Tracker) ProviderStatsOwned(days int, owner string) map[string]map[string]any {
 	t.mu.Lock()
 	snapshot := make([]UsageRecord, len(t.records))
 	copy(snapshot, t.records)
@@ -395,6 +433,12 @@ func (t *Tracker) ProviderStats(days int) map[string]map[string]any {
 	stats := make(map[string]*agg)
 
 	for _, r := range snapshot {
+		// SEC-B5-1: scope to the requesting consumer unless the caller is admin
+		// (empty owner). Public/guest/admin records (Owner == "") are only
+		// visible to admin.
+		if owner != "" && r.Owner != owner {
+			continue
+		}
 		ts, _ := time.Parse(time.RFC3339, r.Timestamp)
 		if ts.Before(cutoff) {
 			continue

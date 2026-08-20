@@ -119,9 +119,16 @@ func handleImportConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	data, err := io.ReadAll(file)
+	// SEC-B5-8: cap the imported config size — an oversized file must not
+	// balloon memory on an admin-only but low-rate-limit endpoint.
+	const maxImportSize = 1 << 20 // 1 MiB
+	data, err := io.ReadAll(io.LimitReader(file, maxImportSize+1))
 	if err != nil {
 		writeError(w, 400, "failed to read file")
+		return
+	}
+	if len(data) > maxImportSize {
+		writeError(w, 400, "config file too large (max 1MiB)")
 		return
 	}
 

@@ -11,8 +11,10 @@ import (
 // ============================================================
 
 func handleUsageSummary(w http.ResponseWriter, r *http.Request) {
-	stats30 := tracker.ProviderStats(30)
-	stats1 := tracker.ProviderStats(1)
+	// SEC-B5-1: consumers only see their own usage; admin ("" owner) sees all.
+	owner := getRequestOwner(r)
+	stats30 := tracker.ProviderStatsOwned(30, owner)
+	stats1 := tracker.ProviderStatsOwned(1, owner)
 	totalReqs30, totalTok30, totalCost30 := 0, 0, 0.0
 	totalReqs1, totalTok1, totalCost1 := 0, 0, 0.0
 	for _, s := range stats30 {
@@ -33,7 +35,7 @@ func handleUsageSummary(w http.ResponseWriter, r *http.Request) {
 		"total_tokens_30d":   totalTok30,
 		"total_cost_usd_30d": round4(totalCost30),
 		"providers_active":   len(stats30),
-		"total_records":      len(tracker.records),
+		"total_records":      tracker.CountOwned(owner),
 	})
 }
 
@@ -42,7 +44,8 @@ func handleUsageProviders(w http.ResponseWriter, r *http.Request) {
 	if err != nil || days <= 0 || days > 365 {
 		days = 30
 	}
-	writeJSON(w, 200, tracker.ProviderStats(days))
+	owner := getRequestOwner(r)
+	writeJSON(w, 200, tracker.ProviderStatsOwned(days, owner))
 }
 
 func handleUsageRecords(w http.ResponseWriter, r *http.Request) {
@@ -50,8 +53,18 @@ func handleUsageRecords(w http.ResponseWriter, r *http.Request) {
 	if err != nil || limit == 0 || limit > 500 {
 		limit = 100
 	}
+	owner := getRequestOwner(r)
 	tracker.mu.Lock()
-	recs := tracker.records
+	var recs []UsageRecord
+	if owner == "" {
+		recs = tracker.records
+	} else {
+		for _, rec := range tracker.records {
+			if rec.Owner == owner {
+				recs = append(recs, rec)
+			}
+		}
+	}
 	if len(recs) > limit {
 		recs = recs[len(recs)-limit:]
 	}

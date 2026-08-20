@@ -1,5 +1,20 @@
 # Changelog
 
+## v4.5.22 (2026-08-20)
+
+Security hardening (post-audit review, batch 5):
+
+- **SEC-B5-1 (consumer cross-tenant usage leak):** `/api/usage/summary`, `/api/usage/providers`, `/api/usage/records` aggregated the whole-site tracker with no ownership scoping, so any consumer could read everyone's token/cost totals and raw per-request records. `UsageRecord` now carries an `Owner`; recording paths capture the consumer ID, and the endpoints return only the caller's records (admin sees everything; public/guest/admin traffic is never visible to consumers).
+- **SEC-B5-2 (spoofable relay owner → rate-limit bypass / victim DoS):** `handleRelayToLocal` now strips `X-Request-Owner` / `X-Request-Role` before dispatch; the auth logic re-derives them from the verified credential. A remote caller can no longer impersonate a consumer ID to dodge the per-consumer QPS limiter, 429 a victim's bucket, or poison request logs.
+- **SEC-B5-3 (discovery list tampering):** `PUT /api/discovery/platforms/{id}` was consumer-reachable and let any consumer mark shared discovered platforms as dismissed/added. Now admin-only.
+- **SEC-B5-4 (discovery scan response size):** `fetchGitHubLists` read remote bodies with no cap on a consumer-triggerable scan. Capped at 1 MiB.
+- **SEC-B5-5 (heartbeat region poisoning):** region/lat/long came from the unauthenticated heartbeat body; a peer could claim arbitrary coordinates to skew region-aware routing. Only the coarse region label (canonicalized to ap/eu/americas/unknown) is now honored; self-reported subregion/coordinates are discarded.
+- **SEC-B5-6 (weak random fallback):** `randomString` (used for JWT secrets and reset tokens) fell back to a predictable timestamp on entropy failure. It now aborts the process (fail-closed) instead.
+- **SEC-B5-7 (shared proxy-IP rate-limit bucket):** `rateLimitByIP` keyed on the raw RemoteAddr, so behind a trusted reverse proxy one client could exhaust a shared bucket and lock out every user. When `OMP_TRUSTED_PROXY=1`, the real client IP from `X-Forwarded-For` is used.
+- **SEC-B5-8 (import DoS):** `/api/config/import` read the uploaded file unbounded into memory. Capped at 1 MiB with a clear error.
+- **SEC-B5-9 (heartbeat double-write):** a malformed heartbeat body made `readJSON` write an error and the handler write a second response (corrupted output). The body is now parsed independently and a bad body is treated as empty.
+- AppVersion bumped to 4.5.22.
+
 ## v4.5.21 (2026-08-20)
 
 Security hardening (post-audit review, batch 4):

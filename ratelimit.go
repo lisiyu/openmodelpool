@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -213,7 +214,21 @@ func rateLimitByIP(maxRequestsPerMinute float64, endpointName string) func(http.
 	qps := maxRequestsPerMinute / 60.0
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
+			// SEC-B5-7: behind a trusted reverse proxy every client shares the
+			// proxy's RemoteAddr; use the real client IP from X-Forwarded-For so
+			// one client cannot exhaust a shared bucket and lock out everyone.
+			// Outside a trusted proxy the XFF header is attacker-controlled and
+			// ignored (consistent with WAF/extractRemoteIP).
 			ip := extractClientIP(r.RemoteAddr)
+			if trustedReverseProxy {
+				if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+					if idx := strings.IndexByte(xff, ','); idx >= 0 {
+						ip = strings.TrimSpace(xff[:idx])
+					} else {
+						ip = strings.TrimSpace(xff)
+					}
+				}
+			}
 
 			ipRateLimiters.RLock()
 			entry, exists := ipRateLimiters.limiters[ip+endpointName]

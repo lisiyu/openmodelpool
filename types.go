@@ -379,6 +379,7 @@ type UsageRecord struct {
 	Success          bool    `json:"success"`
 	Error            string  `json:"error,omitempty"`
 	AccessType       string  `json:"access_type,omitempty"`
+	Owner            string  `json:"owner,omitempty"` // consumer ID that owns this record; empty = public/guest/admin
 }
 
 // ============================================================

@@ -297,6 +297,13 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, hopCount int) {
 	netMgr.RecordReceived()
 
+	// SEC-B5-2: X-Request-Owner / X-Request-Role are derived by the auth logic
+	// below from the VERIFIED credential and set fresh after this point. Strip
+	// whatever the remote caller sent so an attacker cannot spoof a victim
+	// consumer ID (rate-limit bypass / targeted 429 DoS / log poisoning).
+	r.Header.Del("X-Request-Owner")
+	r.Header.Del("X-Request-Role")
+
 	// v2.0: Simplified key handling for local relay
 	authHeader := r.Header.Get("Authorization")
 	bearerKey := strings.TrimPrefix(authHeader, "Bearer ")
