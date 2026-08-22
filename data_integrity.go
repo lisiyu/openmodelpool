@@ -46,11 +46,21 @@ func verifyHMAC(data, storedMAC []byte) bool {
 
 // saveWithIntegrity serializes v to JSON, prepends HMAC, and writes to file.
 func saveWithIntegrity(path string, v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
+	data, err := marshalWithIntegrity(v)
 	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+		return err
 	}
+	return writeWithIntegrity(path, data)
+}
 
+// marshalWithIntegrity serializes v to JSON. B7-supp: lets callers snapshot
+// state under a lock and defer the (slower) disk write until after unlock.
+func marshalWithIntegrity(v any) ([]byte, error) {
+	return json.MarshalIndent(v, "", "  ")
+}
+
+// writeWithIntegrity prepends the HMAC for data and writes atomically to path.
+func writeWithIntegrity(path string, data []byte) error {
 	mac := computeHMAC(data)
 	if mac == nil {
 		// Encryption not ready, save without integrity check (backward compat)

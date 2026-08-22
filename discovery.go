@@ -260,9 +260,14 @@ func (f *FederationManager) doRefresh() {
 			f.trustPool = *pool
 			slog.Info("trust pool refreshed from seed nodes",
 				"version", pool.Version, "nodes", len(pool.Nodes))
-			if err := f.saveLocked(); err != nil {
-				slog.Error("failed to persist trust pool after seed refresh", "error", err)
+			snapshot, serr := f.snapshotLocked()
+			f.mu.Unlock()
+			if serr != nil {
+				slog.Error("failed to persist trust pool after seed refresh", "error", serr)
+				return
 			}
+			f.persistSnapshot(snapshot)
+			return
 		}
 		f.mu.Unlock()
 		return

@@ -97,7 +97,7 @@ func TestParseFloat64(t *testing.T) {
 		{"20.5", 50, 20.5},
 	}
 	for _, tt := range tests {
-		got := parseFloat64(tt.input, tt.def)
+		got := parseFloat64("test_key", tt.input, tt.def)
 		if got != tt.want {
 			t.Errorf("parseFloat64(%q, %v) = %v, want %v", tt.input, tt.def, got, tt.want)
 		}

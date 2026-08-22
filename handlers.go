@@ -824,6 +824,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			dataSent, err := handleStreamProxy(w, r, p, actualModel, req.Messages, extra, model, startTime, accessType, consumerID)
 			DecrConn(p.ID, accessType)
 			if err == nil {
+				recordProviderSuccess(p.ID) // B7-3
 				if consumerID != "" {
 					multiUser.RecordConsumerUsage(consumerID, 0)
 				}
@@ -839,6 +840,8 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			lastErr = err
 			if isRateLimitError(err) {
 				recordProviderCooldown(p.ID)
+			} else {
+				recordProviderFailure(p.ID) // B7-3
 			}
 		} else {
 			IncrConn(p.ID, accessType)
@@ -849,6 +852,8 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				lastErr = err
 				if isRateLimitError(err) {
 					recordProviderCooldown(p.ID)
+				} else {
+					recordProviderFailure(p.ID) // B7-3
 				}
 				tracker.RecordWithOwner(p.ID, p.Name, model, 0, 0, float64(time.Since(startTime).Milliseconds()), false, err.Error(), false, 0, accessType, consumerID)
 				continue
@@ -860,6 +865,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				promptTok = resp.Usage.PromptTokens
 				compTok = resp.Usage.CompletionTokens
 			}
+			recordProviderSuccess(p.ID) // B7-3
 			tracker.RecordWithOwner(p.ID, p.Name, model, promptTok, compTok, latencyMS, true, "", false, 0, accessType, consumerID)
 			if consumerID != "" {
 				multiUser.RecordConsumerUsage(consumerID, promptTok+compTok)
@@ -876,7 +882,10 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeError(w, 502, fmt.Sprintf("all providers failed: %v", lastErr))
+	// B7-b: lastErr can embed upstream internals (URLs, account ids, provider
+	// responses). Full detail is already in the logs per-provider above; give
+	// clients a generic reason so public/guest consumers learn nothing.
+	writeError(w, 502, "all providers failed, please retry later")
 }
 
 // handleStreamProxy handles streaming requests. Returns (dataSent bool, err error).
@@ -945,7 +954,9 @@ func handleCozeRequest(w http.ResponseWriter, r *http.Request, model string, mes
 
 	resp, err := cozeNonStream(r.Context(), p, model, messages)
 	if err != nil {
-		writeError(w, 502, fmt.Sprintf("Coze error: %v", err))
+		// B7-b: don't echo upstream Coze error text to the client.
+		slog.Warn("coze request failed", "model", model, "error", err)
+		writeError(w, 502, "Coze upstream error, please retry later")
 		return
 	}
 	writeJSON(w, 200, resp)

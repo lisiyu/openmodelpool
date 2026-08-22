@@ -44,14 +44,13 @@ func handleShareInfo(w http.ResponseWriter, r *http.Request) {
 		proxyURL = cfg.Get("service_host", "")
 	}
 	if proxyURL == "" {
-		// Fallback to request Host (less trusted — potential Host header injection)
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
-		}
-		proxyURL = scheme + "://" + r.Host
+		// B7-c: no configured fallback — do NOT trust the request Host header
+		// (attacker-controlled on the public path); a poisoned value would be
+		// copied from the Share Center into other people's client configs.
+		proxyURL = ""
+	} else {
+		proxyURL += "/v1"
 	}
-	proxyURL += "/v1"
 
 	tunnelURL := cfg.Get("tunnel_url", "")
 	proxyAPIKey := cfg.Get("proxy_api_key", "")

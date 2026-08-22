@@ -94,17 +94,37 @@ func (t *Tracker) rebuildEWMA() {
 	t.mu.Unlock()
 }
 
-func (t *Tracker) save() {
+// flush persists pending records to disk. B7: takes t.mu itself — the old
+// save() required callers to hold the lock and silently unlocked/relocked
+// around I/O, a contract that double-unlock-panics the moment any caller
+// wraps theirs in defer Unlock. State is marshaled under the lock; the file
+// write happens outside it so Record() is never blocked on disk.
+func (t *Tracker) flush() {
+	t.mu.Lock()
+	b, ok := t.snapshotLocked()
+	t.mu.Unlock()
+	if !ok {
+		return
+	}
+	os.MkdirAll("data", 0700)
+	atomicWriteFile(t.dataPath, b, 0600)
+}
+
+// snapshotLocked truncates history to the cap and serializes the current
+// records. Caller must hold t.mu. Returns (nil, false) if marshaling fails
+// (dirtyCount is preserved so a later flush retries).
+func (t *Tracker) snapshotLocked() ([]byte, bool) {
 	if len(t.records) > trackerMaxRecords {
 		t.records = t.records[len(t.records)-trackerMaxRecords:]
 	}
-	b, _ := json.MarshalIndent(t.records, "", "  ")
+	b, err := json.MarshalIndent(t.records, "", "  ")
+	if err != nil {
+		slog.Error("usage tracker marshal failed", "error", err)
+		return nil, false
+	}
 	t.dirtyCount = 0
 	t.lastFlush = time.Now()
-	t.mu.Unlock()
-	os.MkdirAll("data", 0700)
-	atomicWriteFile(t.dataPath, b, 0600)
-	t.mu.Lock()
+	return b, true
 }
 
 func (t *Tracker) periodicFlush() {
@@ -114,10 +134,11 @@ func (t *Tracker) periodicFlush() {
 		select {
 		case <-ticker.C:
 			t.mu.Lock()
-			if t.dirtyCount > 0 {
-				t.save()
-			}
+			dirty := t.dirtyCount > 0
 			t.mu.Unlock()
+			if dirty {
+				t.flush()
+			}
 		case <-t.stopCh:
 			return
 		}
@@ -190,11 +211,9 @@ func (t *Tracker) RecordWithRetryOwner(providerID, providerName, model string, p
 	shouldFlush := t.dirtyCount >= trackerFlushThreshold || time.Since(t.lastFlush) >= trackerFlushInterval
 	t.mu.Unlock()
 
-	// Flush outside lock to avoid holding lock during IO
+	// Flush takes the lock itself; disk I/O stays outside it.
 	if shouldFlush {
-		t.mu.Lock()
-		t.save()
-		t.mu.Unlock()
+		t.flush()
 	}
 
 	// Record metrics
@@ -380,7 +399,10 @@ func (t *Tracker) archiveUsage() {
 	t.records = toKeep
 	t.dirtyCount = 0
 	t.lastFlush = time.Now()
-	t.save()
+	if b, ok := t.snapshotLocked(); ok {
+		os.MkdirAll("data", 0700)
+		atomicWriteFile(t.dataPath, b, 0600)
+	}
 	slog.Info("usage archived", "month", archiveMonth, "archived_count", len(toArchive), "remaining", len(toKeep))
 }
 
@@ -524,9 +546,7 @@ func (t *Tracker) ProviderStatsOwned(days int, owner string) map[string]map[stri
 
 // Flush forces a disk write.
 func (t *Tracker) Flush() {
-	t.mu.Lock()
-	t.save()
-	t.mu.Unlock()
+	t.flush()
 }
 
 // Stop shuts down the flush goroutine.
@@ -541,7 +561,10 @@ func (t *Tracker) Reset() {
 	t.records = nil
 	t.dirtyCount = 0
 	t.ewmaCache = make(map[string]float64)
-	t.save()
+	if b, ok := t.snapshotLocked(); ok {
+		os.MkdirAll("data", 0700)
+		atomicWriteFile(t.dataPath, b, 0600)
+	}
 	t.mu.Unlock()
 }
 

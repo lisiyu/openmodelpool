@@ -69,20 +69,20 @@ func (m *MultiUserManager) batchSaveLoop() {
 	for {
 		select {
 		case <-ticker.C:
+			m.mu.Lock()
 			if m.dirtyCount.Load() > 0 {
-				m.mu.Lock()
 				m.dirtyCount.Store(0)
-				m.mu.Unlock()
-				m.save()
+				m.saveLocked()
 			}
+			m.mu.Unlock()
 		case <-m.saveStopCh:
 			// Final flush on shutdown
+			m.mu.Lock()
 			if m.dirtyCount.Load() > 0 {
-				m.mu.Lock()
 				m.dirtyCount.Store(0)
-				m.mu.Unlock()
-				m.save()
+				m.saveLocked()
 			}
+			m.mu.Unlock()
 			return
 		}
 	}
@@ -127,7 +127,19 @@ func (m *MultiUserManager) load() {
 	slog.Info("multi-user data loaded", "invites", len(m.invites), "consumers", len(m.consumers))
 }
 
+// save persists the current state to disk. B7-1: it takes m.mu itself because
+// the JSON marshal iterates m.invites/m.consumers — iterating while a writer
+// mutates them is a fatal "concurrent map iteration and map write" runtime
+// crash that no recover can catch. Callers already holding m.mu must use
+// saveLocked() instead (Go mutexes are not reentrant).
 func (m *MultiUserManager) save() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.saveLocked()
+}
+
+// saveLocked writes the state to disk. Caller must hold m.mu.
+func (m *MultiUserManager) saveLocked() {
 	if err := os.MkdirAll(filepath.Dir(m.dataPath), 0700); err != nil {
 		slog.Error("failed to create data directory", "error", err)
 	}
@@ -138,7 +150,11 @@ func (m *MultiUserManager) save() {
 		Invites:   m.invites,
 		Consumers: m.consumers,
 	}
-	b, _ := json.MarshalIndent(data, "", "  ")
+	b, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		slog.Error("multiuser data marshal failed", "path", m.dataPath, "error", err)
+		return
+	}
 	atomicWriteFile(m.dataPath, b, 0600)
 }
 
@@ -165,7 +181,7 @@ func (m *MultiUserManager) CreateInviteCode(maxUses int, role string) string {
 		MaxUses:   maxUses,
 		Role:      role,
 	}
-	m.save()
+	m.saveLocked()
 	slog.Info("invite code created", "code", code, "max_uses", maxUses, "role", role)
 	return code
 }
@@ -216,7 +232,7 @@ func (m *MultiUserManager) UseInviteCode(code, consumerID string) bool {
 	inv.UseCount++
 	inv.UsedBy = consumerID
 	inv.UsedAt = time.Now().Format(time.RFC3339)
-	m.save()
+	m.saveLocked()
 	return true
 }
 
@@ -263,7 +279,7 @@ func (m *MultiUserManager) CreateConsumer(name, inviteCode string) (*Consumer, e
 	inv.UsedBy = id
 	inv.UsedAt = time.Now().Format(time.RFC3339)
 
-	m.save()
+	m.saveLocked()
 	slog.Info("consumer created", "id", id, "name", name)
 
 	// Return a copy with plaintext key for caller display
@@ -300,11 +316,9 @@ func (m *MultiUserManager) RecordConsumerUsage(consumerID string, tokens int) {
 		// Batch save: increment dirty counter, let batchSaveLoop handle disk write
 		count := m.dirtyCount.Add(1)
 		if count >= 10 {
-			// Immediate save if 10+ changes accumulated
+			// Immediate save if 10+ changes accumulated (caller holds m.mu)
 			m.dirtyCount.Store(0)
-			m.mu.Unlock()
-			m.save()
-			m.mu.Lock()
+			m.saveLocked()
 		}
 	}
 }
@@ -376,7 +390,7 @@ func (m *MultiUserManager) DeleteConsumer(id string) bool {
 	}
 	delete(m.apiKeyMap, hashAPIKey(plaintextKey))
 	delete(m.consumers, id)
-	m.save()
+	m.saveLocked()
 
 	// Also remove all providers owned by this consumer
 	pm.DeleteByOwner(id)
@@ -395,7 +409,7 @@ func (m *MultiUserManager) ToggleConsumer(id string, enabled bool) bool {
 		return false
 	}
 	c.Enabled = enabled
-	m.save()
+	m.saveLocked()
 	return true
 }
 
@@ -409,17 +423,17 @@ func (m *MultiUserManager) DeleteInviteCode(code string) bool {
 		return false
 	}
 	delete(m.invites, code)
-	m.save()
+	m.saveLocked()
 	return true
 }
 
 // FlushSaves forces a save of any pending consumer usage data.
 func (m *MultiUserManager) FlushSaves() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.dirtyCount.Load() > 0 {
-		m.mu.Lock()
 		m.dirtyCount.Store(0)
-		m.mu.Unlock()
-		m.save()
+		m.saveLocked()
 	}
 }
 

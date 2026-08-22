@@ -1608,7 +1608,8 @@ func handleNetworkConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := netMgr.RecordConsent(); err != nil {
-		writeError(w, 500, err.Error())
+		slog.Warn("consent recording failed", "error", err)
+		writeError(w, 500, "failed to record consent")
 		return
 	}
 	writeJSON(w, 200, map[string]any{"status": "consent_recorded", "consent_time": netMgr.config.ConsentTime})
@@ -1646,7 +1647,8 @@ func handleNetworkDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := netMgr.DisableSharedNetwork(); err != nil {
-		writeError(w, 500, err.Error())
+		slog.Warn("network disable failed", "error", err)
+		writeError(w, 500, "failed to disable shared network")
 		return
 	}
 	writeJSON(w, 200, map[string]any{"status": "disabled", "mode": "personal", "network_enabled": false, "share_to_pool": false})

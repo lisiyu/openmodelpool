@@ -33,9 +33,13 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/seed/health", rateLimitByIP(30, "seed_health")(handleSeedHealth))
 
 	// Auth (public)
-	mux.HandleFunc("GET /api/setup/status", handleSetupStatus)
+	// B7-6: setup/status and setup are localOnly like the reset endpoints —
+	// on a not-yet-initialized instance whoever reaches POST /api/setup first
+	// becomes admin, and /api/setup/status lets scanners fingerprint fresh
+	// deployments. The admin UI reaches them from localhost during setup.
+	mux.HandleFunc("GET /api/setup/status", localOnly(handleSetupStatus))
 	mux.HandleFunc("GET /api/addresses", rateLimitByIP(10, "addresses")(handleGetAddresses))
-	mux.HandleFunc("POST /api/setup", rateLimitByIP(3, "setup")(handleSetup))
+	mux.HandleFunc("POST /api/setup", localOnly(rateLimitByIP(3, "setup")(handleSetup)))
 	mux.HandleFunc("POST /api/login", rateLimitByIP(5, "login")(handleLogin))
 	mux.HandleFunc("POST /api/refresh", rateLimitByIP(10, "refresh")(handleRefreshToken))
 	mux.HandleFunc("POST /api/forgot-password", localOnly(rateLimitByIP(3, "forgot_password")(handleForgotPassword)))

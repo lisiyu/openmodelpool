@@ -126,6 +126,10 @@ func gracefulShutdown(server *http.Server) {
 			cfg.load()
 			// Reinitialize rate limiter with new config
 			initRateLimiter()
+			// B7-5: WAF reads cfg once at init — without this a SIGHUP left
+			// the old WAF rules active until restart, making the reload
+			// half-effective.
+			reloadWAF()
 			// Reload federation: reconcile with the network_enabled single source
 			// of truth instead of the legacy federation_enabled key (REQ-2).
 			if netMgr != nil {

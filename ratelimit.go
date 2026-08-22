@@ -90,8 +90,8 @@ type GlobalRateLimiter struct {
 }
 
 func initRateLimiter() {
-	globalQPS := parseFloat64(cfg.Get("rate_limit_global", "100"), 100)
-	consumerQPS := parseFloat64(cfg.Get("rate_limit_per_consumer", "20"), 20)
+	globalQPS := parseFloat64("rate_limit_global", cfg.Get("rate_limit_global", "100"), 100)
+	consumerQPS := parseFloat64("rate_limit_per_consumer", cfg.Get("rate_limit_per_consumer", "20"), 20)
 
 	rateLimiter = &GlobalRateLimiter{
 		global:      NewRateLimiter(globalQPS),
@@ -183,13 +183,19 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// parseFloat64 parses a string to float64 with a default fallback.
-func parseFloat64(s string, defaultVal float64) float64 {
+// parseFloat64 parses config key s's value to float64 with a default fallback.
+// B7-d: a silent fallback hid config typos (e.g. rate_limit_global="abc"
+// silently ran at the default) — log so operators notice. An empty value is
+// treated as unset (no warning).
+func parseFloat64(key, s string, defaultVal float64) float64 {
 	v, err := strconv.ParseFloat(s, 64)
-	if err != nil || v <= 0 {
-		return defaultVal
+	if err == nil && v > 0 {
+		return v
 	}
-	return v
+	if s != "" {
+		slog.Warn("invalid numeric config value, using default", "key", key, "value", s, "default", defaultVal)
+	}
+	return defaultVal
 }
 
 // ============================================================

@@ -51,6 +51,39 @@ var allowLocalProviderForTest = false
 // Key: proxy address (e.g. "socks5://127.0.0.1:20801"), Value: *http.Transport
 var proxiedTransportCache sync.Map
 
+// B7-7: cap for the per-proxy transport cache. Proxied providers number in
+// the tens; if the map somehow grows past this (e.g. vmess re-resolution
+// churning local ports), stop caching rather than leaking transports/fds.
+const proxiedTransportCacheCap = 64
+
+var proxiedTransportCount atomic.Int64
+
+// cachedProxiedTransport returns the pooled transport for a proxy address,
+// building it on first use. Returns nil when the builder fails (caller falls
+// back to a plain client).
+func cachedProxiedTransport(proxy string, build func() (*http.Transport, error)) *http.Transport {
+	if cached, ok := proxiedTransportCache.Load(proxy); ok {
+		return cached.(*http.Transport)
+	}
+	t, err := build()
+	if err != nil || t == nil {
+		slog.Warn("failed to build proxy transport", "proxy", proxy, "error", err)
+		return nil
+	}
+	if proxiedTransportCount.Add(1) > proxiedTransportCacheCap {
+		proxiedTransportCount.Add(-1)
+		return t // over cap: functional but unpooled
+	}
+	actual, loaded := proxiedTransportCache.LoadOrStore(proxy, t)
+	if loaded {
+		// Lost a creation race; discard our copy.
+		proxiedTransportCount.Add(-1)
+		t.CloseIdleConnections()
+		return actual.(*http.Transport)
+	}
+	return t
+}
+
 const siderChatURL = "https://sider.ai/api/v3/completion/text"
 
 var siderHeadersBase = map[string]string{
@@ -99,37 +132,55 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 
 	// For socks5:// proxies, use golang.org/x/net/proxy with cached transport
 	if strings.HasPrefix(proxy, "socks5://") || strings.HasPrefix(proxy, "socks5h://") {
-		// Check cache first
-		if cached, ok := proxiedTransportCache.Load(proxy); ok {
-			return &http.Client{Timeout: timeout, Transport: cached.(*http.Transport)}
-		}
-		proxyURL, err := url.Parse(proxy)
-		if err == nil {
-			socksDialer, err := socksproxy.SOCKS5("tcp", proxyURL.Host, nil, socksproxy.Direct)
-			if err == nil {
-				transport := &http.Transport{
-					DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-						return socksDialer.Dial(network, addr)
-					},
-					MaxIdleConns:        20,
-					MaxIdleConnsPerHost: 10,
-					IdleConnTimeout:     120 * time.Second,
-					TLSHandshakeTimeout: 15 * time.Second,
-					ForceAttemptHTTP2:   true,
-				}
-				proxiedTransportCache.Store(proxy, transport)
-				return &http.Client{Timeout: timeout, Transport: transport}
+		t := cachedProxiedTransport(proxy, func() (*http.Transport, error) {
+			proxyURL, err := url.Parse(proxy)
+			if err != nil {
+				return nil, err
 			}
+			socksDialer, err := socksproxy.SOCKS5("tcp", proxyURL.Host, nil, socksproxy.Direct)
+			if err != nil {
+				return nil, err
+			}
+			return &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return socksDialer.Dial(network, addr)
+				},
+				MaxIdleConns:        20,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     120 * time.Second,
+				TLSHandshakeTimeout: 15 * time.Second,
+				ForceAttemptHTTP2:   true,
+			}, nil
+		})
+		if t != nil {
+			return &http.Client{Timeout: timeout, Transport: t}
 		}
 		return &http.Client{Timeout: timeout}
 	}
 
-	// For http:// and https:// proxies, use standard http.Transport
-	transport := &http.Transport{
-		Proxy:             http.ProxyURL(mustParseURL(proxy)),
-		TLSClientConfig:   &tls.Config{MinVersion: tls.VersionTLS12},
+	// For http:// and https:// proxies. B7-7: previously a fresh Transport was
+	// built per request here, so every proxied call paid a full TCP+TLS
+	// handshake and idle connections were never reused. Cache per proxy
+	// address like the socks5 path above.
+	t := cachedProxiedTransport("httpproxy:"+proxy, func() (*http.Transport, error) {
+		u, err := url.Parse(proxy)
+		if err != nil {
+			return nil, err
+		}
+		return &http.Transport{
+			Proxy:               http.ProxyURL(u),
+			TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+			MaxIdleConns:        20,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     120 * time.Second,
+			TLSHandshakeTimeout: 15 * time.Second,
+			ForceAttemptHTTP2:   true,
+		}, nil
+	})
+	if t != nil {
+		return &http.Client{Timeout: timeout, Transport: t}
 	}
-	return &http.Client{Timeout: timeout, Transport: transport}
+	return &http.Client{Timeout: timeout}
 }
 
 func mustParseURL(rawurl string) *url.URL {

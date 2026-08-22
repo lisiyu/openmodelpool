@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -56,7 +57,11 @@ type FederationInvitePayload struct {
 }
 
 // inviteManager handles invite creation, verification, and tracking.
+// B7-4: all map access is guarded by mu — the public verify endpoint
+// (/api/federation/invites/verify) runs concurrently with admin create/list,
+// and unguarded concurrent map read/write is a fatal runtime crash.
 type inviteManager struct {
+	mu      sync.RWMutex
 	issued  map[string]*FederationInvite // invite_id → code
 	used    map[string]bool              // invite_id → used
 	dataDir string
@@ -113,8 +118,10 @@ func (m *inviteManager) CreateInvite(inviteePub string, inviteeName string, invi
 
 	// Generate invite ID from payload hash
 	inviteID := m.inviteID(payload)
+	m.mu.Lock()
 	m.issued[inviteID] = invite
-	m.save()
+	m.saveLocked()
+	m.mu.Unlock()
 
 	slog.Info("invite created",
 		"inviter", invite.Inviter,
@@ -143,7 +150,10 @@ func (m *inviteManager) VerifyInvite(invite *FederationInvite) error {
 
 	// Check if already used
 	inviteID := m.inviteIDFromCode(invite)
-	if m.used[inviteID] {
+	m.mu.RLock()
+	alreadyUsed := m.used[inviteID]
+	m.mu.RUnlock()
+	if alreadyUsed {
 		// Public and chain invites can be reused
 		if invite.Type == FederationInviteDirected {
 			return fmt.Errorf("invite already used")
@@ -182,12 +192,16 @@ func (m *inviteManager) VerifyInvite(invite *FederationInvite) error {
 // MarkUsed marks an invite as used (for directed invites).
 func (m *inviteManager) MarkUsed(invite *FederationInvite) {
 	inviteID := m.inviteIDFromCode(invite)
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.used[inviteID] = true
-	m.save()
+	m.saveLocked()
 }
 
 // GetInvites returns all issued invites.
 func (m *inviteManager) GetInvites() []*FederationInvite {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var result []*FederationInvite
 	for _, inv := range m.issued {
 		result = append(result, inv)
@@ -282,16 +296,28 @@ type inviteData struct {
 	Used   map[string]bool              `json:"used"`
 }
 
+// save persists the invite state. B7-4: takes m.mu itself — the marshal
+// iterates both maps and must not overlap writers. Callers already holding
+// m.mu use saveLocked().
 func (m *inviteManager) save() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.saveLocked()
+}
+
+func (m *inviteManager) saveLocked() {
 	data := inviteData{Issued: m.issued, Used: m.used}
 	b, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
+		slog.Error("invite data marshal failed", "error", err)
 		return
 	}
 	atomicWriteFile(m.dataDir+"/invites.json", b, 0600)
 }
 
 func (m *inviteManager) load() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	data, err := os.ReadFile(m.dataDir + "/invites.json")
 	if err != nil {
 		return

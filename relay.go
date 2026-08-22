@@ -219,17 +219,22 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 					slog.Error("relay stream failed after data sent", "provider", p.Name, "from", nodeID, "error", err)
 					return
 				}
+				if isRateLimitError(err) {
+					recordProviderCooldown(p.ID)
+				} else {
+					recordProviderFailure(p.ID) // B7-3
+				}
 				lastErr = err
 				continue
 			}
+			recordProviderSuccess(p.ID) // B7-3
 			tracker.RecordWithAccessType(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, true, "", false, 0, "relay")
 			slog.Info("relay stream completed", "provider", p.Name, "from", nodeID, "latency_ms", latencyMS)
 			recordContributionToLedger(nodeID, relayReq.Model, p.ID, 0, relayReq.Extra)
 			return
 		}
-		// All providers failed
-		errMsg := fmt.Sprintf("all providers failed for relay: %v", lastErr)
-		sseData := fmt.Sprintf(`data: {"error":{"message":"%s","type":"upstream_error"}}`, errMsg)
+		// All providers failed. B7-b: don't echo lastErr to the remote peer.
+		sseData := `data: {"error":{"message":"all providers failed for relay, please retry later","type":"upstream_error"}}`
 		fmt.Fprintf(sw, "%s\n\n", sseData)
 		slog.Error("relay stream all providers failed", "from", nodeID, "error", lastErr)
 		return
@@ -253,9 +258,15 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		latencyMS := float64(time.Since(startTime).Milliseconds())
 		if err != nil {
 			tracker.RecordWithAccessType(p.ID, p.Name, relayReq.Model, 0, 0, latencyMS, false, err.Error(), false, 0, "relay")
+			if isRateLimitError(err) {
+				recordProviderCooldown(p.ID)
+			} else {
+				recordProviderFailure(p.ID) // B7-3
+			}
 			lastErr = err
 			continue
 		}
+		recordProviderSuccess(p.ID) // B7-3
 
 		resp.Model = relayReq.Model
 		var promptTok, compTok int
@@ -279,7 +290,9 @@ func handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeError(w, 502, fmt.Sprintf("all local providers failed: %v", lastErr))
+	// B7-b: lastErr may embed remote-node internals; detail stays in logs.
+	slog.Warn("all local providers failed", "last_error", fmt.Sprint(lastErr))
+	writeError(w, 502, "all local providers failed, please retry later")
 }
 
 func mustMarshalJSON(v any) []byte {

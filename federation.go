@@ -143,6 +143,7 @@ func isTrustedSeed(r *http.Request) bool {
 // FederationManager manages this node's participation in the federation.
 type FederationManager struct {
 	mu             sync.RWMutex
+	saveMu         sync.Mutex // B7-supp: serializes pool writes (mirrors provider P0-4)
 	trustPool      TrustPool
 	localPeers     map[string]*NodeInfo
 	discoveryHints map[string][]string
@@ -294,9 +295,8 @@ func cloneNodeInfo(n *NodeInfo) *NodeInfo {
 // It only applies the update if the incoming version is strictly newer.
 func (f *FederationManager) UpdateTrustPool(pool TrustPool) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	if pool.Version <= f.trustPool.Version {
+		f.mu.Unlock()
 		return
 	}
 
@@ -307,9 +307,13 @@ func (f *FederationManager) UpdateTrustPool(pool TrustPool) {
 		f.dhtAddNodeLocked(&pool.Nodes[i])
 	}
 
-	if err := f.saveLocked(); err != nil {
+	snapshot, err := f.snapshotLocked()
+	f.mu.Unlock()
+	if err != nil {
 		slog.Error("failed to persist trust pool", "error", err)
+		return
 	}
+	f.persistSnapshot(snapshot)
 }
 
 // UpdateNodeInfo upserts a single node entry from a gossip message.
@@ -368,8 +372,9 @@ func (f *FederationManager) AddKnownNode(node NodeInfo) {
 	}
 
 	f.mu.Lock()
-	defer f.mu.Unlock()
 
+	var snapshot []byte
+	var err error
 	for i := range f.trustPool.Nodes {
 		if f.trustPool.Nodes[i].NodeID == node.NodeID {
 			// Preserve existing rich fields if the new info didn't carry them,
@@ -393,9 +398,13 @@ func (f *FederationManager) AddKnownNode(node NodeInfo) {
 			f.trustPool.Nodes[i] = node
 			f.trustPool.Version++
 			f.trustPool.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-			if err := f.saveLocked(); err != nil {
-				slog.Error("failed to persist trust pool after node removal", "error", err)
+			snapshot, err = f.snapshotLocked()
+			f.mu.Unlock()
+			if err != nil {
+				slog.Error("failed to persist trust pool after node update", "error", err)
+				return
 			}
+			f.persistSnapshot(snapshot)
 			return
 		}
 	}
@@ -403,9 +412,13 @@ func (f *FederationManager) AddKnownNode(node NodeInfo) {
 	f.trustPool.Nodes = append(f.trustPool.Nodes, node)
 	f.trustPool.Version++
 	f.trustPool.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	if err := f.saveLocked(); err != nil {
+	snapshot, err = f.snapshotLocked()
+	f.mu.Unlock()
+	if err != nil {
 		slog.Error("failed to persist trust pool after node addition", "error", err)
+		return
 	}
+	f.persistSnapshot(snapshot)
 }
 
 // MergePeerHints records peer address hints learned via gossip PEX (P1-1). These
@@ -437,19 +450,34 @@ func (f *FederationManager) HintAddresses(nodeID string) []string {
 }
 
 // save persists the trust pool to dataDir/federation_pool.json.
+// B7-supp: snapshots (marshal+HMAC input) under f.mu and performs the file
+// write outside it, so relay/gossip readers are never stalled behind disk I/O.
 func (f *FederationManager) save() {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.saveLocked(); err != nil {
+	b, err := f.snapshotLocked()
+	f.mu.Unlock()
+	if err != nil {
 		slog.Error("failed to save federation pool", "error", err)
+		return
 	}
+	f.persistSnapshot(b)
 }
 
-// saveLocked writes the pool to disk. Caller must hold f.mu.
-// SA-15: Saves with HMAC integrity protection.
-func (f *FederationManager) saveLocked() error {
+// snapshotLocked serializes the pool for persistence. Caller must hold f.mu.
+// SA-15: integrity-protected via persistSnapshot.
+func (f *FederationManager) snapshotLocked() ([]byte, error) {
+	return marshalWithIntegrity(f.trustPool)
+}
+
+// persistSnapshot writes a snapshot to disk outside f.mu. Writes are
+// serialized by saveMu so an older snapshot can never land after a newer one.
+func (f *FederationManager) persistSnapshot(b []byte) {
+	f.saveMu.Lock()
+	defer f.saveMu.Unlock()
 	path := filepath.Join(f.dataDir, "federation_pool.json")
-	return saveWithIntegrity(path, f.trustPool)
+	if err := writeWithIntegrity(path, b); err != nil {
+		slog.Error("failed to save federation pool", "error", err)
+	}
 }
 
 // load reads the cached trust pool from dataDir/federation_pool.json.
@@ -478,9 +506,14 @@ func (f *FederationManager) refreshFromGitHub() error {
 			"version", pool.Version,
 			"nodes", len(pool.Nodes),
 		)
-		if err := f.saveLocked(); err != nil {
+		snapshot, err := f.snapshotLocked()
+		f.mu.Unlock()
+		if err != nil {
 			slog.Error("failed to persist trust pool after GitHub refresh", "error", err)
+			return nil
 		}
+		f.persistSnapshot(snapshot)
+		return nil
 	}
 	f.mu.Unlock()
 	return nil

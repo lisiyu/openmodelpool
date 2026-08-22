@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -468,9 +469,16 @@ func (g *GovernanceLedger) saveLocked() {
 	}
 	b, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
+		slog.Error("governance ledger marshal failed", "path", g.dataPath, "error", err)
 		return
 	}
-	_ = os.WriteFile(g.dataPath, b, 0o600)
+	// B7-2: atomic + error-checked. This was the last non-atomic write in the
+	// codebase — a crash mid-write left a truncated file which load() silently
+	// ignored, and the next save persisted the now-empty in-memory state over
+	// it, permanently losing proposal/ratification history.
+	if err := atomicWriteFile(g.dataPath, b, 0o600); err != nil {
+		slog.Error("governance ledger save failed", "path", g.dataPath, "error", err)
+	}
 }
 
 func (g *GovernanceLedger) load() {

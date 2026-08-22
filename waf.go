@@ -129,8 +129,8 @@ func (e *WAFEngine) Reload() {
 		e.rateRPS = 0
 		e.rateBurst = 0
 	} else {
-		e.rateRPS = parseFloat64(rpsStr, 10)
-		e.rateBurst = parseFloat64(burstStr, 20)
+		e.rateRPS = parseFloat64("waf_rate_rps", rpsStr, 10)
+		e.rateBurst = parseFloat64("waf_rate_burst", burstStr, 20)
 		if e.rateBurst < 1 {
 			e.rateBurst = e.rateRPS
 			if e.rateBurst < 1 {

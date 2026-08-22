@@ -570,7 +570,37 @@ var (
 	cooldownMu   sync.Mutex
 	cooldownMap  = make(map[string]time.Time)
 	cooldownTime = 30 * time.Second
+	// B7-3: consecutive-failure breaker state (same lock — no nesting).
+	consecFailures = make(map[string]int)
 )
+
+// B7-3 circuit breaker thresholds for non-429 failures. The 429 cooldown
+// above only reacts to rate limiting; a provider that times out or 500s on
+// every call kept receiving traffic forever. After breakerThreshold
+// consecutive non-429 failures the provider is cooled down for
+// breakerOpenTime so routing prefers healthy candidates. Any success resets.
+const (
+	breakerThreshold = 5
+	breakerOpenTime  = 60 * time.Second
+)
+
+// recordProviderFailure counts one non-429 upstream failure and opens the
+// breaker once the consecutive count reaches the threshold.
+func recordProviderFailure(providerID string) {
+	cooldownMu.Lock()
+	defer cooldownMu.Unlock()
+	consecFailures[providerID]++
+	if consecFailures[providerID] >= breakerThreshold {
+		cooldownMap[providerID] = time.Now().Add(breakerOpenTime)
+	}
+}
+
+// recordProviderSuccess resets the provider's consecutive-failure count.
+func recordProviderSuccess(providerID string) {
+	cooldownMu.Lock()
+	defer cooldownMu.Unlock()
+	delete(consecFailures, providerID)
+}
 
 // recordProviderCooldown marks a provider as rate-limited until now+cooldown.
 func recordProviderCooldown(providerID string) {

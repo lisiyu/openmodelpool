@@ -1113,28 +1113,28 @@ func TestParseInt64Config_Invalid(t *testing.T) {
 // ============================================================
 
 func TestParseFloat64_Valid(t *testing.T) {
-	if got := parseFloat64("3.14", 1.0); got != 3.14 {
+	if got := parseFloat64("test_key", "3.14", 1.0); got != 3.14 {
 		t.Errorf("parseFloat64('3.14', 1.0) = %f, want 3.14", got)
 	}
 }
 
 func TestParseFloat64_Default(t *testing.T) {
-	if got := parseFloat64("", 5.0); got != 5.0 {
+	if got := parseFloat64("test_key", "", 5.0); got != 5.0 {
 		t.Errorf("parseFloat64('', 5.0) = %f, want 5.0", got)
 	}
 }
 
 func TestParseFloat64_Invalid(t *testing.T) {
-	if got := parseFloat64("abc", 10.0); got != 10.0 {
+	if got := parseFloat64("test_key", "abc", 10.0); got != 10.0 {
 		t.Errorf("parseFloat64('abc', 10.0) = %f, want 10.0", got)
 	}
 }
 
 func TestParseFloat64_ZeroOrNegative(t *testing.T) {
-	if got := parseFloat64("0", 5.0); got != 5.0 {
+	if got := parseFloat64("test_key", "0", 5.0); got != 5.0 {
 		t.Errorf("parseFloat64('0', 5.0) = %f, want 5.0", got)
 	}
-	if got := parseFloat64("-1.5", 5.0); got != 5.0 {
+	if got := parseFloat64("test_key", "-1.5", 5.0); got != 5.0 {
 		t.Errorf("parseFloat64('-1.5', 5.0) = %f, want 5.0", got)
 	}
 }

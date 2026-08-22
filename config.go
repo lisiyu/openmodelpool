@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -313,10 +314,41 @@ func toUpper(s string) string {
 // atomicWriteFile writes data to a file atomically by first writing to a temp
 // file and then renaming. This prevents data corruption from partial writes.
 // P-1: Used by all save() methods across the project.
+// B7-8: the temp file is fsynced before the rename (without it, a power loss
+// could persist the rename metadata before the data blocks, leaving an empty
+// or stale file) and carries a pid+random suffix so two concurrent savers of
+// the same path cannot clobber each other's temp file.
 func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
+	tmp := fmt.Sprintf("%s.tmp.%d.%s", path, os.Getpid(), randomString(8))
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	// B7-8: Windows can transiently fail rename-replace while another handle
+	// (AV scanner, concurrent closer) holds the destination; production Linux
+	// is immune but retry keeps local dev and mixed hosts reliable.
+	var rerr error
+	for i := 0; i < 5; i++ {
+		rerr = os.Rename(tmp, path)
+		if rerr == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(i+1) * 10 * time.Millisecond)
+	}
+	os.Remove(tmp)
+	return rerr
 }
