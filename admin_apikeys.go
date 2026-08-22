@@ -30,7 +30,7 @@ func handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 // POST /api/providers/{id}/keys
 func handleAddAPIKey(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, ok := checkProviderAccess(r, id); !ok {
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B8-2
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}
@@ -57,7 +57,7 @@ func handleAddAPIKey(w http.ResponseWriter, r *http.Request) {
 func handleUpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	keyID := r.PathValue("key_id")
-	if _, ok := checkProviderAccess(r, id); !ok {
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B8-2
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}
@@ -80,7 +80,7 @@ func handleUpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 func handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	keyID := r.PathValue("key_id")
-	if _, ok := checkProviderAccess(r, id); !ok {
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B8-2
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}
@@ -97,7 +97,7 @@ func handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 func handleResetKeyQuota(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	keyID := r.PathValue("key_id")
-	if _, ok := checkProviderAccess(r, id); !ok {
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B8-2
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}

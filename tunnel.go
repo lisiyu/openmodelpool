@@ -67,23 +67,24 @@ func newTunnelManager(domain, tunnelID, token string) *TunnelManager {
 
 // initTunnel creates the tunnel manager and starts the tunnel if enabled.
 func initTunnel(port int) {
-	tunnel = &TunnelManager{port: port}
+	t := &TunnelManager{port: port}
 
 	enabled := cfg.Get("tunnel_enabled", "false") == "true"
 	mode := cfg.Get("tunnel_mode", "quick")
 	domain := cfg.Get("tunnel_domain", "")
 
-	tunnel.mode = mode
-	tunnel.domain = domain
+	t.mode = mode
+	t.domain = domain
 
 	// Restore named tunnel token for restart
 	if mode == "named" {
-		tunnel.token = cfg.Get("cf_tunnel_token", "")
-		tunnel.tunnelID = cfg.Get("cf_tunnel_id", "")
+		t.token = cfg.Get("cf_tunnel_token", "")
+		t.tunnelID = cfg.Get("cf_tunnel_id", "")
 	}
 
+	setTunnel(t) // B8-8
 	if enabled {
-		go tunnel.start()
+		go t.start()
 	}
 }
 
@@ -247,55 +248,58 @@ func (t *TunnelManager) IsRunning() bool {
 
 // handleTunnelStatus returns the current tunnel status.
 func handleTunnelStatus() map[string]any {
-	if tunnel == nil {
+	t := getTunnel() // B8-8
+	if t == nil {
 		return map[string]any{
 			"running": false,
 			"url":     "",
 		}
 	}
 	return map[string]any{
-		"running": tunnel.IsRunning(),
-		"url":     tunnel.GetURL(),
+		"running": t.IsRunning(),
+		"url":     t.GetURL(),
 	}
 }
 
 // applyTunnelConfig is called after saving federation config to apply tunnel changes.
 func applyTunnelConfig() {
-	if tunnel == nil {
+	t := getTunnel() // B8-8
+	if t == nil {
 		return
 	}
 
 	enabled := cfg.Get("tunnel_enabled", "false") == "true"
 
-	if !enabled && tunnel.IsRunning() {
+	if !enabled && t.IsRunning() {
 		slog.Info("tunnel disabled via config, stopping")
-		go tunnel.stop()
-	} else if enabled && !tunnel.IsRunning() {
+		go t.stop()
+	} else if enabled && !t.IsRunning() {
 		slog.Info("tunnel enabled via config, starting")
-		go tunnel.restart()
-	} else if enabled && tunnel.IsRunning() {
+		go t.restart()
+	} else if enabled && t.IsRunning() {
 		// Check if mode or domain changed
 		newMode := cfg.Get("tunnel_mode", "quick")
 		newDomain := cfg.Get("tunnel_domain", "")
 
-		tunnel.mu.Lock()
-		modeChanged := tunnel.mode != newMode
-		domainChanged := tunnel.domain != newDomain
-		tunnel.mu.Unlock()
+		t.mu.Lock()
+		modeChanged := t.mode != newMode
+		domainChanged := t.domain != newDomain
+		t.mu.Unlock()
 
 		if modeChanged || domainChanged {
 			slog.Info("tunnel config changed, restarting", "mode", newMode, "domain", newDomain)
-			go tunnel.restart()
+			go t.restart()
 		}
 	}
 }
 
 // formatTunnelStatus returns a human-readable tunnel status string.
 func formatTunnelStatus() string {
-	if tunnel == nil || !tunnel.IsRunning() {
+	t := getTunnel() // B8-8
+	if t == nil || !t.IsRunning() {
 		return "未运行"
 	}
-	url := tunnel.GetURL()
+	url := t.GetURL()
 	if url == "" {
 		return "运行中（等待分配地址...）"
 	}
@@ -667,11 +671,15 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	cfg.save()
 
 	// Step 7: Restart tunnel in named mode
-	if tunnel != nil {
-		tunnel.stop()
+	// B8-8: stop the old manager and swap the global under tunnelMu so status
+	// readers never observe a torn pointer.
+	oldTunnel := getTunnel()
+	if oldTunnel != nil {
+		oldTunnel.stop()
 	}
-	tunnel = newTunnelManager(body.Domain, tunnelInfo.ID, tunnelInfo.Token)
-	tunnel.start()
+	newTunnel := newTunnelManager(body.Domain, tunnelInfo.ID, tunnelInfo.Token)
+	setTunnel(newTunnel)
+	newTunnel.start()
 
 	publicURL := "https://" + body.Domain
 	slog.Info("domain binding complete", "domain", body.Domain, "tunnel_id", tunnelInfo.ID, "account_id", accountID)
@@ -718,11 +726,14 @@ func handleUnbindDomain(w http.ResponseWriter, r *http.Request) {
 	cfg.save()
 
 	// Restart with quick tunnel
-	if tunnel != nil {
-		tunnel.stop()
+	// B8-8: swap the global under tunnelMu.
+	oldTunnel := getTunnel()
+	if oldTunnel != nil {
+		oldTunnel.stop()
 	}
-	tunnel = newTunnelManager("", "", "")
-	tunnel.start()
+	newTunnel := newTunnelManager("", "", "")
+	setTunnel(newTunnel)
+	newTunnel.start()
 
 	writeJSON(w, 200, map[string]any{"success": true, "message": "domain unbound, switched to quick tunnel"})
 }
@@ -934,12 +945,12 @@ func handleManualDomainBind(w http.ResponseWriter, r *http.Request) {
 	cfg.save()
 
 	// Update tunnel manager
-	if tunnel != nil {
-		tunnel.mu.Lock()
-		tunnel.domain = body.Domain
-		tunnel.mode = "manual"
-		tunnel.url = "https://" + body.Domain
-		tunnel.mu.Unlock()
+	if t := getTunnel(); t != nil { // B8-8
+		t.mu.Lock()
+		t.domain = body.Domain
+		t.mode = "manual"
+		t.url = "https://" + body.Domain
+		t.mu.Unlock()
 	}
 
 	slog.Info("manual domain binding", "domain", body.Domain)
@@ -1097,15 +1108,15 @@ func handleDomainBindingStatus(w http.ResponseWriter, r *http.Request) {
 	tunnelManaged := false
 	tunnelMode := ""
 	tunnelURL := ""
-	if tunnel != nil {
-		tunnel.mu.Lock()
-		tunnelMode = tunnel.mode
-		tunnel.mu.Unlock()
+	if t := getTunnel(); t != nil { // B8-8
+		t.mu.Lock()
+		tunnelMode = t.mode
+		t.mu.Unlock()
 		if tunnelMode != "manual" {
-			tunnelRunning = tunnel.IsRunning()
+			tunnelRunning = t.IsRunning()
 			tunnelManaged = tunnelRunning
 		}
-		tunnelURL = tunnel.GetURL()
+		tunnelURL = t.GetURL()
 	}
 
 	// Best-effort health probe of the bound domain.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"log/slog"
@@ -30,8 +31,23 @@ type NATManager struct {
 	// reflexive address stable and the punches consistent.
 	udpConn  *net.UDPConn
 	localUDP string
-	stunCh   chan string // STUN responses surfaced by udpRecvLoop
+	// B8-3: STUN responses now carry the transaction ID they belong to so the
+	// query loop can correlate replies with its own (random) request. The old
+	// chan string delivered ANY parseable STUN response to whoever waits —
+	// an off-path spoofed packet could plant an attacker-chosen reflexive
+	// address, which this node then advertises to federation peers.
+	stunCh chan stunResponse
 }
+
+// stunResponse pairs a parsed XOR-MAPPED-ADDRESS with the 12-byte STUN
+// transaction ID of the response message.
+type stunResponse struct {
+	txid [stunTxidLen]byte
+	addr string
+}
+
+// stunTxidLen is the RFC 5389 STUN transaction ID size in bytes.
+const stunTxidLen = 12
 
 type probeResult struct {
 	DirectOK  bool      `json:"direct_ok"`
@@ -48,7 +64,7 @@ func initNATManager() {
 			"stun:stun.l.google.com:19302",
 			"stun:stun1.l.google.com:19302",
 		},
-		stunCh: make(chan string, 4),
+		stunCh: make(chan stunResponse, 4),
 	}
 	// Bind one long-lived UDP socket reused for STUN discovery and
 	// hole-punching (see udpConn doc above). On bind failure we degrade
@@ -118,10 +134,17 @@ func (n *NATManager) discoverPublicAddr() {
 // packet is malformed or lacks the attribute. Kept as a pure function so the
 // (over-the-network) STUN handshake can be verified with crafted packets in
 // nat_traversal_test.go.
-func parseSTUNResponse(buf []byte) (string, error) {
+// parseSTUNResponse extracts the XOR-MAPPED-ADDRESS and transaction ID from a
+// STUN binding-success response. The transaction ID lets stunQueryOnConn
+// correlate the reply with its own request (B8-3). Kept as a pure function so
+// the (over-the-network) STUN handshake can be verified with crafted packets
+// in nat_traversal_test.go.
+func parseSTUNResponse(buf []byte) (string, [stunTxidLen]byte, error) {
+	var txid [stunTxidLen]byte
 	if len(buf) < 28 || buf[0] != 0x01 || buf[1] != 0x01 {
-		return "", fmt.Errorf("invalid STUN response")
+		return "", txid, fmt.Errorf("invalid STUN response")
 	}
+	copy(txid[:], buf[8:20])
 	// Walk the attribute list starting after the 20-byte message header.
 	for i := 20; i+4 <= len(buf); {
 		attrType := uint16(buf[i])<<8 | uint16(buf[i+1])
@@ -138,7 +161,7 @@ func parseSTUNResponse(buf []byte) (string, error) {
 					uint32(buf[i+10])<<8 | uint32(buf[i+11])
 				ip := xorIP ^ 0x2112A442
 				return fmt.Sprintf("%d.%d.%d.%d:%d",
-					(ip>>24)&0xFF, (ip>>16)&0xFF, (ip>>8)&0xFF, ip&0xFF, port), nil
+					(ip>>24)&0xFF, (ip>>16)&0xFF, (ip>>8)&0xFF, ip&0xFF, port), txid, nil
 			}
 		}
 		i += 4 + int(attrLen)
@@ -146,7 +169,7 @@ func parseSTUNResponse(buf []byte) (string, error) {
 			i += 4 - (i % 4)
 		}
 	}
-	return "", fmt.Errorf("no XOR-MAPPED-ADDRESS in STUN response")
+	return "", txid, fmt.Errorf("no XOR-MAPPED-ADDRESS in STUN response")
 }
 
 // classifyNAT infers a coarse NAT behaviour from the mapped addresses returned
@@ -353,8 +376,15 @@ func (n *NATManager) stunQueryOnConn(serverAddr string) (string, error) {
 		0x00, 0x01, 0x00, 0x00, // Binding Request, length 0
 		0x21, 0x12, 0xA4, 0x42, // Magic Cookie
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Transaction ID
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Transaction ID (randomized below)
 	}
+	// B8-3: random per-query transaction ID. A predictable all-zero ID let any
+	// off-path packet be accepted as "the" STUN reply.
+	var wantTxid [stunTxidLen]byte
+	if _, err := rand.Read(wantTxid[:]); err != nil {
+		return "", fmt.Errorf("generate STUN transaction id: %w", err)
+	}
+	copy(req[8:20], wantTxid[:])
 	if _, err := n.udpConn.WriteToUDP(req, srv); err != nil {
 		return "", fmt.Errorf("write STUN request: %w", err)
 	}
@@ -362,8 +392,11 @@ func (n *NATManager) stunQueryOnConn(serverAddr string) (string, error) {
 	defer deadline.Stop()
 	for {
 		select {
-		case addr := <-n.stunCh:
-			return addr, nil
+		case resp := <-n.stunCh:
+			if resp.txid != wantTxid {
+				continue // stale/foreign reply — keep waiting for ours
+			}
+			return resp.addr, nil
 		case <-deadline.C:
 			return "", fmt.Errorf("read STUN response: timeout")
 		}
@@ -391,9 +424,9 @@ func (n *NATManager) udpRecvLoop() {
 			}
 			continue
 		}
-		if a, perr := parseSTUNResponse(buf[:nn]); perr == nil {
+		if addr, txid, perr := parseSTUNResponse(buf[:nn]); perr == nil {
 			select {
-			case n.stunCh <- a:
+			case n.stunCh <- stunResponse{txid: txid, addr: addr}:
 			default:
 			}
 		}

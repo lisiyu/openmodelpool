@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -275,7 +276,9 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 		key := authHeader[7:]
 		// Check admin proxy API key first
 		proxyKey := cfg.Get("proxy_api_key", "")
-		if proxyKey != "" && key == proxyKey {
+		// B8-6: constant-time compare — a plain == leaks key-prefix timing to
+		// remote callers probing the public /v1 endpoint.
+		if proxyKey != "" && subtle.ConstantTimeCompare([]byte(key), []byte(proxyKey)) == 1 {
 			r.Header.Set("X-Request-Owner", "")
 			r.Header.Set("X-Request-Role", "admin")
 			handler(w, r)

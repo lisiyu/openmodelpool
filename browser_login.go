@@ -440,7 +440,7 @@ func recoverHandler(w http.ResponseWriter, label string) {
 func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	defer recoverHandler(w, "start")
 	id := r.PathValue("id")
-	if _, ok := checkProviderAccess(r, id); !ok {
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B8-2: captures credentials into the provider
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}

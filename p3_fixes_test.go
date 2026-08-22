@@ -97,9 +97,14 @@ func TestB4x_SyncProviderURL_Admin_Allowed(t *testing.T) {
 	}
 }
 
-// SEC-B4-1: system presets (empty owner) are readable by any consumer.
+// SEC-B4-1: system presets are readable by any consumer.
+// B8-2: "preset" now means an entry in the presetProviders catalog — a bare
+// unowned provider is admin property and no longer consumer-readable.
 func TestB4x_GetProviderModels_SystemPreset_ConsumerAllowed(t *testing.T) {
 	setupTestEnv(t)
+	origPresets := presetProviders
+	presetProviders = append(presetProviders, Provider{ID: "p-preset", Name: "p-preset"})
+	t.Cleanup(func() { presetProviders = origPresets })
 	addOwnedProvider(t, "p-preset", "")
 
 	w := httptest.NewRecorder()

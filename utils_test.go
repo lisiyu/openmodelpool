@@ -2700,7 +2700,9 @@ func TestProviderManager_EnabledRaw(t *testing.T) {
 // ============================================================
 
 func newTestGuestKeyTracker() *guestKeyUsageTracker {
-	return &guestKeyUsageTracker{usage: make(map[string]int64)}
+	// B8-1a: seed the current window so pre-loaded usage is not wiped by the
+	// daily rollover check.
+	return &guestKeyUsageTracker{usage: make(map[string]int64), day: todayUTC()}
 }
 
 func TestCheckAndReserve_NoQuota(t *testing.T) {

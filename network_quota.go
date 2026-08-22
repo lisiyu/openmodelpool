@@ -175,9 +175,33 @@ func (m *OpenKeyQuotaManager) CalculateUserQuota(nodeID string) *QuotaInfo {
 	// Cache the result
 	m.mu.Lock()
 	m.quotaCache[nodeID] = info
+	m.evictQuotaCacheLocked()
 	m.mu.Unlock()
 
 	return info
+}
+
+// maxQuotaCacheEntries bounds the per-node quota cache. Entries are keyed by a
+// caller-supplied node_id (handleOpenKeyQuota), so without a cap the map grows
+// unboundedly under a flood of unique IDs (B8-7).
+const maxQuotaCacheEntries = 1024
+
+// evictQuotaCacheLocked drops the oldest entries (by LastUpdated) once the
+// cache exceeds maxQuotaCacheEntries. Caller holds m.mu.
+func (m *OpenKeyQuotaManager) evictQuotaCacheLocked() {
+	for len(m.quotaCache) > maxQuotaCacheEntries {
+		oldestID := ""
+		var oldestTS string
+		for id, q := range m.quotaCache {
+			if oldestID == "" || q.LastUpdated < oldestTS {
+				oldestID, oldestTS = id, q.LastUpdated
+			}
+		}
+		if oldestID == "" {
+			return
+		}
+		delete(m.quotaCache, oldestID)
+	}
 }
 
 // GetCachedQuota returns the cached quota for a node, or calculates if not cached.

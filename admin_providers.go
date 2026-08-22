@@ -216,7 +216,19 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
 
-// checkProviderAccess verifies the caller can access a provider.
+// isPresetProviderID reports whether id belongs to the built-in preset
+// catalog (providers.go). Presets carry no credentials and are safe for
+// consumers to browse; admin-created unowned providers are NOT presets.
+func isPresetProviderID(id string) bool {
+	for _, p := range presetProviders {
+		if p.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// checkProviderAccess verifies the caller can READ a provider.
 // Returns the raw provider and true if access is allowed.
 func checkProviderAccess(r *http.Request, id string) (Provider, bool) {
 	p, ok := pm.GetRaw(id)
@@ -227,8 +239,30 @@ func checkProviderAccess(r *http.Request, id string) (Provider, bool) {
 	if owner == "" {
 		return p, true // admin has access to all
 	}
-	// Consumer can only access their own providers or system presets
-	if p.Owner != "" && p.Owner != owner {
+	// B8-2: consumers may read their OWN providers or the built-in presets
+	// only. The old rule allowed any provider whose Owner was empty — that
+	// includes every legacy/admin-created provider, not just presets.
+	if p.Owner != owner && !isPresetProviderID(p.ID) {
+		return Provider{}, false
+	}
+	return p, true
+}
+
+// checkProviderWriteAccess verifies the caller may MUTATE a provider (update,
+// delete, keys, sync, tests). B8-2: strict ownership — a consumer may never
+// touch a provider they do not own, regardless of preset status or empty
+// Owner. Repointing someone else's BaseURL would route their stored upstream
+// API key (sent as Authorization) and all traffic to the attacker's server.
+func checkProviderWriteAccess(r *http.Request, id string) (Provider, bool) {
+	p, ok := pm.GetRaw(id)
+	if !ok {
+		return Provider{}, false
+	}
+	owner := getRequestOwner(r)
+	if owner == "" {
+		return p, true // admin has access to all
+	}
+	if p.Owner != owner {
 		return Provider{}, false
 	}
 	return p, true
@@ -246,7 +280,7 @@ func handleGetProvider(w http.ResponseWriter, r *http.Request) {
 
 func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	existing, ok := checkProviderAccess(r, id)
+	existing, ok := checkProviderWriteAccess(r, id)
 	if !ok {
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
@@ -339,7 +373,7 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 
 func handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, ok := checkProviderAccess(r, id); !ok {
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B8-2
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}
@@ -353,7 +387,7 @@ func handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 
 func handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, ok := checkProviderAccess(r, id); !ok {
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B8-2: tests burn the stored upstream key's quota
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}
@@ -406,7 +440,7 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request) {
 // handleTestAllKeys tests all API keys for a provider and returns individual results
 func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, ok := checkProviderAccess(r, id); !ok {
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B8-2
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}

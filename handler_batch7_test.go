@@ -1531,7 +1531,7 @@ func TestHB7_GuestKeyUsageTracker_CheckAndReserve_WithinQuota(t *testing.T) {
 }
 
 func TestHB7_GuestKeyUsageTracker_CheckAndReserve_Exceeded(t *testing.T) {
-	tracker := &guestKeyUsageTracker{usage: map[string]int64{"key1": 10000}}
+	tracker := &guestKeyUsageTracker{usage: map[string]int64{"key1": 10000}, day: todayUTC()} // B8-1a: current window
 	allowed, _ := tracker.CheckAndReserve("key1", 10000, 1000)
 	if allowed {
 		t.Fatal("should reject when quota exceeded")

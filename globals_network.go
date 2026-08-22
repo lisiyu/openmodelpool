@@ -1,5 +1,7 @@
 package main
 
+import "sync"
+
 // ============================================================================
 // Federation & Network — global singleton pointers for P2P networking,
 // federation, gossip, and related subsystems.
@@ -60,6 +62,25 @@ var governor *AlgorithmGovernor
 var quotaPriorityMgr *quotaPriorityManager
 
 var tunnel *TunnelManager
+
+// tunnelMu guards the tunnel global pointer (B8-8). handleBindDomain /
+// handleUnbindDomain reassign it from HTTP handlers while status readers
+// dereference it concurrently — a data race without synchronization.
+var tunnelMu sync.RWMutex
+
+// getTunnel returns the current TunnelManager under the read lock.
+func getTunnel() *TunnelManager {
+	tunnelMu.RLock()
+	defer tunnelMu.RUnlock()
+	return tunnel
+}
+
+// setTunnel replaces the global TunnelManager under the write lock.
+func setTunnel(t *TunnelManager) {
+	tunnelMu.Lock()
+	tunnel = t
+	tunnelMu.Unlock()
+}
 
 // nodeRegistry is the package-level on-disk node registry. It is initialized in
 // initNetworkManager (via initNodeRegistry) right after the in-memory route table

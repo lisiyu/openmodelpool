@@ -166,8 +166,8 @@ func gracefulShutdown(server *http.Server) {
 			healthChecker.stop()
 			CloseAccessLog()
 			CloseAuditLog()
-			if tunnel != nil {
-				tunnel.stop()
+			if t := getTunnel(); t != nil { // B8-8
+				t.stop()
 			}
 			if fed != nil {
 				fed.stop()

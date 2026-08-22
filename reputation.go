@@ -436,23 +436,35 @@ func handlePostScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify signature over the score payload
-	if score.Signature != "" && senderInfo.PubKey != "" {
-		pubKeyBytes, err := base64.StdEncoding.DecodeString(senderInfo.PubKey)
-		if err == nil && len(pubKeyBytes) == ed25519.PublicKeySize {
-			payload := fmt.Sprintf("%s:%s:%.0f:%.0f:%.0f:%s",
-				score.FromNode, score.TargetNode,
-				score.Availability, score.Latency, score.Accuracy,
-				score.Timestamp)
-			sigBytes, err := base64.StdEncoding.DecodeString(score.Signature)
-			if err == nil && len(sigBytes) == ed25519.SignatureSize {
-				pubKey := ed25519.PublicKey(pubKeyBytes)
-				if !ed25519.Verify(pubKey, []byte(payload), sigBytes) {
-					writeError(w, 403, "score signature verification failed")
-					return
-				}
-			}
-		}
+	// Verify signature over the score payload.
+	// B8-5: the signature is now MANDATORY whenever the claimed sender has a
+	// known pubkey — the old "verify only if present" rule let any trust-pool
+	// member post unsigned scores impersonating arbitrary FromNode values
+	// (FromNode selects the verification key, so a required signature closes
+	// the spoof). Nodes without a published pubkey are rejected outright:
+	// there is no way to attribute their scores.
+	if senderInfo.PubKey == "" {
+		writeError(w, 403, "scoring node has no registered pubkey")
+		return
+	}
+	pubKeyBytes, err := base64.StdEncoding.DecodeString(senderInfo.PubKey)
+	if err != nil || len(pubKeyBytes) != ed25519.PublicKeySize {
+		writeError(w, 403, "scoring node pubkey invalid")
+		return
+	}
+	payload := fmt.Sprintf("%s:%s:%.0f:%.0f:%.0f:%s",
+		score.FromNode, score.TargetNode,
+		score.Availability, score.Latency, score.Accuracy,
+		score.Timestamp)
+	sigBytes, err := base64.StdEncoding.DecodeString(score.Signature)
+	if err != nil || len(sigBytes) != ed25519.SignatureSize {
+		writeError(w, 403, "score signature missing or malformed")
+		return
+	}
+	pubKey := ed25519.PublicKey(pubKeyBytes)
+	if !ed25519.Verify(pubKey, []byte(payload), sigBytes) {
+		writeError(w, 403, "score signature verification failed")
+		return
 	}
 
 	repMgr.AddPeerScore(score)

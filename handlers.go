@@ -723,6 +723,14 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// D-4: Per-Key local quota check for Guest Keys
+	// B8-1b: settlement variables live at function scope so the provider loop
+	// below can report actual usage into the deferred Adjust.
+	var (
+		gkSettled  = false   // a reservation was made and must be settled
+		gkKey      string    // the guest key that was reserved
+		gkReserved int64     // tokens reserved up-front (the estimate)
+		gkActual   int64     // actual consumption; 0 refunds, gkReserved keeps it
+	)
 	if keyType == "guest" && guestKeyUsage != nil && guestKeyStore != nil {
 		auth := r.Header.Get("Authorization")
 		guestKey := strings.TrimPrefix(auth, "Bearer ")
@@ -744,10 +752,15 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				writeError(w, 429, "该 Guest Key 的本地额度已用尽")
 				return
 			}
-			// Adjust after request — deferred
+			// B8-1b: charge the reservation as consumption unless a provider
+			// actually served the request with a known token count. The old
+			// unconditional Adjust(key, estimated, 0) refunded EVERY request,
+			// making D-4 quota enforcement a no-op. Streams and failures keep
+			// conservative semantics: unknown usage counts the estimate, total
+			// failure refunds it.
+			gkSettled, gkKey, gkReserved, gkActual = true, guestKey, estimated, 0
 			defer func() {
-				// For streaming, actual usage is unknown; estimate as 0 adjustment (reserve stands)
-				guestKeyUsage.Adjust(guestKey, estimated, 0)
+				guestKeyUsage.Adjust(gkKey, gkReserved, gkActual)
 			}()
 		}
 	}
@@ -825,6 +838,10 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			DecrConn(p.ID, accessType)
 			if err == nil {
 				recordProviderSuccess(p.ID) // B7-3
+				// B8-1b: stream succeeded — usage unknown, keep the reservation
+				if gkSettled {
+					gkActual = gkReserved
+				}
 				if consumerID != "" {
 					multiUser.RecordConsumerUsage(consumerID, 0)
 				}
@@ -833,6 +850,10 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			// If data was already sent to client, cannot retry with another provider
 			if dataSent {
 				slog.Error("stream failed after data sent", "provider", p.Name, "error", err)
+				// B8-1b: partial response delivered — count the estimate
+				if gkSettled {
+					gkActual = gkReserved
+				}
 				return
 			}
 			// No data sent yet — safe to try next provider
@@ -866,6 +887,10 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				compTok = resp.Usage.CompletionTokens
 			}
 			recordProviderSuccess(p.ID) // B7-3
+			// B8-1b: non-stream success — charge the real token count
+			if gkSettled {
+				gkActual = int64(promptTok + compTok)
+			}
 			tracker.RecordWithOwner(p.ID, p.Name, model, promptTok, compTok, latencyMS, true, "", false, 0, accessType, consumerID)
 			if consumerID != "" {
 				multiUser.RecordConsumerUsage(consumerID, promptTok+compTok)

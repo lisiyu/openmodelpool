@@ -22,7 +22,7 @@ func TestParseSTUNResponse_XORMappedIPv4(t *testing.T) {
 	// Plaintext 1.2.3.4:5678 -> XOR with magic cookie.
 	xorIP := []byte{0x20, 0x10, 0xA7, 0x46}
 	xorPort := []byte{0x37, 0x3C}
-	got, err := parseSTUNResponse(makeSTUNBindingResponse(xorIP, xorPort))
+	got, _, err := parseSTUNResponse(makeSTUNBindingResponse(xorIP, xorPort))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -31,8 +31,23 @@ func TestParseSTUNResponse_XORMappedIPv4(t *testing.T) {
 	}
 }
 
+// B8-3: the transaction ID must survive parsing so queries can correlate
+// replies with their own request.
+func TestParseSTUNResponse_TxidRoundTrip(t *testing.T) {
+	buf := makeSTUNBindingResponse([]byte{0x20, 0x10, 0xA7, 0x46}, []byte{0x37, 0x3C})
+	want := [stunTxidLen]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+	copy(buf[8:20], want[:])
+	_, got, err := parseSTUNResponse(buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("txid mismatch: got %v want %v", got, want)
+	}
+}
+
 func TestParseSTUNResponse_Truncated(t *testing.T) {
-	if _, err := parseSTUNResponse([]byte{0x01, 0x01, 0x00}); err == nil {
+	if _, _, err := parseSTUNResponse([]byte{0x01, 0x01, 0x00}); err == nil {
 		t.Fatal("expected error for truncated packet")
 	}
 }
@@ -40,7 +55,7 @@ func TestParseSTUNResponse_Truncated(t *testing.T) {
 func TestParseSTUNResponse_WrongType(t *testing.T) {
 	buf := makeSTUNBindingResponse([]byte{0x01, 0x02, 0x03, 0x04}, []byte{0x00, 0x50})
 	buf[0], buf[1] = 0x00, 0x01 // Binding Request, not a Response
-	if _, err := parseSTUNResponse(buf); err == nil {
+	if _, _, err := parseSTUNResponse(buf); err == nil {
 		t.Fatal("expected error for non-response message type")
 	}
 }
@@ -49,7 +64,7 @@ func TestParseSTUNResponse_NoXorAddr(t *testing.T) {
 	buf := make([]byte, 20)
 	buf[0], buf[1] = 0x01, 0x01
 	buf[4], buf[5], buf[6], buf[7] = 0x21, 0x12, 0xA4, 0x42
-	if _, err := parseSTUNResponse(buf); err == nil {
+	if _, _, err := parseSTUNResponse(buf); err == nil {
 		t.Fatal("expected error when XOR-MAPPED-ADDRESS is missing")
 	}
 }

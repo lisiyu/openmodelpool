@@ -430,7 +430,13 @@ func (gks *GuestKeyStore) UpdateGuestKeyQuotaMulti(key string, quota *int64, quo
 // guestKeyUsageTracker tracks per-key usage for local quota enforcement.
 type guestKeyUsageTracker struct {
 	mu    sync.Mutex
-	usage map[string]int64 // key -> tokens used
+	usage map[string]int64 // key -> tokens used (current daily window)
+	day   string           // UTC date of the current window ("2006-01-02")
+}
+
+// todayUTC returns the UTC date key for quota windows.
+func todayUTC() string {
+	return time.Now().UTC().Format("2006-01-02")
 }
 
 func initGuestKeyUsageTracker() {
@@ -447,6 +453,14 @@ func (t *guestKeyUsageTracker) CheckAndReserve(key string, quota int64, estimate
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	// B8-1a: Quota is a DAILY cap — reset the window when the UTC date rolls
+	// over instead of letting usage accumulate forever (keys would otherwise
+	// be permanently exhausted after enough days of legitimate use).
+	today := todayUTC()
+	if t.day != today {
+		t.usage = make(map[string]int64)
+		t.day = today
+	}
 	used := t.usage[key]
 	remaining := quota - used
 	if remaining <= 0 {

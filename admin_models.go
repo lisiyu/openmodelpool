@@ -12,7 +12,7 @@ import (
 
 func handleSyncModels(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	p, ok := checkProviderAccess(r, id)
+	p, ok := checkProviderWriteAccess(r, id) // B8-2
 	if !ok {
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return

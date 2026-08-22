@@ -207,15 +207,19 @@ func (ts *TicketStore) NotarizeBatch(seedURL string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	endpoint := seedURL + "/api/federation/notarize"
+	// B8-4: the server registers POST /api/ticket/notarize (routes.go); the old
+	// client path /api/federation/notarize never existed, so every batch 404'd
+	// and tickets stayed unnotarized forever.
+	endpoint := seedURL + "/api/ticket/notarize"
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if node != nil {
-		req.Header.Set("X-OMP-NodeID", node.NodeID())
-	}
+	// B8-4: /api/ticket/notarize sits behind withFederationAuth — the bare
+	// X-OMP-NodeID header satisfied none of its three auth paths. Use the
+	// canonical client helper (X-Node-ID + shared secret + envelope signature).
+	req = attachFederationAuth(req)
 
 	resp, err := GetSharedHTTPClient().Do(req)
 	if err != nil {
