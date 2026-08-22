@@ -346,6 +346,9 @@ func (be *BalanceEngine) RunBalanceCycle(ctx context.Context) {
 	}
 
 	globalSnap := be.globalBal
+	// B9-9: len(be.nodeBalance) was read after releasing the lock while other
+	// goroutines can still mutate the map — an unsynchronized map access.
+	nodeCount := len(be.nodeBalance)
 	be.mu.Unlock()
 
 	// 5. Log summary
@@ -354,7 +357,7 @@ func (be *BalanceEngine) RunBalanceCycle(ctx context.Context) {
 		imbalanceSummary = " (⚠ imbalance detected)"
 	}
 	slog.Info("balance cycle completed",
-		"nodes", len(be.nodeBalance),
+		"nodes", nodeCount,
 		"global_ratio", globalSnap.NetworkBalanceRatio,
 		"avg_balance", globalSnap.AverageNodeBalance,
 		"imbalance", globalSnap.ImbalanceNodes,

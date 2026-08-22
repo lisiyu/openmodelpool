@@ -1,6 +1,9 @@
 package main
 
-import "log/slog"
+import (
+	"log/slog"
+	"sync"
+)
 
 // AlgorithmParams holds the tunable parameters of the decentralized
 // algorithm-governance chain.
@@ -32,6 +35,9 @@ func DefaultAlgorithmParams() AlgorithmParams {
 // docs); this implementation keeps a single authoritative parameter set and is
 // intended to be replaced by the distributed protocol in a later phase.
 type AlgorithmChain struct {
+	// B9-5: params is read on every routing/quota decision and written by
+	// admin updates — the unsynchronized struct copy was a data race.
+	mu     sync.RWMutex
 	params AlgorithmParams
 }
 
@@ -42,11 +48,15 @@ func NewAlgorithmChain() *AlgorithmChain {
 
 // GetCurrentParams returns the active parameters.
 func (c *AlgorithmChain) GetCurrentParams() AlgorithmParams {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.params
 }
 
 // UpdateParams replaces the active parameters.
 func (c *AlgorithmChain) UpdateParams(p AlgorithmParams) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.params = p
 }
 

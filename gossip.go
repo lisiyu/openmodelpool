@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -790,16 +791,32 @@ func (g *GossipManager) stop() {
 }
 
 // cryptoShuffle performs a Fisher-Yates shuffle using crypto/rand for secure randomness.
+// B9-7: draws are now uniform (rejection sampling instead of val % n, which was
+// slightly biased) and the random buffer is reused instead of reallocated per swap.
 func cryptoShuffle(nodes []NodeInfo) {
 	n := len(nodes)
+	if n < 2 {
+		return
+	}
+	var buf [8]byte
 	for i := n - 1; i > 0; i-- {
-		buf := make([]byte, 8)
-		if _, err := rand.Read(buf); err != nil {
-			break // fallback: leave remaining elements in place
-		}
-		val := uint64(buf[0])<<56 | uint64(buf[1])<<48 | uint64(buf[2])<<40 | uint64(buf[3])<<32 |
-			uint64(buf[4])<<24 | uint64(buf[5])<<16 | uint64(buf[6])<<8 | uint64(buf[7])
-		j := int(val % uint64(i+1))
+		j := cryptoRandBelow(uint64(i+1), &buf)
 		nodes[i], nodes[j] = nodes[j], nodes[i]
+	}
+}
+
+// cryptoRandBelow returns a uniform int in [0, max) using rejection sampling.
+// max must be > 0. On a rand.Read failure the caller gets index 0 as a safe
+// fallback rather than an infinite loop.
+func cryptoRandBelow(max uint64, buf *[8]byte) int {
+	limit := (^uint64(0) / max) * max
+	for {
+		if _, err := rand.Read(buf[:]); err != nil {
+			return 0
+		}
+		val := binary.BigEndian.Uint64(buf[:])
+		if val < limit {
+			return int(val % max)
+		}
 	}
 }

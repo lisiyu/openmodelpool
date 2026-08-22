@@ -131,8 +131,12 @@ func handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if SMTP is configured
+	// B9-2: a distinctive error here would confirm the admin address to an
+	// attacker probing the endpoint (matching email → 400, wrong email → 200).
+	// Return the same generic response and only log the real reason.
 	if !auth.IsSMTPConfigured() {
-		writeError(w, 400, "邮件服务未配置，无法发送重置链接。请使用「重置密码」功能（通过 Proxy API Key）")
+		slog.Info("forgot-password requested but SMTP is not configured")
+		writeJSON(w, 200, map[string]any{"success": true, "message": "如果邮箱已配置，重置链接已发送"})
 		return
 	}
 

@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -24,6 +23,9 @@ func handleResetWithCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "code and new_password required")
 		return
 	}
+	// B9-3: policy enforcement moved into auth.ResetPasswordWithCode so this
+	// path applies the same strength rules as token-based reset. The loose
+	// length check here stays only to fail fast on obviously short input.
 	if len(body.NewPassword) < 8 {
 		writeError(w, 400, "password must be at least 8 characters")
 		return
@@ -33,27 +35,14 @@ func handleResetWithCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// P0-2: Validate against the independent ResetCode, NOT the Proxy API Key
-	valid, err := auth.ValidateAndConsumeResetCode(body.Code)
-	if err != nil || !valid {
-		writeError(w, 401, "invalid or expired reset code")
+	// P0-2 / B9-3: validate against the independent ResetCode and apply the
+	// full password policy atomically — no direct access to auth internals.
+	if err := auth.ResetPasswordWithCode(body.Code, body.NewPassword); err != nil {
+		slog.Warn("password reset via code rejected", "error", err)
+		writeError(w, 401, "invalid or expired reset code, or password does not meet policy")
 		return
 	}
 
-	// Reset password
-	hash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcrypt.DefaultCost)
-	if err != nil {
-		slog.Error("failed to hash password", "error", err)
-		writeError(w, 500, "internal error")
-		return
-	}
-	auth.mu.Lock()
-	auth.data.Admin.PasswordHash = string(hash)
-	auth.data.Reset = nil
-	auth.mu.Unlock()
-	auth.save()
-
-	slog.Info("password reset via independent reset code")
 	writeJSON(w, 200, map[string]any{
 		"success": true,
 		"message": "password reset successfully",

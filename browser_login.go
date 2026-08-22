@@ -536,7 +536,18 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 		createdAt:   time.Now(),
 	}
 
+	// B9-4: the early count check at the top of the handler is advisory only
+	// (lock is released before we get here). Re-check under the write lock at
+	// insertion so two concurrent starts can't both slip past the limit.
 	browserSessionsMu.Lock()
+	if len(browserSessions) >= 2 {
+		browserSessionsMu.Unlock()
+		ctxCancel()
+		allocCancel()
+		_ = os.RemoveAll(userDataDir)
+		writeError(w, 429, "已有太多浏览器会话，请先取消其他会话")
+		return
+	}
 	browserSessions[id] = sess
 	browserSessionsMu.Unlock()
 

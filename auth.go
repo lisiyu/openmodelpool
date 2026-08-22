@@ -588,12 +588,57 @@ func (a *Auth) ValidateAndConsumeResetCode(code string) (bool, error) {
 	return true, nil
 }
 
+// checkResetCodeLocked verifies the reset code without consuming it.
+// Caller must hold a.mu. B9-3: separating verification from consumption lets
+// ResetPasswordWithCode reject weak passwords before burning the single-use code.
+func (a *Auth) checkResetCodeLocked(code string) error {
+	if a.data.ResetCodeHash == "" {
+		return errors.New("no reset code configured")
+	}
+	if a.data.ResetCodeExpires != "" {
+		expires, err := time.Parse(time.RFC3339, a.data.ResetCodeExpires)
+		if err != nil || time.Now().After(expires) {
+			return errors.New("reset code has expired")
+		}
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(a.data.ResetCodeHash), []byte(code)); err != nil {
+		return errors.New("invalid reset code")
+	}
+	return nil
+}
+
+// ResetPasswordWithCode resets the admin password using the independent reset
+// code with full password policy enforcement (B9-3). The old handler only
+// checked length and mutated auth internals directly, bypassing the strength
+// rules every other reset path enforces. The code is consumed only after the
+// new password passes validation.
+func (a *Auth) ResetPasswordWithCode(code, newPass string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.checkResetCodeLocked(code); err != nil {
+		return err
+	}
+	if err := validatePasswordStrength(newPass); err != nil {
+		return err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+	a.data.Admin.PasswordHash = string(hash)
+	a.data.Reset = nil
+	a.data.ResetCodeHash = ""
+	a.data.ResetCodeExpires = ""
+	a.saveLocked()
+	slog.Info("password reset via independent reset code")
+	return nil
+}
+
 // HasResetCode returns whether a reset code is currently configured.
 func (a *Auth) HasResetCode() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.data.ResetCodeHash != ""
-}
+	return a.data.ResetCodeHash != ""}
 
 // randomString generates a cryptographically random string of length n.
 // SEC-B5-6: fail-closed — if the entropy source fails, abort the process

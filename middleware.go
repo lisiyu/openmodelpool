@@ -366,9 +366,20 @@ func extractToken(r *http.Request) string {
 // SEC-P0-1: a relay-dispatched request is treated as untrusted remote even if
 // its preserved RemoteAddr looks local, so /network/{selfID}/api/forgot-password
 // can never reach these endpoints from the public internet.
+// B9-1: behind a Cloudflare Tunnel (cloudflared sidecar) every external request
+// arrives with RemoteAddr 127.0.0.1, defeating the loopback check. cloudflared
+// always injects Cf-Connecting-Ip with the real client address, so a public IP
+// in that header marks the request as internet-originated regardless of how
+// local its socket looks.
 func localOnly(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip := extractClientIP(r.RemoteAddr)
+		cfIP := r.Header.Get("Cf-Connecting-Ip")
+		if cfPublic := net.ParseIP(cfIP); cfPublic != nil && !cfPublic.IsLoopback() && !cfPublic.IsPrivate() {
+			slog.Warn("blocked tunnel-originated access to sensitive endpoint", "ip", ip, "cf_ip", cfIP, "path", r.URL.Path)
+			writeError(w, 403, "this endpoint is only accessible from localhost or private network")
+			return
+		}
 		if isRelayDispatched(r) || !isLocalOrPrivateIP(ip) {
 			slog.Warn("blocked non-local access to sensitive endpoint", "ip", ip, "path", r.URL.Path, "relay_dispatched", isRelayDispatched(r))
 			writeError(w, 403, "this endpoint is only accessible from localhost or private network")

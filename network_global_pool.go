@@ -243,8 +243,9 @@ func (gp *GlobalPool) Contribute(nodeID string, amount int64) error {
 	}
 
 	gp.mu.Lock()
-	defer gp.mu.Unlock()
-
+	// B9-8: doSave performs disk I/O; holding the exclusive lock through the
+	// fsync stalled every other pool operation. Mutate under the lock, then
+	// persist after releasing it (same pattern as RecordConsumption).
 	found := false
 	for _, n := range gp.ParticipantNodes {
 		if n.NodeID == nodeID {
@@ -253,17 +254,21 @@ func (gp *GlobalPool) Contribute(nodeID string, amount int64) error {
 		}
 	}
 	if !found {
+		gp.mu.Unlock()
 		return fmt.Errorf("node %s is not a pool participant", nodeID)
 	}
 
 	gp.NodeContributions[nodeID] += amount
 	gp.recalculateLocked()
+	contributed := gp.NodeContributions[nodeID]
+	gp.mu.Unlock()
+
 	gp.doSave()
 
 	slog.Info("global pool: contribution recorded",
 		"node_id", nodeID,
 		"amount", amount,
-		"total_from_node", gp.NodeContributions[nodeID],
+		"total_from_node", contributed,
 	)
 
 	return nil

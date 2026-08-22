@@ -166,6 +166,16 @@ func (lb *LoadBalancer) probeAllNodes() {
 	selfID := netMgr.GetNodeID()
 	client := GetSharedHTTPClient()
 
+	// B9-6: metrics and route history were only ever inserted, never evicted,
+	// so departed nodes leaked entries forever and inflated the full-map
+	// scans in ScoreNode. Drop anything not present in the current table.
+	live := make(map[string]struct{}, len(entries)+1)
+	live[selfID] = struct{}{}
+	for _, entry := range entries {
+		live[entry.NodeID] = struct{}{}
+	}
+	lb.evictStaleMetrics(live)
+
 	for _, entry := range entries {
 		if entry.NodeID == selfID {
 			continue
@@ -201,6 +211,25 @@ func (lb *LoadBalancer) probeAllNodes() {
 			resp.Body.Close()
 			lb.recordProbe(nodeID, elapsed, resp.StatusCode < 400)
 		}(entry.NodeID, addr)
+	}
+}
+
+// evictStaleMetrics removes metrics and routing history for nodes that are no
+// longer in the route table. B9-6. `live` is the current node-ID set; entries
+// for unknown nodes are dropped outright (recordProbe recreates them if the
+// node returns). Caller must NOT hold lb.mu.
+func (lb *LoadBalancer) evictStaleMetrics(live map[string]struct{}) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	for id := range lb.nodeMetrics {
+		if _, ok := live[id]; !ok {
+			delete(lb.nodeMetrics, id)
+		}
+	}
+	for id := range lb.routeHistory {
+		if _, ok := live[id]; !ok {
+			delete(lb.routeHistory, id)
+		}
 	}
 }
 
