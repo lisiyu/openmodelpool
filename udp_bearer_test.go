@@ -57,13 +57,13 @@ func TestUDPBearer_RelayRoundTrip(t *testing.T) {
 
 	// Server side: echo the request body and report the path it saw.
 	oldHandler := relayDispatchHandler
-	relayDispatchHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	setRelayDispatchHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		w.Header().Set("X-Echo-Path", r.URL.Path)
 		w.WriteHeader(200)
 		w.Write(body)
-	})
-	defer func() { relayDispatchHandler = oldHandler }()
+	}))
+	defer func() { setRelayDispatchHandler(oldHandler) }()
 
 	// Wire the direct link so RelayOverUDP finds peer B's address.
 	oldDLM := directLinkMgr
@@ -117,12 +117,12 @@ func TestUDPBearer_RelayLargeBody(t *testing.T) {
 	bB := NewUDPDataBearer(connB, "nodeB")
 
 	oldHandler := relayDispatchHandler
-	relayDispatchHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	setRelayDispatchHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		w.WriteHeader(200)
 		w.Write(body)
-	})
-	defer func() { relayDispatchHandler = oldHandler }()
+	}))
+	defer func() { setRelayDispatchHandler(oldHandler) }()
 
 	oldDLM := directLinkMgr
 	oldBearer := udpDataBearer

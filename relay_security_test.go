@@ -1,17 +1,17 @@
 package main
 
-// relay_security_test.go — regression tests for SEC-P0-1 (relay-to-self
+// relay_security_test.go �?regression tests for SEC-P0-1 (relay-to-self
 // authentication bypass) and SEC-P0-2 (client-spoofable X-OMP-KeyType header).
 //
 // Coverage:
-//   ① X-OMP-KeyType is never trusted from the wire (RequestKeyType + strip).
-//   ② relayAuthMiddleware rejects anonymous /network requests and accepts
+//   �?X-OMP-KeyType is never trusted from the wire (RequestKeyType + strip).
+//   �?relayAuthMiddleware rejects anonymous /network requests and accepts
 //     recognized API keys; __punch stays exempt.
-//   ③ handleRelayToLocal enforces the path whitelist and dispatches in-process
+//   �?handleRelayToLocal enforces the path whitelist and dispatches in-process
 //     preserving the original RemoteAddr.
-//   ④ withProxyAuth / localOnly treat relay-dispatched requests as untrusted
+//   �?withProxyAuth / localOnly treat relay-dispatched requests as untrusted
 //     remote (no anonymous-admin, no loopback trust).
-//   ⑤ relayToRemote strips X-OMP-KeyType from outbound forwards.
+//   �?relayToRemote strips X-OMP-KeyType from outbound forwards.
 
 import (
 	"bytes"
@@ -39,15 +39,15 @@ func relaySecurityTestEnv(t *testing.T) *testEnv {
 		},
 	}
 	netMgr = nm
-	relayDispatchHandler = setupRoutes()
+	setRelayDispatchHandler(setupRoutes())
 	t.Cleanup(func() {
 		netMgr = origNetMgr
-		relayDispatchHandler = origDispatch
+		setRelayDispatchHandler(origDispatch)
 	})
 	return env
 }
 
-// ① RequestKeyType must ignore the client-supplied X-OMP-KeyType header and
+// �?RequestKeyType must ignore the client-supplied X-OMP-KeyType header and
 // instead use the internal context value (or the verified token).
 func TestRequestKeyType_IgnoresWireHeader(t *testing.T) {
 	relaySecurityTestEnv(t)
@@ -85,7 +85,7 @@ func TestStripInternalHeadersMiddleware(t *testing.T) {
 	}
 }
 
-// ② relayAuthMiddleware gates the /network route.
+// �?relayAuthMiddleware gates the /network route.
 func TestRelayAuthMiddleware(t *testing.T) {
 	relaySecurityTestEnv(t)
 
@@ -110,7 +110,7 @@ func TestRelayAuthMiddleware(t *testing.T) {
 
 	// Proxy key: a structural sk-{random} key is NOT accepted at the relay
 	// boundary unless it equals the configured proxy_api_key (SEC-P0-3).
-	// A random sk- key must be rejected — otherwise any sk-anything becomes
+	// A random sk- key must be rejected �?otherwise any sk-anything becomes
 	// the node operator (full provider access).
 	proxy := httptest.NewRequest(http.MethodGet, "/network/mmx-self/v1/models", nil)
 	proxy.Header.Set("Authorization", "Bearer sk-some-proxy-key")
@@ -149,7 +149,7 @@ func TestRelayAuthMiddleware(t *testing.T) {
 	}
 }
 
-// ③ handleRelayToLocal enforces the whitelist: only /v1/* and
+// �?handleRelayToLocal enforces the whitelist: only /v1/* and
 // /api/network/heartbeat/ping may be relayed to self.
 func TestRelayToLocal_PathWhitelist(t *testing.T) {
 	relaySecurityTestEnv(t)
@@ -182,7 +182,7 @@ func TestRelayToLocal_PathWhitelist(t *testing.T) {
 	}
 }
 
-// ④ withProxyAuth must NOT grant the C3 anonymous-admin fallback to a
+// �?withProxyAuth must NOT grant the C3 anonymous-admin fallback to a
 // relay-dispatched request, even when the preserved RemoteAddr is localhost.
 func TestWithProxyAuth_RelayDispatched_NoAnonymousAdmin(t *testing.T) {
 	relaySecurityTestEnv(t)
@@ -256,7 +256,7 @@ func TestLocalOnly_RelayDispatched_Rejected(t *testing.T) {
 	}
 }
 
-// ⑤ relayToRemote strips X-OMP-KeyType from the outbound forward.
+// �?relayToRemote strips X-OMP-KeyType from the outbound forward.
 func TestRelayToRemote_StripsKeyTypeHeader(t *testing.T) {
 	relaySecurityTestEnv(t)
 

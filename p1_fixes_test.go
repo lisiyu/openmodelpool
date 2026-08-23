@@ -1,6 +1,6 @@
 package main
 
-// p1_fixes_test.go — regression tests for batch-2 fixes:
+// p1_fixes_test.go �?regression tests for batch-2 fixes:
 //   - P1-1: withProxyAuth accepts a signed relay/gateway forward (no Authorization
 //     header) so inter-node forwarding can reach the inner gateway handler; forged
 //     or unsigned forwards are still rejected.
@@ -100,7 +100,7 @@ func TestGetNode_ReturnsCopy(t *testing.T) {
 
 // P1-5: a guest key must survive the relay-to-self dispatch. handleRelayToLocal
 // strips the Authorization header (so the key never reaches provider code), but
-// the D-4 per-key quota check still needs the key — it is carried via context.
+// the D-4 per-key quota check still needs the key �?it is carried via context.
 // Without this, a guest key could drain the shared pool with no quota accounting.
 func TestHandleRelayToLocal_GuestKeySurvivesViaContext(t *testing.T) {
 	env := relaySecurityTestEnv(t)
@@ -123,15 +123,15 @@ func TestHandleRelayToLocal_GuestKeySurvivesViaContext(t *testing.T) {
 	defer func() { netMgr.config.Mode = origMode }()
 
 	origDispatch := relayDispatchHandler
-	defer func() { relayDispatchHandler = origDispatch }()
+	defer func() { setRelayDispatchHandler(origDispatch) }()
 
 	var innerReq *http.Request
 	var innerKeyType string
-	relayDispatchHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	setRelayDispatchHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		innerReq = r
 		innerKeyType = RequestKeyType(r)
 		w.WriteHeader(http.StatusOK)
-	})
+	}))
 
 	// A regular (non-public-pool) guest key routed to its issuing node.
 	req := httptest.NewRequest(http.MethodGet, "/network/mmx-self/v1/models", nil)
@@ -144,9 +144,9 @@ func TestHandleRelayToLocal_GuestKeySurvivesViaContext(t *testing.T) {
 	if innerReq == nil {
 		t.Fatalf("request did not dispatch to relayDispatchHandler (code=%d)", rec.Code)
 	}
-	// The key must be available to the inner handler via context…
+	// The key must be available to the inner handler via context�?
 	if got := relayGuestKey(innerReq); got != guestKey {
-		t.Fatalf("P1-5: relayGuestKey(inner) = %q, want %q — quota bypass over relay path", got, guestKey)
+		t.Fatalf("P1-5: relayGuestKey(inner) = %q, want %q �?quota bypass over relay path", got, guestKey)
 	}
 	// …while the Authorization header itself is gone.
 	if h := innerReq.Header.Get("Authorization"); h != "" {
@@ -154,12 +154,12 @@ func TestHandleRelayToLocal_GuestKeySurvivesViaContext(t *testing.T) {
 	}
 	// The effective key type derives from context, so the D-4 branch activates.
 	if innerKeyType != "guest" {
-		t.Fatalf("RequestKeyType(inner) = %q, want guest — D-4 quota check would be skipped", innerKeyType)
+		t.Fatalf("RequestKeyType(inner) = %q, want guest �?D-4 quota check would be skipped", innerKeyType)
 	}
 }
 
 // P1-5 (D-4): the quota check must consume the context-carried key when the
-// Authorization header is absent — i.e. the exact wire shape of a relayed guest
+// Authorization header is absent �?i.e. the exact wire shape of a relayed guest
 // request. Simulates the decision the D-4 block makes.
 func TestGuestQuota_UsesContextKey_WhenHeaderStripped(t *testing.T) {
 	relaySecurityTestEnv(t)
@@ -203,7 +203,7 @@ func TestGuestQuota_UsesContextKey_WhenHeaderStripped(t *testing.T) {
 	if !allowed {
 		t.Fatal("first request within quota should be allowed")
 	}
-	// A second draw pushes the tracked usage past the quota — must be denied.
+	// A second draw pushes the tracked usage past the quota �?must be denied.
 	allowed2, _ := guestKeyUsage.CheckAndReserve(key, record.Quota, 80)
 	if allowed2 {
 		t.Fatal("quota must be enforced over the relay path (P1-5)")

@@ -21,7 +21,7 @@ func runServer() {
 	mux := setupRoutes()
 	// SEC-P0-1: relay-to-self requests are dispatched in-process to this mux
 	// (preserving the original RemoteAddr) instead of looping back over TCP.
-	relayDispatchHandler = mux
+	setRelayDispatchHandler(mux)
 
 	port := cfg.Get("service_port", "8000")
 	addr := ":" + port

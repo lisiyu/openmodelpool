@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,7 +29,26 @@ var allowLocalRelayForTest = false
 // the relay-to-local path) to the raw mux returned by setupRoutes(), so a
 // relayed request is dispatched without a loopback HTTP hop — preserving the
 // original RemoteAddr for downstream auth decisions.
-var relayDispatchHandler http.Handler
+//
+// Access is guarded by relayDispatchMu: UDP bearer worker goroutines may
+// still be serving an inbound request while a test restores the original
+// handler, which the race detector correctly flags as a write/read race.
+var (
+	relayDispatchMu      sync.RWMutex
+	relayDispatchHandler http.Handler
+)
+
+func setRelayDispatchHandler(h http.Handler) {
+	relayDispatchMu.Lock()
+	relayDispatchHandler = h
+	relayDispatchMu.Unlock()
+}
+
+func getRelayDispatchHandler() http.Handler {
+	relayDispatchMu.RLock()
+	defer relayDispatchMu.RUnlock()
+	return relayDispatchHandler
+}
 
 // relayAuthMiddleware requires a valid credential on /network/{id} relay routes
 // (SEC-P0-1). Accepted credentials:
@@ -399,7 +419,8 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 
 	slog.Info("relay to local", "target", "self", "path", restPath, "hops", hopCount)
 
-	if relayDispatchHandler == nil {
+	dispatch := getRelayDispatchHandler()
+	if dispatch == nil {
 		slog.Error("relay-to-local dispatch handler not initialized")
 		writeError(w, 503, "relay not available")
 		return
@@ -415,7 +436,7 @@ func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, 
 	if internalKeyType != "" {
 		ctx = context.WithValue(ctx, ctxKeyInternalKeyType, internalKeyType)
 	}
-	relayDispatchHandler.ServeHTTP(w, r.WithContext(ctx))
+	dispatch.ServeHTTP(w, r.WithContext(ctx))
 }
 
 // relayToRemote forwards a request to a remote node via reverse proxy

@@ -1,6 +1,6 @@
 package main
 
-// p4_fixes_test.go — regression tests for batch-5 fixes (v4.5.22):
+// p4_fixes_test.go �?regression tests for batch-5 fixes (v4.5.22):
 //   - SEC-B5-1: usage endpoints are scoped to the requesting consumer.
 //   - SEC-B5-2: relay-to-local strips spoofed X-Request-Owner/X-Request-Role.
 //   - SEC-B5-3: discovery platform update is admin-only.
@@ -80,13 +80,13 @@ func TestB5x_RelayToLocal_StripsSpoofedOwnerHeader(t *testing.T) {
 	relaySecurityTestEnv(t)
 
 	origDispatch := relayDispatchHandler
-	defer func() { relayDispatchHandler = origDispatch }()
+	defer func() { setRelayDispatchHandler(origDispatch) }()
 
 	var captured *http.Request
-	relayDispatchHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	setRelayDispatchHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured = r.Clone(context.Background())
 		w.WriteHeader(http.StatusOK)
-	})
+	}))
 
 	// Public key via relay with a forged owner header.
 	req := httptest.NewRequest(http.MethodPost, "/network/mmx-self/v1/chat/completions", strings.NewReader(`{"model":"gpt-4"}`))
@@ -109,7 +109,7 @@ func TestB5x_RelayToLocal_StripsSpoofedOwnerHeader(t *testing.T) {
 }
 
 // SEC-B5-3: discovery platform update requires admin auth (withAuth). Verify
-// the route registration changed — consumer-role request without an admin JWT
+// the route registration changed �?consumer-role request without an admin JWT
 // must be rejected by the middleware.
 func TestB5x_DiscoveryPlatformUpdate_AdminOnly(t *testing.T) {
 	setupTestEnv(t)

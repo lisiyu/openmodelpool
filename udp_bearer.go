@@ -271,7 +271,7 @@ func (b *UDPDataBearer) HandleInbound(frame []byte, from *net.UDPAddr) {
 		}
 		b.mu.Lock()
 		rm.frags[int(fragIndex)] = append([]byte(nil), payload...)
-		complete := len(rm.frags) >= int(rm.meta.FragTotal)-1
+		complete := len(rm.frags) >= rm.meta.FragTotal-1
 		b.mu.Unlock()
 		if complete {
 			b.onComplete(reqID, from)
@@ -335,7 +335,8 @@ func (b *UDPDataBearer) serveReq(reqID string, rm *reasmMsg, from *net.UDPAddr) 
 
 	body := b.assemble(rm)
 	rec := &bearerRespRecorder{}
-	if relayDispatchHandler == nil {
+	dispatch := getRelayDispatchHandler()
+	if dispatch == nil {
 		rec.WriteHeader(http.StatusServiceUnavailable)
 	} else {
 		req := &http.Request{
@@ -348,7 +349,7 @@ func (b *UDPDataBearer) serveReq(reqID string, rm *reasmMsg, from *net.UDPAddr) 
 		if rm.meta.Query != "" {
 			req.RequestURI += "?" + rm.meta.Query
 		}
-		relayDispatchHandler.ServeHTTP(rec, req)
+		dispatch.ServeHTTP(rec, req)
 	}
 	if rec.code == 0 {
 		rec.code = http.StatusOK

@@ -739,7 +739,10 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			pqDirect, pqClientIP, pqModel, pqReserved = true, clientIP, model, estTokens
-			defer publicQuota.AdjustQuota(pqClientIP, pqModel, pqReserved, pqActual)
+			// Closure form: the bare defer captured pqActual=0 at defer time,
+			// so every later settlement assignment was dead and AdjustQuota
+			// always refunded the full reservation (public quota no-op).
+			defer func() { publicQuota.AdjustQuota(pqClientIP, pqModel, pqReserved, pqActual) }()
 		}
 	}
 
