@@ -278,6 +278,32 @@ func handleGetProvider(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, p.Safe())
 }
 
+// handleProviderLoginStatus reports whether the provider has a usable token
+// saved. B10-WL8: the client-browser-login poll previously read GET
+// /api/providers/{id} and tested `!api_key.includes('...')` — but Safe()
+// ALWAYS masks the key as "xxxx...xxxx", so the condition could never match
+// and the UI sat at "等待 Token 回传" forever even after a successful
+// bookmarklet save. This endpoint answers the boolean directly from the raw
+// record without exposing any credential material.
+func handleProviderLoginStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, ok := checkProviderAccess(r, id)
+	if !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
+	saved := p.APIKey != "" && p.APIKey != "your-api-key-here"
+	if !saved && len(p.APIKeys) > 0 {
+		for _, k := range p.APIKeys {
+			if strings.TrimSpace(k.Key) != "" {
+				saved = true
+				break
+			}
+		}
+	}
+	writeJSON(w, 200, map[string]any{"token_saved": saved})
+}
+
 func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	existing, ok := checkProviderWriteAccess(r, id)

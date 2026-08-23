@@ -92,6 +92,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/providers/presets", rateLimitByIP(30, "presets")(handleGetPresets))
 	mux.HandleFunc("POST /api/providers", withConsumerOrAdminAuth(handleCreateProvider))
 	mux.HandleFunc("GET /api/providers/{id}", withConsumerOrAdminAuth(handleGetProvider))
+	mux.HandleFunc("GET /api/providers/{id}/login-status", withConsumerOrAdminAuth(handleProviderLoginStatus))
 	mux.HandleFunc("PUT /api/providers/{id}", withConsumerOrAdminAuth(handleUpdateProvider))
 	mux.HandleFunc("DELETE /api/providers/{id}", withConsumerOrAdminAuth(handleDeleteProvider))
 	mux.HandleFunc("POST /api/providers/{id}/test", withConsumerOrAdminAuth(handleTestProvider))

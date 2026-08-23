@@ -527,10 +527,14 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	// Resolve proxy
 	proxyURL := ""
 	if p.Proxy != "" {
-		if strings.HasPrefix(p.Proxy, "vmess://") {
+		// B10-WL6: vmess AND vless links are resolved to a local verified
+		// SOCKS5 endpoint; other schemes pass through as-is. Previously a
+		// vless:// link fell into the passthrough branch and Chrome received
+		// an unparseable --proxy-server value → every site unreachable.
+		if strings.HasPrefix(p.Proxy, "vmess://") || strings.HasPrefix(p.Proxy, "vless://") {
 			resolved, err := ResolveProxy(p.ID, p.Proxy)
 			if err != nil {
-				writeError(w, 500, "代理解析失败")
+				writeError(w, 500, "代理解析失败: "+err.Error())
 				return
 			}
 			proxyURL = resolved

@@ -101,9 +101,9 @@ var siderHeadersBase = map[string]string{
 // proxyHTTPClient returns an HTTP client configured with the provider's proxy.
 func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 	proxy := p.Proxy
-	// For vmess:// links, the proxy should already be resolved to socks5://localhost:port
-	// by ResolveProxy during provider save. If not resolved yet, try now.
-	if strings.HasPrefix(proxy, "vmess://") {
+	// For vmess:// / vless:// links, the proxy should be resolved to
+	// socks5://localhost:port by ResolveProxy. If not resolved yet, try now.
+	if strings.HasPrefix(proxy, "vmess://") || strings.HasPrefix(proxy, "vless://") {
 		resolved, err := ResolveProxy(p.ID, proxy)
 		if err != nil {
 			slog.Warn("failed to resolve VMess proxy", "provider", p.ID, "error", err)

@@ -1976,9 +1976,13 @@ function startClientLoginPoll() {
   clientLoginPollTimer = setInterval(async () => {
     try {
       const pid = getCurrentProviderId();
-      const r = await authFetch('/api/providers/' + pid);
+      // B10-WL8: poll the dedicated boolean endpoint — GET /api/providers/{id}
+      // always returns a MASKED api_key ("xxxx...xxxx"), so the old
+      // `!api_key.includes('...')` heuristic could never succeed and the UI
+      // waited forever even after a successful bookmarklet save.
+      const r = await authFetch('/api/providers/' + encodeURIComponent(pid) + '/login-status');
       const d = await r.json();
-      if (d && d.api_key && d.api_key !== 'your-api-key-here' && !d.api_key.includes('...')) {
+      if (d && d.token_saved) {
         clearInterval(clientLoginPollTimer);
         clientLoginPollTimer = null;
         statusEl.innerHTML = '✅ Token 已自动保存！';
