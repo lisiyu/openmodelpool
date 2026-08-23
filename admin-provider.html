@@ -1878,10 +1878,10 @@ function updateClientLoginTip() {
   const preset = typeof presets !== 'undefined' && Array.isArray(presets) ? presets.find(x => x.id === pid) : null;
   if (preset && preset.type === 'coze') {
     tip.style.display = 'block';
-    tip.style.background = 'rgba(255,159,10,.1)';
-    tip.innerHTML = '<b>⚠️ 扣子专用说明：</b>扣子使用 <b>PAT 个人访问令牌</b>鉴权，无法通过书签自动抓取。请登录后打开 '
+    tip.style.background = 'rgba(108,99,255,.08)';
+    tip.innerHTML = '<b>💡 扣子小贴士：</b>扣子对话使用 <b>PAT 个人访问令牌</b>鉴权。推荐登录后打开 '
       + '<a href="https://www.coze.cn/open/oauth/pats" target="_blank" style="color:var(--info)">扣子令牌页面</a>'
-      + ' 创建令牌并复制，然后用下方「手动粘贴 Token」保存。';
+      + ' 创建并复制令牌，通过下方「手动粘贴 Token」保存即可使用；书签抓取的网页 Cookie 仅作辅助参考。';
   } else {
     tip.style.display = 'none';
     tip.innerHTML = '';

@@ -445,6 +445,7 @@ function applyProviderNavURL(p) {
   var input = document.getElementById('browserNavUrl');
   if (url) { input.value = url; input.placeholder = '输入网址，如 ' + url; }
   else { input.value = ''; input.placeholder = '输入网址，如 https://example.com'; }
+  return url;
 }
 
 function startBrowserLoginSession() {
@@ -477,19 +478,24 @@ window.addEventListener('load', function() {
   authFetch('/api/providers/' + encodeURIComponent(browserLoginProviderId))
     .then(r => r.json())
     .then(p => {
-      applyProviderNavURL(p);
-      if (p && p.type && p.type !== 'web_session' && !(p.web_session && p.web_session.login_url)) {
+      var url = applyProviderNavURL(p);
+      if (p && p.type && p.type !== 'web_session' && !url) {
         document.getElementById('browserLoginStatus').textContent =
-          '提示: 该平台类型为「' + p.type + '」（API 模式），通常无需浏览器 Cookie 登录；如确需网页登录，请先在编辑页切换为 Web 会话模式并配置登录 URL。';
-        toast('该平台不是 Web 会话模式，已跳过自动启动', 'error');
+          '提示: 平台「' + p.id + '」未配置登录 URL（可在编辑页填写登录 URL 或 Base URL 后重试）。';
+        toast('未找到可打开的网址，请手动输入', 'error');
         return;
+      }
+      if (p && p.type && p.type !== 'web_session') {
+        // B10-WL5: informational only — API-mode platforms can still use the
+        // browser to inspect their site; never block or nag.
+        document.getElementById('browserLoginStatus').textContent =
+          '提示: 平台为「' + p.type + '」API 模式，已打开其网页首页供辅助使用。';
       }
       sessionFlowStarted = true;
       startBrowserLoginSession();
     })
     .catch(function(err) {
-      // Config fetch failed (e.g. older build without the GET route) — still
-      // start the session; admin navigates manually.
+      // Config fetch failed — still start the session; admin navigates manually.
       applyProviderNavURL(null);
       sessionFlowStarted = true;
       startBrowserLoginSession();
