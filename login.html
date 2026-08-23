@@ -344,11 +344,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   try {
     const resp = await fetch('/api/setup/status');
-    const data = await resp.json();
-    if (!data.initialized) {
-      isRedirecting = true;
-      window.location.href = '/setup';
-      return;
+    // The endpoint is localOnly (B7-6): public visitors get 403. Treat any
+    // non-OK answer as "already initialized" — only an explicit
+    // {initialized:false} from localhost sends you to /setup. Otherwise a
+    // public-domain visitor 403s, !undefined is truthy-falsy, and we bounce
+    // to /setup which 302s straight back here: an infinite login-page loop.
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.initialized === false) {
+        isRedirecting = true;
+        window.location.href = '/setup';
+        return;
+      }
     }
     // Check if already logged in
     const token = localStorage.getItem('admin_token');
