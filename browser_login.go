@@ -302,6 +302,10 @@ type BrowserLoginSession struct {
 	proxyURL    string
 	userDataDir string
 	createdAt   time.Time
+	// autoCleanup is the pending TTL timer for THIS session instance. It must
+	// be bound to the instance (not just the provider ID) and stoppable — see
+	// scheduleAutoCleanup.
+	autoCleanup *time.Timer
 }
 
 var (
@@ -386,6 +390,15 @@ func cleanupSession(providerID string) {
 	browserSessionsMu.Lock()
 	sess, ok := browserSessions[providerID]
 	if ok {
+		// Stop this session's pending auto-cleanup timer first so it cannot
+		// fire later and interfere with a replacement session.
+		sess.mu.Lock()
+		timer := sess.autoCleanup
+		sess.autoCleanup = nil
+		sess.mu.Unlock()
+		if timer != nil {
+			timer.Stop()
+		}
 		sess.cancel()
 		delete(browserSessions, providerID)
 	}
@@ -394,6 +407,36 @@ func cleanupSession(providerID string) {
 	if ok && sess.userDataDir != "" {
 		_ = os.RemoveAll(sess.userDataDir)
 	}
+}
+
+// browserSessionTTL is how long an idle browser login session is kept before
+// automatic cleanup. A var so tests can shorten it.
+var browserSessionTTL = 10 * time.Minute
+
+// scheduleAutoCleanup arms the TTL timer for sess. B10-BL1: the timer is bound
+// to the SESSION INSTANCE — when it fires it only cleans up if the map still
+// holds this exact session. The old implementation slept in a goroutine keyed
+// only by provider ID, so a retry within the TTL window let the stale timer
+// kill the NEW session mid-login, surfacing as "没有活跃的浏览器登录会话" in
+// the UI.
+func scheduleAutoCleanup(sess *BrowserLoginSession) {
+	t := time.AfterFunc(browserSessionTTL, func() {
+		browserSessionsMu.Lock()
+		cur, ok := browserSessions[sess.providerID]
+		if !ok || cur != sess {
+			browserSessionsMu.Unlock()
+			return // replaced by a newer session (or already removed)
+		}
+		delete(browserSessions, sess.providerID)
+		browserSessionsMu.Unlock()
+
+		sess.cancel()
+		if sess.userDataDir != "" {
+			_ = os.RemoveAll(sess.userDataDir)
+		}
+		sess.update("cancelled", "会话超时（10 分钟）已自动结束，请重新启动", nil)
+	})
+	sess.autoCleanup = t
 }
 
 // isExecNotFound reports whether a chromedp launch error is caused by a missing
@@ -445,14 +488,14 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for existing session. A terminal (error/canceled) session must NOT
+	// Check for existing session. A terminal (error/cancelled) session must NOT
 	// block a retry — otherwise a single failed launch (e.g. Chrome missing on
 	// the host) sticks the admin on the stale error status for the full 10-min
 	// auto-cleanup window and the "浏览器登录" feature becomes unusable. Only a
 	// live/active session short-circuits; a terminal one is cleared so a fresh
 	// launch can proceed immediately.
 	if sess, ok := getSession(id); ok {
-		if sess.status == "error" || sess.status == "canceled" {
+		if sess.status == "error" || sess.status == "cancelled" {
 			cleanupSession(id)
 		} else {
 			sess.mu.Lock()
@@ -551,11 +594,8 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	browserSessions[id] = sess
 	browserSessionsMu.Unlock()
 
-	// Auto-cleanup after 10 minutes
-	go func() {
-		time.Sleep(10 * time.Minute)
-		cleanupSession(id)
-	}()
+	// B10-BL1: arm the instance-bound TTL auto-cleanup timer.
+	scheduleAutoCleanup(sess)
 
 	// Start browser in goroutine
 	go func() {
@@ -611,6 +651,10 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 func handleBrowserLoginStatus(w http.ResponseWriter, r *http.Request) {
 	defer recoverHandler(w, "status")
 	id := r.PathValue("id")
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B10-V4: session state leaks provider info
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
 	sess, ok := getSession(id)
 	if !ok {
 		writeError(w, 404, "没有活跃的浏览器登录会话")
@@ -632,6 +676,10 @@ func handleBrowserLoginStatus(w http.ResponseWriter, r *http.Request) {
 func handleBrowserLoginLogin(w http.ResponseWriter, r *http.Request) {
 	defer recoverHandler(w, "login")
 	id := r.PathValue("id")
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B10-V4: drives the login flow
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
 	sess, ok := getSession(id)
 	if !ok {
 		writeError(w, 404, "没有活跃的浏览器登录会话")
@@ -756,6 +804,10 @@ func handleBrowserLoginLogin(w http.ResponseWriter, r *http.Request) {
 func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 	defer recoverHandler(w, "action")
 	id := r.PathValue("id")
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B10-V4: drives/steers the session
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
 	sess, ok := getSession(id)
 	if !ok {
 		writeError(w, 404, "没有活跃的浏览器登录会话")
@@ -1002,6 +1054,10 @@ func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 func handleBrowserLoginFinish(w http.ResponseWriter, r *http.Request) {
 	defer recoverHandler(w, "finish")
 	id := r.PathValue("id")
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B10-V4: writes credentials into the provider
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
 	sess, ok := getSession(id)
 	if !ok {
 		writeError(w, 404, "没有活跃的浏览器登录会话")
@@ -1136,6 +1192,10 @@ func handleBrowserLoginFinish(w http.ResponseWriter, r *http.Request) {
 func handleBrowserLoginCancel(w http.ResponseWriter, r *http.Request) {
 	defer recoverHandler(w, "cancel")
 	id := r.PathValue("id")
+	if _, ok := checkProviderWriteAccess(r, id); !ok { // B10-V4: kills someone else's session
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
 	cleanupSession(id)
 	writeJSON(w, 200, map[string]any{
 		"status":  "cancelled",

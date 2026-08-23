@@ -229,11 +229,15 @@ func rateLimitByIP(maxRequestsPerMinute float64, endpointName string) func(http.
 			// one client cannot exhaust a shared bucket and lock out everyone.
 			// Outside a trusted proxy the XFF header is attacker-controlled and
 			// ignored (consistent with WAF/extractRemoteIP).
+			// B10-V5: take the RIGHTMOST entry, matching the WAF parser. The
+			// leftmost value is client-supplied in every standard proxy chain,
+			// so keying buckets on it let an attacker rotate fake IPs for a
+			// fresh limiter on every request.
 			ip := extractClientIP(r.RemoteAddr)
 			if trustedReverseProxy {
 				if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-					if idx := strings.IndexByte(xff, ','); idx >= 0 {
-						ip = strings.TrimSpace(xff[:idx])
+					if idx := strings.LastIndexByte(xff, ','); idx >= 0 {
+						ip = strings.TrimSpace(xff[idx+1:])
 					} else {
 						ip = strings.TrimSpace(xff)
 					}

@@ -1272,12 +1272,25 @@ select.form-input{appearance:none;cursor:pointer}
 </style>
 <script>
 // Sub-page modal navigation
+// B10-BL5: sub-pages live in a REUSED iframe. When the modal closes, the frame
+// keeps running in the background (by design, for instant reopen), so we
+// notify the embedded page via onSubPageHidden/onSubPageShown hooks so it can
+// pause/resume background polling (the built-in browser login page polls
+// status every 2s — without this it polled forever while hidden).
+function notifySubPage(fnName) {
+  try {
+    var f = document.getElementById('subPageFrame');
+    var w = f && f.contentWindow;
+    if (w && typeof w[fnName] === 'function') w[fnName]();
+  } catch (e) { /* cross-origin or not loaded yet */ }
+}
 function openSubPage(url, title) {
   var modal = document.getElementById('subPageModal');
   var frame = document.getElementById('subPageFrame');
   var titleEl = document.getElementById('subPageModalTitle');
   if (title) titleEl.textContent = title;
-  // Reuse the iframe if the same page is already loaded — avoids a full reload on every open
+  // Reuse the iframe if the same page is already loaded — avoids a full reload on every open.
+  // The page itself re-syncs its state via the onSubPageShown hook below.
   if (frame.getAttribute('data-src') !== url) {
     frame.src = url;
     frame.setAttribute('data-src', url);
@@ -1285,11 +1298,13 @@ function openSubPage(url, title) {
   modal.classList.add('open');
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+  setTimeout(function() { notifySubPage('onSubPageShown'); }, 150);
 }
 function closeSubPage() {
   var modal = document.getElementById('subPageModal');
   var frame = document.getElementById('subPageFrame');
   // Keep the loaded sub-page in the iframe (do NOT reset to about:blank) so reopening is instant
+  notifySubPage('onSubPageHidden');
   modal.classList.remove('open');
   modal.style.display = 'none';
   document.body.style.overflow = '';

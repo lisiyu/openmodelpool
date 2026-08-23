@@ -239,51 +239,59 @@ func (h *HealthChecker) checkProvider(p Provider) {
 		client := proxyHTTPClient(p, 15*time.Second)
 		baseURL := strings.TrimRight(p.BaseURL, "/")
 
-		// Build model list to try
-		var probeModels []string
+		// B10-P5: probe exactly ONE model per key. The old loop tried every
+		// enabled model plus three hardcoded fallbacks for every key, so a
+		// fully-dead provider burned keys × models real billable completions
+		// every check cycle just to conclude "unhealthy".
+		probeModel := ""
 		for _, m := range p.Models {
 			if m.Enabled {
-				probeModels = append(probeModels, m.ID)
+				probeModel = m.ID
+				break
 			}
 		}
-		probeModels = append(probeModels, "gpt-3.5-turbo", "@cf/meta/llama-3-8b-instruct", "@cf/mistral/mistral-7b-instruct-v0.1")
+		if probeModel == "" {
+			probeModel = "gpt-3.5-turbo"
+		}
 
 		// Try each key until one succeeds
 		for _, ke := range keysToTry {
 			keysTested++
 			keyOK := false
 
-			for _, model := range probeModels {
-				reqStart := time.Now()
-				probeBody, _ := json.Marshal(map[string]any{
-					"model":      model,
-					"max_tokens": 1,
-					"messages":   []map[string]string{{"role": "user", "content": "hi"}},
-				})
-				probeReq, _ := http.NewRequestWithContext(ctx, "POST", baseURL+"/chat/completions", bytes.NewReader(probeBody))
-				probeReq.Header.Set("Authorization", "Bearer "+ke.key)
-				probeReq.Header.Set("Content-Type", "application/json")
-				probeResp, err := client.Do(probeReq)
-				if err != nil {
-					continue
-				}
-				io.Copy(io.Discard, probeResp.Body)
-				probeResp.Body.Close()
-				latencyMS = float64(time.Since(reqStart).Milliseconds())
+			reqStart := time.Now()
+			probeBody, _ := json.Marshal(map[string]any{
+				"model":      probeModel,
+				"max_tokens": 1,
+				"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+			})
+			probeReq, _ := http.NewRequestWithContext(ctx, "POST", baseURL+"/chat/completions", bytes.NewReader(probeBody))
+			probeReq.Header.Set("Authorization", "Bearer "+ke.key)
+			probeReq.Header.Set("Content-Type", "application/json")
+			probeResp, err := client.Do(probeReq)
+			if err != nil {
+				failReason = ke.alias + ": probe request failed"
+				keysFailed++
+				continue
+			}
+			io.Copy(io.Discard, probeResp.Body)
+			probeResp.Body.Close()
+			latencyMS = float64(time.Since(reqStart).Milliseconds())
 
-				if probeResp.StatusCode == 200 {
-					healthy = true
-					failReason = ""
-					keyOK = true
-					break
-				}
-				if probeResp.StatusCode == 401 || probeResp.StatusCode == 403 {
-					break // key is invalid, stop trying models for this key
-				}
+			if probeResp.StatusCode == 200 {
+				healthy = true
+				failReason = ""
+				keyOK = true
+			} else if probeResp.StatusCode == 429 {
+				// Rate-limited means the key is valid and the upstream is up;
+				// do not burn further probes or mark it failed.
+				healthy = true
+				failReason = ""
+				keyOK = true
 			}
 
 			if !keyOK {
-				failReason = ke.alias + ": all models failed"
+				failReason = ke.alias + ": probe failed"
 				keysFailed++
 			}
 		}

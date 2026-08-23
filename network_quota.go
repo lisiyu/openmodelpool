@@ -275,6 +275,15 @@ func CalculateGlobalPoolQuota() int64 {
 	globalPool.mu.RLock()
 	defer globalPool.mu.RUnlock()
 
+	return calculateGlobalPoolQuotaLocked()
+}
+
+// calculateGlobalPoolQuotaLocked is the lock-free core of CalculateGlobalPoolQuota.
+// B10-V2: the public entry used to be called from CalculateNodeGlobalPoolShare
+// while that function already held globalPool.mu.RLock — a recursive RLock that
+// deadlocks as soon as a writer queues between the two acquisitions.
+// Caller must hold globalPool.mu.
+func calculateGlobalPoolQuotaLocked() int64 {
 	available := globalPool.AvailableQuota
 	if available <= 0 {
 		return 0
@@ -310,7 +319,9 @@ func CalculateNodeGlobalPoolShare(nodeID string) int64 {
 		return 0
 	}
 
-	totalQuota := CalculateGlobalPoolQuota()
+	// B10-V2: use the Locked variant — the public one re-acquired the same
+	// RLock we already hold here (deadlock under writer contention).
+	totalQuota := calculateGlobalPoolQuotaLocked()
 	share := float64(nodeContrib) / float64(globalPool.TotalContributed) * float64(totalQuota)
 	return int64(share)
 }

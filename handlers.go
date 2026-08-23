@@ -709,17 +709,38 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// and falling back to local handling would be charged twice against the
 	// same per-IP cap, and a contributor drawing on its own entitlement would
 	// still be throttled at the anonymous rate.
-	if keyType == "public" && publicQuota != nil && r.Header.Get(headerQuotaCharged) == "" {
+	//
+	// B10-V1: the old unconditional Adjust(reserved, 0) refunded EVERY public
+	// request, making the four-layer public-key quota a no-op (RecordUsage has
+	// no production callers). Mirror the B8-1b guest-key settlement: stream /
+	// unknown usage keeps the reservation, non-stream success charges real
+	// tokens, total failure refunds. When the network gateway pre-reserved and
+	// handed the request to us (marker set + handoff in context), we only
+	// report the outcome — the gateway owns the final AdjustQuota call.
+	var (
+		pqDirect    bool
+		pqClientIP  string
+		pqModel     string
+		pqReserved  int64
+		pqActual    int64 // 0 refunds; pqReserved keeps the estimate
+		pqAdopted   *pqHandoff
+	)
+	if keyType == "public" && publicQuota != nil {
 		clientIP := extractClientIP(r.RemoteAddr)
 		estTokens := int64(4096)
 		if req.MaxTokens != nil && *req.MaxTokens > 0 {
 			estTokens = int64(*req.MaxTokens)
 		}
-		if ok, reason, _ := publicQuota.ReserveQuota(clientIP, model, estTokens); !ok {
-			writeError(w, 429, fmt.Sprintf("public free pool quota exceeded: %s", reason))
-			return
+		if h := pqHandoffFromContext(r.Context()); h != nil && r.Header.Get(headerQuotaCharged) != "" {
+			pqAdopted = h
+		} else if r.Header.Get(headerQuotaCharged) == "" {
+			if ok, reason, _ := publicQuota.ReserveQuota(clientIP, model, estTokens); !ok {
+				writeError(w, 429, fmt.Sprintf("public free pool quota exceeded: %s", reason))
+				return
+			}
+			pqDirect, pqClientIP, pqModel, pqReserved = true, clientIP, model, estTokens
+			defer publicQuota.AdjustQuota(pqClientIP, pqModel, pqReserved, pqActual)
 		}
-		defer publicQuota.AdjustQuota(clientIP, model, estTokens, 0)
 	}
 
 	// D-4: Per-Key local quota check for Guest Keys
@@ -838,9 +859,15 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			DecrConn(p.ID, accessType)
 			if err == nil {
 				recordProviderSuccess(p.ID) // B7-3
-				// B8-1b: stream succeeded — usage unknown, keep the reservation
+				// B8-1b/B10-V1: stream succeeded — usage unknown, keep the reservation
 				if gkSettled {
 					gkActual = gkReserved
+				}
+				if pqDirect {
+					pqActual = pqReserved
+				}
+				if pqAdopted != nil {
+					pqAdopted.settle(pqAdopted.reserved)
 				}
 				if consumerID != "" {
 					multiUser.RecordConsumerUsage(consumerID, 0)
@@ -850,9 +877,15 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			// If data was already sent to client, cannot retry with another provider
 			if dataSent {
 				slog.Error("stream failed after data sent", "provider", p.Name, "error", err)
-				// B8-1b: partial response delivered — count the estimate
+				// B8-1b/B10-V1: partial response delivered — count the estimate
 				if gkSettled {
 					gkActual = gkReserved
+				}
+				if pqDirect {
+					pqActual = pqReserved
+				}
+				if pqAdopted != nil {
+					pqAdopted.settle(pqAdopted.reserved)
 				}
 				return
 			}
@@ -887,9 +920,15 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				compTok = resp.Usage.CompletionTokens
 			}
 			recordProviderSuccess(p.ID) // B7-3
-			// B8-1b: non-stream success — charge the real token count
+			// B8-1b/B10-V1: non-stream success — charge the real token count
 			if gkSettled {
 				gkActual = int64(promptTok + compTok)
+			}
+			if pqDirect {
+				pqActual = int64(promptTok + compTok)
+			}
+			if pqAdopted != nil {
+				pqAdopted.settle(int64(promptTok + compTok))
 			}
 			tracker.RecordWithOwner(p.ID, p.Name, model, promptTok, compTok, latencyMS, true, "", false, 0, accessType, consumerID)
 			if consumerID != "" {
@@ -901,6 +940,11 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if lastErr != nil && isRateLimitError(lastErr) {
+		// B10-V1: total failure — refund an adopted reservation (direct path
+		// refunds via pqActual staying 0).
+		if pqAdopted != nil {
+			pqAdopted.settle(0)
+		}
 		// Rate-limited upstream: surface 429 so the client knows to back off
 		// and retry later (instead of a generic 502).
 		writeError(w, 429, "上游限流，请稍后重试 (rate limited)")
@@ -910,6 +954,9 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// B7-b: lastErr can embed upstream internals (URLs, account ids, provider
 	// responses). Full detail is already in the logs per-provider above; give
 	// clients a generic reason so public/guest consumers learn nothing.
+	if pqAdopted != nil {
+		pqAdopted.settle(0)
+	}
 	writeError(w, 502, "all providers failed, please retry later")
 }
 

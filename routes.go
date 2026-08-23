@@ -267,6 +267,9 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/network/guest-keys", withAuth(handleGuestKeyIssue))
 	mux.HandleFunc("GET /api/network/guest-keys", withAuth(handleGuestKeyList))
 	mux.HandleFunc("DELETE /api/network/guest-keys/{key}", withAuth(handleGuestKeyRevoke))
+	mux.HandleFunc("DELETE /api/network/guest-keys/{key}/permanent", withAuth(handleGuestKeyDelete))       // B10-U2: was dead — UI button 404'd
+	mux.HandleFunc("POST /api/network/guest-keys/{key}/mark-collaborator", withAuth(handleGuestKeyMarkCollaborator)) // B10-U2: was dead
+	mux.HandleFunc("POST /api/network/guest-keys/{key}/share-type", withAuth(handleGuestKeyShareType))    // B10-U2: was dead
 	mux.HandleFunc("POST /api/network/keys/validate", rateLimitByIP(30, "key_validate")(handleNetworkKeyValidate))
 	mux.HandleFunc("PUT /api/network/guest-keys/{key}/quota", withAuth(handleGuestKeyUpdateQuota))
 

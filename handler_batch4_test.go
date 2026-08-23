@@ -1310,9 +1310,21 @@ func TestHB4_HandleBrowserLoginFinish_NoSession(t *testing.T) {
 
 func TestHB4_HandleBrowserLoginCancel_NoSession(t *testing.T) {
 	setupTestEnv(t)
+	// B10-V4: a nonexistent provider now 404s at the ownership gate instead
+	// of returning the old idempotent 200.
 	req := httptest.NewRequest("POST", "/api/providers/nonexistent/browser-login/cancel", nil)
 	req.SetPathValue("id", "nonexistent")
 	w := httptest.NewRecorder()
+	handleBrowserLoginCancel(w, req)
+	if w.Code != 404 {
+		t.Errorf("expected 404 for nonexistent provider, got %d", w.Code)
+	}
+
+	// Existing provider, no active session: cancel stays idempotent (200).
+	pm.Add(Provider{ID: "bl-cancel", Name: "BL Cancel", BaseURL: "https://bl.example.com"})
+	req = httptest.NewRequest("POST", "/api/providers/bl-cancel/browser-login/cancel", nil)
+	req.SetPathValue("id", "bl-cancel")
+	w = httptest.NewRecorder()
 	handleBrowserLoginCancel(w, req)
 	if w.Code != 200 {
 		t.Errorf("expected 200 (idempotent), got %d", w.Code)

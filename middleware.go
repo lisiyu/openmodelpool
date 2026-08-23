@@ -149,6 +149,38 @@ func relayGuestKey(r *http.Request) string {
 	return ""
 }
 
+// B10-V1: pqHandoff carries a public-quota reservation made by the network
+// gateway into the local handler that actually serves the request, so the
+// completion path can charge real usage instead of the blind full refund that
+// made the four-layer quota a no-op. The gateway owns the single final
+// AdjustQuota call; the handler only reports outcomes via settle.
+type pqHandoff struct {
+	clientIP string
+	model    string
+	reserved int64
+	actual   int64
+	settled  bool
+}
+
+func (h *pqHandoff) settle(actual int64) {
+	if h == nil || h.settled { // first settlement wins; later calls are no-ops
+		return
+	}
+	h.actual = actual
+	h.settled = true
+}
+
+type pqHandoffCtxKey struct{}
+
+func withPQHandoff(r *http.Request, h *pqHandoff) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), pqHandoffCtxKey{}, h))
+}
+
+func pqHandoffFromContext(ctx context.Context) *pqHandoff {
+	h, _ := ctx.Value(pqHandoffCtxKey{}).(*pqHandoff)
+	return h
+}
+
 // stripInternalHeadersMiddleware removes client-supplied internal headers that
 // must never be trusted from the wire (SEC-P0-2). It runs before every handler
 // so that a forged X-OMP-KeyType can never reach RequestKeyType. Our own relay

@@ -1849,6 +1849,17 @@ async function autoSaveForBrowserLogin(pid) {
 // === 本机浏览器登录 (Client Browser Login) ===
 let clientLoginPollTimer = null;
 
+// B10-BL8: this helper was referenced by openProviderLogin/startClientLoginPoll/
+// saveManualToken/generateBookmarklet but never defined, so every one of those
+// calls threw a ReferenceError and the entire client-browser-login section was
+// dead. Resolution order: the id of the provider currently being edited, then
+// the hidden form field populated by editProvider.
+function getCurrentProviderId() {
+  if (typeof editingId !== 'undefined' && editingId) return editingId;
+  const el = document.getElementById('pProviderId');
+  return el ? el.value.trim() : '';
+}
+
 function toggleClientLogin() {
   const body = document.getElementById('clientLoginBody');
   const arrow = document.getElementById('clientLoginArrow');
@@ -1861,7 +1872,26 @@ function toggleClientLogin() {
 function generateBookmarklet() {
   const ompUrl = window.location.origin;
   const providerId = document.getElementById('pProviderId')?.value || getCurrentProviderId();
-  // Bookmarklet: extract token from current page cookie and POST to OMP
+  // B10-BL9: the bookmarklet used to read the admin token from
+  // localStorage('omp_admin_token') — which (a) the server never recognized
+  // (auth is Authorization: Bearer) and (b) is always EMPTY on a third-party
+  // origin, so every save attempt failed with 401. Embed the real admin token
+  // at generation time instead.
+  const tok = (typeof authToken !== 'undefined' && authToken) || localStorage.getItem('admin_token') || '';
+  if (!tok) {
+    toast('登录状态已失效，请刷新页面重新登录后再生成书签', 'error');
+    return;
+  }
+  if (!providerId) {
+    toast('请先保存平台以获得 ID，再生成书签', 'error');
+    return;
+  }
+  const tokLit = JSON.stringify(tok);
+  const pidLit = JSON.stringify(providerId);
+  // Bookmarklet: extract token from current page cookie and POST to OMP.
+  // B10-BL12: cookies go under web_session.extra_cookies — the old top-level
+  // "extra_cookies" key does not exist on the Provider struct and was dropped
+  // server-side.
   const bmCode = `(function(){
     var t='',c=document.cookie.split('; ');
     for(var i=0;i<c.length;i++){
@@ -1874,13 +1904,13 @@ function generateBookmarklet() {
     if(!t){alert('未找到 Token，请先登录');return;}
     if(t.startsWith('Bearer%20'))t=t.replace('Bearer%20','');
     if(t.startsWith('Bearer '))t=t.replace('Bearer ','');
-    fetch('${ompUrl}/api/providers/'+encodeURIComponent('${providerId}'),{
+    fetch(${JSON.stringify(ompUrl)}+'/api/providers/'+encodeURIComponent(${pidLit}),{
       method:'PUT',
-      headers:{'Content-Type':'application/json','X-Admin-Token':localStorage.getItem('omp_admin_token')||''},
-      body:JSON.stringify({api_key:t,extra_cookies:'token=Bearer%20'+t+'; refresh_token=discard'})
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+${tokLit}},
+      body:JSON.stringify({api_key:t,web_session:{extra_cookies:'token=Bearer%20'+t+'; refresh_token=discard'}})
     }).then(function(r){return r.json()}).then(function(d){
       if(d.success)alert('Token 已自动保存！');
-      else alert('保存失败: '+(d.error||'未知错误'));
+      else alert('保存失败: '+((d.error&&d.error.message)||d.error||'未知错误'));
     }).catch(function(e){alert('请求失败: '+e.message);});
   })();`;
   const bookmarkletUrl = 'javascript:' + encodeURIComponent(bmCode);
@@ -1888,14 +1918,30 @@ function generateBookmarklet() {
   if (link) link.href = bookmarkletUrl;
 }
 
-function openProviderLogin() {
-  const pid = getCurrentProviderId();
-  const urls = {
+// B10-BL10: prefer the platform's own login URL over the stale hardcoded map —
+// the old fallback 'https://'+pid+'.com' sent e.g. Coze admins to coze.com
+// (wrong TLD/domain) and every unknown id to a random *.com site.
+function resolveProviderLoginURL(pid) {
+  const custom = document.getElementById('pLoginUrl')?.value.trim();
+  if (custom) return custom;
+  const base = document.getElementById('pUrl')?.value.trim();
+  if (base && base.startsWith('http')) return base;
+  const curated = {
     'sider': 'https://sider.ai',
     'poe': 'https://poe.com/login',
     'anthropic': 'https://console.anthropic.com/login',
+    'coze': 'https://www.coze.cn',
   };
-  const url = urls[pid] || 'https://' + pid + '.com';
+  return curated[pid] || '';
+}
+
+function openProviderLogin() {
+  const pid = getCurrentProviderId();
+  const url = resolveProviderLoginURL(pid);
+  if (!url) {
+    toast('请先在表单中填写登录 URL 或 Base URL', 'error');
+    return;
+  }
   window.open(url, '_blank');
   // Start polling for token update
   startClientLoginPoll();
@@ -1948,7 +1994,7 @@ async function saveManualToken() {
       method: 'PUT',
       body: JSON.stringify({
         api_key: token,
-        extra_cookies: 'token=Bearer%20' + token + '; refresh_token=discard'
+        web_session: { extra_cookies: 'token=Bearer%20' + token + '; refresh_token=discard' }
       })
     });
     const d = await r.json();

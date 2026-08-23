@@ -274,7 +274,7 @@ body {
         <label class="form-label">新密码</label>
         <div class="input-wrapper">
           <input type="password" class="form-input" id="inputNewPassword"
-                 placeholder="至少 6 位" autocomplete="new-password" required>
+                 placeholder="至少12位，含大小写字母、数字和符号" autocomplete="new-password" required>
           <button type="button" class="toggle-password" onclick="toggleNewPwd()">👁️</button>
         </div>
       </div>
@@ -315,7 +315,7 @@ body {
         <label class="form-label">密码</label>
         <div class="input-wrapper">
           <input type="password" class="form-input" id="inputCollabPassword"
-                 placeholder="至少 6 位" autocomplete="new-password" required>
+                 placeholder="至少12位，含大小写字母、数字和符号" autocomplete="new-password" required>
           <button type="button" class="toggle-password" onclick="toggleCollabPwd()">👁️</button>
         </div>
       </div>
@@ -489,6 +489,23 @@ async function handleForgot() {
   }
 }
 
+// B10-U1: mirrors backend validatePasswordStrength (12+ chars, all four classes).
+function validatePasswordPolicy(pwd, onError) {
+  if (pwd.length < 12) {
+    onError('密码至少需要12位字符');
+    return false;
+  }
+  const hasNum = /\d/.test(pwd);
+  const hasLower = /[a-z]/.test(pwd);
+  const hasUpper = /[A-Z]/.test(pwd);
+  const hasSpecial = /[^a-zA-Z0-9]/.test(pwd);
+  if (!(hasNum && hasLower && hasUpper && hasSpecial)) {
+    onError('密码必须同时包含大写字母、小写字母、数字和特殊字符');
+    return false;
+  }
+  return true;
+}
+
 function toggleNewPwd() {
   const input = document.getElementById('inputNewPassword');
   const btn = event.target;
@@ -505,8 +522,7 @@ async function handleReset() {
     showResetError('请填写重置码和新密码');
     return;
   }
-  if (newPwd.length < 6) {
-    showResetError('密码至少 6 位');
+  if (!validatePasswordPolicy(newPwd, showResetError)) {
     return;
   }
   if (newPwd !== confirmPwd) {
@@ -615,7 +631,7 @@ async function handleCollaborateRegister() {
   hideCollaborateError();
 
   if (!username) { showCollaborateError('请填写用户名'); return; }
-  if (password.length < 6) { showCollaborateError('密码至少 6 位'); return; }
+  if (!validatePasswordPolicy(password, showCollaborateError)) { return; }
   if (password !== confirmPwd) { showCollaborateError('两次输入的密码不一致'); return; }
 
   const btn = document.getElementById('btnRegister');

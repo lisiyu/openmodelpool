@@ -228,7 +228,7 @@ body {
         <label class="form-label">设置密码</label>
         <div class="input-wrapper">
           <input type="password" class="form-input" id="inputPassword"
-                 placeholder="至少6位字符" autocomplete="new-password" required>
+                 placeholder="至少12位，含大小写字母、数字和符号" autocomplete="new-password" required>
           <button type="button" class="toggle-password" onclick="togglePwd('inputPassword', this)">👁️</button>
         </div>
         <div class="password-hint" id="pwdHint"></div>
@@ -269,37 +269,48 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-// Password strength hint
+// Password strength hint (B10-U1: mirrors backend validatePasswordStrength —
+// 12+ chars with all four character classes)
 document.getElementById('inputPassword').addEventListener('input', function() {
   const pwd = this.value;
   const hint = document.getElementById('pwdHint');
   if (!pwd) { hint.textContent = ''; hint.className = 'password-hint'; return; }
-  if (pwd.length < 6) {
-    hint.textContent = '密码至少需要6位字符';
+  const hasNum = /\d/.test(pwd);
+  const hasLower = /[a-z]/.test(pwd);
+  const hasUpper = /[A-Z]/.test(pwd);
+  const hasSpecial = /[^a-zA-Z0-9]/.test(pwd);
+  if (pwd.length < 12) {
+    hint.textContent = '密码至少需要12位字符';
     hint.className = 'password-hint error';
-  } else if (pwd.length < 8) {
-    hint.textContent = '密码强度：一般';
-    hint.className = 'password-hint';
+  } else if (!(hasNum && hasLower && hasUpper && hasSpecial)) {
+    hint.textContent = '密码必须同时包含大写字母、小写字母、数字和特殊字符';
+    hint.className = 'password-hint error';
   } else {
-    const hasNum = /\d/.test(pwd);
-    const hasLetter = /[a-zA-Z]/.test(pwd);
-    const hasSpecial = /[^a-zA-Z0-9]/.test(pwd);
-    if (hasNum && hasLetter && hasSpecial) {
-      hint.textContent = '密码强度：强 ✓';
-      hint.className = 'password-hint';
-      hint.style.color = 'var(--success)';
-    } else if (hasNum && hasLetter) {
-      hint.textContent = '密码强度：中等';
-      hint.className = 'password-hint';
-    } else {
-      hint.textContent = '建议混合使用字母、数字和特殊字符';
-      hint.className = 'password-hint';
-    }
+    hint.textContent = '密码强度：强 ✓';
+    hint.className = 'password-hint';
+    hint.style.color = 'var(--success)';
   }
 });
 
-function togglePwd(inputId, btn) {
-  const input = document.getElementById(inputId);
+// B10-U1: single source of truth for the client-side password policy check —
+// mirrors backend validatePasswordStrength (12+ chars, all four classes).
+function validatePasswordPolicy(pwd, onError) {
+  if (pwd.length < 12) {
+    onError('密码至少需要12位字符');
+    return false;
+  }
+  const hasNum = /\d/.test(pwd);
+  const hasLower = /[a-z]/.test(pwd);
+  const hasUpper = /[A-Z]/.test(pwd);
+  const hasSpecial = /[^a-zA-Z0-9]/.test(pwd);
+  if (!(hasNum && hasLower && hasUpper && hasSpecial)) {
+    onError('密码必须同时包含大写字母、小写字母、数字和特殊字符');
+    return false;
+  }
+  return true;
+}
+
+function togglePwd(inputId, btn) {  const input = document.getElementById(inputId);
   if (input.type === 'password') {
     input.type = 'text';
     btn.textContent = '🙈';
@@ -321,8 +332,7 @@ async function handleSetup(e) {
     showToast('请填写用户名和密码', 'error');
     return;
   }
-  if (password.length < 6) {
-    showToast('密码长度至少6位', 'error');
+  if (!validatePasswordPolicy(password, (msg) => showToast(msg, 'error'))) {
     return;
   }
   if (password !== confirm) {

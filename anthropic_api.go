@@ -176,6 +176,11 @@ type anthropicResponseWriter struct {
 	streamStarted bool
 	buf           bytes.Buffer
 	model         string
+	// B10-U3: last usage seen in the OpenAI chunk stream, propagated into the
+	// Anthropic message_delta instead of the hardcoded zeros that made every
+	// streaming response report 0 output tokens.
+	lastPromptTokens   int
+	lastCompletionTok  int
 }
 
 func (w *anthropicResponseWriter) Header() http.Header {
@@ -231,6 +236,9 @@ func (w *anthropicResponseWriter) writeStreaming(data []byte) (int, error) {
 				"model":         w.model,
 				"stop_reason":   nil,
 				"stop_sequence": nil,
+				// B10-U3: input_tokens stays 0 here — OpenAI streams report
+				// prompt usage only on later chunks; the real value surfaces in
+				// message_delta's usage once seen.
 				"usage": map[string]int{
 					"input_tokens":  0,
 					"output_tokens": 0,
@@ -266,7 +274,8 @@ func (w *anthropicResponseWriter) writeStreaming(data []byte) (int, error) {
 				"type":  "content_block_stop",
 				"index": 0,
 			})
-			// message_delta
+			// message_delta — B10-U3: propagate real usage (0 only when the
+			// upstream genuinely never reported any).
 			w.writeSSE("message_delta", map[string]any{
 				"type": "message_delta",
 				"delta": map[string]any{
@@ -274,7 +283,7 @@ func (w *anthropicResponseWriter) writeStreaming(data []byte) (int, error) {
 					"stop_sequence": nil,
 				},
 				"usage": map[string]int{
-					"output_tokens": 0,
+					"output_tokens": w.lastCompletionTok,
 				},
 			})
 			// message_stop
@@ -292,9 +301,23 @@ func (w *anthropicResponseWriter) writeStreaming(data []byte) (int, error) {
 				} `json:"delta"`
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
+			// B10-U3: OpenAI emits usage on the final chunk when
+			// stream_options.include_usage is set (and some providers always do).
+			Usage *struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+			} `json:"usage"`
 		}
 		if json.Unmarshal([]byte(dataStr), &chunk) != nil {
 			continue
+		}
+		if chunk.Usage != nil {
+			if chunk.Usage.PromptTokens > 0 {
+				w.lastPromptTokens = chunk.Usage.PromptTokens
+			}
+			if chunk.Usage.CompletionTokens > 0 {
+				w.lastCompletionTok = chunk.Usage.CompletionTokens
+			}
 		}
 
 		for _, choice := range chunk.Choices {

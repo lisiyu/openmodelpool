@@ -1015,6 +1015,15 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			reservedQuota = estimatedTokens
+			// B10-V1: hand the reservation to the local handler so completion
+			// can charge real usage. actual starts at the estimate — if nothing
+			// settles it (non-chat endpoints, handler changes), the estimate
+			// stands instead of silently refunding.
+			pq := &pqHandoff{clientIP: clientIP, model: model, reserved: reservedQuota, actual: reservedQuota}
+			r = withPQHandoff(r, pq)
+			defer func() {
+				publicQuota.AdjustQuota(pq.clientIP, pq.model, pq.reserved, pq.actual)
+			}()
 			w.Header().Set(headerQuotaSource, quotaSourceCommunity)
 			r.Header.Set(headerQuotaCharged, quotaSourceCommunity)
 		}
@@ -1029,13 +1038,8 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	// If no node found or route table is empty, fallback to local handling
 	if bestNode == nil {
 		slog.Debug("gateway: no suitable node found, falling back to local", "model", model)
-		if keyType == KeyTypePublic && reservedQuota > 0 && publicQuota != nil {
-			clientIP := ""
-			if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-				clientIP = ip
-			}
-			defer publicQuota.AdjustQuota(clientIP, model, reservedQuota, 0)
-		}
+		// B10-V1: settlement now flows through the pqHandoff — the deferred
+		// AdjustQuota above reads the outcome reported by the local handler.
 		handleGatewayFallback(w, r, bodyBytes, model, stream)
 		return
 	}
@@ -1047,13 +1051,6 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if bestNode.NodeID == selfID {
 		slog.Debug("gateway: best node is self, handling locally", "model", model, "node_id", selfID)
-		if keyType == KeyTypePublic && reservedQuota > 0 && publicQuota != nil {
-			clientIP := ""
-			if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-				clientIP = ip
-			}
-			defer publicQuota.AdjustQuota(clientIP, model, reservedQuota, 0)
-		}
 		handleGatewayFallback(w, r, bodyBytes, model, stream)
 		return
 	}
@@ -1061,15 +1058,8 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 	// Forward to the selected remote node
 	slog.Info("gateway: routing request", "model", model, "target_node", bestNode.NodeID, "stream", stream, "hop", hopCount+1)
 
-	// Adjust quota after remote request (estimated=reservedQuota, actual=0 for remote — will be corrected)
-	if keyType == KeyTypePublic && reservedQuota > 0 && publicQuota != nil {
-		clientIP := ""
-		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			clientIP = ip
-		}
-		defer publicQuota.AdjustQuota(clientIP, model, reservedQuota, reservedQuota/2)
-	}
-
+	// B10-V1: the remote node does its own usage accounting; locally we only
+	// know the estimate, so keep it (was an arbitrary half-charge).
 	gatewayForwardToRemote(w, r, bestNode, bodyBytes, hopCount, stream, model)
 }
 

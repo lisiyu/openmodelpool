@@ -368,7 +368,7 @@ select.form-input{appearance:none;cursor:pointer}
 
   <!-- URL 导航栏 -->
   <div style="display:flex;gap:8px;margin-bottom:12px">
-    <input type="text" id="browserNavUrl" class="form-input" placeholder="输入网址，如 https://sider.ai" style="flex:1;font-size:13px" value="https://sider.ai" />
+    <input type="text" id="browserNavUrl" class="form-input" placeholder="正在读取平台登录地址..." style="flex:1;font-size:13px" value="" />
     <button class="btn btn-primary btn-sm" onclick="browserNavigate()" style="white-space:nowrap">前往</button>
     <button class="btn btn-sm" onclick="browserAction('screenshot')" style="white-space:nowrap">🔄 刷新</button>
   </div>
@@ -389,7 +389,7 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
         <div style="display:flex;gap:8px;flex-shrink:0">
           <button class="btn btn-sm" onclick="browserLoginFinish()" style="background:#34c759;color:#fff;font-weight:600;padding:8px 18px">✓ 保存Cookie</button>
-          <a href="/admin" class="btn btn-sm" style="display:inline-flex;align-items:center;text-decoration:none;padding:8px 14px" onclick="if(window.parent&&window.parent.closeSubPage){window.parent.closeSubPage();return false;}">取消</a>
+          <a href="/admin" class="btn btn-sm" style="display:inline-flex;align-items:center;text-decoration:none;padding:8px 14px" onclick="browserLoginCancel();return false;">取消</a>
         </div>
       </div>
     </div>
@@ -410,17 +410,41 @@ select.form-input{appearance:none;cursor:pointer}
 
 var browserLoginProviderId = getQueryParam('id');
 var browserLoginPolling = null;
+var sessionFlowStarted = false;
 
-// Page load: auto-start browser login
-window.addEventListener('load', function() {
-  if (!browserLoginProviderId) {
-    document.getElementById('browserLoginStatus').textContent = '错误: 缺少 Provider ID 参数';
-    return;
-  }
+function stopBrowserLoginPolling() {
+  if (browserLoginPolling) { clearInterval(browserLoginPolling); browserLoginPolling = null; }
+}
+
+// B10-BL5: the sub-page lives inside a reused iframe in admin.html — when the
+// modal is closed the iframe keeps running (by design, for instant reopen),
+// so the parent notifies us via these hooks to pause/resume status polling.
+// Without them a hidden page polled forever and burned sessions.
+window.onSubPageHidden = function() { stopBrowserLoginPolling(); };
+window.onSubPageShown = function() {
+  if (!sessionFlowStarted || !browserLoginProviderId) return;
+  if (browserLoginPolling) return;
+  // Re-sync once: the server auto-resumes live sessions on /start, and clears
+  // terminal ones so a fresh launch can proceed.
+  startBrowserLoginSession();
+};
+
+// Resolve the default navigation URL from the provider's own config.
+// B10-BL4: this used to be hardcoded to https://sider.ai for every provider,
+// which sent e.g. Coze admins to Sider's site. Preference order:
+// web_session.login_url → base_url → blank (admin types it manually).
+function applyProviderNavURL(p) {
+  var url = '';
+  if (p && p.web_session && p.web_session.login_url) url = p.web_session.login_url;
+  else if (p && p.base_url) url = p.base_url;
+  var input = document.getElementById('browserNavUrl');
+  if (url) { input.value = url; input.placeholder = '输入网址，如 ' + url; }
+  else { input.value = ''; input.placeholder = '输入网址，如 https://example.com'; }
+}
+
+function startBrowserLoginSession() {
   document.getElementById('browserScreenshot').src = '';
-  document.getElementById('browserLoginStatus').textContent = '正在启动浏览器...';
   document.getElementById('browserCurrentURL').textContent = '';
-  document.getElementById('browserNavUrl').value = 'https://sider.ai';
   fetch('/api/providers/' + browserLoginProviderId + '/browser-login/start', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + authToken }
@@ -429,10 +453,42 @@ window.addEventListener('load', function() {
       document.getElementById('browserLoginStatus').textContent = '错误: ' + (data.error.message || data.error);
       return;
     }
+    document.getElementById('browserLoginStatus').textContent = data.message || '正在启动浏览器...';
     startBrowserLoginPolling();
   }).catch(err => {
     document.getElementById('browserLoginStatus').textContent = '请求失败: ' + (err.message || err);
   });
+}
+
+// Page load: resolve provider config, then auto-start browser login
+window.addEventListener('load', function() {
+  if (!browserLoginProviderId) {
+    document.getElementById('browserLoginStatus').textContent = '错误: 缺少 Provider ID 参数';
+    return;
+  }
+  document.getElementById('browserLoginStatus').textContent = '正在启动浏览器...';
+  // Fetch provider config first so the nav bar starts on THIS platform's login
+  // page instead of a hardcoded default; then launch the browser session.
+  authFetch('/api/providers/' + encodeURIComponent(browserLoginProviderId))
+    .then(r => r.json())
+    .then(p => {
+      applyProviderNavURL(p);
+      if (p && p.type && p.type !== 'web_session' && !(p.web_session && p.web_session.login_url)) {
+        document.getElementById('browserLoginStatus').textContent =
+          '提示: 该平台类型为「' + p.type + '」（API 模式），通常无需浏览器 Cookie 登录；如确需网页登录，请先在编辑页切换为 Web 会话模式并配置登录 URL。';
+        toast('该平台不是 Web 会话模式，已跳过自动启动', 'error');
+        return;
+      }
+      sessionFlowStarted = true;
+      startBrowserLoginSession();
+    })
+    .catch(function(err) {
+      // Config fetch failed (e.g. older build without the GET route) — still
+      // start the session; admin navigates manually.
+      applyProviderNavURL(null);
+      sessionFlowStarted = true;
+      startBrowserLoginSession();
+    });
 });
 
 function startBrowserLoginPolling() {

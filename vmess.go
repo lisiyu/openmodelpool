@@ -100,7 +100,8 @@ func ParseVMessLink(link string) (*VMessConfig, error) {
 	if config.Add == "" || config.ID == "" || config.Port == "" {
 		return nil, fmt.Errorf("vmess link missing required fields (add/id/port)")
 	}
-	if isPrivateHost(net.JoinHostPort(config.Add, config.Port)) {
+	// B10-P1: cached — ResolveProxy runs per request on the hot path.
+	if cachedIsPrivateHost(net.JoinHostPort(config.Add, config.Port)) {
 		return nil, fmt.Errorf("vmess address resolves to private/loopback IP: %s", config.Add)
 	}
 	return &config, nil

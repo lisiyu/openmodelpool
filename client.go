@@ -28,8 +28,11 @@ import (
 
 // sharedTransport is a connection-pooled transport for all proxy requests.
 var sharedTransport = &http.Transport{
-	MaxIdleConns:        100,
-	MaxIdleConnsPerHost: 10,
+	// B10-P4: raised from 100/10 — with many concurrent streams through a
+	// handful of provider hosts, MaxIdleConnsPerHost=10 kept tearing down and
+	// re-handshaking TLS connections under load.
+	MaxIdleConns:        512,
+	MaxIdleConnsPerHost: 100,
 	IdleConnTimeout:     90 * time.Second,
 	DisableCompression:  false,
 	TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12},
@@ -111,7 +114,8 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 	}
 
 	if proxy == "" {
-		if !allowLocalProviderForTest && isPrivateHost(p.BaseURL) {
+		// B10-P1: cached — this runs on every forwarded request.
+		if !allowLocalProviderForTest && cachedIsPrivateHost(p.BaseURL) {
 			// SEC-SSRF-1: a provider BaseURL that resolves to a private/loopback
 			// address (or cannot be resolved — fail-closed) must NOT be dialed.
 			// Previously this only logged a warning and returned a *working*
@@ -236,6 +240,56 @@ func isPrivateHost(host string) bool {
 		}
 	}
 	return false
+}
+
+// B10-P1: per-host memoization of isPrivateHost results. The proxy hot path
+// re-resolved DNS on every forwarded request, adding a blocking LookupHost to
+// each upstream call. Results are cached briefly; the cache is bounded so a
+// large set of distinct hostnames cannot grow it without limit.
+type dnsCacheEntry struct {
+	private bool
+	expires time.Time
+}
+
+const (
+	dnsCacheTTL     = 5 * time.Minute
+	dnsCacheMaxSize = 4096
+)
+
+var (
+	dnsCacheMu sync.Mutex
+	dnsCache   = make(map[string]dnsCacheEntry)
+)
+
+// cachedIsPrivateHost is isPrivateHost with a short-lived result cache.
+// Security semantics are unchanged: entries expire quickly and fail-closed
+// results are cached exactly like allow results, so a hostname that starts
+// resolving privately is still blocked within at most one TTL window.
+func cachedIsPrivateHost(host string) bool {
+	key := strings.TrimSpace(host)
+	if key == "" {
+		return true
+	}
+	now := time.Now()
+	dnsCacheMu.Lock()
+	if e, ok := dnsCache[key]; ok && now.Before(e.expires) {
+		v := e.private
+		dnsCacheMu.Unlock()
+		return v
+	}
+	dnsCacheMu.Unlock()
+
+	result := isPrivateHost(host)
+
+	dnsCacheMu.Lock()
+	if len(dnsCache) >= dnsCacheMaxSize {
+		// Cheap bound: reset rather than track LRU — at worst one lookup storm
+		// repopulates the cache.
+		dnsCache = make(map[string]dnsCacheEntry)
+	}
+	dnsCache[key] = dnsCacheEntry{private: result, expires: now.Add(dnsCacheTTL)}
+	dnsCacheMu.Unlock()
+	return result
 }
 
 // isCGNAT reports whether ip falls in the carrier-grade NAT range
@@ -1906,9 +1960,13 @@ func geminiNonStream(ctx context.Context, p Provider, model string, messages []C
 	}
 
 	body, _ := json.Marshal(payload)
-	endpoint := p.BaseURL + "/v1beta/models/" + url.PathEscape(model) + ":generateContent?key=" + p.APIKey
+	// B10-V3: the API key moved from the query string to the x-goog-api-key
+	// header — a key embedded in the URL leaks into logs via url.Error and
+	// any upstream access logging.
+	endpoint := p.BaseURL + "/v1beta/models/" + url.PathEscape(model) + ":generateContent"
 	req, _ := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", p.APIKey)
 
 	resp, err := proxyHTTPClient(p, 300*time.Second).Do(req)
 	if err != nil {
@@ -1989,9 +2047,11 @@ func geminiStream(ctx context.Context, p Provider, model string, messages []Chat
 	}
 
 	body, _ := json.Marshal(payload)
-	endpoint := p.BaseURL + "/v1beta/models/" + url.PathEscape(model) + ":streamGenerateContent?alt=sse&key=" + p.APIKey
+	// B10-V3: key in header, not query string (see non-stream call site).
+	endpoint := p.BaseURL + "/v1beta/models/" + url.PathEscape(model) + ":streamGenerateContent?alt=sse"
 	req, _ := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", p.APIKey)
 
 	client := proxyHTTPClient(p, 300*time.Second)
 	resp, err := client.Do(req)
