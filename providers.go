@@ -399,6 +399,11 @@ var presetProviders = []Provider{
 	{
 		ID: "coze", Name: "扣子 (Coze)", Type: "coze",
 		BaseURL: "https://api.coze.cn",
+		// B10-WL3: web-login flows (built-in browser nav bar, 打开登录页面,
+		// bookmarklet guide) previously fell back to the API base
+		// (https://api.coze.cn — a bare JSON endpoint) because the preset had
+		// no login URL. The login/consent pages live on www.coze.cn.
+		WebSession: &WebSessionConfig{LoginURL: "https://www.coze.cn/"},
 		Priority: 1,
 		Description: "扣子智能体平台（专有 API，模型为 coze-{bot_id} 格式）。API Key 填写 PAT 个人访问令牌",
 		APIKeyURL:  "https://www.coze.cn",

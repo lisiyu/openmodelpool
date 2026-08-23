@@ -430,13 +430,18 @@ window.onSubPageShown = function() {
 };
 
 // Resolve the default navigation URL from the provider's own config.
-// B10-BL4: this used to be hardcoded to https://sider.ai for every provider,
-// which sent e.g. Coze admins to Sider's site. Preference order:
-// web_session.login_url → base_url → blank (admin types it manually).
+// B10-BL4: this used to be hardcoded to https://sider.ai for every provider.
+// Preference order: web_session.login_url → base_url (with an api.-prefix
+// heuristic — e.g. a Coze provider saved with base https://api.coze.cn and no
+// login URL lands on https://www.coze.cn, not on a bare JSON endpoint) →
+// blank (admin types it manually).
 function applyProviderNavURL(p) {
   var url = '';
   if (p && p.web_session && p.web_session.login_url) url = p.web_session.login_url;
   else if (p && p.base_url) url = p.base_url;
+  if (url && /^https:\/\/api\./i.test(url)) {
+    url = url.replace(/^https:\/\/api\./i, 'https://www.');
+  }
   var input = document.getElementById('browserNavUrl');
   if (url) { input.value = url; input.placeholder = '输入网址，如 ' + url; }
   else { input.value = ''; input.placeholder = '输入网址，如 https://example.com'; }

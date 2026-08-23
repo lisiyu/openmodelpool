@@ -352,10 +352,6 @@ select.form-input{appearance:none;cursor:pointer}
   <input type="hidden" id="pLoginUrl" value="">
   <div id="loginPageStatus" style="display:none"></div>
 
-<input type="hidden" id="pLoginUrl" value="">
-
-<input type="hidden" id="pLoginUrl" value="">
-
     <div id="modalStep1">
       <div class="form-label">选择平台（或选择「自定义平台」）</div>
       <input class="form-input" id="presetSearch" placeholder="搜索平台..." oninput="filterPresets()" style="margin-bottom:12px">
@@ -404,6 +400,7 @@ select.form-input{appearance:none;cursor:pointer}
             <span id="clientLoginArrow" style="margin-left:auto;font-size:10px;color:var(--text-muted);transition:transform .2s">▼</span>
           </div>
           <div id="clientLoginBody" style="display:none;margin-top:14px">
+            <div id="clientLoginTip" style="display:none;font-size:12px;line-height:1.7;padding:10px 12px;border-radius:8px;margin-bottom:12px"></div>
             <div style="font-size:12px;color:var(--text-secondary);line-height:1.8;margin-bottom:12px">
               <b>第一步：</b>将下方蓝色按钮拖到书签栏（仅需一次）<br>
               <div style="margin:10px 0">
@@ -1866,7 +1863,29 @@ function toggleClientLogin() {
   const show = body.style.display === 'none';
   body.style.display = show ? 'block' : 'none';
   arrow.style.transform = show ? 'rotate(180deg)' : 'rotate(0)';
-  if (show) generateBookmarklet();
+  if (show) { updateClientLoginTip(); generateBookmarklet(); }
+}
+
+// B10-WL4: Coze does not expose its API credential as a page cookie — the
+// coze adapter authenticates with a Personal Access Token (PAT) created in
+// the token console. Cookie-scraping (bookmarklet / built-in browser save)
+// can never produce it, so guide PAT users to the right flow instead of
+// letting them hit "未找到 Token".
+function updateClientLoginTip() {
+  const tip = document.getElementById('clientLoginTip');
+  if (!tip) return;
+  const pid = getCurrentProviderId();
+  const preset = typeof presets !== 'undefined' && Array.isArray(presets) ? presets.find(x => x.id === pid) : null;
+  if (preset && preset.type === 'coze') {
+    tip.style.display = 'block';
+    tip.style.background = 'rgba(255,159,10,.1)';
+    tip.innerHTML = '<b>⚠️ 扣子专用说明：</b>扣子使用 <b>PAT 个人访问令牌</b>鉴权，无法通过书签自动抓取。请登录后打开 '
+      + '<a href="https://www.coze.cn/open/oauth/pats" target="_blank" style="color:var(--info)">扣子令牌页面</a>'
+      + ' 创建令牌并复制，然后用下方「手动粘贴 Token」保存。';
+  } else {
+    tip.style.display = 'none';
+    tip.innerHTML = '';
+  }
 }
 
 function generateBookmarklet() {

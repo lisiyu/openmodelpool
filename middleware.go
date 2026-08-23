@@ -61,6 +61,18 @@ func corsMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 		}
 
+		// B10-WL: the client-browser-login bookmarklet executes on arbitrary
+		// provider sites (sider.ai, coze.cn, poe.com, ...) whose origins can
+		// never be enumerated in the whitelist. Grant wildcard CORS ONLY to
+		// the provider-update write path used by the bookmarklet — auth still
+		// requires a valid bearer token, so this exposes nothing to attackers
+		// (they cannot read responses without the token anyway).
+		wantsBookmarkletScope := strings.HasPrefix(r.URL.Path, "/api/providers/") &&
+			(r.Method == http.MethodPut || r.Method == http.MethodOptions)
+		if !originAllowed && origin != "" && wantsBookmarkletScope {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
 		w.Header().Set("Access-Control-Max-Age", "86400") // Cache preflight for 24h

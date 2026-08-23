@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/proxy"
 )
 
 // VMessConfig represents a parsed vmess:// link
@@ -153,23 +158,89 @@ func (m *VMessProxy) StartProxy(providerID string, config *VMessConfig) (string,
 		config:   *config,
 	}
 
+	proxyAddr := fmt.Sprintf("socks5://127.0.0.1:%d", port)
+
+	// B10-WL2: wait until the SOCKS port actually accepts connections — the
+	// old fixed 500ms sleep raced xray's bind on slow hosts.
+	socksAddr := fmt.Sprintf("127.0.0.1:%d", port)
+	listening := false
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if c, err := net.DialTimeout("tcp", socksAddr, 500*time.Millisecond); err == nil {
+			c.Close()
+			listening = true
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	exited := func() bool { return cmd.ProcessState != nil && cmd.ProcessState.Exited() }
+	if !listening || exited() {
+		m.mu.Lock()
+		m.stopInstance(inst)
+		delete(m.proxies, providerID)
+		m.mu.Unlock()
+		return "", fmt.Errorf("xray 未能在本地端口监听，请检查配置")
+	}
+
+	// B10-WL2b: verify the tunnel actually passes traffic. A dead VMess node
+	// keeps the xray process alive but silently drops every connection — the
+	// built-in browser then showed "This site can't be reached" for ALL sites
+	// (its DNS is forced through the proxy), which looked like "代理没有生效".
+	// Fail fast here with an actionable message instead.
+	if err := checkSocksEgress(socksAddr); err != nil {
+		m.mu.Lock()
+		m.stopInstance(inst)
+		delete(m.proxies, providerID)
+		m.mu.Unlock()
+		slog.Warn("VMess tunnel egress check failed", "provider", providerID, "error", err)
+		return "", fmt.Errorf("VMess 隧道无法连通（节点可能失效），请更新代理链接后重试")
+	}
+
 	m.mu.Lock()
 	m.proxies[providerID] = inst
 	m.mu.Unlock()
 
-	proxyAddr := fmt.Sprintf("socks5://127.0.0.1:%d", port)
-	slog.Info("VMess proxy started", "provider", providerID, "proxy", proxyAddr, "server", config.Add)
-
-	time.Sleep(500 * time.Millisecond)
-
-	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
-		m.mu.Lock()
-		delete(m.proxies, providerID)
-		m.mu.Unlock()
-		return "", fmt.Errorf("xray exited immediately, check config")
-	}
+	slog.Info("VMess proxy started (egress verified)", "provider", providerID, "proxy", proxyAddr, "server", config.Add)
 
 	return proxyAddr, nil
+}
+
+// checkSocksEgress dials an HTTP probe target THROUGH the given SOCKS5 addr to
+// prove the tunnel forwards traffic end-to-end. Any HTTP response counts as
+// success; transport errors mean the tunnel is dead.
+func checkSocksEgress(socksAddr string) error {
+	dialer, err := socksProxyDialer(socksAddr)
+	if err != nil {
+		return fmt.Errorf("socks dialer: %w", err)
+	}
+	ctxDialer, ok := dialer.(interface {
+		DialContext(ctx context.Context, network, addr string) (net.Conn, error)
+	})
+	if !ok {
+		return fmt.Errorf("dialer does not support context")
+	}
+	client := &http.Client{
+		Timeout: 12 * time.Second,
+		Transport: &http.Transport{
+			DialContext: ctxDialer.DialContext,
+		},
+	}
+	resp, err := client.Get(egressProbeURL())
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
+	return nil
+}
+
+// egressProbeURL returns the connectivity probe target (var for tests).
+var egressProbeURL = func() string { return "https://www.gstatic.com/generate_204" }
+
+// socksProxyDialer builds a SOCKS5 dialer for the given host:port (var-wrapped
+// so tests can inject failures without a real proxy).
+var socksProxyDialer = func(socksAddr string) (proxy.Dialer, error) {
+	return proxy.SOCKS5("tcp", socksAddr, nil, proxy.Direct)
 }
 
 // StopProxy stops the Xray proxy for a provider
