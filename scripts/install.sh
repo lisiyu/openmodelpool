@@ -69,6 +69,10 @@ show_help() {
 跳过可选组件（对"全部"生效）:
   OMP_SKIP_XRAY=1 OMP_SKIP_CLOUDFLARED=1 OMP_SKIP_FRP=1
   OMP_SKIP_NGROK=1 OMP_SKIP_BROWSER=1 sudo bash install.sh
+
+已有安装时的行为:
+  all 模式  检测到已安装组件默认直接复用（[Y/n]），回车即跳过下载；非交互环境亦复用
+  子命令    默认下载并升级到最新（[y/N]，输入 Y 才复用）—— 版本更高/相同也想切换时可交互选择
 EOF
 }
 
@@ -348,6 +352,28 @@ extract_home_path() {
 #  组件: xray —— XTLS/Xray-core（vmess/vless 本地代理依赖）
 # ══════════════════════════════════════════════════
 
+# 交互询问是否跳过下载、复用已有安装。
+#   $1 = 默认值 (y=默认复用, n=默认下载)；$2 = 组件名
+#   非交互环境（stdin 非 TTY）按默认值静默处理，不阻塞管道用法。
+prompt_reuse() {
+    local def="$1" name="$2" ans
+    if [[ ! -t 0 ]]; then
+        if [[ "$def" == "y" ]]; then
+            info "非交互环境，默认复用已有 $name"
+            return 0
+        fi
+        return 1
+    fi
+    if [[ "$def" == "y" ]]; then
+        read -r -p "  检测到已有 $name，跳过下载、直接复用？[Y/n] " ans
+        if [[ -z "$ans" || "$ans" =~ ^[Yy] ]]; then return 0; fi
+    else
+        read -r -p "  检测到已有 $name，跳过下载、直接复用？[y/N] " ans
+        if [[ "$ans" =~ ^[Yy] ]]; then return 0; fi
+    fi
+    return 1
+}
+
 # 在常见位置查找已有的 xray 可执行文件，找到就复用，避免重复下载
 _find_existing_xray() {
     local candidates=(
@@ -369,29 +395,38 @@ _find_existing_xray() {
 }
 
 install_xray() {
+    # $1 = reuse 默认值：all 模式传 y（默认复用），显式子命令传 n（默认下载最新）
+    local reuse_default="${1:-n}"
     local existing
     if existing=$(_find_existing_xray); then
         local cur
         cur=$("$existing" version 2>/dev/null | grep -o 'Xray [^ ]*' | head -1 | cut -d' ' -f2)
         info "Xray 已存在: ${cur:-unknown} ($existing)"
-        # 如果不在标准位置，复制一份到 $XRAY_DIR 统一管理
-        if [[ "$existing" != "$XRAY_BIN" ]]; then
-            info "  复制到标准位置 $XRAY_BIN"
-            mkdir -p "$XRAY_DIR"
-            local existing_dir
-            existing_dir=$(dirname "$existing")
-            cp "$existing" "$XRAY_BIN" 2>/dev/null || true
-            chmod 755 "$XRAY_BIN" 2>/dev/null || true
-            # 同步 geoip.dat / geosite.dat（如果有）
-            for f in geoip.dat geosite.dat; do
-                [[ -f "$existing_dir/$f" ]] && cp "$existing_dir/$f" "$XRAY_DIR/" 2>/dev/null || true
-            done
-            if [[ -x "$XRAY_BIN" ]]; then
-                ok "Xray 已就绪: ${cur:-unknown} (复用已有安装)"
+        if prompt_reuse "$reuse_default" "Xray ${cur:-}"; then
+            # 选择复用：非标准位置统一复制到 $XRAY_BIN
+            if [[ "$existing" != "$XRAY_BIN" ]]; then
+                info "  复制到标准位置 $XRAY_BIN"
+                mkdir -p "$XRAY_DIR"
+                local existing_dir
+                existing_dir=$(dirname "$existing")
+                cp "$existing" "$XRAY_BIN" 2>/dev/null || true
+                chmod 755 "$XRAY_BIN" 2>/dev/null || true
+                # 同步 geoip.dat / geosite.dat（如果有）
+                for f in geoip.dat geosite.dat; do
+                    [[ -f "$existing_dir/$f" ]] && cp "$existing_dir/$f" "$XRAY_DIR/" 2>/dev/null || true
+                done
+                if [[ ! -x "$XRAY_BIN" ]]; then
+                    warn "复制到标准位置失败，改为下载最新版本"
+                else
+                    ok "Xray 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
+                    return 0
+                fi
+            else
+                ok "Xray 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
                 return 0
             fi
         fi
-        info "  将升级到最新版本"
+        info "  将下载最新版本"
     fi
 
     local VER ASSET ZIP_URL TMP_DIR
@@ -456,6 +491,8 @@ install_xray() {
 # ══════════════════════════════════════════════════
 
 install_cloudflared() {
+    # $1 = reuse 默认值：all 传 y，显式子命令传 n
+    local reuse_default="${1:-n}"
     # 扫描常见位置已有安装，找到就复用
     local cf_bin cf_candidates=(
         "$LOCAL_BIN/cloudflared"                    # 标准安装位置
@@ -472,18 +509,25 @@ install_cloudflared() {
         local cur
         cur=$("$cf_bin" --version 2>/dev/null | head -1)
         info "cloudflared 已存在: ${cur:-unknown} ($cf_bin)"
-        # 不在标准位置时复制一份
-        if [[ "$cf_bin" != "$LOCAL_BIN/cloudflared" ]]; then
-            info "  复制到标准位置 $LOCAL_BIN/cloudflared"
-            mkdir -p "$LOCAL_BIN"
-            cp "$cf_bin" "$LOCAL_BIN/cloudflared" 2>/dev/null || true
-            chmod 755 "$LOCAL_BIN/cloudflared" 2>/dev/null || true
-            if [[ -x "$LOCAL_BIN/cloudflared" ]]; then
-                ok "cloudflared 已就绪: ${cur:-unknown} (复用已有安装)"
+        if prompt_reuse "$reuse_default" "cloudflared ${cur:-}"; then
+            # 非标准位置复制一份统一管理
+            if [[ "$cf_bin" != "$LOCAL_BIN/cloudflared" ]]; then
+                info "  复制到标准位置 $LOCAL_BIN/cloudflared"
+                mkdir -p "$LOCAL_BIN"
+                cp "$cf_bin" "$LOCAL_BIN/cloudflared" 2>/dev/null || true
+                chmod 755 "$LOCAL_BIN/cloudflared" 2>/dev/null || true
+                if [[ ! -x "$LOCAL_BIN/cloudflared" ]]; then
+                    warn "复制到标准位置失败，改为下载最新版本"
+                else
+                    ok "cloudflared 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
+                    return 0
+                fi
+            else
+                ok "cloudflared 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
                 return 0
             fi
         fi
-        info "  将升级到最新版本"
+        info "  将下载最新版本"
     fi
 
     local VER ASSET UV TMP_DIR
@@ -521,6 +565,8 @@ install_cloudflared() {
 # ══════════════════════════════════════════════════
 
 install_frp() {
+    # $1 = reuse 默认值：all 传 y，显式子命令传 n
+    local reuse_default="${1:-n}"
     # 扫描常见位置已有安装，找到就复用
     local frps_bin frpc_bin found_frps=0 found_frpc=0
     local frp_candidates=(
@@ -549,22 +595,30 @@ install_frp() {
         local cur
         cur=$("$frps_bin" --version 2>/dev/null | head -1)
         info "frp 已存在: ${cur:-unknown} (frps=$frps_bin, frpc=$frpc_bin)"
-        # 不在标准位置时复制
-        local needs_copy=0
-        if [[ "$frps_bin" != "$LOCAL_BIN/frps" ]]; then needs_copy=1; fi
-        if [[ "$frpc_bin" != "$LOCAL_BIN/frpc" ]]; then needs_copy=1; fi
-        if [[ $needs_copy -eq 1 ]]; then
-            info "  复制到标准位置 $LOCAL_BIN/"
-            mkdir -p "$LOCAL_BIN"
-            cp "$frps_bin" "$LOCAL_BIN/frps" 2>/dev/null || true
-            cp "$frpc_bin" "$LOCAL_BIN/frpc" 2>/dev/null || true
-            chmod 755 "$LOCAL_BIN/frps" "$LOCAL_BIN/frpc" 2>/dev/null || true
-            if [[ -x "$LOCAL_BIN/frps" && -x "$LOCAL_BIN/frpc" ]]; then
-                ok "frp 已就绪: ${cur:-unknown} (复用已有安装)"
+        if prompt_reuse "$reuse_default" "frp ${cur:-}"; then
+            local needs_copy=0
+            if [[ "$frps_bin" != "$LOCAL_BIN/frps" ]]; then needs_copy=1; fi
+            if [[ "$frpc_bin" != "$LOCAL_BIN/frpc" ]]; then needs_copy=1; fi
+            if [[ $needs_copy -eq 1 ]]; then
+                info "  复制到标准位置 $LOCAL_BIN/"
+                mkdir -p "$LOCAL_BIN"
+                cp "$frps_bin" "$LOCAL_BIN/frps" 2>/dev/null || true
+                cp "$frpc_bin" "$LOCAL_BIN/frpc" 2>/dev/null || true
+                chmod 755 "$LOCAL_BIN/frps" "$LOCAL_BIN/frpc" 2>/dev/null || true
+                if [[ ! -x "$LOCAL_BIN/frps" || ! -x "$LOCAL_BIN/frpc" ]]; then
+                    warn "复制到标准位置失败，改为下载最新版本"
+                else
+                    ok "frp 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
+                    return 0
+                fi
+            else
+                ok "frp 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
                 return 0
             fi
         fi
-        info "  将升级到最新版本"
+        info "  将下载最新版本"
+    elif [[ $found_frps -eq 1 || $found_frpc -eq 1 ]]; then
+        info "frp 部分存在（frps=${frps_bin:-无}, frpc=${frpc_bin:-无}），将下载并按最新版本补齐"
     fi
 
     local VER V ASSET UV TMP_DIR
@@ -613,6 +667,8 @@ install_frp() {
 # ══════════════════════════════════════════════════
 
 install_ngrok() {
+    # $1 = reuse 默认值：all 传 y，显式子命令传 n
+    local reuse_default="${1:-n}"
     # 扫描常见位置已有安装，找到就复用
     local ng_bin ng_candidates=(
         "$LOCAL_BIN/ngrok"                          # 标准安装位置
@@ -629,17 +685,24 @@ install_ngrok() {
         local cur
         cur=$("$ng_bin" version 2>/dev/null | head -1)
         info "ngrok 已存在: ${cur:-unknown} ($ng_bin)"
-        if [[ "$ng_bin" != "$LOCAL_BIN/ngrok" ]]; then
-            info "  复制到标准位置 $LOCAL_BIN/ngrok"
-            mkdir -p "$LOCAL_BIN"
-            cp "$ng_bin" "$LOCAL_BIN/ngrok" 2>/dev/null || true
-            chmod 755 "$LOCAL_BIN/ngrok" 2>/dev/null || true
-            if [[ -x "$LOCAL_BIN/ngrok" ]]; then
-                ok "ngrok 已就绪: ${cur:-unknown} (复用已有安装)"
+        if prompt_reuse "$reuse_default" "ngrok ${cur:-}"; then
+            if [[ "$ng_bin" != "$LOCAL_BIN/ngrok" ]]; then
+                info "  复制到标准位置 $LOCAL_BIN/ngrok"
+                mkdir -p "$LOCAL_BIN"
+                cp "$ng_bin" "$LOCAL_BIN/ngrok" 2>/dev/null || true
+                chmod 755 "$LOCAL_BIN/ngrok" 2>/dev/null || true
+                if [[ ! -x "$LOCAL_BIN/ngrok" ]]; then
+                    warn "复制到标准位置失败，改为下载最新版本"
+                else
+                    ok "ngrok 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
+                    return 0
+                fi
+            else
+                ok "ngrok 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
                 return 0
             fi
         fi
-        info "  将升级到最新版本"
+        info "  将下载最新版本"
     fi
 
     local VER V ASSET UV TMP_DIR
@@ -683,6 +746,8 @@ install_ngrok() {
 # ══════════════════════════════════════════════════
 
 install_browser() {
+    # $1 = reuse 默认值：all 传 y，显式子命令传 n
+    local reuse_default="${1:-n}"
     # 扫描常见位置已有安装，找到就复用
     local browser_bin browser_candidates=(
         "$BROWSER_DIR/chrome-headless-shell"        # 标准安装位置
@@ -698,18 +763,25 @@ install_browser() {
         local cur
         cur=$("$browser_bin" --version 2>/dev/null | head -1)
         info "浏览器核心已存在: ${cur:-unknown} ($browser_bin)"
-        # 不在标准位置时复制整个目录
-        if [[ "$(dirname "$browser_bin")" != "$BROWSER_DIR" ]]; then
-            info "  复制到标准位置 $BROWSER_DIR/"
-            mkdir -p "$BROWSER_DIR"
-            cp -a "$(dirname "$browser_bin")"/* "$BROWSER_DIR/" 2>/dev/null || true
-            chmod -R 755 "$BROWSER_DIR/" 2>/dev/null || true
-            if [[ -x "$BROWSER_DIR/chrome-headless-shell" ]]; then
-                ok "浏览器核心已就绪: ${cur:-unknown} (复用已有安装)"
+        if prompt_reuse "$reuse_default" "浏览器核心 ${cur:-}"; then
+            # 不在标准位置时复制整个目录
+            if [[ "$(dirname "$browser_bin")" != "$BROWSER_DIR" ]]; then
+                info "  复制到标准位置 $BROWSER_DIR/"
+                mkdir -p "$BROWSER_DIR"
+                cp -a "$(dirname "$browser_bin")"/* "$BROWSER_DIR/" 2>/dev/null || true
+                chmod -R 755 "$BROWSER_DIR/" 2>/dev/null || true
+                if [[ ! -x "$BROWSER_DIR/chrome-headless-shell" ]]; then
+                    warn "复制到标准位置失败，改为下载最新版本"
+                else
+                    ok "浏览器核心已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
+                    return 0
+                fi
+            else
+                ok "浏览器核心已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
                 return 0
             fi
         fi
-        info "  将升级到最新版本"
+        info "  将下载最新版本"
     fi
 
     case "$PLATFORM" in
@@ -833,28 +905,29 @@ VERSION_ARG="${2:-}"
 
 case "$COMPONENT" in
     ""|all)
+        # all 模式：检测到已有安装时默认复用（跳过下载），交互可改选升级
         install_core "$VERSION_ARG"
-        [[ "${OMP_SKIP_XRAY:-0}" != "1" ]] && install_xray
-        [[ "${OMP_SKIP_CLOUDFLARED:-0}" != "1" ]] && install_cloudflared
-        [[ "${OMP_SKIP_FRP:-0}" != "1" ]] && install_frp
-        [[ "${OMP_SKIP_NGROK:-0}" != "1" ]] && install_ngrok
-        [[ "${OMP_SKIP_BROWSER:-0}" != "1" ]] && install_browser
+        [[ "${OMP_SKIP_XRAY:-0}" != "1" ]] && install_xray y
+        [[ "${OMP_SKIP_CLOUDFLARED:-0}" != "1" ]] && install_cloudflared y
+        [[ "${OMP_SKIP_FRP:-0}" != "1" ]] && install_frp y
+        [[ "${OMP_SKIP_NGROK:-0}" != "1" ]] && install_ngrok y
+        [[ "${OMP_SKIP_BROWSER:-0}" != "1" ]] && install_browser y
         ;;
     core)      install_core "$VERSION_ARG" ;;
-    xray)      install_xray ;;
-    cloudflared) install_cloudflared ;;
-    frp)       install_frp ;;
-    ngrok)     install_ngrok ;;
-    browser)   install_browser ;;
+    xray)      install_xray n ;;
+    cloudflared) install_cloudflared n ;;
+    frp)       install_frp n ;;
+    ngrok)     install_ngrok n ;;
+    browser)   install_browser n ;;
     status)    cmd_status ;;
     help|-h|--help) show_help ;;
     *)         # 向后兼容: 旧用法 install.sh <版本号> = 全部组件 + 核心固定版本
         install_core "$COMPONENT"
-        [[ "${OMP_SKIP_XRAY:-0}" != "1" ]] && install_xray
-        [[ "${OMP_SKIP_CLOUDFLARED:-0}" != "1" ]] && install_cloudflared
-        [[ "${OMP_SKIP_FRP:-0}" != "1" ]] && install_frp
-        [[ "${OMP_SKIP_NGROK:-0}" != "1" ]] && install_ngrok
-        [[ "${OMP_SKIP_BROWSER:-0}" != "1" ]] && install_browser
+        [[ "${OMP_SKIP_XRAY:-0}" != "1" ]] && install_xray y
+        [[ "${OMP_SKIP_CLOUDFLARED:-0}" != "1" ]] && install_cloudflared y
+        [[ "${OMP_SKIP_FRP:-0}" != "1" ]] && install_frp y
+        [[ "${OMP_SKIP_NGROK:-0}" != "1" ]] && install_ngrok y
+        [[ "${OMP_SKIP_BROWSER:-0}" != "1" ]] && install_browser y
         ;;
 esac
 
