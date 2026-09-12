@@ -166,7 +166,7 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		if p.APIKey == "" || strings.Contains(p.APIKey, "...") {
 			p.APIKey = existing.APIKey
 		}
-		if p.Proxy == "" || p.Proxy == "vmess://***" {
+		if p.Proxy == "" || p.Proxy == "vmess://***" || p.Proxy == "vless://***" {
 			p.Proxy = existing.Proxy
 		}
 		p.AccessControl.ShareToPool = existing.AccessControl.ShareToPool
@@ -201,13 +201,26 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		p.Models = enableLatestModels(p.Models)
 	}
 
-	// Validate VMess proxy link format
-	if strings.HasPrefix(p.Proxy, "vmess://") {
-		if _, err := ParseVMessLink(p.Proxy); err != nil {
-			writeError(w, 400, "Invalid VMess link: "+err.Error())
+	// Validate proxy link format
+	if p.Proxy != "" {
+		// Reasonable upper bound: ML-KEM keys can be very long (2000+ chars)
+		if len(p.Proxy) > 8192 {
+			writeError(w, 400, "proxy URL must be at most 8192 characters")
 			return
 		}
-		slog.Info("VMess proxy link saved, will start on first use", "provider", p.ID)
+		if strings.HasPrefix(p.Proxy, "vmess://") {
+			if _, err := ParseVMessLink(p.Proxy); err != nil {
+				writeError(w, 400, "Invalid VMess link: "+err.Error())
+				return
+			}
+			slog.Info("VMess proxy link saved, will start on first use", "provider", p.ID)
+		} else if strings.HasPrefix(p.Proxy, "vless://") {
+			if _, err := ParseVLESSLink(p.Proxy); err != nil {
+				writeError(w, 400, "Invalid VLESS link: "+err.Error())
+				return
+			}
+			slog.Info("VLESS proxy link saved, will start on first use", "provider", p.ID)
+		}
 	}
 
 	result := pm.Add(p)
@@ -326,7 +339,7 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 
 	// Remove masked VMess proxy to prevent overwriting real link
 	if proxy, ok := updates["proxy"]; ok {
-		if proxyStr, isStr := proxy.(string); isStr && proxyStr == "vmess://***" {
+		if proxyStr, isStr := proxy.(string); isStr && (proxyStr == "vmess://***" || proxyStr == "vless://***") {
 			delete(updates, "proxy")
 		}
 	}
@@ -359,14 +372,24 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		merged.Type = existing.Type
 	}
 
-	// Validate VMess proxy link if changed (lazy start — proxy starts on first use)
+	// Validate proxy link if changed (lazy start — proxy starts on first use)
 	if merged.Proxy != "" && merged.Proxy != existing.Proxy {
+		if len(merged.Proxy) > 8192 {
+			writeError(w, 400, "proxy URL must be at most 8192 characters")
+			return
+		}
 		if strings.HasPrefix(merged.Proxy, "vmess://") {
 			if _, err := ParseVMessLink(merged.Proxy); err != nil {
 				writeError(w, 400, "Invalid VMess link: "+err.Error())
 				return
 			}
 			slog.Info("VMess proxy link saved, will start on first use", "provider", id)
+		} else if strings.HasPrefix(merged.Proxy, "vless://") {
+			if _, err := ParseVLESSLink(merged.Proxy); err != nil {
+				writeError(w, 400, "Invalid VLESS link: "+err.Error())
+				return
+			}
+			slog.Info("VLESS proxy link saved, will start on first use", "provider", id)
 		}
 	}
 

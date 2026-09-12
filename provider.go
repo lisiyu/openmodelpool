@@ -55,6 +55,10 @@ func (m *ProviderManager) load() {
 					p.APIKeys[i].Key = decryptField(p.APIKeys[i].Key)
 				}
 			}
+			// Decrypt proxy URL if encrypted
+			if p.Proxy != "" && IsEncrypted(p.Proxy) {
+				p.Proxy = decryptField(p.Proxy)
+			}
 			// Migrate legacy single APIKey to APIKeys array
 			migrated := migrateProviderKeys(&p)
 			// Apply default access control if not set
@@ -149,6 +153,10 @@ func (m *ProviderManager) makeProviderListLocked() []Provider {
 			if p.APIKeys[i].Key != "" && !IsEncrypted(p.APIKeys[i].Key) {
 				p.APIKeys[i].Key = encryptField(p.APIKeys[i].Key)
 			}
+		}
+		// Encrypt proxy URL (may contain long ML-KEM keys or other sensitive info)
+		if p.Proxy != "" && !IsEncrypted(p.Proxy) {
+			p.Proxy = encryptField(p.Proxy)
 		}
 		list = append(list, p)
 	}

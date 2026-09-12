@@ -176,7 +176,7 @@ func handleImportConfig(w http.ResponseWriter, r *http.Request) {
 				if p.APIKey == "" || strings.Contains(p.APIKey, "...") {
 					p.APIKey = existing.APIKey
 				}
-				if p.Proxy == "" || p.Proxy == "vmess://***" {
+				if p.Proxy == "" || p.Proxy == "vmess://***" || p.Proxy == "vless://***" {
 					p.Proxy = existing.Proxy
 				}
 				if len(p.APIKeys) == 0 {

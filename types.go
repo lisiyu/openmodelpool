@@ -355,9 +355,11 @@ func (p *Provider) Safe() Provider {
 		}
 	}
 
-	// Mask vmess proxy links (contains sensitive UUID)
+	// Mask proxy links (contain sensitive credentials)
 	if strings.HasPrefix(safe.Proxy, "vmess://") {
 		safe.Proxy = "vmess://***"
+	} else if strings.HasPrefix(safe.Proxy, "vless://") {
+		safe.Proxy = "vless://***"
 	}
 	return safe
 }
