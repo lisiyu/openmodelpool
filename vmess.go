@@ -66,16 +66,24 @@ type vmessInstance struct {
 
 func initVMessManager(dataDir string) {
 	// Windows 上 Xray 可执行文件带 .exe 后缀，需一并探测
+	// 候选路径按优先级：
+	//   1. <install_dir>/xray/xray   （一键脚本标准安装位置）
+	//   2. xray/xray                 （相对工作目录）
+	//   3. data/xray/xray            （兼容手动放置）
+	//   4. PATH 中的 xray            （兜底）
 	candidates := []string{
 		filepath.Join(dataDir, "..", "xray", "xray"),
 		"xray/xray",
+		filepath.Join(dataDir, "xray", "xray"),
 	}
 	if runtime.GOOS == "windows" {
 		candidates = []string{
 			filepath.Join(dataDir, "..", "xray", "xray.exe"),
 			"xray/xray.exe",
+			filepath.Join(dataDir, "xray", "xray.exe"),
 			filepath.Join(dataDir, "..", "xray", "xray"),
 			"xray/xray",
+			filepath.Join(dataDir, "xray", "xray"),
 		}
 	}
 	xrayPath := ""
@@ -83,6 +91,12 @@ func initVMessManager(dataDir string) {
 		if _, err := os.Stat(p); err == nil {
 			xrayPath = p
 			break
+		}
+	}
+	// 兜底：从 PATH 查找
+	if xrayPath == "" {
+		if p, err := exec.LookPath("xray"); err == nil {
+			xrayPath = p
 		}
 	}
 	if xrayPath == "" {

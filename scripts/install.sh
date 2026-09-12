@@ -348,11 +348,50 @@ extract_home_path() {
 #  组件: xray —— XTLS/Xray-core（vmess/vless 本地代理依赖）
 # ══════════════════════════════════════════════════
 
+# 在常见位置查找已有的 xray 可执行文件，找到就复用，避免重复下载
+_find_existing_xray() {
+    local candidates=(
+        "$XRAY_BIN"                    # 标准安装位置
+        "$DEFAULT_INSTALL_DIR/data/xray/xray"  # 兼容手动放置到 data 目录
+        "$LOCAL_BIN/xray"              # PATH 常见位置
+    )
+    # PATH 兜底
+    if command -v xray &>/dev/null; then
+        candidates+=("$(command -v xray)")
+    fi
+    for p in "${candidates[@]}"; do
+        if [[ -x "$p" ]]; then
+            echo "$p"
+            return 0
+        fi
+    done
+    return 1
+}
+
 install_xray() {
-    if [[ -x "$XRAY_BIN" ]]; then
+    local existing
+    if existing=$(_find_existing_xray); then
         local cur
-        cur=$("$XRAY_BIN" version 2>/dev/null | grep -o 'Xray [^ ]*' | head -1 | cut -d' ' -f2)
-        info "Xray 已存在: ${cur:-unknown}，将升级到最新"
+        cur=$("$existing" version 2>/dev/null | grep -o 'Xray [^ ]*' | head -1 | cut -d' ' -f2)
+        info "Xray 已存在: ${cur:-unknown} ($existing)"
+        # 如果不在标准位置，复制一份到 $XRAY_DIR 统一管理
+        if [[ "$existing" != "$XRAY_BIN" ]]; then
+            info "  复制到标准位置 $XRAY_BIN"
+            mkdir -p "$XRAY_DIR"
+            local existing_dir
+            existing_dir=$(dirname "$existing")
+            cp "$existing" "$XRAY_BIN" 2>/dev/null || true
+            chmod 755 "$XRAY_BIN" 2>/dev/null || true
+            # 同步 geoip.dat / geosite.dat（如果有）
+            for f in geoip.dat geosite.dat; do
+                [[ -f "$existing_dir/$f" ]] && cp "$existing_dir/$f" "$XRAY_DIR/" 2>/dev/null || true
+            done
+            if [[ -x "$XRAY_BIN" ]]; then
+                ok "Xray 已就绪: ${cur:-unknown} (复用已有安装)"
+                return 0
+            fi
+        fi
+        info "  将升级到最新版本"
     fi
 
     local VER ASSET ZIP_URL TMP_DIR
