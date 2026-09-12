@@ -76,6 +76,7 @@ func setupRoutes() *http.ServeMux {
 	// One-click version update (incremental)
 	mux.HandleFunc("GET /api/admin/version/latest", withAuth(handleAdminVersionLatest))
 	mux.HandleFunc("POST /api/admin/update/start", rateLimitByIP(3, "update_start")(withAuth(handleAdminUpdateStart)))
+	mux.HandleFunc("POST /api/admin/update/broadcast", rateLimitByIP(2, "update_broadcast")(withAuth(handleAdminUpdateBroadcast)))
 	mux.HandleFunc("GET /api/admin/update/status", withAuth(handleAdminUpdateStatus))
 	// Federation cross-node update signal + report-back
 	mux.HandleFunc("POST /api/federation/update-signal", rateLimitByIP(30, "update_signal")(withFederationAuth(handleFederationUpdateSignal)))

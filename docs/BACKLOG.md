@@ -95,6 +95,8 @@
   - 两个 job 的**显示名保持不变**（`Unit tests (with coverage)` / `Integration tests`），避免改名导致分支保护里可能配置的 required status check 匹配不上而永久 pending。若确认未设为 required，可把后者改名为更贴切的 `Second run (flaky watch)`。
 - [x] **P5-4 `startRegionSyncLoop` 空转治理（2026-08-11 实现）**：删除 stubs.go 里 sleep-only 的空转循环（其注释声称"跨节点同步区域"但循环体只有 TODO），新增 `region_sync.go` 实现本地 reconciliation 循环——只调和 join/heartbeat 通道未覆盖的三类缺口：① 已知但从不心跳我们的 peer；② 启动时公网地址未就绪导致自检测失败的本节点区域；③ 长期失联、无人清理的过期节点。设计铁律：**零网络 I/O、零 DNS 解析**（慢/恶意 peer 永不阻塞循环），仅靠本进程既持状态对账；空 known 视图（管理器未初始化/网络瞬时抖动）禁用 prune 防误删，本节点条目永不 prune。`reconcileRegionsOnce` 注入时钟 + `regionSeenAt` 旁路时间戳（避免每次 register 覆盖整值擦掉时间戳），`regionEntryTTL` 变量可测；`region_sync_test.go` 7 用例锁 fill-gap（pool 上报/IP 探测兜底）、空视图禁 prune、TTL 过期 prune、本节点受保护、known 节点保留、`hostFromEndpoint` 解析。`go build/vet/test ./...` 全绿
 
+- [x] **P5-5 跨环境更新广播 opt-in 入口 + 端到端验证（2026-09-12 实现）**：REVIEW 2.2 点名的"P1 跨环境广播未验证"缺口——`BroadcastUpdateSignal` 早已实现却无任何触发入口（本地自更新路径刻意不广播）。现新增显式 `POST /api/admin/update/broadcast`（`withAuth` + 限流，可选 body `{"target_version":...}` 覆盖版本，缺省用最新版本；仍遵守"绝不在本地自更新时隐式广播"的 opt-in 契约）。`update_broadcast_test.go` 7 用例：manager 缺失 500、body 覆盖版本、缺省用缓存最新版、坏 body 400、无目标 400，以及**端到端**——注入 active peer 后 `BroadcastUpdateSignal` 同步记录 downloading 状态、异步 goroutine 真实经 HTTP 送达 `/api/federation/update-signal` 且带 `X-Node-ID`/`X-Node-Signature` 联邦身份头。`go build/vet/test ./...` 全绿
+
 ## Promotion（稳定后）
 
 - [x] 准备推广物料包（2026-08-09）：`docs/LAUNCH-KIT.md` —— 中英一句话定位 + 仓库 About 文案、README 润色清单（副标题改为直述公益、新增"无商业模式/无代币/无积分/无抽成"段与徽章、版本徽章 v4.1.6→v4.3.24 修漂移、公益额度·贡献记账（非货币） 经济学措辞改写为"记账非货币"、新增 four-line pledge、Earn/Spend 明确 1:1 且额度耗尽不拒绝）、约 330 字中文发布稿（附裁到 300 字的删法）、Show HN 英文稿、15 个 GitHub topics（并说明为何**不**加 web3/dao/decentralized-ai）、发布前检查清单、以及"一律不用"的措辞黑名单。**代理不发布**，待雷工审核
