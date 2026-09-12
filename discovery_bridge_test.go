@@ -15,13 +15,13 @@ func TestAddPeer_BridgesToTrustPool(t *testing.T) {
 
 	before := fed.GetTrustPool().Version
 	peer := PeerInfo{
-		NodeID:    "mmx-bridge01",
-		Name:      "bridge",
-		Addresses: []string{"https://bridge.example.com"},
-		Status:    "online",
-		LastSeen:  time.Now().Format(time.RFC3339),
+		NodeID:     "mmx-bridge01",
+		Name:       "bridge",
+		Addresses:  []string{"https://bridge.example.com"},
+		Status:     "online",
+		LastSeen:   time.Now().Format(time.RFC3339),
 		TrustScore: 0.5,
-		PubKey:    "cHVibGlj", // arbitrary base64
+		PubKey:     "cHVibGlj", // arbitrary base64
 	}
 	if err := netMgr.AddPeer(peer); err != nil {
 		t.Fatalf("AddPeer: %v", err)

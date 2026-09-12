@@ -457,9 +457,9 @@ func (g *GossipLedger) GetTransparency() LedgerTransparency {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	t := LedgerTransparency{
-		PeerID:   g.peerID,
-		ByModel:  map[string]int64{},
-		ByPeer:   map[string]int64{},
+		PeerID:  g.peerID,
+		ByModel: map[string]int64{},
+		ByPeer:  map[string]int64{},
 	}
 	for _, r := range g.recs {
 		t.TotalTokens += r.Tokens
@@ -616,15 +616,15 @@ func (g *GossipLedger) PeerID() string {
 }
 
 type gossipLedgerData struct {
-	PeerID    string                        `json:"peer_id"`
+	PeerID    string                         `json:"peer_id"`
 	Recs      map[string]*ContributionRecord `json:"recs"`
 	Trusts    map[string]*TrustRecord        `json:"trusts"`
-	Claims    map[string]*CapabilityClaim     `json:"claims"`
-	Penalties map[string]*PenaltyRecord       `json:"penalties"`
-	Txs       []*SignedTransaction            `json:"txs"`
-	Seq       uint64                          `json:"seq"`
-	PubKey    []byte                          `json:"pub_key"`
-	PrivKey   []byte                          `json:"priv_key"`
+	Claims    map[string]*CapabilityClaim    `json:"claims"`
+	Penalties map[string]*PenaltyRecord      `json:"penalties"`
+	Txs       []*SignedTransaction           `json:"txs"`
+	Seq       uint64                         `json:"seq"`
+	PubKey    []byte                         `json:"pub_key"`
+	PrivKey   []byte                         `json:"priv_key"`
 }
 
 func (g *GossipLedger) Save(path string) error {

@@ -236,8 +236,8 @@ func registerWithBootstraps() {
 	}
 
 	payload := map[string]any{
-		"node_id":   nodeID,
-		"addresses": addrs,
+		"node_id":    nodeID,
+		"addresses":  addrs,
 		"is_gateway": cfg.Get("is_gateway", "false") == "true",
 	}
 	body, _ := json.Marshal(payload)

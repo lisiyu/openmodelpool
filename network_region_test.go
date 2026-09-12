@@ -220,9 +220,9 @@ func TestRegionManager_GetAllRegions(t *testing.T) {
 
 func TestRegionManager_GetRegionSummary(t *testing.T) {
 	rm := newTestRegionManager()
-	rm.RegisterNode("mmx-node1", "8.8.8.8", "ip_detect")       // Americas
-	rm.RegisterNode("mmx-node2", "114.100.1.1", "ip_detect")    // AP
-	rm.RegisterNode("mmx-node3", "35.100.1.1", "ip_detect")     // Americas
+	rm.RegisterNode("mmx-node1", "8.8.8.8", "ip_detect")     // Americas
+	rm.RegisterNode("mmx-node2", "114.100.1.1", "ip_detect") // AP
+	rm.RegisterNode("mmx-node3", "35.100.1.1", "ip_detect")  // Americas
 
 	summary := rm.GetRegionSummary()
 	if summary[RegionAmericas] != 2 {
@@ -356,8 +356,8 @@ func TestGetOptimalRouteEmpty(t *testing.T) {
 
 func TestHaversineDistance(t *testing.T) {
 	tests := []struct {
-		name     string
-		lat1, lon1, lat2, lon2 float64
+		name                     string
+		lat1, lon1, lat2, lon2   float64
 		expectedMin, expectedMax float64
 	}{
 		{"same point", 0, 0, 0, 0, 0, 0.01},
@@ -400,7 +400,7 @@ func TestRegionDistance(t *testing.T) {
 
 func TestRegionCenter(t *testing.T) {
 	tests := []struct {
-		region Region
+		region         Region
 		latMin, latMax float64
 		lonMin, lonMax float64
 	}{

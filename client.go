@@ -1,8 +1,6 @@
 package main
 
 import (
-	"sync"
-	"sync/atomic"
 	"bufio"
 	"bytes"
 	"context"
@@ -16,6 +14,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"crypto/tls"
@@ -24,7 +24,6 @@ import (
 
 // Client handles forwarding requests to upstream AI providers.
 // Supports: openai_compatible, sider, coze, anthropic.
-
 
 // sharedTransport is a connection-pooled transport for all proxy requests.
 var sharedTransport = &http.Transport{
@@ -35,7 +34,7 @@ var sharedTransport = &http.Transport{
 	MaxIdleConnsPerHost: 100,
 	IdleConnTimeout:     90 * time.Second,
 	DisableCompression:  false,
-	TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12},
+	TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
 }
 
 // sharedHTTPClient reuses connections across requests.
@@ -147,6 +146,14 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 			}
 			return &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					// Validate destination host for SSRF
+					host, _, err := net.SplitHostPort(addr)
+					if err != nil {
+						host = addr
+					}
+					if !allowLocalProviderForTest && cachedIsPrivateHost(host) {
+						return nil, errors.New("ssrf blocked: target address resolves to private/internal address")
+					}
 					return socksDialer.Dial(network, addr)
 				},
 				MaxIdleConns:        20,
@@ -172,7 +179,13 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 			return nil, err
 		}
 		return &http.Transport{
-			Proxy:               http.ProxyURL(u),
+			Proxy: func(req *http.Request) (*url.URL, error) {
+				host := req.Host
+				if !allowLocalProviderForTest && cachedIsPrivateHost(host) {
+					return nil, errors.New("ssrf blocked: target address resolves to private/internal address")
+				}
+				return u, nil
+			},
 			TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
 			MaxIdleConns:        20,
 			MaxIdleConnsPerHost: 10,
@@ -337,6 +350,7 @@ func doStream(ctx context.Context, p Provider, model string, messages []ChatMess
 		return openaiStream(ctx, p, model, messages, extra, w)
 	}
 }
+
 // ============================================================
 // Web Session (generic template for web-login-only platforms)
 // ============================================================
@@ -696,9 +710,6 @@ func testWebSession(p Provider) map[string]any {
 	return map[string]any{"success": true, "message": p.Name + " connected"}
 }
 
-
-
-
 // ============================================================
 // OpenAI-compatible
 // ============================================================
@@ -708,7 +719,7 @@ func openaiNonStream(ctx context.Context, p Provider, model string, messages []C
 	req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", jsonBody(body))
 	setOpenAIHeaders(req, p.APIKey)
 
-	resp, err := proxyHTTPClient(p, 300 * time.Second).Do(req)
+	resp, err := proxyHTTPClient(p, 300*time.Second).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -868,7 +879,7 @@ func siderNonStream(ctx context.Context, p Provider, model string, messages []Ch
 	req, _ := http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(body))
 	req.Header = siderBuildHeaders(p.APIKey)
 
-	client := proxyHTTPClient(p, 300 * time.Second)
+	client := proxyHTTPClient(p, 300*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -926,7 +937,7 @@ func siderStream(ctx context.Context, p Provider, model string, messages []ChatM
 	req, _ := http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(body))
 	req.Header = siderBuildHeaders(p.APIKey)
 
-	client := proxyHTTPClient(p, 300 * time.Second)
+	client := proxyHTTPClient(p, 300*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -1048,7 +1059,7 @@ func cozeNonStream(ctx context.Context, p Provider, model string, messages []Cha
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := proxyHTTPClient(p, 300 * time.Second)
+	client := proxyHTTPClient(p, 300*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -1086,7 +1097,9 @@ func cozeNonStream(ctx context.Context, p Provider, model string, messages []Cha
 			return nil, err
 		}
 		var pollResult struct {
-			Data struct{ Status string `json:"status"` } `json:"data"`
+			Data struct {
+				Status string `json:"status"`
+			} `json:"data"`
 		}
 		if err := json.NewDecoder(pollResp.Body).Decode(&pollResult); err != nil {
 			pollResp.Body.Close()
@@ -1200,7 +1213,7 @@ func cozeStream(ctx context.Context, p Provider, model string, messages []ChatMe
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := proxyHTTPClient(p, 300 * time.Second)
+	client := proxyHTTPClient(p, 300*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		writeSSEError(w, model, "upstream request failed")
@@ -1572,10 +1585,10 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 			baseURL = "https://api.coze.cn"
 		}
 		ctx2, cancel2 := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel2()
-	req, _ := http.NewRequestWithContext(ctx2, "GET", baseURL+"/v1/workspaces", nil)
+		defer cancel2()
+		req, _ := http.NewRequestWithContext(ctx2, "GET", baseURL+"/v1/workspaces", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
-		client := proxyHTTPClient(testProvider, 15 * time.Second)
+		client := proxyHTTPClient(testProvider, 15*time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}
@@ -1595,10 +1608,10 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		payload["prompt"] = "ping"
 		body, _ := json.Marshal(payload)
 		ctx3, cancel3 := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel3()
-	req, _ := http.NewRequestWithContext(ctx3, "POST", siderChatURL, bytes.NewReader(body))
+		defer cancel3()
+		req, _ := http.NewRequestWithContext(ctx3, "POST", siderChatURL, bytes.NewReader(body))
 		req.Header = h
-		client := proxyHTTPClient(testProvider, 30 * time.Second)
+		client := proxyHTTPClient(testProvider, 30*time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}
@@ -1624,8 +1637,8 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		}
 		testBody, _ := json.Marshal(testPayload)
 		testCtx, testCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer testCancel()
-	testReq, _ := http.NewRequestWithContext(testCtx, "POST", testProvider.BaseURL+"/v1/messages", bytes.NewReader(testBody))
+		defer testCancel()
+		testReq, _ := http.NewRequestWithContext(testCtx, "POST", testProvider.BaseURL+"/v1/messages", bytes.NewReader(testBody))
 		testReq.Header.Set("Content-Type", "application/json")
 		testReq.Header.Set("x-api-key", testProvider.APIKey)
 		testReq.Header.Set("anthropic-version", "2023-06-01")
@@ -1647,13 +1660,13 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		if testProvider.APIKey == "" {
 			return map[string]any{"success": false, "error": "API key not configured"}
 		}
-		client := proxyHTTPClient(testProvider, 15 * time.Second)
+		client := proxyHTTPClient(testProvider, 15*time.Second)
 		baseURL := strings.TrimRight(testProvider.BaseURL, "/")
 
 		// Step 1: Fetch /models to verify key and get available model names
 		modelsCtx, modelsCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer modelsCancel()
-	modelsReq, _ := http.NewRequestWithContext(modelsCtx, "GET", baseURL+"/models", nil)
+		defer modelsCancel()
+		modelsReq, _ := http.NewRequestWithContext(modelsCtx, "GET", baseURL+"/models", nil)
 		modelsReq.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
 		modelsResp, err := client.Do(modelsReq)
 		if err != nil {
@@ -1728,8 +1741,8 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		}
 		testBody, _ := json.Marshal(testPayload)
 		testCtx2, testCancel2 := context.WithTimeout(context.Background(), 30*time.Second)
-	defer testCancel2()
-	testReq, _ := http.NewRequestWithContext(testCtx2, "POST", baseURL+"/chat/completions", bytes.NewReader(testBody))
+		defer testCancel2()
+		testReq, _ := http.NewRequestWithContext(testCtx2, "POST", baseURL+"/chat/completions", bytes.NewReader(testBody))
 		testReq.Header.Set("Authorization", "Bearer "+testProvider.APIKey)
 		testReq.Header.Set("Content-Type", "application/json")
 		testResp, err := client.Do(testReq)
@@ -1779,8 +1792,8 @@ func queryKeyBalance(baseURL, apiKey string) map[string]any {
 
 	for _, ep := range endpoints {
 		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer fetchCancel()
-	req, err := http.NewRequestWithContext(fetchCtx, "GET", baseURL+ep.path, nil)
+		defer fetchCancel()
+		req, err := http.NewRequestWithContext(fetchCtx, "GET", baseURL+ep.path, nil)
 		if err != nil {
 			continue
 		}
@@ -1885,7 +1898,7 @@ func fetchRemoteModels(p Provider) []map[string]string {
 	if p.APIKey != "free-anonymous" {
 		req.Header.Set("Authorization", "Bearer "+p.APIKey)
 	}
-	client := proxyHTTPClient(p, 15 * time.Second)
+	client := proxyHTTPClient(p, 15*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		slog.Warn("fetch remote models failed", "provider", p.ID, "error", err)

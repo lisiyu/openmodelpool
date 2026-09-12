@@ -870,8 +870,8 @@ func TestHB4_FederationManager_IsRelayEnabled_Default(t *testing.T) {
 
 func TestHB4_FederationManager_GetTrustPool_Empty(t *testing.T) {
 	f := &FederationManager{
-		trustPool:   TrustPool{},
-		localPeers:  make(map[string]*NodeInfo),
+		trustPool:  TrustPool{},
+		localPeers: make(map[string]*NodeInfo),
 	}
 	pool := f.GetTrustPool()
 	if len(pool.Nodes) != 0 {
@@ -881,8 +881,8 @@ func TestHB4_FederationManager_GetTrustPool_Empty(t *testing.T) {
 
 func TestHB4_FederationManager_GetActiveNodes_Empty(t *testing.T) {
 	f := &FederationManager{
-		trustPool:   TrustPool{},
-		localPeers:  make(map[string]*NodeInfo),
+		trustPool:  TrustPool{},
+		localPeers: make(map[string]*NodeInfo),
 	}
 	active := f.GetActiveNodes()
 	if len(active) != 0 {
@@ -933,10 +933,10 @@ func TestHB4_FederationManager_GetNode_NotFound(t *testing.T) {
 func TestHB4_FederationManager_UpdateTrustPool_Newer(t *testing.T) {
 	dir := t.TempDir()
 	f := &FederationManager{
-		trustPool:   TrustPool{Version: 1},
-		localPeers:  make(map[string]*NodeInfo),
-		dataDir:     dir,
-		stopCh:      make(chan struct{}),
+		trustPool:  TrustPool{Version: 1},
+		localPeers: make(map[string]*NodeInfo),
+		dataDir:    dir,
+		stopCh:     make(chan struct{}),
 	}
 	f.UpdateTrustPool(TrustPool{Version: 2, Nodes: []NodeInfo{{NodeID: "n1"}}})
 	if f.trustPool.Version != 2 {
@@ -946,8 +946,8 @@ func TestHB4_FederationManager_UpdateTrustPool_Newer(t *testing.T) {
 
 func TestHB4_FederationManager_UpdateTrustPool_Older(t *testing.T) {
 	f := &FederationManager{
-		trustPool:   TrustPool{Version: 5},
-		localPeers:  make(map[string]*NodeInfo),
+		trustPool:  TrustPool{Version: 5},
+		localPeers: make(map[string]*NodeInfo),
 	}
 	f.UpdateTrustPool(TrustPool{Version: 3})
 	if f.trustPool.Version != 5 {

@@ -74,14 +74,14 @@ func handleFederationHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, 200, map[string]any{
-		"enabled":       fed.IsEnabled(),
-		"relay":         fed.IsRelayEnabled(),
-		"pool_version":  pool.Version,
-		"total_nodes":   len(pool.Nodes),
-		"active_nodes":  activeCount,
-		"self_node_id":  selfID,
-		"self_version":  AppVersion,
-		"nodes":         nodes,
-		"generated_at":  time.Now().UTC().Format(time.RFC3339),
+		"enabled":      fed.IsEnabled(),
+		"relay":        fed.IsRelayEnabled(),
+		"pool_version": pool.Version,
+		"total_nodes":  len(pool.Nodes),
+		"active_nodes": activeCount,
+		"self_node_id": selfID,
+		"self_version": AppVersion,
+		"nodes":        nodes,
+		"generated_at": time.Now().UTC().Format(time.RFC3339),
 	})
 }

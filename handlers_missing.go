@@ -42,7 +42,12 @@ func handleNodePubKey(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"public_key": pubKeyB64,
-		"node_id":    func() string { if node != nil { return node.NodeID() }; return "" }(),
+		"node_id": func() string {
+			if node != nil {
+				return node.NodeID()
+			}
+			return ""
+		}(),
 	})
 }
 

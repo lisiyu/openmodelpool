@@ -176,6 +176,7 @@ func parseSTUNResponse(buf []byte) (string, [stunTxidLen]byte, error) {
 // by two or more distinct STUN servers (RFC 5780 §4.3 lightweight test):
 //   - identical (ip,port) across servers  -> "full_cone" (cone NAT or open)
 //   - differing port (or ip) across servers -> "symmetric"
+//
 // A single successful response yields "unknown" (insufficient data to decide).
 // Behind a symmetric NAT direct peering is unreliable, so callers should fall
 // back to relay — erring toward "symmetric" here is the safe choice.
@@ -297,20 +298,20 @@ func (n *NATManager) PreferRelay() bool {
 func handleNATStatus(w http.ResponseWriter, r *http.Request) {
 	if natMgr == nil {
 		writeJSON(w, 200, map[string]any{
-			"initialized":  false,
-			"public_addr":  "",
-			"nat_type":     "unknown",
-			"probe_count":  0,
+			"initialized": false,
+			"public_addr": "",
+			"nat_type":    "unknown",
+			"probe_count": 0,
 		})
 		return
 	}
 	natMgr.mu.RLock()
 	defer natMgr.mu.RUnlock()
 	writeJSON(w, 200, map[string]any{
-		"initialized":  true,
-		"public_addr":  natMgr.publicAddr,
-		"nat_type":     natMgr.natType,
-		"probe_count":  len(natMgr.probeCache),
+		"initialized": true,
+		"public_addr": natMgr.publicAddr,
+		"nat_type":    natMgr.natType,
+		"probe_count": len(natMgr.probeCache),
 	})
 }
 

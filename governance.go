@@ -454,18 +454,18 @@ func (g *GovernanceLedger) saveLocked() {
 		return
 	}
 	snap := struct {
-		Proposals     []*GovernanceProposal  `json:"proposals"`
-		Ratifications []byte                 `json:"-"`
+		Proposals     []*GovernanceProposal    `json:"proposals"`
+		Ratifications []byte                   `json:"-"`
 		Rats          []GovernanceRatification `json:"ratifications"`
-		LastPHash     string                 `json:"last_proposal_hash"`
-		LastRHash     string                 `json:"last_ratification_hash"`
-		Seq           int64                  `json:"seq"`
+		LastPHash     string                   `json:"last_proposal_hash"`
+		LastRHash     string                   `json:"last_ratification_hash"`
+		Seq           int64                    `json:"seq"`
 	}{
-		Proposals:     g.proposalList,
-		Rats:          g.ratifications,
-		LastPHash:     g.lastPHash,
-		LastRHash:     g.lastRHash,
-		Seq:           g.proposalSeq,
+		Proposals: g.proposalList,
+		Rats:      g.ratifications,
+		LastPHash: g.lastPHash,
+		LastRHash: g.lastRHash,
+		Seq:       g.proposalSeq,
 	}
 	b, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {

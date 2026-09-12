@@ -125,7 +125,10 @@ func TestEventBus_Broadcast_PreservesExistingTime(t *testing.T) {
 		t.Fatal("timeout waiting for broadcast event")
 	}
 
-	go func() { for range ch {} }()
+	go func() {
+		for range ch {
+		}
+	}()
 	eb.Unsubscribe(clientIDFromChan(t, eb, ch))
 }
 
@@ -149,7 +152,10 @@ func TestEventBus_Broadcast_SlowConsumer(t *testing.T) {
 	eb.Broadcast(SSEEvent{Type: "dropped"})
 
 	// Cleanup
-	go func() { for range smallCh {} }()
+	go func() {
+		for range smallCh {
+		}
+	}()
 	eb.Unsubscribe(clientID)
 }
 

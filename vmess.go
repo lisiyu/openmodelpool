@@ -38,12 +38,12 @@ type VMessConfig struct {
 
 	// VLESS-only fields (populated by ParseVLESSLink from URI query params;
 	// ignored by the vmess base64-JSON path thanks to omitempty / "-").
-	IsVLESS bool   `json:"-"`               // outbound protocol switch in generateConfig
-	Flow    string `json:"flow,omitempty"`  // e.g. xtls-rprx-vision
+	IsVLESS  bool   `json:"-"`                  // outbound protocol switch in generateConfig
+	Flow     string `json:"flow,omitempty"`     // e.g. xtls-rprx-vision
 	Security string `json:"security,omitempty"` // stream security: reality | tls | none
-	PBK     string `json:"pbk,omitempty"`   // REALITY public key
-	SID     string `json:"sid,omitempty"`   // REALITY short id
-	FP      string `json:"fp,omitempty"`    // uTLS fingerprint (e.g. chrome)
+	PBK      string `json:"pbk,omitempty"`      // REALITY public key
+	SID      string `json:"sid,omitempty"`      // REALITY short id
+	FP       string `json:"fp,omitempty"`       // uTLS fingerprint (e.g. chrome)
 }
 
 // VMessProxy manages a local Xray instance for a VMess proxy

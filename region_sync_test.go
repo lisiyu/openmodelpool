@@ -137,7 +137,7 @@ func TestReconcileKeepsSelfEvenWhenStale(t *testing.T) {
 
 	now := time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)
 	seen := regionSeenAt{
-		selfID:    now.Add(-time.Hour), // stale self
+		selfID:     now.Add(-time.Hour), // stale self
 		"departed": now.Add(-time.Hour), // stale other
 	}
 

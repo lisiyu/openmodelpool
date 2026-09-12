@@ -638,7 +638,8 @@ func (a *Auth) ResetPasswordWithCode(code, newPass string) error {
 func (a *Auth) HasResetCode() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.data.ResetCodeHash != ""}
+	return a.data.ResetCodeHash != ""
+}
 
 // randomString generates a cryptographically random string of length n.
 // SEC-B5-6: fail-closed — if the entropy source fails, abort the process

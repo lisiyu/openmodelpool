@@ -66,6 +66,7 @@ var releaseSigningPubKey = ed25519.PublicKey{
 // The order is dynamically adjusted based on detected network region:
 //   - China mainland: mirrors first, direct GitHub last
 //   - Global/overseas: direct GitHub first, mirrors as fallback
+//
 // Mirrors that go offline are silently skipped by the retry logic.
 var githubDownloadMirrors = []string{
 	"https://ghfast.top/",
@@ -637,7 +638,7 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 		url   string
 	}
 	var sources []downloadSource
-	
+
 	region := detectRegion()
 	if region == "cn" {
 		// China mainland: mirrors first

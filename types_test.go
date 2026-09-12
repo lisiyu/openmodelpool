@@ -369,14 +369,14 @@ func TestModelListResponse_JSON(t *testing.T) {
 
 func TestAPIKeyConfig_Fields(t *testing.T) {
 	config := APIKeyConfig{
-		ID:          "key-1",
-		Alias:       "My Key",
-		Quota:       1000000,
-		QuotaDaily:  100000,
-		QuotaMonthly: 3000000,
+		ID:            "key-1",
+		Alias:         "My Key",
+		Quota:         1000000,
+		QuotaDaily:    100000,
+		QuotaMonthly:  3000000,
 		AccessControl: "private",
-		Enabled:     true,
-		Priority:    10,
+		Enabled:       true,
+		Priority:      10,
 	}
 	data, err := json.Marshal(config)
 	if err != nil {

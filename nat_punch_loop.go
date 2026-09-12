@@ -76,11 +76,11 @@ type DirectLinkManager struct {
 	pubAddr   string
 	localAddr string
 
-	sessions map[string]*PunchSession   // peerNodeID -> in-progress punch
-	links    map[string]*net.UDPAddr    // peerNodeID -> established direct addr
+	sessions map[string]*PunchSession // peerNodeID -> in-progress punch
+	links    map[string]*net.UDPAddr  // peerNodeID -> established direct addr
 
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx     context.Context
+	cancel  context.CancelFunc
 	ownRecv bool
 }
 

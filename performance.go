@@ -75,8 +75,8 @@ var internalTransport = &http.Transport{
 	TLSHandshakeTimeout:   10 * time.Second,
 	ExpectContinueTimeout: 1 * time.Second,
 	ForceAttemptHTTP2:     true,
-	TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, // #nosec G402 -- internalTransport only talks to mutually-trusted pool nodes; self-signed certs are expected
-	DialContext:       dialPreferIPv4,
+	TLSClientConfig:       &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, // #nosec G402 -- internalTransport only talks to mutually-trusted pool nodes; self-signed certs are expected
+	DialContext:           dialPreferIPv4,
 }
 
 // dialPreferIPv4 is the DialContext used by internalTransport. Some pool hosts
@@ -529,8 +529,8 @@ func handleAPIMetrics(w http.ResponseWriter, r *http.Request) {
 		"worker_pool_total":        workerPoolTotal,
 
 		// Component counts
-		"providers_enabled": len(pm.Enabled()),
-		"models_available":  len(pm.AllModels()),
+		"providers_enabled":       len(pm.Enabled()),
+		"models_available":        len(pm.AllModels()),
 		"active_federation_nodes": activeNodes,
 
 		// Route table

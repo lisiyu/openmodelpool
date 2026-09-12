@@ -20,11 +20,11 @@ import (
 // GenesisBlock is the immutable network identity configuration.
 // All forks of OpenModelPool Agent should use the same genesis to stay on the same network.
 var GenesisConfig = GenesisBlock{
-	NetworkName:  "openmodelpool-mainnet",
-	GenesisNode:  "mm-JG7pKCdqgU8PBijd4m4CXP",
+	NetworkName:   "openmodelpool-mainnet",
+	GenesisNode:   "mm-JG7pKCdqgU8PBijd4m4CXP",
 	GenesisPubKey: "", // populated at runtime from node identity if this IS the genesis node
-	CreatedAt:    "2026-07-07T00:00:00Z",
-	Version:      1,
+	CreatedAt:     "2026-07-07T00:00:00Z",
+	Version:       1,
 }
 
 // GenesisBlock defines the network identity.
@@ -116,9 +116,9 @@ type NodeJoinRequest struct {
 
 // NodeJoinResponse is returned to joining nodes.
 type NodeJoinResponse struct {
-	Accepted  bool     `json:"accepted"`
-	NetworkID string   `json:"network_id"`
-	Reason    string   `json:"reason,omitempty"`
+	Accepted  bool       `json:"accepted"`
+	NetworkID string     `json:"network_id"`
+	Reason    string     `json:"reason,omitempty"`
 	Peers     []NodeInfo `json:"peers,omitempty"` // known peers snapshot
 }
 

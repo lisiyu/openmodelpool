@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -258,7 +259,7 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			case "private":
 				quotaPrivUsed += k.Used
 			case "shared":
-				quotaPubUsed += k.Used * int64(publicPct) / 100
+				quotaPubUsed += int64(math.Round(float64(k.Used) * float64(publicPct) / 100))
 				quotaGuestUsed += k.Used * int64(guestPct) / 100
 			}
 		}

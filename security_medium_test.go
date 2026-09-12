@@ -178,15 +178,15 @@ func TestSA14_PasswordStrength(t *testing.T) {
 		password string
 		wantErr  bool
 	}{
-		{"short", true},                              // too short
-		{"123456789012", true},                       // only digits
-		{"abcdefghijklm", true},                      // only lowercase
-		{"Abcdefgh1234", true},                       // missing special character
-		{"Abcdefghijkl!", true},                      // missing digit
-		{"Abcdefghijk1!", false},                     // all 4 classes, 13 chars ✓
-		{"MyP@ssw0rd123", false},                     // all 4 classes, 13 chars ✓
-		{"Ab1!xxxxxxxx", false},                      // all 4 classes, 12 chars ✓
-		{"Ab1!", true},                               // all 4 classes but too short
+		{"short", true},          // too short
+		{"123456789012", true},   // only digits
+		{"abcdefghijklm", true},  // only lowercase
+		{"Abcdefgh1234", true},   // missing special character
+		{"Abcdefghijkl!", true},  // missing digit
+		{"Abcdefghijk1!", false}, // all 4 classes, 13 chars ✓
+		{"MyP@ssw0rd123", false}, // all 4 classes, 13 chars ✓
+		{"Ab1!xxxxxxxx", false},  // all 4 classes, 12 chars ✓
+		{"Ab1!", true},           // all 4 classes but too short
 		{"", true},
 	}
 

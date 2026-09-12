@@ -85,9 +85,9 @@ func TestGlobalRateLimiter_ConsumerLimiters(t *testing.T) {
 
 func TestParseFloat64(t *testing.T) {
 	tests := []struct {
-		input   string
-		def     float64
-		want    float64
+		input string
+		def   float64
+		want  float64
 	}{
 		{"100", 50, 100},
 		{"0", 50, 50},

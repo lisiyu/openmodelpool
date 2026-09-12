@@ -9,13 +9,13 @@ import (
 // requests, per v4 design §4. Enables N+M conversion (N providers + M consumers)
 // instead of N×M direct conversion.
 type RequestIR struct {
-	Model        string     `json:"model"`
+	Model        string      `json:"model"`
 	Messages     []MessageIR `json:"messages"`
-	SystemPrompt string     `json:"system_prompt,omitempty"`
-	Temperature  *float64   `json:"temperature,omitempty"`
-	MaxTokens    *int       `json:"max_tokens,omitempty"`
-	Stream       bool       `json:"stream"`
-	Tools        []ToolIR   `json:"tools,omitempty"`
+	SystemPrompt string      `json:"system_prompt,omitempty"`
+	Temperature  *float64    `json:"temperature,omitempty"`
+	MaxTokens    *int        `json:"max_tokens,omitempty"`
+	Stream       bool        `json:"stream"`
+	Tools        []ToolIR    `json:"tools,omitempty"`
 }
 
 // MessageIR is the unified message representation.
@@ -40,11 +40,11 @@ type TokenUsage struct {
 
 // OpenAIResponse represents a standard OpenAI-format response for normalization.
 type OpenAIResponse struct {
-	ID      string   `json:"id,omitempty"`
-	Object  string   `json:"object,omitempty"`
-	Created int64    `json:"created,omitempty"`
-	Model   string   `json:"model,omitempty"`
-	Choices []any    `json:"choices,omitempty"`
+	ID      string      `json:"id,omitempty"`
+	Object  string      `json:"object,omitempty"`
+	Created int64       `json:"created,omitempty"`
+	Model   string      `json:"model,omitempty"`
+	Choices []any       `json:"choices,omitempty"`
 	Usage   *TokenUsage `json:"usage,omitempty"`
 }
 
@@ -255,13 +255,13 @@ func (a *GeminiAdapter) PlatformName() string { return "gemini" }
 
 // geminiRequest is the native Gemini API request structure.
 type geminiRequest struct {
-	Contents    []geminiContent `json:"contents"`
+	Contents         []geminiContent         `json:"contents"`
 	GenerationConfig *geminiGenerationConfig `json:"generationConfig,omitempty"`
 }
 
 type geminiContent struct {
-	Role  string        `json:"role"`
-	Parts []geminiPart  `json:"parts"`
+	Role  string       `json:"role"`
+	Parts []geminiPart `json:"parts"`
 }
 
 type geminiPart struct {
@@ -269,8 +269,8 @@ type geminiPart struct {
 }
 
 type geminiGenerationConfig struct {
-	Temperature *float64 `json:"temperature,omitempty"`
-	MaxOutputTokens *int `json:"maxOutputTokens,omitempty"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+	MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
 }
 
 func (a *GeminiAdapter) TranslateRequest(ir *RequestIR) ([]byte, error) {

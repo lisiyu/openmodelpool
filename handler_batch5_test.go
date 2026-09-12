@@ -204,12 +204,12 @@ func TestHB5_NetworkStats_Default(t *testing.T) {
 
 func TestHB5_PeerInfo_Fields(t *testing.T) {
 	p := PeerInfo{
-		NodeID:     "n1",
-		Name:       "TestNode",
-		Region:     "us",
-		Models:     []string{"gpt-4"},
-		Status:     "online",
-		TrustScore: 0.9,
+		NodeID:      "n1",
+		Name:        "TestNode",
+		Region:      "us",
+		Models:      []string{"gpt-4"},
+		Status:      "online",
+		TrustScore:  0.9,
 		ShareToPool: true,
 	}
 	if p.NodeID != "n1" {

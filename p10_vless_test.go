@@ -49,9 +49,9 @@ func TestP10_ParseVLESSLink_WSTLS(t *testing.T) {
 func TestP10_ParseVLESSLink_Invalid(t *testing.T) {
 	cases := []string{
 		"vmess://notavless",
-		"vless://example.com:443",                     // no uuid
+		"vless://example.com:443",                           // no uuid
 		"vless://uuid@host:notaport?security=reality&pbk=x", // bad port
-		"vless://uuid@host:443?security=reality",      // reality without pbk
+		"vless://uuid@host:443?security=reality",            // reality without pbk
 	}
 	for i, c := range cases {
 		if _, err := ParseVLESSLink(c); err == nil {
@@ -109,7 +109,9 @@ func TestP10_ProviderLoginStatus(t *testing.T) {
 	}
 
 	rec := get("p10-login-status")
-	var d struct{ TokenSaved bool `json:"token_saved"` }
+	var d struct {
+		TokenSaved bool `json:"token_saved"`
+	}
 	if err := json.NewDecoder(rec.Body).Decode(&d); err != nil {
 		t.Fatalf("decode: %v", err)
 	}

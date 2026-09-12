@@ -52,10 +52,10 @@ import (
 // STUN discovery and hole-punching).
 
 const (
-	dataMagic      = "OMP2"        // distinguishes data frames from punch ("OMP1") / STUN
-	frameHeaderLen = 27            // magic(4)+type(1)+reqID(16)+fragIndex(2)+fragTotal(2)+payloadLen(2)
-	maxFragPayload = 1400          // bytes of body per 'B' fragment datagram
-	firstFragCap   = 700           // headroom keeps the envelope frame under the 1500 MTU
+	dataMagic      = "OMP2" // distinguishes data frames from punch ("OMP1") / STUN
+	frameHeaderLen = 27     // magic(4)+type(1)+reqID(16)+fragIndex(2)+fragTotal(2)+payloadLen(2)
+	maxFragPayload = 1400   // bytes of body per 'B' fragment datagram
+	firstFragCap   = 700    // headroom keeps the envelope frame under the 1500 MTU
 	bearerTimeout  = 20 * time.Second
 )
 

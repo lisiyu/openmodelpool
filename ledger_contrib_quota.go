@@ -32,12 +32,12 @@ import (
 
 // ContributionQuota is a single contributor's transparent accounting row.
 type ContributionQuota struct {
-	PeerID            string `json:"peer_id"`             // contributor node id
-	ContributedTokens int64  `json:"contributed_tokens"`  // total tokens donated to the pool
-	EarnedFreeQuota   int64  `json:"earned_free_quota"`   // = ContributedTokens (1:1, public-welfare)
-	ConsumedQuota     int64  `json:"consumed_quota"`      // tokens already drawn against the entitlement
-	RemainingQuota    int64  `json:"remaining_quota"`     // = EarnedFreeQuota - ConsumedQuota (never negative)
-	LastUpdated       int64  `json:"last_updated"`        // unix seconds
+	PeerID            string `json:"peer_id"`            // contributor node id
+	ContributedTokens int64  `json:"contributed_tokens"` // total tokens donated to the pool
+	EarnedFreeQuota   int64  `json:"earned_free_quota"`  // = ContributedTokens (1:1, public-welfare)
+	ConsumedQuota     int64  `json:"consumed_quota"`     // tokens already drawn against the entitlement
+	RemainingQuota    int64  `json:"remaining_quota"`    // = EarnedFreeQuota - ConsumedQuota (never negative)
+	LastUpdated       int64  `json:"last_updated"`       // unix seconds
 }
 
 // remainingLocked computes the still-drawable entitlement. Caller holds the lock.
