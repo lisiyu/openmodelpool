@@ -456,10 +456,34 @@ install_xray() {
 # ══════════════════════════════════════════════════
 
 install_cloudflared() {
-    if [[ -x "$LOCAL_BIN/cloudflared" ]]; then
+    # 扫描常见位置已有安装，找到就复用
+    local cf_bin cf_candidates=(
+        "$LOCAL_BIN/cloudflared"                    # 标准安装位置
+        "$DEFAULT_INSTALL_DIR/cloudflared"          # 兼容手动放置到安装目录
+        "/usr/bin/cloudflared"
+    )
+    if command -v cloudflared &>/dev/null; then
+        cf_candidates+=("$(command -v cloudflared)")
+    fi
+    for p in "${cf_candidates[@]}"; do
+        if [[ -x "$p" ]]; then cf_bin="$p"; break; fi
+    done
+    if [[ -n "$cf_bin" ]]; then
         local cur
-        cur=$("$LOCAL_BIN/cloudflared" --version 2>/dev/null | head -1)
-        info "cloudflared 已存在: ${cur:-unknown}，将升级到最新"
+        cur=$("$cf_bin" --version 2>/dev/null | head -1)
+        info "cloudflared 已存在: ${cur:-unknown} ($cf_bin)"
+        # 不在标准位置时复制一份
+        if [[ "$cf_bin" != "$LOCAL_BIN/cloudflared" ]]; then
+            info "  复制到标准位置 $LOCAL_BIN/cloudflared"
+            mkdir -p "$LOCAL_BIN"
+            cp "$cf_bin" "$LOCAL_BIN/cloudflared" 2>/dev/null || true
+            chmod 755 "$LOCAL_BIN/cloudflared" 2>/dev/null || true
+            if [[ -x "$LOCAL_BIN/cloudflared" ]]; then
+                ok "cloudflared 已就绪: ${cur:-unknown} (复用已有安装)"
+                return 0
+            fi
+        fi
+        info "  将升级到最新版本"
     fi
 
     local VER ASSET UV TMP_DIR
@@ -497,6 +521,52 @@ install_cloudflared() {
 # ══════════════════════════════════════════════════
 
 install_frp() {
+    # 扫描常见位置已有安装，找到就复用
+    local frps_bin frpc_bin found_frps=0 found_frpc=0
+    local frp_candidates=(
+        "$LOCAL_BIN/frps"                          # 标准安装位置
+        "$DEFAULT_INSTALL_DIR/frp/frps"            # 兼容手动放置
+        "/usr/bin/frps"
+    )
+    for p in "${frp_candidates[@]}"; do
+        if [[ -x "$p" ]]; then frps_bin="$p"; found_frps=1; break; fi
+    done
+    if command -v frps &>/dev/null; then
+        frps_bin="$(command -v frps)"; found_frps=1
+    fi
+    local frpc_candidates=(
+        "$LOCAL_BIN/frpc"
+        "$DEFAULT_INSTALL_DIR/frp/frpc"
+        "/usr/bin/frpc"
+    )
+    for p in "${frpc_candidates[@]}"; do
+        if [[ -x "$p" ]]; then frpc_bin="$p"; found_frpc=1; break; fi
+    done
+    if command -v frpc &>/dev/null; then
+        frpc_bin="$(command -v frpc)"; found_frpc=1
+    fi
+    if [[ $found_frps -eq 1 && $found_frpc -eq 1 ]]; then
+        local cur
+        cur=$("$frps_bin" --version 2>/dev/null | head -1)
+        info "frp 已存在: ${cur:-unknown} (frps=$frps_bin, frpc=$frpc_bin)"
+        # 不在标准位置时复制
+        local needs_copy=0
+        if [[ "$frps_bin" != "$LOCAL_BIN/frps" ]]; then needs_copy=1; fi
+        if [[ "$frpc_bin" != "$LOCAL_BIN/frpc" ]]; then needs_copy=1; fi
+        if [[ $needs_copy -eq 1 ]]; then
+            info "  复制到标准位置 $LOCAL_BIN/"
+            mkdir -p "$LOCAL_BIN"
+            cp "$frps_bin" "$LOCAL_BIN/frps" 2>/dev/null || true
+            cp "$frpc_bin" "$LOCAL_BIN/frpc" 2>/dev/null || true
+            chmod 755 "$LOCAL_BIN/frps" "$LOCAL_BIN/frpc" 2>/dev/null || true
+            if [[ -x "$LOCAL_BIN/frps" && -x "$LOCAL_BIN/frpc" ]]; then
+                ok "frp 已就绪: ${cur:-unknown} (复用已有安装)"
+                return 0
+            fi
+        fi
+        info "  将升级到最新版本"
+    fi
+
     local VER V ASSET UV TMP_DIR
     VER=$(get_latest_tag "$FRP_REPO")
     [[ -z "$VER" ]] && { warn "获取 frp 版本失败，跳过"; return 1; }
@@ -543,6 +613,35 @@ install_frp() {
 # ══════════════════════════════════════════════════
 
 install_ngrok() {
+    # 扫描常见位置已有安装，找到就复用
+    local ng_bin ng_candidates=(
+        "$LOCAL_BIN/ngrok"                          # 标准安装位置
+        "$DEFAULT_INSTALL_DIR/ngrok/ngrok"          # 兼容手动放置
+        "/usr/bin/ngrok"
+    )
+    if command -v ngrok &>/dev/null; then
+        ng_candidates+=("$(command -v ngrok)")
+    fi
+    for p in "${ng_candidates[@]}"; do
+        if [[ -x "$p" ]]; then ng_bin="$p"; break; fi
+    done
+    if [[ -n "$ng_bin" ]]; then
+        local cur
+        cur=$("$ng_bin" version 2>/dev/null | head -1)
+        info "ngrok 已存在: ${cur:-unknown} ($ng_bin)"
+        if [[ "$ng_bin" != "$LOCAL_BIN/ngrok" ]]; then
+            info "  复制到标准位置 $LOCAL_BIN/ngrok"
+            mkdir -p "$LOCAL_BIN"
+            cp "$ng_bin" "$LOCAL_BIN/ngrok" 2>/dev/null || true
+            chmod 755 "$LOCAL_BIN/ngrok" 2>/dev/null || true
+            if [[ -x "$LOCAL_BIN/ngrok" ]]; then
+                ok "ngrok 已就绪: ${cur:-unknown} (复用已有安装)"
+                return 0
+            fi
+        fi
+        info "  将升级到最新版本"
+    fi
+
     local VER V ASSET UV TMP_DIR
     VER=$(get_latest_tag "$NGROK_REPO")
     [[ -z "$VER" ]] && { warn "获取 ngrok 版本失败，跳过"; return 1; }
@@ -584,6 +683,35 @@ install_ngrok() {
 # ══════════════════════════════════════════════════
 
 install_browser() {
+    # 扫描常见位置已有安装，找到就复用
+    local browser_bin browser_candidates=(
+        "$BROWSER_DIR/chrome-headless-shell"        # 标准安装位置
+        "$DEFAULT_INSTALL_DIR/browser/chrome-headless-shell"
+    )
+    for p in "${browser_candidates[@]}"; do
+        if [[ -x "$p" ]]; then browser_bin="$p"; break; fi
+    done
+    if command -v chrome-headless-shell &>/dev/null; then
+        browser_bin="$(command -v chrome-headless-shell)"
+    fi
+    if [[ -n "$browser_bin" ]]; then
+        local cur
+        cur=$("$browser_bin" --version 2>/dev/null | head -1)
+        info "浏览器核心已存在: ${cur:-unknown} ($browser_bin)"
+        # 不在标准位置时复制整个目录
+        if [[ "$(dirname "$browser_bin")" != "$BROWSER_DIR" ]]; then
+            info "  复制到标准位置 $BROWSER_DIR/"
+            mkdir -p "$BROWSER_DIR"
+            cp -a "$(dirname "$browser_bin")"/* "$BROWSER_DIR/" 2>/dev/null || true
+            chmod -R 755 "$BROWSER_DIR/" 2>/dev/null || true
+            if [[ -x "$BROWSER_DIR/chrome-headless-shell" ]]; then
+                ok "浏览器核心已就绪: ${cur:-unknown} (复用已有安装)"
+                return 0
+            fi
+        fi
+        info "  将升级到最新版本"
+    fi
+
     case "$PLATFORM" in
         linux-amd64)  CFT_PLAT="linux64" ;;
         linux-arm64)  CFT_PLAT="linux-arm64" ;;
