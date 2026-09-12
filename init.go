@@ -114,6 +114,7 @@ func initAllFederation() {
 	initInviteManager("data")
 	initUpdateManager("data")
 	initContributionLedger("data")
+	initGrantQuota("data")
 	initNATManager()
 }
 

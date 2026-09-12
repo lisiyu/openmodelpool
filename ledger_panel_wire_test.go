@@ -55,9 +55,11 @@ func TestLedgerPanelScriptCallsRealEndpoints(t *testing.T) {
 		"/api/admin/ledger/transparency",
 		"/api/admin/ledger/contribution-quota",
 		"/api/admin/ledger/contributors?limit=10",
+		"/api/admin/ledger/grants",
 		"/api/admin/ledger/export?format=",
 		"function loadLedgerTransparency",
 		"function renderHonorRoll",
+		"function renderGrants",
 		"function exportLedger",
 	} {
 		if !strings.Contains(j, need) {
