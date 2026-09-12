@@ -73,6 +73,7 @@
   - [x] P4-2(i) 中文版 `docs/PUBLIC-WELFARE.md`（全部对应已落地代码，不夸大）
   - [x] P4-2(ii) 英文版 `docs/PUBLIC-WELFARE.en.md`（与中文版对齐：免费额度归属模型/默认不强制/软提醒/网关角色/社区共治）
   - [x] P4-2(i) 中文版 `docs/PUBLIC-WELFARE.md`：使命 / 架构分层 / 去中心化联邦 / 透明 / 公益额度闭环 / 与商业网关区别 / 一行部署，全部对应已落地代码、不夸大
+- [x] **P4-3 开放评测基准：数据面 + 复现文档（2026-09-12 实现）**：让教育科研能公开可复现地评估免费池模型，结果自愿回传、不产生排名/激励。**数据面** `model_directory.go`：公开无鉴权 `GET /api/public/model-directory`（`wafMiddleware`+限流30/min），返回当前网关**社区公共面**快照（免费池 `free-*` 启用 provider 的模型 + 联邦信任池主动共享的模型，含 sources 与 `free_pool` 标记、`snapshot_at`）；**隐私红线**：`/v1/models` 里本机私有 provider 的模型永不进入该目录，代码注释明示。`model_directory_test.go` 4 用例（非 free- 私有 provider 绝不泄露、mesh 共享含 peer 名、nil 安全空目录、普通 provider 即便启用也省略）。**文档** `docs/EVAL-BENCHMARK.md`：固定 5 题中文基线（知识/数学/逻辑/代码/翻译）+ 目录→评测→CSV 回传复现流程 + 节流守则（公共免费池为共享资源）+ 自愿上传不得刷榜换激励的红线；`docs/INDEX.md` 加入口。`go build/vet/test ./...` 全绿
 
 ## Phase 5 — 发布后可持续性（2026-08-09 起，v4.3.29 之后）
 

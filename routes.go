@@ -16,6 +16,9 @@ func setupRoutes() *http.ServeMux {
 	// §10A: WAF is enforced on the inbound proxy path (no-op until enabled).
 	mux.HandleFunc("GET /v1/models", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayModels))))
 	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
+	// Public model directory (Phase 4 eval-benchmark): no auth, only community-
+	// shared + free-pool models — never private provider configs.
+	mux.HandleFunc("GET /api/public/model-directory", wafMiddleware(rateLimitByIP(30, "model_directory")(handleModelDirectory)))
 	mux.HandleFunc("POST /v1/completions", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
 	mux.HandleFunc("POST /v1/embeddings", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
 	// OpenAI v1/responses, v1/images, v1/audio downstream passthrough (P3-3(iii))
