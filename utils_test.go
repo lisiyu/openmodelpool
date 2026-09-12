@@ -2082,13 +2082,13 @@ func TestEnableLatestModels_LargeSet(t *testing.T) {
 
 func newTestTracker() *Tracker {
 	return &Tracker{
-		dataPath:            "/tmp/test_tracker_usage.json",
-		ewmaCache:           make(map[string]float64),
-		lastFlush:           time.Now(),
-		stopCh:              make(chan struct{}),
-		reqLogMax:           100,
-		alertThresholds:     []float64{0.8, 0.9, 1.0},
-		alertedTokens:       make(map[string]map[float64]bool),
+		dataPath:             "/tmp/test_tracker_usage.json",
+		ewmaCache:            make(map[string]float64),
+		lastFlush:            time.Now(),
+		stopCh:               make(chan struct{}),
+		reqLogMax:            100,
+		alertThresholds:      []float64{0.8, 0.9, 1.0},
+		alertedTokens:        make(map[string]map[float64]bool),
 		tokenUsageByProvider: make(map[string]int64),
 	}
 }
@@ -3266,4 +3266,3 @@ func TestAuth_ResetPassword_WeakPassword(t *testing.T) {
 		t.Error("weak password should fail")
 	}
 }
-

@@ -1680,8 +1680,8 @@ func TestHB8_UpdateManager_ListStatuses(t *testing.T) {
 func TestHB8_UpdateManager_setLocalFailed(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local:  UpdateStatus{Env: "local", Phase: PhaseDownloading},
-		peers:  make(map[string]UpdateStatus),
+		local:   UpdateStatus{Env: "local", Phase: PhaseDownloading},
+		peers:   make(map[string]UpdateStatus),
 		dataDir: dir,
 	}
 	um.setLocalFailed("test error")
@@ -1696,8 +1696,8 @@ func TestHB8_UpdateManager_setLocalFailed(t *testing.T) {
 func TestHB8_UpdateManager_setLocalTarget(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local:  UpdateStatus{Env: "local"},
-		peers:  make(map[string]UpdateStatus),
+		local:   UpdateStatus{Env: "local"},
+		peers:   make(map[string]UpdateStatus),
 		dataDir: dir,
 	}
 	um.setLocalTarget("v5.0.0")
@@ -1709,8 +1709,8 @@ func TestHB8_UpdateManager_setLocalTarget(t *testing.T) {
 func TestHB8_UpdateManager_upsertPeer(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local:  UpdateStatus{Env: "local"},
-		peers:  make(map[string]UpdateStatus),
+		local:   UpdateStatus{Env: "local"},
+		peers:   make(map[string]UpdateStatus),
 		dataDir: dir,
 	}
 	um.upsertPeer("peer-1", func(s *UpdateStatus) {

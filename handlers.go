@@ -19,11 +19,11 @@ import (
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Content-Type-Options", "nosniff")   // B4: prevent MIME sniffing
-	w.Header().Set("X-Frame-Options", "DENY")             // B4: prevent clickjacking
-	w.Header().Set("Cache-Control", "no-store")           // B4: prevent caching of API responses
-	w.Header().Set("Content-Security-Policy", "default-src 'none'") // F12: CSP for API responses
-	w.Header().Set("Referrer-Policy", "no-referrer")              // F14: prevent referrer leak
+	w.Header().Set("X-Content-Type-Options", "nosniff")                              // B4: prevent MIME sniffing
+	w.Header().Set("X-Frame-Options", "DENY")                                        // B4: prevent clickjacking
+	w.Header().Set("Cache-Control", "no-store")                                      // B4: prevent caching of API responses
+	w.Header().Set("Content-Security-Policy", "default-src 'none'")                  // F12: CSP for API responses
+	w.Header().Set("Referrer-Policy", "no-referrer")                                 // F14: prevent referrer leak
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()") // F15
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
@@ -98,8 +98,8 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	// F3: Encryption and config health
 	if enc != nil {
 		status["encryption"] = map[string]any{
-			"ready":      !enc.IsEphemeral(),
-			"ephemeral":  enc.IsEphemeral(),
+			"ready":     !enc.IsEphemeral(),
+			"ephemeral": enc.IsEphemeral(),
 		}
 	}
 	// Uptime
@@ -718,12 +718,12 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// handed the request to us (marker set + handoff in context), we only
 	// report the outcome — the gateway owns the final AdjustQuota call.
 	var (
-		pqDirect    bool
-		pqClientIP  string
-		pqModel     string
-		pqReserved  int64
-		pqActual    int64 // 0 refunds; pqReserved keeps the estimate
-		pqAdopted   *pqHandoff
+		pqDirect   bool
+		pqClientIP string
+		pqModel    string
+		pqReserved int64
+		pqActual   int64 // 0 refunds; pqReserved keeps the estimate
+		pqAdopted  *pqHandoff
 	)
 	if keyType == "public" && publicQuota != nil {
 		clientIP := extractClientIP(r.RemoteAddr)
@@ -750,10 +750,10 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// B8-1b: settlement variables live at function scope so the provider loop
 	// below can report actual usage into the deferred Adjust.
 	var (
-		gkSettled  = false   // a reservation was made and must be settled
-		gkKey      string    // the guest key that was reserved
-		gkReserved int64     // tokens reserved up-front (the estimate)
-		gkActual   int64     // actual consumption; 0 refunds, gkReserved keeps it
+		gkSettled  = false // a reservation was made and must be settled
+		gkKey      string  // the guest key that was reserved
+		gkReserved int64   // tokens reserved up-front (the estimate)
+		gkActual   int64   // actual consumption; 0 refunds, gkReserved keeps it
 	)
 	if keyType == "guest" && guestKeyUsage != nil && guestKeyStore != nil {
 		auth := r.Header.Get("Authorization")

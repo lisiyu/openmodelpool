@@ -40,12 +40,12 @@ func runServer() {
 	handler := recoverMiddleware(stripInternalHeadersMiddleware(requestIDMiddleware(corsMiddleware(requestLogMiddleware(concurrencyMiddleware(adminTimeoutMiddleware(mux)))))))
 
 	server := &http.Server{
-		Addr:         addr,
-		Handler:      handler,
-		ReadTimeout:  30 * time.Second,
-		ReadHeaderTimeout: 10 * time.Second, // SEC-P2-15: bound slow-header attacks
-		WriteTimeout: 300 * time.Second,     // long for streaming
-		IdleTimeout:  120 * time.Second,
+		Addr:              addr,
+		Handler:           handler,
+		ReadTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,  // SEC-P2-15: bound slow-header attacks
+		WriteTimeout:      300 * time.Second, // long for streaming
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Start HTTPS server if public_url is https://
@@ -97,10 +97,10 @@ func setupHTTPS(server *http.Server, handler http.Handler) {
 			GetCertificate: certManager.GetCertificate,
 			MinVersion:     tls.VersionTLS12, // B14: reject TLS 1.0/1.1
 		},
-		ReadTimeout:  30 * time.Second,
+		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second, // SEC-P2-15
-		WriteTimeout: 300 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		WriteTimeout:      300 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
@@ -189,7 +189,8 @@ func gracefulShutdown(server *http.Server) {
 				ledgerReplicator.Stop()
 			}
 			if netMgr != nil {
-				netMgr.stopRefreshLoop()			}
+				netMgr.stopRefreshLoop()
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			server.Shutdown(ctx)

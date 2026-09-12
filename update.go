@@ -66,6 +66,7 @@ var releaseSigningPubKey = ed25519.PublicKey{
 // The order is dynamically adjusted based on detected network region:
 //   - China mainland: mirrors first, direct GitHub last
 //   - Global/overseas: direct GitHub first, mirrors as fallback
+//
 // Mirrors that go offline are silently skipped by the retry logic.
 var githubDownloadMirrors = []string{
 	"https://ghfast.top/",
@@ -637,7 +638,7 @@ func (um *UpdateManager) TriggerSelfUpdate(target string) {
 		url   string
 	}
 	var sources []downloadSource
-	
+
 	region := detectRegion()
 	if region == "cn" {
 		// China mainland: mirrors first
@@ -1426,6 +1427,39 @@ func handleAdminUpdateStart(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		updateManager.TriggerSelfUpdate(target)
 	}()
+}
+
+// handleAdminUpdateBroadcast is the explicit, opt-in action that pushes the
+// latest release to every active federation peer (P1 cross-environment
+// broadcast). It is NEVER invoked implicitly: the local self-update path
+// deliberately does not broadcast (see words of caution in
+// handleAdminUpdateStart). An optional JSON body {"target_version":"vX.Y.Z"}
+// overrides the version to broadcast; otherwise the latest release detected
+// from GitHub is used. The endpoint returns 200 as soon as the signals have
+// been handed to the per-peer goroutines; peers report back asynchronously
+// via /api/federation/update-report.
+func handleAdminUpdateBroadcast(w http.ResponseWriter, r *http.Request) {
+	if updateManager == nil {
+		writeError(w, 500, "update manager not initialized")
+		return
+	}
+	target := updateManager.GetLatestVersion().LatestVersion
+	var body struct {
+		TargetVersion string `json:"target_version"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil && err != io.EOF {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if body.TargetVersion != "" {
+		target = body.TargetVersion
+	}
+	if target == "" {
+		writeError(w, 400, "no target version available")
+		return
+	}
+	updateManager.BroadcastUpdateSignal(target)
+	writeJSON(w, 200, map[string]any{"accepted": true, "target": target})
 }
 
 // handleAdminUpdateStatus returns aggregated local + peer statuses (T-3).

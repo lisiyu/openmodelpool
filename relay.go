@@ -19,15 +19,15 @@ import (
 // ============================================================
 
 type rateLimitEntry struct {
-	count     int
+	count       int
 	windowStart time.Time
 }
 
 var (
-	rateLimitMu   sync.Mutex
-	rateLimitMap  = make(map[string]*rateLimitEntry)
-	rateLimitMax  = 60
-	rateLimitWin  = time.Minute
+	rateLimitMu            sync.Mutex
+	rateLimitMap           = make(map[string]*rateLimitEntry)
+	rateLimitMax           = 60
+	rateLimitWin           = time.Minute
 	rateLimitMapMaxEntries = 10000
 )
 

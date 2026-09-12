@@ -124,7 +124,7 @@ func TestPostHeartbeatToPeer(t *testing.T) {
 	}
 
 	var parsed struct {
-		NodeID  string `json:"node_id"`
+		NodeID   string `json:"node_id"`
 		Endpoint string `json:"endpoint"`
 	}
 	if err := json.Unmarshal([]byte(gotBody), &parsed); err != nil {

@@ -95,9 +95,9 @@ func TestHandleGatewayModels_MeshSourcesAnnotated(t *testing.T) {
 		SharedProviders: []SharedProvider{{ProviderID: "peer-llm", Models: []string{"peer-gpt4"}}},
 	})
 	fed.AddKnownNode(NodeInfo{
-		NodeID:   "mmx-peer-2",
-		Endpoint: "https://n2.example.com",
-		Status:   "active",
+		NodeID:       "mmx-peer-2",
+		Endpoint:     "https://n2.example.com",
+		Status:       "active",
 		SharedModels: []string{"peer-extra"},
 	})
 

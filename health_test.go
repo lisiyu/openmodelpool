@@ -58,9 +58,9 @@ func TestHealthChecker_GetHealth_WithStatuses(t *testing.T) {
 func TestHealthChecker_IsHealthy(t *testing.T) {
 	hc := &HealthChecker{
 		statuses: map[string]*ProviderHealth{
-			"healthy-p": {ProviderID: "healthy-p", Status: "healthy"},
+			"healthy-p":  {ProviderID: "healthy-p", Status: "healthy"},
 			"degraded-p": {ProviderID: "degraded-p", Status: "degraded"},
-			"down-p": {ProviderID: "down-p", Status: "down"},
+			"down-p":     {ProviderID: "down-p", Status: "down"},
 		},
 		stopCh: make(chan struct{}),
 	}

@@ -67,7 +67,7 @@ func handleFederationHealthPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
-	serveEmbeddedHTML(w, r, "federation-health.html", true)
+	serveEmbeddedHTML(w, r, "federation-health.html", false)
 }
 
 func handleAdminCommonJS(w http.ResponseWriter, r *http.Request) {

@@ -160,13 +160,13 @@ func TestGuestKeyStore_ValidateGuestKey(t *testing.T) {
 	key, _ := GenerateGuestKey("mmx-node1")
 
 	tests := []struct {
-		name     string
-		key      string
-		wantNode string
+		name      string
+		key       string
+		wantNode  string
 		wantValid bool
 	}{
 		{"valid generated key", key, "mmx-node1", true},
-		{"valid format unknown key", "sk-guest-mmx-unknown-abc123", "", false},  // unknown keys rejected (S-1 fix)
+		{"valid format unknown key", "sk-guest-mmx-unknown-abc123", "", false}, // unknown keys rejected (S-1 fix)
 		{"not guest key", "sk-abc123", "", false},
 		{"empty key", "", "", false},
 		{"guest key no random part", "sk-guest-node1", "", false},
@@ -193,7 +193,7 @@ func TestGuestKeyStore_RevokeGuestKey(t *testing.T) {
 	defer func() { guestKeyStore = oldStore }()
 
 	key, _ := GenerateGuestKey("mmx-node1")
-	
+
 	// Key should be valid before revocation
 	if _, valid := ValidateGuestKey(key); !valid {
 		t.Fatal("key should be valid before revocation")
@@ -291,7 +291,7 @@ func TestGuestKeyStore_SaveAndLoad(t *testing.T) {
 func TestGuestKeyStore_LoadInvalidFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	dataPath := filepath.Join(tmpDir, "guest_keys.json")
-	
+
 	// Write invalid JSON
 	os.WriteFile(dataPath, []byte("not json"), 0600)
 

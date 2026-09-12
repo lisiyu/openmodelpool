@@ -35,7 +35,7 @@ type SeedPeerInfo struct {
 	LoadScore    float64          `json:"load_score,omitempty"`
 	LastSeen     int64            `json:"last_seen,omitempty"` // Unix timestamp
 	IsGateway    bool             `json:"is_gateway"`
-	IsSeed       bool             `json:"is_seed"`      // v3.1: always true — every node is a seed
+	IsSeed       bool             `json:"is_seed"` // v3.1: always true — every node is a seed
 	Region       string           `json:"region,omitempty"`
 	Version      string           `json:"version,omitempty"`
 	Capabilities PeerCapabilities `json:"capabilities,omitempty"` // v3.1
@@ -51,9 +51,9 @@ type SeedRegisterRequest struct {
 	Models       []string         `json:"models,omitempty"`
 	Region       string           `json:"region,omitempty"`
 	IsGateway    bool             `json:"is_gateway"`
-	IsSeed       bool             `json:"is_seed"`       // v3.1: ignored, all nodes are seeds
+	IsSeed       bool             `json:"is_seed"` // v3.1: ignored, all nodes are seeds
 	Version      string           `json:"version,omitempty"`
-	Secret       string           `json:"secret"` // shared secret for inter-node auth
+	Secret       string           `json:"secret"`                 // shared secret for inter-node auth
 	Capabilities PeerCapabilities `json:"capabilities,omitempty"` // v3.1
 	ShareToPool  bool             `json:"share_to_pool"`          // v3.1
 }
@@ -346,8 +346,8 @@ func startSeedServer() {
 	server := &http.Server{
 		Addr:         ":" + seedPort,
 		Handler:      seedMux,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  30 * time.Second,
 	}
 

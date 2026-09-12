@@ -1087,9 +1087,9 @@ func TestHB3_UpdateManager_ListStatuses(t *testing.T) {
 func TestHB3_UpdateManager_SetReportBack(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local: UpdateStatus{Env: "local", Phase: PhaseIdle},
-		peers: make(map[string]UpdateStatus),
-		cache: &versionCache{},
+		local:   UpdateStatus{Env: "local", Phase: PhaseIdle},
+		peers:   make(map[string]UpdateStatus),
+		cache:   &versionCache{},
 		dataDir: dir,
 	}
 	sig := UpdateSignal{BroadcastBy: "node1", TargetVersion: "v1.0"}

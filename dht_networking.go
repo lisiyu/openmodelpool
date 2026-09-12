@@ -49,9 +49,9 @@ type DHTMessage struct {
 	From     DHTNodeID   `json:"from"`
 	FromAddr string      `json:"from_addr"`
 	Type     DHTMsgType  `json:"type"`
-	Target   DHTNodeID   `json:"target,omitempty"` // lookup target (node ID or sha256(key))
-	Key      string      `json:"key,omitempty"`    // record key (STORE / FIND_VALUE)
-	Value    []byte      `json:"value,omitempty"`  // record value (STORE / FIND_VALUE_RESP)
+	Target   DHTNodeID   `json:"target,omitempty"`  // lookup target (node ID or sha256(key))
+	Key      string      `json:"key,omitempty"`     // record key (STORE / FIND_VALUE)
+	Value    []byte      `json:"value,omitempty"`   // record value (STORE / FIND_VALUE_RESP)
 	Entries  []*DHTEntry `json:"entries,omitempty"` // closest nodes (FIND_*_RESP)
 	Found    bool        `json:"found,omitempty"`   // FIND_VALUE_RESP: value present locally
 }

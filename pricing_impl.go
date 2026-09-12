@@ -19,14 +19,14 @@ var platformPricing = map[string]map[string][2]float64{
 		"claude-3-haiku-20240307":  {0.25, 1.25},
 	},
 	"deepseek": {
-		"deepseek-chat":    {0.27, 1.10},
+		"deepseek-chat":     {0.27, 1.10},
 		"deepseek-reasoner": {0.55, 2.19},
 	},
 	"openai": {
 		"gpt-4o": {2.50, 10.00},
 	},
 	"coze": {
-		"gpt-4o":       {2.50, 10.00},
+		"gpt-4o":        {2.50, 10.00},
 		"deepseek-chat": {0.27, 1.10},
 	},
 	"nvidia": {

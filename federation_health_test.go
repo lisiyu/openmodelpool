@@ -37,12 +37,12 @@ func TestHandleFederationHealth_ReportsNodeHealth(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	var out struct {
-		Enabled      bool   `json:"enabled"`
-		TotalNodes   int    `json:"total_nodes"`
-		ActiveNodes  int    `json:"active_nodes"`
-		SelfNodeID   string `json:"self_node_id"`
-		SelfVersion  string `json:"self_version"`
-		Nodes        []struct {
+		Enabled     bool   `json:"enabled"`
+		TotalNodes  int    `json:"total_nodes"`
+		ActiveNodes int    `json:"active_nodes"`
+		SelfNodeID  string `json:"self_node_id"`
+		SelfVersion string `json:"self_version"`
+		Nodes       []struct {
 			NodeID          string `json:"node_id"`
 			Status          string `json:"status"`
 			Freshness       string `json:"freshness"`

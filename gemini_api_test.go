@@ -52,9 +52,9 @@ func TestConvertGeminiFinish(t *testing.T) {
 
 func TestGeminiAuthAdapter(t *testing.T) {
 	cases := []struct {
-		name    string
-		setHdr  func(r *http.Request)
-		want    string
+		name   string
+		setHdr func(r *http.Request)
+		want   string
 	}{
 		{
 			name: "x-goog-api-key header",

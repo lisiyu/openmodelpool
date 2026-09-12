@@ -54,7 +54,7 @@
   - [x] P2-3(i) 贡献→免费配额闭环（加法式、零耦合）：`ledger_contrib_quota.go` —— `ContributionQuotaTracker`（按 peer_id 累计贡献 token → 等额免费配额，1:1 公益、无手续费/不通胀/不可交易；持久化 `data/contribution_quota.json`、线程安全）；`RecordContribution` 末尾加 nil 安全累计钩子（消费侧强制留 P2-3(ii)）；路由注册 `GET /api/admin/ledger/contribution-quota`（admin 鉴权 + 限流）返回每个贡献者"贡献量↔赚得免费配额"透明视图。`ledger_contrib_quota_test.go` 4 用例全绿（累计 1:1、持久化、RecordContribution 累计、nil 钩子无副作用）。`go build/vet/test ./...` 全绿
   - [x] P2-3(ii) 消费侧接入贡献者身份（**非排他实现**，2026-08-09）：`ledger_quota_consume.go` —— 身份直接复用联邦既有的 ed25519 节点身份（`verifyRelayForwardAuth` 已校验 `X-Node-ID` + 签名 + 重放窗口），**不新建用户系统**。`tryContributorDraw` 在 `handleGatewayRequest` 的 public-key 分支：已验签且有余额的贡献者从自己赚得的额度扣减，并因此跳过匿名 per-IP 滥用闸门；**无身份 / 额度用尽 / tracker 为 nil 一律回落到原社区免费池路径，不拒绝任何人**（贴合"善意默认、只防恶意滥用、不防不贡献"治理哲学，故把 backlog 原文的"强制"落地为"贡献者优先"，此为本轮唯一设计判断，请雷工验收时确认）。`ledger_contrib_quota.go` 增 `ConsumedQuota`/`RemainingQuota` + `Consume`/`Refund`/`Remaining`/`TotalConsumed`（1:1、可退款且钳零、不增发、不可交易），持久化向后兼容（旧文件 consumed 缺省 0）。响应头 `X-OMP-Quota-Source: contributor|community` 透明化扣自哪条通道；admin 透明度端点补 `total_consumed_tokens`/`total_remaining_tokens`。**顺带修掉一个既有双扣 bug**：网关已扣费的请求回落到本地 `handleChatCompletions` 时会对同一 IP 再扣一次，现由内部标记 `X-OMP-Quota-Charged` 阻断（该标记在网关入口 `stripInternalQuotaHeaders` 强制剥离，客户端无法伪造绕过闸门）。`ledger_quota_consume_test.go` 9 用例全绿（扣减/不足即 no-op/退款钳零/持久化/settle 结算/匿名与耗尽均回落/nil 惰性/伪造标记被剥离/畸形 node id 不成身份/端点字段）
 
-## Phase 3 — 普惠低门槛
+- [x] **P2-4 贡献者荣誉榜（非经济激励，2026-09-12 实现）**：REVIEW 阶段2 最后一项"贡献者荣誉体系"——公益用"被看见"代替"变现"。后端 `GossipLedger.GetContributorHonors` 按 peer 聚合捐献 token/记录数/最晚时间并排序（desc by tokens），新增 `GET /api/admin/ledger/contributors?limit=10`（`withAuth`+限流，`ledger_honor.go`，名字尽力从联邦信任池解析、失败回退短 ID）；**纯展示、无任何经济级联**——不兑换、不进配额/优先级/治理计算。前端 `admin-ledger.js` 透明度面板新增"贡献者荣誉榜"卡片（`renderHonorRoll`），文案明示"仅表达感谢"。`ledger_honor_test.go` 4 用例（排序/空榜/limit+名字回退/503）+ wire 测试追加接线断言全绿。`go build/vet/test ./...` 全绿
 
 - [x] P3-1 一键部署 / 容器化（降低个人运行门槛）：`Dockerfile`（多阶段、CGO 关、非 root、:8000、data 卷、版本 ldflags 注入）已具备；新增 `docker-compose.yml`（`docker compose up -d` 一行起，命名卷持久化 + restart unless-stopped + no-new-privileges）+ `.dockerignore`（排除 data/.git/构建产物，避免敏感/冗余打进构建上下文）。纯仓库产物，不改应用逻辑
 - [x] P3-2 免费池开箱即用：默认配置即可零成本接入
@@ -62,7 +62,7 @@
 - [x] P3-3 调用格式扩展（下游消费格式，与上游 provider.Type 正交）：2026-08-09 拍板**以 OpenAI 兼容为通用语 + Anthropic 原生已内建，不引入专有格式**。普通调用方契约恒为"base URL + API Key"，复用 `withProxyAuth`。
   - [x] P3-3(i) **Gemini 下游入口**：`gemini_api.go` 接受 `POST /v1beta/models/{model}:generateContent` 与 `:streamGenerateContent`，请求翻译为 OpenAI 格式后复用 `handleGatewayRequest`（与 Anthropic 同模式），响应经 `geminiResponseWriter` 翻回 Gemini 格式（含流式 SSE、usageMetadata、finishReason 映射）。`geminiAuthAdapter` 支持 `x-goog-api-key` 头与 `?key=` 查询（后者在鉴权后从 query 剥离，避免令牌外泄）。`gemini_api_test.go` 覆盖解析/翻译/鉴权共 7 用例全绿
   - [x] P3-3(ii) **Azure 下游 URL 风格**：`azure_api.go` 接受 `POST /openai/deployments/{deployment}/chat/completions`（`azureAuthAdapter` 把 Azure SDK 的 `api-key` 头转 Bearer），从路径提取 `deployment` 作为 model 注入 OpenAI 请求体、重写路径为 `/v1/chat/completions` 后复用 `handleGatewayRequest`；响应本就是 OpenAI 格式，无需翻译。`azure_api_test.go` 覆盖注入/鉴权共 3 用例全绿
-  - [ ] P3-3(iii) 候选增量（低优先级、社区明确诉求时再做，均收敛到"base url + key"契约）：OpenAI 新版 `/v1/responses`、`/v1/images`、`/v1/audio` 下游透传
+  - [x] P3-3(iii) 候选增量（低优先级、社区明确诉求时再做，均收敛到"base url + key"契约）：OpenAI 新版 `/v1/responses`、`/v1/images`、`/v1/audio` 下游透传。**实现（与既有格式翻译不同）：纯透传不翻译** —— `openai_passthrough.go::handleRawPassthrough` 把原始 body 用选中的 provider key 原样转发到上游 `BaseURL+子路径`（`/responses`、`/images/generations`、`/audio/speech`），响应原样回传（SSE/JSON/音频字节均保留 Content-Type）。透传复用 gateway 的全套前置检查（hop 计数、ShareBoundary、public/guest quota 预留估算），provider 失败自动回退下一候选，`no provider` 返回 404。`/v1/responses` 支持流式。`openai_passthrough_test.go` 覆盖子路径映射、verbatim 透传（JSON/音频/SSE）、无 provider 404 共 6 用例全绿
 
 ## Phase 4 — 教育科研
 
@@ -72,6 +72,7 @@
   - [x] P4-2(i) 中文版 `docs/PUBLIC-WELFARE.md`（全部对应已落地代码，不夸大）
   - [x] P4-2(ii) 英文版 `docs/PUBLIC-WELFARE.en.md`（与中文版对齐：免费额度归属模型/默认不强制/软提醒/网关角色/社区共治）
   - [x] P4-2(i) 中文版 `docs/PUBLIC-WELFARE.md`：使命 / 架构分层 / 去中心化联邦 / 透明 / 公益额度闭环 / 与商业网关区别 / 一行部署，全部对应已落地代码、不夸大
+- [x] **P4-3 开放评测基准：数据面 + 复现文档（2026-09-12 实现）**：让教育科研能公开可复现地评估免费池模型，结果自愿回传、不产生排名/激励。**数据面** `model_directory.go`：公开无鉴权 `GET /api/public/model-directory`（`wafMiddleware`+限流30/min），返回当前网关**社区公共面**快照（免费池 `free-*` 启用 provider 的模型 + 联邦信任池主动共享的模型，含 sources 与 `free_pool` 标记、`snapshot_at`）；**隐私红线**：`/v1/models` 里本机私有 provider 的模型永不进入该目录，代码注释明示。`model_directory_test.go` 4 用例（非 free- 私有 provider 绝不泄露、mesh 共享含 peer 名、nil 安全空目录、普通 provider 即便启用也省略）。**文档** `docs/EVAL-BENCHMARK.md`：固定 5 题中文基线（知识/数学/逻辑/代码/翻译）+ 目录→评测→CSV 回传复现流程 + 节流守则（公共免费池为共享资源）+ 自愿上传不得刷榜换激励的红线；`docs/INDEX.md` 加入口。`go build/vet/test ./...` 全绿
 
 ## Phase 5 — 发布后可持续性（2026-08-09 起，v4.3.29 之后）
 
@@ -94,6 +95,9 @@
   - 文档同步：`CONTRIBUTING.md` 改为"CI 跑的就是你本地那套，只多 `-race`/`-count=1`，不存在短/全分层"；`README.md` 贡献段补"CI gates on the same suite (with -race), so a green local run means a green CI run"。
   - 两个 job 的**显示名保持不变**（`Unit tests (with coverage)` / `Integration tests`），避免改名导致分支保护里可能配置的 required status check 匹配不上而永久 pending。若确认未设为 required，可把后者改名为更贴切的 `Second run (flaky watch)`。
 - [x] **P5-4 `startRegionSyncLoop` 空转治理（2026-08-11 实现）**：删除 stubs.go 里 sleep-only 的空转循环（其注释声称"跨节点同步区域"但循环体只有 TODO），新增 `region_sync.go` 实现本地 reconciliation 循环——只调和 join/heartbeat 通道未覆盖的三类缺口：① 已知但从不心跳我们的 peer；② 启动时公网地址未就绪导致自检测失败的本节点区域；③ 长期失联、无人清理的过期节点。设计铁律：**零网络 I/O、零 DNS 解析**（慢/恶意 peer 永不阻塞循环），仅靠本进程既持状态对账；空 known 视图（管理器未初始化/网络瞬时抖动）禁用 prune 防误删，本节点条目永不 prune。`reconcileRegionsOnce` 注入时钟 + `regionSeenAt` 旁路时间戳（避免每次 register 覆盖整值擦掉时间戳），`regionEntryTTL` 变量可测；`region_sync_test.go` 7 用例锁 fill-gap（pool 上报/IP 探测兜底）、空视图禁 prune、TTL 过期 prune、本节点受保护、known 节点保留、`hostFromEndpoint` 解析。`go build/vet/test ./...` 全绿
+
+- [x] **P5-5 跨环境更新广播 opt-in 入口 + 端到端验证（2026-09-12 实现）**：REVIEW 2.2 点名的"P1 跨环境广播未验证"缺口——`BroadcastUpdateSignal` 早已实现却无任何触发入口（本地自更新路径刻意不广播）。现新增显式 `POST /api/admin/update/broadcast`（`withAuth` + 限流，可选 body `{"target_version":...}` 覆盖版本，缺省用最新版本；仍遵守"绝不在本地自更新时隐式广播"的 opt-in 契约）。`update_broadcast_test.go` 7 用例：manager 缺失 500、body 覆盖版本、缺省用缓存最新版、坏 body 400、无目标 400，以及**端到端**——注入 active peer 后 `BroadcastUpdateSignal` 同步记录 downloading 状态、异步 goroutine 真实经 HTTP 送达 `/api/federation/update-signal` 且带 `X-Node-ID`/`X-Node-Signature` 联邦身份头。`go build/vet/test ./...` 全绿
+- [x] **P5-6 零日志隐私模式（数据主权，2026-09-12 实现）**：审计链路此前**无条件开启**（`initAuditLog` 无开关、硬编码 `dataDir`）。新增 `audit_enabled` 配置（默认 `true`，向后兼容）——设 `false` 进入零日志模式：不创建 `data/audit/`、不写文件、`audit_webhook_url` 一并静默，`auditRecord` 恒 no-op（现有调用方已 nil 安全，零改动）。`initAuditLog` 去硬编码改收 `dataDir` 参数（init.go 传 `"data"`，行为不变）。`audit_disable_test.go` 2 用例（零日志下无目录/无写入/不 panic；默认开启写入并含动作行）。`docs/CONFIGURATION.md` 新增"审计与隐私"小节（含 `GET /api/admin/audit-log` 零日志态返回 `enabled:false`）。`go build/vet/test ./...` 全绿
 
 ## Promotion（稳定后）
 

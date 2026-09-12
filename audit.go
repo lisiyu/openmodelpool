@@ -27,8 +27,14 @@ type AuditLogger struct {
 	webhookURL string // optional remote webhook for real-time audit forwarding
 }
 
-func initAuditLog() {
-	dataDir := "data"
+func initAuditLog(dataDir string) {
+	// Zero-log privacy mode (Route3 "数据主权"): operators that never want a
+	// local audit trail set audit_enabled=false and the whole logger stays off
+	// (no file, no webhook). Default is true to preserve existing behavior.
+	if cfg != nil && cfg.Get("audit_enabled", "true") != "true" {
+		slog.Info("audit logging disabled by config (audit_enabled=false, zero-log privacy mode)")
+		return
+	}
 	auditDir := filepath.Join(dataDir, "audit")
 	if err := os.MkdirAll(auditDir, 0700); err != nil {
 		slog.Error("failed to create audit directory", "error", err)

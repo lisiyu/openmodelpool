@@ -1,5 +1,26 @@
 # Changelog
 
+## v4.5.35 (2026-09-12)
+
+Componentized one-click installer — each runtime dependency can now be upgraded on its own (Linux & Windows aligned):
+
+- **`scripts/install.sh` (Linux) reworked into a component model** with per-component subcommands: `install.sh` (all, latest), `install.sh <版本>` (all + pinned core, backward compatible), `install.sh core [<版本>]`, `install.sh xray`, `install.sh cloudflared`, `install.sh frp`, `install.sh ngrok`, `install.sh browser`, `install.sh status`. Optional components that fail only warn and never block the core install.
+- **Fix: Xray was never installed by the one-click script** — `vmess://`/`vless://` proxies silently fell back to "xray binary not found", contradicting FEATURES.md's "auto-start local Xray proxy". The script now provisions Xray-core (with official `.dgst` verification) into `<dataDir>/../xray/xray`.
+- **Browser-core (headless Chrome for Testing) component** — installs `chrome-headless-shell`, writes `OMP_CHROME_PATH` (systemd drop-in / user env), so chromedp browser login works out of the box.
+- **`scripts/omp-manager.ps1` (Windows) gains `-Component <name>`** — upgrades core / xray / cloudflared / frp / ngrok / browser binaries in place without touching tunnel configs or scheduled tasks; `Show-Status` now reports xray and browser-core.
+- **`vmess.go`: `initVMessManager` probes `.exe` candidates on Windows** (`<dataDir>/../xray/xray.exe`, `xray/xray.exe`), otherwise an installed Windows xray could never be discovered.
+- Region-aware mirroring now bypasses mirrors for non-GitHub sources (Chrome for Testing).
+- `docs/DEPLOYMENT_GUIDE.md`: new section 2.4 documenting the dependency-component table and per-platform per-component upgrade commands.
+- AppVersion bumped to 4.5.35 · full suite green, `install.sh` `bash -n` clean, `omp-manager.ps1` parser-clean.
+
+## v4.5.34 (2026-09-12)
+
+Rolling ops release, deployed to openmodelpool.CC production node:
+
+- CI: second-run job renamed to `test-flaky-watch` / "Second run (flaky watch)" (branch protection has no required check named "Integration tests", so the rename is safe).
+- Carries P5-6 zero-log privacy mode (`audit_enabled=false`) and P4-3 public model directory from prior commits.
+- AppVersion bumped to 4.5.34.
+
 ## v4.5.23 (2026-08-21)
 
 Reliability & integrity hardening (post-audit review, batch 6):

@@ -5,11 +5,15 @@
 #  用法 (管理员 PowerShell):
 #    交互菜单:  irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex
 #    自动更新:  irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex -- -AutoUpdate
+#    单独升级组件 (core/xray/cloudflared/frp/ngrok/browser):
+#               $s = irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')"
+#               iex "$s -Component xray"
 # ============================================================
 param(
     [string]$InstallDir = "C:\openmodelpool",
     [int]$Port = 8000,
-    [switch]$AutoUpdate
+    [switch]$AutoUpdate,
+    [string]$Component = ""
 )
 
 $ErrorActionPreference = "Continue"
@@ -1410,6 +1414,25 @@ function Show-Status {
     $ngrokTask = Get-ScheduledTask -TaskName $ngrokTaskName -ErrorAction SilentlyContinue
     if ($ngrokTask) { Write-Info "计划任务: $ngrokTaskName ($($ngrokTask.State))" }
 
+    # Xray (vmess/vless 本地代理)
+    Write-Host ""
+    Write-Host "  [Xray]" -ForegroundColor $C
+    $xrayExePath = Join-Path $InstallDir "xray\xray.exe"
+    if (Test-Path $xrayExePath) { Write-Info "xray: 已安装 ($xrayExePath)" }
+    else { Write-Info "xray: 未安装（vmess/vless 代理不可用）" }
+    $xrayProc = Get-Process -Name "xray" -ErrorAction SilentlyContinue
+    if ($xrayProc) { Write-OK "使用中 (PID: $($xrayProc.Id))" }
+    else { Write-Info "未运行" }
+
+    # 浏览器核心 (chromedp 登录)
+    Write-Host ""
+    Write-Host "  [浏览器核心]" -ForegroundColor $C
+    $shellPath = Join-Path $InstallDir "browser\chrome-headless-shell.exe"
+    $envPath = [Environment]::GetEnvironmentVariable("OMP_CHROME_PATH", "User")
+    if (Test-Path $shellPath) { Write-Info "headless-shell: 已安装 ($shellPath)" }
+    elseif ($envPath) { Write-Info "headless-shell: 经由 OMP_CHROME_PATH ($envPath)" }
+    else { Write-Info "headless-shell: 未安装（浏览器登录不可用）" }
+
     # 尝试获取 ngrok URL
     if ($ngrokProc) {
         try {
@@ -1480,11 +1503,191 @@ function Restart-All {
 }
 
 # ============================================================
+# 组件单独升级（Windows 与 Linux install.sh 组件清单对齐）
+#   用法:  iex (irm ".../omp-manager.ps1...") -Component <name>
+#             name ∈ core | xray | cloudflared | frp | ngrok | browser
+#   仅升级对应二进制，不改动既有隧道配置与计划任务。
+# ============================================================
+
+function Get-LatestTag {
+    param([string]$Repo)
+    $ri = Invoke-RestWithRetry "https://api.github.com/repos/$Repo/releases/latest"
+    if ($ri) { return $ri.tag_name }
+    return $null
+}
+
+function Install-Xray {
+    param([string]$Tag)
+    if (-not $Tag) { $Tag = Get-LatestTag "XTLS/Xray-core" }
+    if (-not $Tag) { Write-Err "获取 Xray 最新版本失败"; return $false }
+
+    $arch = [Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE")
+    if ($arch -match "ARM64") { $asset = "Xray-windows-arm64-v8a.zip" }
+    else { $asset = "Xray-windows-64.zip" }
+    Write-Title "升级 Xray (vmess/vless 本地代理) → $Tag"
+
+    $url = "https://github.com/XTLS/Xray-core/releases/download/$Tag/$asset"
+    $tmpZip = Join-Path $env:TEMP "omp-xray-$(Get-Random).zip"
+    if (-not (Invoke-DownloadWithRetry $url $tmpZip)) { Write-Err "Xray 下载失败"; return $false }
+
+    $xrayDir = Join-Path $InstallDir "xray"
+    New-Item -ItemType Directory -Force -Path $xrayDir | Out-Null
+    $tmpDir = Join-Path $env:TEMP "omp-xray-x-$(Get-Random)"
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    try {
+        Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force -ErrorAction Stop
+    } catch {
+        Write-Err "Xray 解压失败: $($_.Exception.Message)"
+        Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+        return $false
+    }
+    $xrayExe = Join-Path $xrayDir "xray.exe"
+    $src = Get-ChildItem $tmpDir -Recurse -Filter "xray.exe" | Select-Object -First 1
+    if (-not $src) { Write-Err "解压后未找到 xray.exe"; return $false }
+    Copy-Item $src.FullName -Destination $xrayExe -Force
+    Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-OK "Xray 已升级: $xrayExe ($Tag)"
+    return $true
+}
+
+function Install-BrowserCore {
+    Write-Title "升级内置浏览器核心 (headless Chrome for Testing)"
+    $json = Invoke-RestWithRetry "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
+    if (-not $json) { Write-Err "获取 Chrome for Testing 版本失败"; return $false }
+
+    $entry = $json.downloads.'chrome-headless-shell'.windows64
+    if (-not $entry) { Write-Err "无 windows64 headless shell 下载地址"; return $false }
+    $url = $entry[0].url
+    $ver = $json.channels.Stable.version
+    $tmpZip = Join-Path $env:TEMP "omp-browser-$(Get-Random).zip"
+    if (-not (Invoke-DownloadWithRetry $url $tmpZip)) { Write-Err "浏览器核心下载失败"; return $false }
+
+    $browserDir = Join-Path $InstallDir "browser"
+    New-Item -ItemType Directory -Force -Path $browserDir | Out-Null
+    $tmpDir = Join-Path $env:TEMP "omp-browser-x-$(Get-Random)"
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    try {
+        Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force -ErrorAction Stop
+    } catch {
+        Write-Err "浏览器核心解压失败: $($_.Exception.Message)"
+        Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+        return $false
+    }
+    $shellExe = Get-ChildItem $tmpDir -Recurse -Filter "chrome-headless-shell.exe" | Select-Object -First 1
+    if (-not $shellExe) { Write-Err "解压后未找到 chrome-headless-shell.exe"; return $false }
+    $dest = Join-Path $browserDir "chrome-headless-shell.exe"
+    Copy-Item $shellExe.FullName -Destination $dest -Force
+    Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    [Environment]::SetEnvironmentVariable("OMP_CHROME_PATH", $dest, "User")
+    $env:OMP_CHROME_PATH = $dest
+    Write-OK "浏览器核心已升级: $dest ($ver)"
+    Write-Info "已设置用户环境变量 OMP_CHROME_PATH（新进程生效；当前进程需手动 export）"
+    return $true
+}
+
+function Install-CloudflaredBin {
+    param([string]$Tag)
+    if (-not $Tag) { $Tag = Get-LatestTag "cloudflare/cloudflared" }
+    if (-not $Tag) { Write-Err "获取 cloudflared 最新版本失败"; return $false }
+    Write-Title "升级 cloudflared (Cloudflare 隧道) → $Tag"
+
+    $arch = [Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE")
+    if ($arch -match "ARM64") { $asset = "cloudflared-windows-arm64.exe" }
+    else { $asset = "cloudflared-windows-amd64.exe" }
+    $url = "https://github.com/cloudflare/cloudflared/releases/download/$Tag/$asset"
+    $tmpExe = Join-Path $env:TEMP "omp-cf-$(Get-Random).exe"
+    if (-not (Invoke-DownloadWithRetry $url $tmpExe)) { Write-Err "cloudflared 下载失败"; return $false }
+
+    New-Item -ItemType Directory -Force -Path $cfDir | Out-Null
+    Copy-Item $tmpExe -Destination $cfExe -Force
+    Remove-Item $tmpExe -Force -ErrorAction SilentlyContinue
+    Write-OK "cloudflared 已升级: $cfExe ($Tag)"
+    return $true
+}
+
+function Install-FrpBin {
+    param([string]$Tag)
+    if (-not $Tag) { $Tag = Get-LatestTag "fatedier/frp" }
+    if (-not $Tag) { Write-Err "获取 frp 最新版本失败"; return $false }
+    $ver = $Tag.TrimStart("v")
+    Write-Title "升级 frpc (FRP 隧道) → $Tag"
+
+    $url = "https://github.com/fatedier/frp/releases/download/$Tag/frp_${ver}_windows_amd64.zip"
+    $tmpZip = Join-Path $env:TEMP "omp-frp-$(Get-Random).zip"
+    if (-not (Invoke-DownloadWithRetry $url $tmpZip)) { Write-Err "frpc 下载失败"; return $false }
+    $tmpDir = Join-Path $env:TEMP "omp-frp-x-$(Get-Random)"
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    try {
+        Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force -ErrorAction Stop
+    } catch {
+        Write-Err "frpc 解压失败"; return $false
+    }
+    $frpc = Get-ChildItem $tmpDir -Recurse -Filter "frpc.exe" | Select-Object -First 1
+    if (-not $frpc) { Write-Err "解压后未找到 frpc.exe"; return $false }
+    New-Item -ItemType Directory -Force -Path $frpDir | Out-Null
+    Copy-Item $frpc.FullName -Destination $frpExe -Force
+    Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-OK "frpc 已升级: $frpExe ($Tag)"
+    return $true
+}
+
+function Install-NgrokBin {
+    param([string]$Tag)
+    if (-not $Tag) { $Tag = Get-LatestTag "ngrok/ngrok-v3" }
+    if (-not $Tag) { Write-Err "获取 ngrok 最新版本失败"; return $false }
+    $ver = $Tag.TrimStart("v")
+    Write-Title "升级 ngrok (ngrok 隧道) → $Tag"
+
+    $url = "https://github.com/ngrok/ngrok-v3/releases/download/$Tag/ngrok-v3-${ver}-windows-amd64.zip"
+    $tmpZip = Join-Path $env:TEMP "omp-ngrok-$(Get-Random).zip"
+    if (-not (Invoke-DownloadWithRetry $url $tmpZip)) { Write-Err "ngrok 下载失败"; return $false }
+    $tmpDir = Join-Path $env:TEMP "omp-ngrok-x-$(Get-Random)"
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    try {
+        Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force -ErrorAction Stop
+    } catch {
+        Write-Err "ngrok 解压失败"; return $false
+    }
+    $ng = Get-ChildItem $tmpDir -Recurse -Filter "ngrok.exe" | Select-Object -First 1
+    if (-not $ng) { Write-Err "解压后未找到 ngrok.exe"; return $false }
+    New-Item -ItemType Directory -Force -Path $ngrokDir | Out-Null
+    Copy-Item $ng.FullName -Destination $ngrokExe -Force
+    Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-OK "ngrok 已升级: $ngrokExe ($Tag)"
+    return $true
+}
+
+function Update-Component {
+    param([string]$Name)
+    $Name = $Name.ToLower().Trim()
+    switch ($Name) {
+        "core"       { Upgrade-OMP; return }
+        "xray"       { Install-Xray; return }
+        "browser"    { Install-BrowserCore; return }
+        "cloudflared" { Install-CloudflaredBin; return }
+        "frp"        { Install-FrpBin; return }
+        "ngrok"      { Install-NgrokBin; return }
+        default {
+            Write-Host ""
+            Write-Host "  可用组件: core | xray | cloudflared | frp | ngrok | browser" -ForegroundColor $Y
+            Write-Host "  示例: iex (irm '.../omp-manager.ps1') -Component xray" -ForegroundColor DarkGray
+        }
+    }
+}
+
+# ============================================================
 # 主菜单
 # ============================================================
 if (-not (Test-Admin)) {
     Write-Host "[ERROR] 请使用管理员权限运行 PowerShell" -ForegroundColor $R
     exit 1
+}
+
+# 组件单独升级模式（非交互）
+if ($Component) {
+    Update-Component $Component
+    exit 0
 }
 
 
@@ -1607,6 +1810,7 @@ while ($true) {
     Write-Host "    0. 退出" -ForegroundColor $W
     Write-Host "  ============================================" -ForegroundColor $C
     Write-Host "  安装目录: $InstallDir  端口: $Port" -ForegroundColor DarkGray
+    Write-Host "  单独升级组件: iex ... -Component xray|browser|frp|ngrok|cloudflared|core" -ForegroundColor DarkGray
     $choice = Read-Host "  请选择 [0-8]"
 
     switch ($choice) {

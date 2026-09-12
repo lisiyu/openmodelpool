@@ -34,33 +34,33 @@ func TestResolvePublicEndpoint_Priority(t *testing.T) {
 		wantPrefix   string
 	}{
 		{
-			name:        "federation_endpoint_wins_over_all",
-			fedEndpoint: "https://explicit.example.com",
+			name:         "federation_endpoint_wins_over_all",
+			fedEndpoint:  "https://explicit.example.com",
 			publicDomain: "https://public.example.com",
-			host:        "host.example.com",
-			want:        "https://explicit.example.com",
+			host:         "host.example.com",
+			want:         "https://explicit.example.com",
 		},
 		{
-			name:        "public_domain_wins_when_no_federation_endpoint",
-			fedEndpoint: "",
+			name:         "public_domain_wins_when_no_federation_endpoint",
+			fedEndpoint:  "",
 			publicDomain: "https://public.example.com",
-			host:        "host.example.com",
-			want:        "https://public.example.com",
+			host:         "host.example.com",
+			want:         "https://public.example.com",
 		},
 		{
-			name:        "host_header_used_when_no_config",
-			fedEndpoint: "",
+			name:         "host_header_used_when_no_config",
+			fedEndpoint:  "",
 			publicDomain: "",
-			host:        "host.example.com",
-			want:        "https://host.example.com",
+			host:         "host.example.com",
+			want:         "https://host.example.com",
 		},
 		{
-			name:        "lan_fallback_warn_when_nothing_set",
-			fedEndpoint: "",
+			name:         "lan_fallback_warn_when_nothing_set",
+			fedEndpoint:  "",
 			publicDomain: "",
-			host:        "",
-			servicePort: "8123",
-			wantPrefix:  "http://",
+			host:         "",
+			servicePort:  "8123",
+			wantPrefix:   "http://",
 		},
 	}
 
@@ -141,7 +141,7 @@ func TestNetworkAddPeer_EmptyNodeIDUnreachable(t *testing.T) {
 // (GetInfo) 产出的 Endpoint 必须是该公网域名，而绝不能回落到内网 http:// 地址。
 func TestNodeGetInfo_UsesConfiguredPublicEndpoint(t *testing.T) {
 	env := setupTestEnv(t)
-	t.Setenv("FEDERATION_ENDPOINT", "")              // 确保显式端点未配置
+	t.Setenv("FEDERATION_ENDPOINT", "") // 确保显式端点未配置
 	t.Setenv("PUBLIC_DOMAIN", "https://openmodelpool.io")
 
 	node = &NodeIdentity{keyPath: filepath.Join(env.dir, "node.key")}

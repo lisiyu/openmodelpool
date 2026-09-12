@@ -16,8 +16,15 @@ func setupRoutes() *http.ServeMux {
 	// §10A: WAF is enforced on the inbound proxy path (no-op until enabled).
 	mux.HandleFunc("GET /v1/models", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayModels))))
 	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
+	// Public model directory (Phase 4 eval-benchmark): no auth, only community-
+	// shared + free-pool models — never private provider configs.
+	mux.HandleFunc("GET /api/public/model-directory", wafMiddleware(rateLimitByIP(30, "model_directory")(handleModelDirectory)))
 	mux.HandleFunc("POST /v1/completions", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
 	mux.HandleFunc("POST /v1/embeddings", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
+	// OpenAI v1/responses, v1/images, v1/audio downstream passthrough (P3-3(iii))
+	mux.HandleFunc("POST /v1/responses", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
+	mux.HandleFunc("POST /v1/images/generations", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
+	mux.HandleFunc("POST /v1/audio/speech", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
 	// Anthropic Messages API compatibility — for Claude Code and other Anthropic clients
 	mux.HandleFunc("POST /v1/messages", anthropicAuthAdapter(withProxyAuth(wafMiddleware(rateLimitMiddleware(handleAnthropicMessages)))))
 	// Azure OpenAI URL compatibility — accepts /openai/deployments/{deployment}/chat/completions
@@ -63,6 +70,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/goroutines", rateLimitByIP(5, "goroutines")(withAuth(handleGoroutineDump)))
 	// Ledger transparency (P2-2): where contributed compute came from + integrity
 	mux.HandleFunc("GET /api/admin/ledger/transparency", rateLimitByIP(10, "ledger_transparency")(withAuth(handleAdminLedgerTransparency)))
+	mux.HandleFunc("GET /api/admin/ledger/contributors", rateLimitByIP(10, "ledger_contributors")(withAuth(handleAdminLedgerContributors)))
 	mux.HandleFunc("GET /api/admin/ledger/contribution-quota", rateLimitByIP(10, "ledger_quota")(withAuth(handleAdminLedgerContributionQuota)))
 	// Ledger export for research / openness (P4-1): JSON (full) or CSV (contributions)
 	mux.HandleFunc("GET /api/admin/ledger/export", rateLimitByIP(10, "ledger_export")(withAuth(handleLedgerExport)))
@@ -72,6 +80,7 @@ func setupRoutes() *http.ServeMux {
 	// One-click version update (incremental)
 	mux.HandleFunc("GET /api/admin/version/latest", withAuth(handleAdminVersionLatest))
 	mux.HandleFunc("POST /api/admin/update/start", rateLimitByIP(3, "update_start")(withAuth(handleAdminUpdateStart)))
+	mux.HandleFunc("POST /api/admin/update/broadcast", rateLimitByIP(2, "update_broadcast")(withAuth(handleAdminUpdateBroadcast)))
 	mux.HandleFunc("GET /api/admin/update/status", withAuth(handleAdminUpdateStatus))
 	// Federation cross-node update signal + report-back
 	mux.HandleFunc("POST /api/federation/update-signal", rateLimitByIP(30, "update_signal")(withFederationAuth(handleFederationUpdateSignal)))
@@ -268,9 +277,9 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/network/guest-keys", withAuth(handleGuestKeyIssue))
 	mux.HandleFunc("GET /api/network/guest-keys", withAuth(handleGuestKeyList))
 	mux.HandleFunc("DELETE /api/network/guest-keys/{key}", withAuth(handleGuestKeyRevoke))
-	mux.HandleFunc("DELETE /api/network/guest-keys/{key}/permanent", withAuth(handleGuestKeyDelete))       // B10-U2: was dead — UI button 404'd
+	mux.HandleFunc("DELETE /api/network/guest-keys/{key}/permanent", withAuth(handleGuestKeyDelete))                 // B10-U2: was dead — UI button 404'd
 	mux.HandleFunc("POST /api/network/guest-keys/{key}/mark-collaborator", withAuth(handleGuestKeyMarkCollaborator)) // B10-U2: was dead
-	mux.HandleFunc("POST /api/network/guest-keys/{key}/share-type", withAuth(handleGuestKeyShareType))    // B10-U2: was dead
+	mux.HandleFunc("POST /api/network/guest-keys/{key}/share-type", withAuth(handleGuestKeyShareType))               // B10-U2: was dead
 	mux.HandleFunc("POST /api/network/keys/validate", rateLimitByIP(30, "key_validate")(handleNetworkKeyValidate))
 	mux.HandleFunc("PUT /api/network/guest-keys/{key}/quota", withAuth(handleGuestKeyUpdateQuota))
 

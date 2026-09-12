@@ -100,9 +100,9 @@ func TestHandleDirectProbe_RejectsPrivateTarget(t *testing.T) {
 	t.Cleanup(func() { natMgr = orig })
 
 	cases := []struct {
-		name    string
-		body    string
-		want    int
+		name string
+		body string
+		want int
 	}{
 		{"ftp_scheme", `{"node_id":"n1","target_url":"ftp://example.com/x"}`, 400},
 		{"loopback", `{"node_id":"n1","target_url":"http://127.0.0.1:8000/api/network/status"}`, 400},

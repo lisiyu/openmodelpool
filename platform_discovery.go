@@ -131,7 +131,7 @@ func handleGetDiscoveredPlatforms(w http.ResponseWriter, r *http.Request) {
 // handleUpdateDiscoveredPlatform updates the status of a discovered platform.
 func handleUpdateDiscoveredPlatform(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	
+
 	if id == "" {
 		writeError(w, 400, "platform ID required")
 		return
@@ -250,7 +250,7 @@ func getKnownFreePlatforms() []DiscoveredPlatform {
 			Description: "Cloudflare \u63d0\u4f9b\u7684 AI \u63a8\u7406\u670d\u52a1\uff0c\u652f\u6301\u591a\u79cd\u5f00\u6e90\u6a21\u578b\uff0c\u6bcf\u5929\u6709\u514d\u8d39\u989d\u5ea6",
 			APIKeyURL:   "https://dash.cloudflare.com/ai",
 			Models:      []string{"@cf/meta/llama-3.1-8b-instruct", "@cf/meta/llama-3.1-70b-instruct"},
-			Source: "github_list", Status: "new", DiscoveredAt: now,
+			Source:      "github_list", Status: "new", DiscoveredAt: now,
 		},
 		{
 			ID: "huggingface-inference", Name: "HuggingFace Inference API",
@@ -258,7 +258,7 @@ func getKnownFreePlatforms() []DiscoveredPlatform {
 			Description: "HuggingFace \u514d\u8d39\u63a8\u7406 API\uff0c\u53ef\u8c03\u7528\u6570\u5343\u4e2a\u5f00\u6e90\u6a21\u578b",
 			APIKeyURL:   "https://huggingface.co/settings/tokens",
 			Models:      []string{"meta-llama/Llama-3.1-8B-Instruct", "mistralai/Mistral-7B-Instruct-v0.3"},
-			Source: "github_list", Status: "new", DiscoveredAt: now,
+			Source:      "github_list", Status: "new", DiscoveredAt: now,
 		},
 		{
 			ID: "openrouter-free", Name: "OpenRouter (\u514d\u8d39\u6a21\u578b)",
@@ -266,7 +266,7 @@ func getKnownFreePlatforms() []DiscoveredPlatform {
 			Description: "OpenRouter \u4e0a\u6807\u8bb0\u4e3a\u514d\u8d39\u7684\u6a21\u578b\uff0c\u65e0\u9700\u4ed8\u8d39\u5373\u53ef\u8c03\u7528",
 			APIKeyURL:   "https://openrouter.ai/keys",
 			Models:      []string{"meta-llama/llama-3.1-8b-instruct:free", "google/gemini-2.0-flash-exp:free"},
-			Source: "github_list", Status: "new", DiscoveredAt: now,
+			Source:      "github_list", Status: "new", DiscoveredAt: now,
 		},
 		{
 			ID: "aihubmix", Name: "AIHubMix",
@@ -274,7 +274,7 @@ func getKnownFreePlatforms() []DiscoveredPlatform {
 			Description: "\u805a\u5408\u5e73\u53f0\uff0c\u63d0\u4f9b\u514d\u8d39\u989d\u5ea6\uff0cOpenAI \u517c\u5bb9 API",
 			APIKeyURL:   "https://aihubmix.com/",
 			Models:      []string{"gpt-4o", "claude-3.5-sonnet", "gemini-2.0-flash"},
-			Source: "github_list", Status: "new", DiscoveredAt: now,
+			Source:      "github_list", Status: "new", DiscoveredAt: now,
 		},
 		{
 			ID: "chutes-ai", Name: "Chutes AI",
@@ -282,7 +282,7 @@ func getKnownFreePlatforms() []DiscoveredPlatform {
 			Description: "\u514d\u8d39\u5f00\u6e90\u6a21\u578b\u63a8\u7406\u5e73\u53f0\uff0c\u65e0\u9700\u4fe1\u7528\u5361\u6ce8\u518c",
 			APIKeyURL:   "https://chutes.ai/",
 			Models:      []string{"deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"},
-			Source: "github_list", Status: "new", DiscoveredAt: now,
+			Source:      "github_list", Status: "new", DiscoveredAt: now,
 		},
 		{
 			ID: "lmstudio-local", Name: "LM Studio (\u672c\u5730)",
@@ -290,7 +290,7 @@ func getKnownFreePlatforms() []DiscoveredPlatform {
 			Description: "LM Studio \u672c\u5730\u6a21\u578b\u63a8\u7406\uff0cOpenAI \u517c\u5bb9 API",
 			APIKeyURL:   "https://lmstudio.ai/",
 			Models:      []string{"local-model"},
-			Source: "manual", Status: "new", DiscoveredAt: now,
+			Source:      "manual", Status: "new", DiscoveredAt: now,
 		},
 		{
 			ID: "vllm-local", Name: "vLLM (\u672c\u5730/\u81ea\u5efa)",
@@ -298,7 +298,7 @@ func getKnownFreePlatforms() []DiscoveredPlatform {
 			Description: "vLLM \u9ad8\u6027\u80fd\u63a8\u7406\u5f15\u64ce\uff0c\u81ea\u5efa\u90e8\u7f72\u540e OpenAI \u517c\u5bb9",
 			APIKeyURL:   "https://docs.vllm.ai/",
 			Models:      []string{},
-			Source: "manual", Status: "new", DiscoveredAt: now,
+			Source:      "manual", Status: "new", DiscoveredAt: now,
 		},
 		{
 			ID: "coze-intl", Name: "Coze \u56fd\u9645\u7248",
@@ -306,7 +306,7 @@ func getKnownFreePlatforms() []DiscoveredPlatform {
 			Description: "Coze \u56fd\u9645\u7248\uff0c\u652f\u6301 Bot API \u8c03\u7528\uff0cOpenAI \u517c\u5bb9",
 			APIKeyURL:   "https://www.coze.com",
 			Models:      []string{},
-			Source: "manual", Status: "new", DiscoveredAt: now,
+			Source:      "manual", Status: "new", DiscoveredAt: now,
 		},
 	}
 }

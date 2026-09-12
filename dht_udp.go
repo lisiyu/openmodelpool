@@ -185,7 +185,7 @@ func (t *UDPDHTTransport) Stop() {
 // dhtNode and dhtTransport are the production-singleton instances, started in
 // initAllNetwork and stopped in gracefulShutdown.
 var (
-	dhtNode     *DHTNode
+	dhtNode      *DHTNode
 	dhtTransport *UDPDHTTransport
 )
 

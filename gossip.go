@@ -92,7 +92,7 @@ func (g *GossipManager) doGossipRound() {
 	if contributionLedger != nil {
 		ledgerPayload := struct {
 			Contributions []*ContributionRecord `json:"contributions,omitempty"`
-			Claims        []*CapabilityClaim     `json:"claims,omitempty"`
+			Claims        []*CapabilityClaim    `json:"claims,omitempty"`
 		}{
 			Contributions: contributionLedger.GetAllContributions(),
 			Claims:        contributionLedger.GetAllClaims(),
@@ -372,7 +372,7 @@ func (g *GossipManager) processGossipResponse(msg *GossipMessage, peer NodeInfo)
 	if len(msg.Payload) > 0 && contributionLedger != nil {
 		var ledgerPayload struct {
 			Contributions []*ContributionRecord `json:"contributions,omitempty"`
-			Claims        []*CapabilityClaim     `json:"claims,omitempty"`
+			Claims        []*CapabilityClaim    `json:"claims,omitempty"`
 		}
 		if err := json.Unmarshal(msg.Payload, &ledgerPayload); err == nil {
 			added := contributionLedger.GossipSync(ledgerPayload.Contributions, nil, ledgerPayload.Claims, nil)

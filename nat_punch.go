@@ -19,8 +19,8 @@ var PunchMagic = []byte{0x4f, 0x4d, 0x50, 0x31} // "OMP1"
 type PunchOffer struct {
 	NodeID        string `json:"node_id"`
 	ReflexiveAddr string `json:"reflexive_addr"` // STUN 公网 UDP 地址 host:port
-	LocalAddr     string `json:"local_addr"`      // 私网 UDP 监听地址 host:port（open 网络下可能与 reflexive 相同）
-	Nonce         []byte `json:"nonce"`           // 16 字节随机值，对端回显以证明存活
+	LocalAddr     string `json:"local_addr"`     // 私网 UDP 监听地址 host:port（open 网络下可能与 reflexive 相同）
+	Nonce         []byte `json:"nonce"`          // 16 字节随机值，对端回显以证明存活
 	SenderTS      int64  `json:"ts"`
 }
 

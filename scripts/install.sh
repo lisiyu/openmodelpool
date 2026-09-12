@@ -1,31 +1,77 @@
 #!/bin/bash
-# OpenModelPool 一键安装/升级脚本
-# curl -sSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh | bash
-# 或指定版本: curl ... | bash -s -- 4.3.21
+# OpenModelPool 一键安装/升级脚本（组件化，支持单独升级各依赖组件）
+#
+#   curl -sSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh | bash
+#
+# 组件列表（均可单独升级）:
+#   core         OpenModelPool 主程序（release 资产，强制 SHA-256 校验）
+#   xray         XTLS/Xray-core —— provider 用 vmess:// vless:// 时的本地代理
+#   cloudflared  Cloudflare 隧道客户端（tunnel 模式经 PATH 查找）
+#   frp          frps + frpc（FRP 自建隧道可选组件）
+#   ngrok        ngrok agent（ngrok 隧道可选组件）
+#   browser      内置浏览器核心（chromedp 登录依赖的 headless Chrome）
+#   status       查看所有组件安装状态与版本
+#
+# 用例:
+#   sudo bash install.sh                      全部组件各取最新
+#   sudo bash install.sh 4.5.34               全部，核心固定 v4.5.34（向后兼容）
+#   sudo bash install.sh core 4.5.34          仅升级核心到固定版本
+#   sudo bash install.sh xray                 仅升级 Xray
+#   sudo bash install.sh cloudflared          仅升级 Cloudflare 隧道
+#   sudo bash install.sh frp                  仅升级 frp
+#   sudo bash install.sh ngrok                仅升级 ngrok
+#   sudo bash install.sh browser              仅升级内置浏览器核心
+#   sudo bash install.sh status               查看组件状态
+#
+# 跳过可选组件（仅对"全部"生效）:
+#   OMP_SKIP_XRAY=1 OMP_SKIP_CLOUDFLARED=1 OMP_SKIP_FRP=1 \
+#   OMP_SKIP_NGROK=1 OMP_SKIP_BROWSER=1 sudo bash install.sh
 
 set -euo pipefail
 
 REPO="lisiyu/openmodelpool"
+XRAY_REPO="XTLS/Xray-core"
+CLOUDFLARED_REPO="cloudflare/cloudflared"
+FRP_REPO="fatedier/frp"
+NGROK_REPO="ngrok/ngrok-v3"
 DEFAULT_INSTALL_DIR="/opt/openmodelpool"
 SERVICE_NAME="openmodelpool"
 BINARY_NAME="openmodelpool"
-DATA_DIR="/opt/openmodelpool/data"
+DATA_DIR="$DEFAULT_INSTALL_DIR/data"
+XRAY_DIR="$DEFAULT_INSTALL_DIR/xray"
+XRAY_BIN="$XRAY_DIR/xray"
+BROWSER_DIR="$DEFAULT_INSTALL_DIR/browser"
+LOCAL_BIN="/usr/local/bin"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-info()  { echo -e "${CYAN}→${NC} $*"; }
-ok()    { echo -e "${GREEN}✓${NC} $*"; }
-warn()  { echo -e "${YELLOW}!${NC} $*"; }
-fail()  { echo -e "${RED}✗${NC} $*"; exit 1; }
+RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; CYAN=$'\033[0;36m'; NC=$'\033[0m'
+info() { echo -e "${CYAN}->${NC} $*"; }
+ok()   { echo -e "${GREEN}ok${NC} $*"; }
+warn() { echo -e "${YELLOW}!${NC} $*"; }
+fail() { echo -e "${RED}x${NC} $*"; exit 1; }
 
-[[ $EUID -ne 0 ]] && fail "请使用 sudo 执行: sudo bash install.sh [版本号]"
+[[ $EUID -ne 0 ]] && fail "请使用 sudo 执行: sudo bash install.sh [组件] [版本号]"
 
-# ─── 参数解析 ───
-TARGET_VERSION="${1:-}"
-if [[ -n "$TARGET_VERSION" && ! "$TARGET_VERSION" =~ ^v ]]; then
-    TARGET_VERSION="v$TARGET_VERSION"
-fi
+show_help() {
+    cat <<'EOF'
+用法: sudo bash install.sh [组件] [版本]
 
-# ─── 平台检测 ───
+组件（不传或 all 时核心可选固定版本，向后兼容旧用法）:
+  (空) | all          全部组件升级
+  core [<版本>]       仅核心，版本如 4.5.34
+  xray                仅 Xray（vmess/vless 本地代理）
+  cloudflared         仅 Cloudflare 隧道客户端
+  frp                 仅 frps + frpc
+  ngrok               仅 ngrok agent
+  browser             仅内置浏览器核心（headless Chrome）
+  status              查看各组件安装状态与版本
+  help                显示本帮助
+
+跳过可选组件（对"全部"生效）:
+  OMP_SKIP_XRAY=1 OMP_SKIP_CLOUDFLARED=1 OMP_SKIP_FRP=1
+  OMP_SKIP_NGROK=1 OMP_SKIP_BROWSER=1 sudo bash install.sh
+EOF
+}
+
 ARCH=$(uname -m)
 case "$ARCH" in
     x86_64)  PLATFORM="linux-amd64" ;;
@@ -34,28 +80,14 @@ case "$ARCH" in
     *)       fail "不支持的架构: $ARCH (仅支持 x86_64/aarch64/armv7l)" ;;
 esac
 
-# ─── 区域检测（根据 IP 判断 VPS 所在区域，优选下载源）───
-# 返回: cn (中国大陆) | global (海外/其他)
 detect_region() {
     local ip country
-    # 尝试多个 IP 查询服务，任一成功即返回
     ip=$(curl -s --connect-timeout 3 https://ifconfig.me 2>/dev/null) || \
     ip=$(curl -s --connect-timeout 3 https://api.ipify.org 2>/dev/null) || \
     ip=$(curl -s --connect-timeout 3 https://icanhazip.com 2>/dev/null) || true
-    
-    if [[ -z "$ip" ]]; then
-        echo "global"  # 无法获取 IP，默认海外
-        return
-    fi
-    
-    # 查询 IP 归属地
+    if [[ -z "$ip" ]]; then echo "global"; return; fi
     country=$(curl -s --connect-timeout 3 "http://ip-api.com/line/${ip}?fields=countryCode" 2>/dev/null) || country=""
-    
-    if [[ "$country" == "CN" ]]; then
-        echo "cn"
-    else
-        echo "global"
-    fi
+    if [[ "$country" == "CN" ]]; then echo "cn"; else echo "global"; fi
 }
 
 REGION=$(detect_region)
@@ -65,55 +97,30 @@ else
     info "检测到海外网络环境，优先直连 GitHub"
 fi
 
-# ─── 版本检测 ───
-if [[ -z "$TARGET_VERSION" ]]; then
-    info "获取最新版本..."
-    TARGET_VERSION=$(curl -sSL "https://api.github.com/repos/$REPO/releases/latest" \
-        | grep '"tag_name"' | sed 's/.*"tag_name" *: *"\([^"]*\)".*/\1/')
-    [[ -z "$TARGET_VERSION" ]] && fail "无法获取最新版本，请检查网络或指定版本号"
-fi
-info "目标版本: ${YELLOW}$TARGET_VERSION${NC} (${PLATFORM})"
+mirrors_for() {
+    local url="$1"
+    if [[ "$url" != https://github.com/* ]]; then
+        echo "$url"   # 非 GitHub 源（如 Chrome for Testing）不做镜像代理
+        return
+    fi
+    if [[ "$REGION" == "cn" ]]; then
+        echo "https://ghfast.top/$url|https://gh-proxy.com/$url|https://ghproxy.net/$url|$url"
+    else
+        echo "$url|https://ghfast.top/$url|https://gh-proxy.com/$url|https://ghproxy.net/$url"
+    fi
+}
 
-# 下载源列表：根据区域自动优选
-# 中国大陆：镜像优先；海外：直连优先
-# 与 OMP 自动更新逻辑保持一致的多源策略
-ASSET="${BINARY_NAME}-${PLATFORM}"
-URL="https://github.com/$REPO/releases/download/${TARGET_VERSION}/${ASSET}"
-TMP_DIR=$(mktemp -d)
-trap "rm -rf $TMP_DIR" EXIT
-
-if [[ "$REGION" == "cn" ]]; then
-    # 中国大陆：镜像优先，直连兜底
-    MIRRORS=(
-        "https://ghfast.top/$URL"
-        "https://gh-proxy.com/$URL"
-        "https://ghproxy.net/$URL"
-        "https://mirror.ghproxy.com/$URL"
-        "$URL"
-    )
-else
-    # 海外：直连优先，镜像兜底
-    MIRRORS=(
-        "$URL"
-        "https://ghfast.top/$URL"
-        "https://gh-proxy.com/$URL"
-        "https://ghproxy.net/$URL"
-        "https://mirror.ghproxy.com/$URL"
-    )
-fi
-
-# ─── 带重试的多源下载 ───
 download_with_retry() {
     local url="$1" dest="$2" max_tries="${3:-3}" timeout="${4:-120}"
     local attempt=1 last_err=""
     while [ $attempt -le $max_tries ]; do
         if [ $attempt -gt 1 ]; then
-            local backoff=$(( attempt * 2 ))
-            info "重试第 ${attempt} 次（等待 ${backoff}s）..."
-            sleep $backoff
+            info "重试第 ${attempt} 次（等待 $(( attempt * 2 ))s）..."
+            sleep $(( attempt * 2 ))
         fi
         local http_code
-        http_code=$(curl -sSL --connect-timeout 30 --max-time "$timeout"             -w "%{http_code}" -o "$dest" "$url" 2>/dev/null) || http_code="000"
+        http_code=$(curl -sSL --connect-timeout 30 --max-time "$timeout" \
+            -w "%{http_code}" -o "$dest" "$url" 2>/dev/null) || http_code="000"
         if [ "$http_code" = "200" ]; then
             local size
             size=$(stat -c%s "$dest" 2>/dev/null || stat -f%z "$dest" 2>/dev/null || echo 0)
@@ -130,72 +137,39 @@ download_with_retry() {
     return 1
 }
 
-info "下载二进制（多源兜底）..."
-DOWNLOADED=false
-USED_SOURCE=""
-for src_url in "${MIRRORS[@]}"; do
-    label=$(echo "$src_url" | sed 's|https://||;s|/.*||;s|^$|github-direct|')
-    info "尝试源: $label"
-    if download_with_retry "$src_url" "$TMP_DIR/$ASSET" 2 90; then
-        DOWNLOADED=true
-        USED_SOURCE="$label"
-        break
-    fi
-    rm -f "$TMP_DIR/$ASSET"
-done
-
-if ! $DOWNLOADED; then
-    fail "所有下载源均失败，版本 $TARGET_VERSION 可能不存在或网络不可达"
-fi
-
-SIZE=$(stat -c%s "$TMP_DIR/$ASSET" 2>/dev/null || stat -f%z "$TMP_DIR/$ASSET" 2>/dev/null)
-ok "已下载 $(( SIZE / 1024 / 1024 )) MB（via $USED_SOURCE）"
-
-# ─── 校验（SEC-P2-12: fail-closed，仅从 GitHub 官方获取校验，镜像只信字节）───
-SHA_DOWNLOADED=false
-# 只使用 GitHub 官方 release 资产的 .sha256 —— 镜像的校验文件绝不作为校验源。
-SHA_URLS=("${URL}.sha256")
-for sha_url in "${SHA_URLS[@]}"; do
-    if curl -sSL --connect-timeout 10 --max-time 30 "$sha_url" -o "$TMP_DIR/${ASSET}.sha256" 2>/dev/null; then
-        if grep -qE '^[a-f0-9]{64}' "$TMP_DIR/${ASSET}.sha256" 2>/dev/null; then
-            SHA_DOWNLOADED=true
-            break
+download_multisource() {
+    local raw_url="$1" dest="$2" label="$3"
+    local src_list old_ifs
+    old_ifs=$IFS; IFS='|'
+    src_list=$(mirrors_for "$raw_url")
+    for src_url in $src_list; do
+        local src_label
+        src_label=$(echo "$src_url" | sed 's|https://||;s|/.*||;s|^$|github-direct|')
+        info "尝试源 ($label): $src_label"
+        if download_with_retry "$src_url" "$dest" 2 90; then
+            IFS=$old_ifs
+            return 0
         fi
-    fi
-done
+        rm -f "$dest"
+    done
+    IFS=$old_ifs
+    return 1
+}
 
-if ! $SHA_DOWNLOADED; then
-    fail "无法从 GitHub 官方获取 SHA-256 校验文件，已中止安装（fail-closed）"
-fi
+get_latest_tag() {
+    local repo="$1"
+    curl -sSL --connect-timeout 10 --max-time 30 \
+        "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null \
+        | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4
+}
 
-EXPECTED=$(awk '{print $1}' < "$TMP_DIR/${ASSET}.sha256")
-ACTUAL=$(sha256sum "$TMP_DIR/$ASSET" | awk '{print $1}')
-if [[ "$EXPECTED" != "$ACTUAL" ]]; then
-    fail "SHA-256 校验失败！expected=$EXPECTED actual=$ACTUAL"
-fi
-ok "SHA-256 校验通过"
+# ══════════════════════════════════════════════════
+#  组件: core —— OpenModelPool 主程序
+# ══════════════════════════════════════════════════
 
-# ─── systemctl 可用性检测 ───
-# Coze 云主机等环境中 systemctl 可能被安全策略阻塞，需要主动探测
-USE_SYSTEMCTL=false
-if command -v systemctl &>/dev/null; then
-    # 实际尝试 systemctl 操作（带超时），判断是否真正可用
-    if timeout 5 systemctl status "$SERVICE_NAME" &>/dev/null; then
-        USE_SYSTEMCTL=true
-        info "systemctl 可用，使用 systemd 管理服务"
-    elif timeout 5 systemctl list-units --type=service &>/dev/null; then
-        USE_SYSTEMCTL=true
-        info "systemctl 可用，使用 systemd 管理服务"
-    else
-        warn "systemctl 受限（超时或被阻塞），使用直接进程管理"
-    fi
-else
-    warn "systemctl 不可用，使用直接进程管理"
-fi
-
-# ─── 停止服务 ───
-stop_service() {
-    if $USE_SYSTEMCTL; then
+stop_core_service() {
+    local use_systemctl="$1"
+    if $use_systemctl; then
         if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
             info "停止服务 (systemctl)..."
             if ! timeout 10 systemctl stop "$SERVICE_NAME" 2>/dev/null; then
@@ -206,12 +180,10 @@ stop_service() {
             ok "服务已停止"
         fi
     else
-        # Direct process management
-        info "停止服务 (直接进程管理)..."
         if pgrep -x "$BINARY_NAME" &>/dev/null; then
+            info "停止服务 (直接进程管理)..."
             pkill -x "$BINARY_NAME" 2>/dev/null || true
             sleep 2
-            # Force kill if still running
             if pgrep -x "$BINARY_NAME" &>/dev/null; then
                 pkill -9 -x "$BINARY_NAME" 2>/dev/null || true
                 sleep 1
@@ -223,31 +195,108 @@ stop_service() {
     fi
 }
 
-stop_service
+start_core_service() {
+    local use_systemctl="$1" install_dir="$2"
+    if $use_systemctl; then
+        info "启动服务 (systemctl)..."
+        if ! timeout 10 systemctl start "$SERVICE_NAME" 2>/dev/null; then
+            warn "systemctl start 失败，降级为直接启动"
+            cd "$install_dir"
+            nohup ./$BINARY_NAME > "$install_dir/omp.log" 2>&1 &
+            sleep 3
+            if ! pgrep -x "$BINARY_NAME" &>/dev/null; then
+                fail "服务启动失败，检查日志: cat $install_dir/omp.log | tail -50"
+            fi
+        else
+            sleep 3
+        fi
+        if ! systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && ! pgrep -x "$BINARY_NAME" &>/dev/null; then
+            fail "服务启动失败，检查日志: journalctl -u $SERVICE_NAME -n 50"
+        fi
+    else
+        info "启动服务 (直接启动)..."
+        cd "$install_dir"
+        nohup ./$BINARY_NAME > "$install_dir/omp.log" 2>&1 &
+        sleep 3
+        if ! pgrep -x "$BINARY_NAME" &>/dev/null; then
+            fail "服务启动失败，检查日志: cat $install_dir/omp.log | tail -50"
+        fi
+    fi
+    ok "服务运行中"
+}
 
-# ─── 安装目录 ───
-INSTALL_DIR="$DEFAULT_INSTALL_DIR"
-mkdir -p "$INSTALL_DIR" "$DATA_DIR"
+install_core() {
+    local TARGET_VERSION="${1:-}"
+    local TMP_DIR ASSET URL SIZE HEALTH H_VER H_MOD H_PROV
+    TMP_DIR=$(mktemp -d)
 
-# ─── 备份旧版本 ───
-if [[ -f "$INSTALL_DIR/$BINARY_NAME" ]]; then
-    OLD_VER=$("$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null || echo "unknown")
-    BACKUP="${INSTALL_DIR}/${BINARY_NAME}.bak"
-    cp "$INSTALL_DIR/$BINARY_NAME" "$BACKUP"
-    ok "旧版本已备份 (${OLD_VER})"
-fi
+    if [[ -z "$TARGET_VERSION" ]]; then
+        info "获取 OpenModelPool 最新版本..."
+        TARGET_VERSION=$(get_latest_tag "$REPO")
+        [[ -z "$TARGET_VERSION" ]] && { rm -rf "$TMP_DIR"; fail "无法获取最新版本，请检查网络或指定版本号"; }
+    elif [[ ! "$TARGET_VERSION" =~ ^v ]]; then
+        TARGET_VERSION="v$TARGET_VERSION"
+    fi
+    info "核心版本: ${YELLOW}${TARGET_VERSION}${NC} (${PLATFORM})"
 
-# ─── 安装 ───
-cp "$TMP_DIR/$ASSET" "$INSTALL_DIR/$BINARY_NAME"
-chmod 755 "$INSTALL_DIR/$BINARY_NAME"
-NEW_VER=$("$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null || echo "$TARGET_VERSION")
-ok "已安装 $NEW_VER"
+    ASSET="${BINARY_NAME}-${PLATFORM}"
+    URL="https://github.com/${REPO}/releases/download/${TARGET_VERSION}/${ASSET}"
 
-# ─── systemd unit ───
-if $USE_SYSTEMCTL; then
-    if [[ ! -f /etc/systemd/system/${SERVICE_NAME}.service ]]; then
-        info "创建 systemd 服务..."
-        cat > /etc/systemd/system/${SERVICE_NAME}.service << UNIT
+    info "下载核心二进制（多源兜底）..."
+    if ! download_multisource "$URL" "$TMP_DIR/$ASSET" "core"; then
+        rm -rf "$TMP_DIR"
+        fail "核心二进制下载失败，版本 ${TARGET_VERSION} 可能不存在或网络不可达"
+    fi
+    SIZE=$(stat -c%s "$TMP_DIR/$ASSET" 2>/dev/null || stat -f%z "$TMP_DIR/$ASSET" 2>/dev/null)
+    ok "已下载 $(( SIZE / 1024 / 1024 )) MB（核心 ${TARGET_VERSION}）"
+
+    # SEC-P2-12 fail-closed: 仅 GitHub 官方 sha256 资产作为校验源，镜像只信字节
+    SHA_OK=false
+    if curl -sSL --connect-timeout 10 --max-time 30 "${URL}.sha256" -o "$TMP_DIR/$ASSET.sha256" 2>/dev/null; then
+        if grep -qE '^[a-f0-9]{64}' "$TMP_DIR/$ASSET.sha256" 2>/dev/null; then SHA_OK=true; fi
+    fi
+    if ! $SHA_OK; then
+        rm -rf "$TMP_DIR"
+        fail "无法从 GitHub 官方获取 SHA-256 校验文件，已中止安装（fail-closed）"
+    fi
+    EXPECTED=$(awk '{print $1}' < "$TMP_DIR/$ASSET.sha256")
+    ACTUAL=$(sha256sum "$TMP_DIR/$ASSET" | awk '{print $1}')
+    if [[ "$EXPECTED" != "$ACTUAL" ]]; then
+        rm -rf "$TMP_DIR"
+        fail "SHA-256 校验失败！expected=$EXPECTED actual=$ACTUAL"
+    fi
+    ok "SHA-256 校验通过"
+
+    USE_SYSTEMCTL=false
+    if command -v systemctl &>/dev/null; then
+        if timeout 5 systemctl status "$SERVICE_NAME" &>/dev/null || timeout 5 systemctl list-units --type=service &>/dev/null; then
+            USE_SYSTEMCTL=true
+            info "systemctl 可用，使用 systemd 管理服务"
+        else
+            warn "systemctl 受限（超时或被阻塞），使用直接进程管理"
+        fi
+    else
+        warn "systemctl 不可用，使用直接进程管理"
+    fi
+
+    stop_core_service "$USE_SYSTEMCTL"
+
+    mkdir -p "$DEFAULT_INSTALL_DIR" "$DATA_DIR"
+
+    if [[ -f "$DEFAULT_INSTALL_DIR/$BINARY_NAME" ]]; then
+        cp "$DEFAULT_INSTALL_DIR/$BINARY_NAME" "$DEFAULT_INSTALL_DIR/$BINARY_NAME.bak"
+        ok "旧版本已备份"
+    fi
+
+    cp "$TMP_DIR/$ASSET" "$DEFAULT_INSTALL_DIR/$BINARY_NAME"
+    chmod 755 "$DEFAULT_INSTALL_DIR/$BINARY_NAME"
+    rm -rf "$TMP_DIR"
+    ok "核心已安装 ${YELLOW}${TARGET_VERSION}${NC}"
+
+    if $USE_SYSTEMCTL; then
+        if [[ ! -f /etc/systemd/system/${SERVICE_NAME}.service ]]; then
+            info "创建 systemd 服务..."
+            cat > /etc/systemd/system/${SERVICE_NAME}.service << UNIT
 [Unit]
 Description=OpenModelPool - AI Model Router & Load Balancer
 After=network-online.target
@@ -255,8 +304,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/$BINARY_NAME
+WorkingDirectory=$DEFAULT_INSTALL_DIR
+ExecStart=$DEFAULT_INSTALL_DIR/$BINARY_NAME
 Restart=on-failure
 RestartSec=10
 LimitNOFILE=65536
@@ -264,82 +313,387 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 UNIT
-        systemctl daemon-reload
-        systemctl enable "$SERVICE_NAME" 2>/dev/null || true
-        ok "systemd 服务已创建并启用"
-    else
-        info "systemd 服务已存在，跳过创建"
-    fi
-fi
-
-# ─── 启动 ───
-start_service() {
-    if $USE_SYSTEMCTL; then
-        info "启动服务 (systemctl)..."
-        if ! timeout 10 systemctl start "$SERVICE_NAME" 2>/dev/null; then
-            warn "systemctl start 失败，降级为直接启动"
-            cd "$INSTALL_DIR"
-            nohup ./$BINARY_NAME > "$INSTALL_DIR/omp.log" 2>&1 &
-            sleep 3
-            if ! pgrep -x "$BINARY_NAME" &>/dev/null; then
-                fail "服务启动失败，检查日志:\n  cat $INSTALL_DIR/omp.log | tail -50"
-            fi
+            systemctl daemon-reload
+            systemctl enable "$SERVICE_NAME" 2>/dev/null || true
+            ok "systemd 服务已创建并启用"
         else
-            sleep 3
-        fi
-        if ! systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && ! pgrep -x "$BINARY_NAME" &>/dev/null; then
-            fail "服务启动失败，检查日志:\n  journalctl -u $SERVICE_NAME -n 50"
-        fi
-    else
-        info "启动服务 (直接启动)..."
-        cd "$INSTALL_DIR"
-        nohup ./$BINARY_NAME > "$INSTALL_DIR/omp.log" 2>&1 &
-        sleep 3
-        if ! pgrep -x "$BINARY_NAME" &>/dev/null; then
-            fail "服务启动失败，检查日志:\n  cat $INSTALL_DIR/omp.log | tail -50"
+            info "systemd 服务已存在，跳过创建"
         fi
     fi
-    ok "服务运行中"
+
+    start_core_service "$USE_SYSTEMCTL" "$DEFAULT_INSTALL_DIR"
+
+    sleep 2
+    HEALTH=$(curl -s http://localhost:8000/health 2>/dev/null || true)
+    if [[ -n "$HEALTH" ]]; then
+        H_VER=$(echo "$HEALTH" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+        H_MOD=$(echo "$HEALTH" | grep -o '"models_available":[0-9]*' | cut -d: -f2)
+        H_PROV=$(echo "$HEALTH" | grep -o '"providers_enabled":[0-9]*' | cut -d: -f2)
+        ok "健康检查: version=$H_VER, models=$H_MOD, providers=$H_PROV"
+    else
+        warn "健康检查未响应，服务可能仍在初始化"
+    fi
 }
 
-start_service
-
-# ─── 健康检查 ───
-sleep 2
-HEALTH=$(curl -s http://localhost:8000/health 2>/dev/null || true)
-if [[ -n "$HEALTH" ]]; then
-    H_VER=$(echo "$HEALTH" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
-    H_MOD=$(echo "$HEALTH" | grep -o '"models_available":[0-9]*' | cut -d: -f2)
-    H_PROV=$(echo "$HEALTH" | grep -o '"providers_enabled":[0-9]*' | cut -d: -f2)
-    ok "健康检查: version=$H_VER, models=$H_MOD, providers=$H_PROV"
-else
-    warn "健康检查未响应，服务可能仍在初始化"
-fi
-
-# ─── 清理旧备份 ───
-if [[ -f "${INSTALL_DIR}/${BINARY_NAME}.bak" ]]; then
-    OLDEST="${INSTALL_DIR}/${BINARY_NAME}.bak.old"
-    [[ -f "$OLDEST" ]] && rm -f "$OLDEST"
-    if [[ -f "${INSTALL_DIR}/${BINARY_NAME}.bak.bak" ]]; then
-        mv "${INSTALL_DIR}/${BINARY_NAME}.bak.bak" "$OLDEST" 2>/dev/null || true
+extract_home_path() {
+    local dg="$1" fname="$2" h
+    h=$(grep -i "$fname" "$dg" 2>/dev/null | grep -oE '[a-f0-9]{64}' | head -1)
+    if [[ -z "$h" && "$(grep -cE '[a-f0-9]{64}' "$dg" 2>/dev/null)" = "1" ]]; then
+        h=$(grep -oE '[a-f0-9]{64}' "$dg" | head -1)
     fi
-fi
+    echo "$h"
+}
 
-# ─── 完成 ───
-IP=$(curl -s --connect-timeout 3 https://icanhazip.com 2>/dev/null || echo "your-server-ip")
+# ══════════════════════════════════════════════════
+#  组件: xray —— XTLS/Xray-core（vmess/vless 本地代理依赖）
+# ══════════════════════════════════════════════════
+
+install_xray() {
+    if [[ -x "$XRAY_BIN" ]]; then
+        local cur
+        cur=$("$XRAY_BIN" version 2>/dev/null | grep -o 'Xray [^ ]*' | head -1 | cut -d' ' -f2)
+        info "Xray 已存在: ${cur:-unknown}，将升级到最新"
+    fi
+
+    local VER ASSET ZIP_URL TMP_DIR
+    VER=$(get_latest_tag "$XRAY_REPO")
+    [[ -z "$VER" ]] && { warn "获取 Xray 版本失败，跳过"; return 1; }
+
+    case "$PLATFORM" in
+        linux-amd64)  ASSET="Xray-linux-64.zip" ;;
+        linux-arm64)  ASSET="Xray-linux-arm64-v8a.zip" ;;
+        linux-armv7)  ASSET="Xray-linux-arm32-v7a.zip" ;;
+        *)  warn "不支持 Xray 平台: $PLATFORM，跳过"; return 1 ;;
+    esac
+
+    info "Xray 版本: ${YELLOW}${VER}${NC} ($ASSET)"
+    ZIP_URL="https://github.com/${XRAY_REPO}/releases/download/${VER}/${ASSET}"
+    TMP_DIR=$(mktemp -d)
+
+    if ! download_multisource "$ZIP_URL" "$TMP_DIR/xray.zip" "xray"; then
+        rm -rf "$TMP_DIR"
+        warn "Xray 下载失败，跳过（vmess/vless 代理将不可用）"
+        return 1
+    fi
+
+    # 校验：官方 .dgst（存在则 fail-closed，缺失则 warn 跳过）
+    local dg_dir="$TMP_DIR/dgst" exp act
+    mkdir -p "$dg_dir"
+    if curl -sSL --connect-timeout 10 --max-time 30 "${ZIP_URL}.dgst" -o "$dg_dir/$ASSET.dgst" 2>/dev/null; then
+        exp=$(extract_home_path "$dg_dir/$ASSET.dgst" "$ASSET")
+        act=$(sha256sum "$TMP_DIR/xray.zip" | awk '{print $1}')
+        if [[ -n "$exp" && "$exp" != "$act" ]]; then
+            rm -rf "$TMP_DIR"
+            warn "Xray SHA-256 校验失败，已跳过（expected=$exp actual=$act）"
+            return 1
+        fi
+        ok "Xray SHA-256 校验通过"
+    else
+        warn "未取得 Xray .dgst 校验文件（HTTPS+大小兜底）"
+    fi
+
+    mkdir -p "$XRAY_DIR"
+    if command -v unzip &>/dev/null; then
+        unzip -o -q "$TMP_DIR/xray.zip" -d "$XRAY_DIR" || true
+    elif command -v python3 &>/dev/null; then
+        python3 -m zipfile -e "$TMP_DIR/xray.zip" "$XRAY_DIR" || true
+    else
+        rm -rf "$TMP_DIR"
+        warn "未找到 unzip/python3 无法解压 Xray，跳过"
+        return 1
+    fi
+    rm -rf "$TMP_DIR"
+    chmod 755 "$XRAY_BIN" 2>/dev/null || true
+
+    if [[ -x "$XRAY_BIN" ]]; then
+        ok "Xray 已安装: ${XRAY_BIN} (${VER})"
+    else
+        warn "Xray 解压后未找到可执行文件，vmess/vless 代理将不可用"
+    fi
+}
+
+# ══════════════════════════════════════════════════
+#  组件: cloudflared —— Cloudflare 隧道客户端（tunnel 模式）
+# ══════════════════════════════════════════════════
+
+install_cloudflared() {
+    if [[ -x "$LOCAL_BIN/cloudflared" ]]; then
+        local cur
+        cur=$("$LOCAL_BIN/cloudflared" --version 2>/dev/null | head -1)
+        info "cloudflared 已存在: ${cur:-unknown}，将升级到最新"
+    fi
+
+    local VER ASSET UV TMP_DIR
+    VER=$(get_latest_tag "$CLOUDFLARED_REPO")
+    [[ -z "$VER" ]] && { warn "获取 cloudflared 版本失败，跳过"; return 1; }
+
+    case "$PLATFORM" in
+        linux-amd64)  ASSET="cloudflared-linux-amd64" ;;
+        linux-arm64)  ASSET="cloudflared-linux-arm64" ;;
+        linux-armv7)  ASSET="cloudflared-linux-arm" ;;
+    esac
+    if [[ -z "${ASSET:-}" ]]; then warn "不支持 cloudflared 平台: $PLATFORM，跳过"; return 1; fi
+
+    info "cloudflared 版本: ${YELLOW}${VER}${NC}"
+    UV="https://github.com/${CLOUDFLARED_REPO}/releases/download/${VER}/${ASSET}"
+    TMP_DIR=$(mktemp -d)
+
+    if ! download_multisource "$UV" "$TMP_DIR/cloudflared" "cloudflared"; then
+        rm -rf "$TMP_DIR"
+        warn "cloudflared 下载失败，跳过（tunnel 模式将不可用）"
+        return 1
+    fi
+
+    install -m 755 "$TMP_DIR/cloudflared" "$LOCAL_BIN/cloudflared"
+    rm -rf "$TMP_DIR"
+    if "$LOCAL_BIN/cloudflared" --version &>/dev/null; then
+        ok "cloudflared 已安装: $LOCAL_BIN/cloudflared (${VER})"
+    else
+        warn "cloudflared 安装后无法运行，请检查"
+    fi
+}
+
+# ══════════════════════════════════════════════════
+#  组件: frp —— frps + frpc（FRP 自建隧道可选组件）
+# ══════════════════════════════════════════════════
+
+install_frp() {
+    local VER V ASSET UV TMP_DIR
+    VER=$(get_latest_tag "$FRP_REPO")
+    [[ -z "$VER" ]] && { warn "获取 frp 版本失败，跳过"; return 1; }
+    V="${VER#v}"
+
+    case "$PLATFORM" in
+        linux-amd64)  FRP_OSA="linux_amd64" ;;
+        linux-arm64)  FRP_OSA="linux_arm64" ;;
+        linux-armv7)  FRP_OSA="linux_armv7" ;;
+        *)  warn "不支持 frp 平台: $PLATFORM，跳过"; return 1 ;;
+    esac
+    ASSET="frp_${V}_${FRP_OSA}.tar.gz"
+    UV="https://github.com/${FRP_REPO}/releases/download/${VER}/${ASSET}"
+
+    info "frp 版本: ${YELLOW}${VER}${NC} ($ASSET)"
+    TMP_DIR=$(mktemp -d)
+    if ! download_multisource "$UV" "$TMP_DIR/frp.tar.gz" "frp"; then
+        rm -rf "$TMP_DIR"
+        warn "frp 下载失败，跳过"
+        return 1
+    fi
+
+    mkdir -p "$TMP_DIR/unpack"
+    tar -xzf "$TMP_DIR/frp.tar.gz" -C "$TMP_DIR/unpack" 2>/dev/null || { rm -rf "$TMP_DIR"; warn "frp 解压失败，跳过"; return 1; }
+    local frps_src frpc_src
+    frps_src=$(find "$TMP_DIR/unpack" -type f -name frps | head -1)
+    frpc_src=$(find "$TMP_DIR/unpack" -type f -name frpc | head -1)
+    if [[ -n "$frps_src" ]]; then install -m 755 "$frps_src" "$LOCAL_BIN/frps"; fi
+    if [[ -n "$frpc_src" ]]; then install -m 755 "$frpc_src" "$LOCAL_BIN/frpc"; fi
+    rm -rf "$TMP_DIR"
+
+    if [[ -x "$LOCAL_BIN/frps" ]]; then
+        ok "frps 已安装: $LOCAL_BIN/frps (${VER})"
+    else
+        warn "frps 未找到，安装失败"
+    fi
+    if [[ -x "$LOCAL_BIN/frpc" ]]; then
+        ok "frpc 已安装: $LOCAL_BIN/frpc (${VER})"
+    fi
+}
+
+# ══════════════════════════════════════════════════
+#  组件: ngrok —— ngrok agent（ngrok 隧道可选组件）
+# ══════════════════════════════════════════════════
+
+install_ngrok() {
+    local VER V ASSET UV TMP_DIR
+    VER=$(get_latest_tag "$NGROK_REPO")
+    [[ -z "$VER" ]] && { warn "获取 ngrok 版本失败，跳过"; return 1; }
+    V="${VER#v}"
+
+    case "$PLATFORM" in
+        linux-amd64)  NGROK_OSA="linux-amd64" ;;
+        linux-arm64)  NGROK_OSA="linux-arm64" ;;
+        linux-armv7)  NGROK_OSA="linux-arm" ;;
+        *)  warn "不支持 ngrok 平台: $PLATFORM，跳过"; return 1 ;;
+    esac
+    ASSET="ngrok-v3-${V}-${NGROK_OSA}.tar.gz"
+    UV="https://github.com/${NGROK_REPO}/releases/download/${VER}/${ASSET}"
+
+    info "ngrok 版本: ${YELLOW}${VER}${NC} ($ASSET)"
+    TMP_DIR=$(mktemp -d)
+    if ! download_multisource "$UV" "$TMP_DIR/ngrok.tar.gz" "ngrok"; then
+        rm -rf "$TMP_DIR"
+        warn "ngrok 下载失败，跳过"
+        return 1
+    fi
+
+    mkdir -p "$TMP_DIR/unpack"
+    tar -xzf "$TMP_DIR/ngrok.tar.gz" -C "$TMP_DIR/unpack" 2>/dev/null || { rm -rf "$TMP_DIR"; warn "ngrok 解压失败，跳过"; return 1; }
+    local ng_src
+    ng_src=$(find "$TMP_DIR/unpack" -type f -name ngrok | head -1)
+    if [[ -n "$ng_src" ]]; then
+        install -m 755 "$ng_src" "$LOCAL_BIN/ngrok"
+        rm -rf "$TMP_DIR"
+        ok "ngrok 已安装: $LOCAL_BIN/ngrok (${VER})"
+    else
+        rm -rf "$TMP_DIR"
+        warn "ngrok 解压后未找到二进制，跳过"
+    fi
+}
+
+# ══════════════════════════════════════════════════
+#  组件: browser —— 内置浏览器核心（chromedp 依赖的 headless Chrome）
+# ══════════════════════════════════════════════════
+
+install_browser() {
+    case "$PLATFORM" in
+        linux-amd64)  CFT_PLAT="linux64" ;;
+        linux-arm64)  CFT_PLAT="linux-arm64" ;;
+        linux-armv7)  CFT_PLAT="linux-arm" ;;
+        *)  warn "不支持 browser 平台: $PLATFORM，跳过"; return 1 ;;
+    esac
+
+    info "获取 Chrome for Testing 最新 headless shell..."
+    local json url
+    json=$(curl -sSL --connect-timeout 10 --max-time 30 \
+        "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json" 2>/dev/null) || true
+    url=$(echo "$json" | grep -o "https://[^\" ]*chrome-headless-shell-${CFT_PLAT}.zip" | head -1)
+    if [[ -z "$url" ]]; then
+        warn "无法获取 headless shell 下载地址，跳过（浏览器登录将不可用）"
+        return 1
+    fi
+    local ver fn
+    ver=$(echo "$url" | sed -E 's|.*chrome-for-testing-public/([0-9.]+)/.*|\1|' | head -1)
+    fn=$(basename "$url")
+
+    local TMP_DIR
+    TMP_DIR=$(mktemp -d)
+    info "下载浏览器核心: ${YELLOW}${ver:-latest}${NC} ($fn)"
+    if ! download_multisource "$url" "$TMP_DIR/$fn" "browser"; then
+        rm -rf "$TMP_DIR"
+        warn "浏览器核心下载失败，跳过"
+        return 1
+    fi
+
+    mkdir -p "$BROWSER_DIR"
+    if command -v unzip &>/dev/null; then
+        unzip -o -q "$TMP_DIR/$fn" -d "$BROWSER_DIR" || true
+    elif command -v python3 &>/dev/null; then
+        python3 -m zipfile -e "$TMP_DIR/$fn" "$BROWSER_DIR" || true
+    else
+        rm -rf "$TMP_DIR"
+        warn "未找到 unzip/python3 无法解压浏览器核心，跳过"
+        return 1
+    fi
+    rm -rf "$TMP_DIR"
+
+    local SHELL_BIN
+    SHELL_BIN=$(find "$BROWSER_DIR" -type f -name chrome-headless-shell -perm -u+x | head -1)
+    if [[ -z "$SHELL_BIN" ]]; then
+        warn "浏览器核心解压后未找到可执行文件，跳过"
+        return 1
+    fi
+    chmod 755 "$SHELL_BIN"
+
+    # 让 OMP 通过 OMP_CHROME_PATH 找到该核心（systemd drop-in；未用 systemd 时提示 export）
+    if command -v systemctl &>/dev/null && [[ -d /etc/systemd/system ]]; then
+        mkdir -p /etc/systemd/system/openmodelpool.service.d
+        printf '[Service]\nEnvironment=OMP_CHROME_PATH=%s\n' "$SHELL_BIN" > /etc/systemd/system/openmodelpool.service.d/omp-browser.conf
+        systemctl daemon-reload 2>/dev/null || true
+        ok "已写入 OMP_CHROME_PATH 到 systemd drop-in"
+    else
+        info "非 systemd 环境：请设置 export OMP_CHROME_PATH=$SHELL_BIN"
+    fi
+    ok "浏览器核心已安装: ${SHELL_BIN} (${ver:-latest})"
+}
+
+# ══════════════════════════════════════════════════
+#  状态查看
+# ══════════════════════════════════════════════════
+
+ver_of_bin() { "$1" --version 2>/dev/null | head -1; }
+
+cmd_status() {
+    echo ""
+    echo "OpenModelPool 组件状态 (${PLATFORM})"
+    echo "----------------------------------------"
+
+    if [[ -x "$DEFAULT_INSTALL_DIR/$BINARY_NAME" ]]; then
+        local hv vv
+        hv=$(curl -s --max-time 3 http://localhost:8000/health 2>/dev/null || true)
+        vv=$(echo "$hv" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+        echo "  core        : 已安装 ${vv:-版本未知（服务未运行?）}"
+    else
+        echo "  core        : 未安装（${DEFAULT_INSTALL_DIR}/openmodelpool 不存在）"
+    fi
+
+    if [[ -x "$XRAY_BIN" ]]; then
+        echo "  xray        : 已安装 $(ver_of_bin "$XRAY_BIN" | head -c 40)"
+    else
+        echo "  xray        : 未安装（vmess/vless 代理将不可用）"
+    fi
+
+    if [[ -x "$LOCAL_BIN/cloudflared" ]]; then
+        echo "  cloudflared : 已安装 $(ver_of_bin "$LOCAL_BIN/cloudflared" | head -c 60)"
+    else
+        echo "  cloudflared : 未安装（tunnel 模式将不可用）"
+    fi
+
+    for pair in "frps:$LOCAL_BIN/frps" "frpc:$LOCAL_BIN/frpc" "ngrok:$LOCAL_BIN/ngrok"; do
+        local name="${pair%%:*}" path="${pair##*:}"
+        if [[ -x "$path" ]]; then
+            echo "  ${name}       : 已安装 $(ver_of_bin "$path" | head -c 60)"
+        else
+            echo "  ${name}       : 未安装"
+        fi
+    done
+
+    local shell_bin
+    shell_bin=$(find "$BROWSER_DIR" -type f -name chrome-headless-shell -perm -u+x 2>/dev/null | head -1)
+    if [[ -n "$shell_bin" ]]; then
+        echo "  browser     : 已安装 ${shell_bin}"
+    else
+        echo "  browser     : 未安装（浏览器登录将不可用）"
+    fi
+    echo ""
+}
+
+# ══════════════════════════════════════════════════
+#  主路由
+# ══════════════════════════════════════════════════
+
+COMPONENT="${1:-all}"
+VERSION_ARG="${2:-}"
+
+case "$COMPONENT" in
+    ""|all)
+        install_core "$VERSION_ARG"
+        [[ "${OMP_SKIP_XRAY:-0}" != "1" ]] && install_xray
+        [[ "${OMP_SKIP_CLOUDFLARED:-0}" != "1" ]] && install_cloudflared
+        [[ "${OMP_SKIP_FRP:-0}" != "1" ]] && install_frp
+        [[ "${OMP_SKIP_NGROK:-0}" != "1" ]] && install_ngrok
+        [[ "${OMP_SKIP_BROWSER:-0}" != "1" ]] && install_browser
+        ;;
+    core)      install_core "$VERSION_ARG" ;;
+    xray)      install_xray ;;
+    cloudflared) install_cloudflared ;;
+    frp)       install_frp ;;
+    ngrok)     install_ngrok ;;
+    browser)   install_browser ;;
+    status)    cmd_status ;;
+    help|-h|--help) show_help ;;
+    *)         # 向后兼容: 旧用法 install.sh <版本号> = 全部组件 + 核心固定版本
+        install_core "$COMPONENT"
+        [[ "${OMP_SKIP_XRAY:-0}" != "1" ]] && install_xray
+        [[ "${OMP_SKIP_CLOUDFLARED:-0}" != "1" ]] && install_cloudflared
+        [[ "${OMP_SKIP_FRP:-0}" != "1" ]] && install_frp
+        [[ "${OMP_SKIP_NGROK:-0}" != "1" ]] && install_ngrok
+        [[ "${OMP_SKIP_BROWSER:-0}" != "1" ]] && install_browser
+        ;;
+esac
 
 echo ""
-echo "╔══════════════════════════════════════════╗"
-echo -e "║  ${GREEN}OpenModelPool 部署完成${NC}                ║"
-echo "╠══════════════════════════════════════════╣"
-echo "║  版本:    $TARGET_VERSION"
-echo "║  架构:    $PLATFORM"
-echo "║  路径:    $INSTALL_DIR/$BINARY_NAME"
-echo "║  数据:    $DATA_DIR"
-echo "║  管理面板: http://$IP:8000"
-if $USE_SYSTEMCTL; then
-echo "║  日志:    journalctl -u $SERVICE_NAME -f"
-else
-echo "║  日志:    tail -f $INSTALL_DIR/omp.log"
-fi
-echo "╚══════════════════════════════════════════╝"
+echo "== OpenModelPool 安装/升级完成 =="
+echo "  管理面板: http://<服务器IP>:8000"
+echo "  数据目录: $DATA_DIR"
+echo "  组件状态: sudo bash $0 status"
+echo "  全局帮助: sudo bash $0 help"

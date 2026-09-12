@@ -19,7 +19,7 @@ type LedgerManifestEntry struct {
 // LedgerManifest summarizes a node's ledger as a set of record digests indexed
 // by record id. Two nodes reconcile by comparing manifests.
 type LedgerManifest struct {
-	PeerID  string                        `json:"peer_id"`
+	PeerID  string                         `json:"peer_id"`
 	Entries map[string]LedgerManifestEntry `json:"entries"`
 }
 
@@ -63,10 +63,10 @@ func BuildManifest(g *GossipLedger) *LedgerManifest {
 
 // contentHashContributionOf / ... strip the node-specific Signature before
 // hashing, mirroring contentHashContribution, so cross-replica digests match.
-func contentHashContributionOf(t *TrustRecord) string     { return stripHash(t) }
-func contentHashClaimOf(c *CapabilityClaim) string         { return stripHash(c) }
-func contentHashPenaltyOf(p *PenaltyRecord) string         { return stripHash(p) }
-func contentHashTxOf(tx *SignedTransaction) string         { return stripHash(tx) }
+func contentHashContributionOf(t *TrustRecord) string { return stripHash(t) }
+func contentHashClaimOf(c *CapabilityClaim) string    { return stripHash(c) }
+func contentHashPenaltyOf(p *PenaltyRecord) string    { return stripHash(p) }
+func contentHashTxOf(tx *SignedTransaction) string    { return stripHash(tx) }
 
 func stripHash(v interface{}) string {
 	data, err := json.Marshal(v)

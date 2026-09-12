@@ -61,7 +61,7 @@ func handleGetPresets(w http.ResponseWriter, r *http.Request) {
 			"id": p.ID, "name": p.Name, "type": p.Type,
 			"base_url": p.BaseURL, "description": p.Description,
 			"icon": p.Icon, "default_models": p.Models,
-			"api_key_url": p.APIKeyURL,
+			"api_key_url":  p.APIKeyURL,
 			"key_optional": p.KeyOptional,
 		}
 		if p.WebSession != nil {

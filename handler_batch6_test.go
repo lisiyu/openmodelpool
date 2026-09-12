@@ -101,9 +101,9 @@ func TestHB6_isInFlightPhase_Failed(t *testing.T) {
 func TestHB6_UpdateManager_ListStatuses_Empty(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local: UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
-		peers: make(map[string]UpdateStatus),
-		cache: &versionCache{},
+		local:   UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
+		peers:   make(map[string]UpdateStatus),
+		cache:   &versionCache{},
 		dataDir: dir,
 	}
 	statuses := um.ListStatuses()
@@ -118,9 +118,9 @@ func TestHB6_UpdateManager_ListStatuses_Empty(t *testing.T) {
 func TestHB6_UpdateManager_setLocalPhase(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local: UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
-		peers: make(map[string]UpdateStatus),
-		cache: &versionCache{},
+		local:   UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
+		peers:   make(map[string]UpdateStatus),
+		cache:   &versionCache{},
 		dataDir: dir,
 	}
 	um.setLocalPhase(PhaseDownloading, 10, "starting", "")
@@ -139,9 +139,9 @@ func TestHB6_UpdateManager_setLocalPhase(t *testing.T) {
 func TestHB6_UpdateManager_setLocalFailed(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local: UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
-		peers: make(map[string]UpdateStatus),
-		cache: &versionCache{},
+		local:   UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
+		peers:   make(map[string]UpdateStatus),
+		cache:   &versionCache{},
 		dataDir: dir,
 	}
 	um.setLocalFailed("something broke")
@@ -160,9 +160,9 @@ func TestHB6_UpdateManager_setLocalFailed(t *testing.T) {
 func TestHB6_UpdateManager_upsertPeer(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local: UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
-		peers: make(map[string]UpdateStatus),
-		cache: &versionCache{},
+		local:   UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
+		peers:   make(map[string]UpdateStatus),
+		cache:   &versionCache{},
 		dataDir: dir,
 	}
 	um.upsertPeer("node-1", func(s *UpdateStatus) {
@@ -186,9 +186,9 @@ func TestHB6_UpdateManager_upsertPeer(t *testing.T) {
 func TestHB6_UpdateManager_OnReportReceived(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local: UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
-		peers: make(map[string]UpdateStatus),
-		cache: &versionCache{},
+		local:   UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
+		peers:   make(map[string]UpdateStatus),
+		cache:   &versionCache{},
 		dataDir: dir,
 	}
 	report := UpdateReport{
@@ -213,9 +213,9 @@ func TestHB6_UpdateManager_OnReportReceived(t *testing.T) {
 func TestHB6_UpdateManager_setReportBack(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local: UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
-		peers: make(map[string]UpdateStatus),
-		cache: &versionCache{},
+		local:   UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
+		peers:   make(map[string]UpdateStatus),
+		cache:   &versionCache{},
 		dataDir: dir,
 	}
 	sig := UpdateSignal{BroadcastBy: "origin-1", TargetVersion: "v5.0.0"}
@@ -234,9 +234,9 @@ func TestHB6_UpdateManager_setReportBack(t *testing.T) {
 func TestHB6_UpdateManager_clearReportBack(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local: UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
-		peers: make(map[string]UpdateStatus),
-		cache: &versionCache{},
+		local:   UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
+		peers:   make(map[string]UpdateStatus),
+		cache:   &versionCache{},
 		dataDir: dir,
 	}
 	sig := UpdateSignal{BroadcastBy: "origin-1", TargetVersion: "v5.0.0"}
@@ -257,9 +257,9 @@ func TestHB6_UpdateManager_clearReportBack(t *testing.T) {
 func TestHB6_UpdateManager_reconcilePending_NoFile(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local: UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseDownloading},
-		peers: make(map[string]UpdateStatus),
-		cache: &versionCache{},
+		local:   UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseDownloading},
+		peers:   make(map[string]UpdateStatus),
+		cache:   &versionCache{},
 		dataDir: dir,
 	}
 	um.reconcilePending()
@@ -278,9 +278,9 @@ func TestHB6_UpdateManager_reconcilePending_NoFile(t *testing.T) {
 func TestHB6_UpdateManager_writePending(t *testing.T) {
 	dir := t.TempDir()
 	um := &UpdateManager{
-		local: UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
-		peers: make(map[string]UpdateStatus),
-		cache: &versionCache{},
+		local:   UpdateStatus{Env: "local", IsLocal: true, Role: "origin", Phase: PhaseIdle},
+		peers:   make(map[string]UpdateStatus),
+		cache:   &versionCache{},
 		dataDir: dir,
 	}
 	um.writePending("v5.0.0")
@@ -859,8 +859,8 @@ func TestHB6_NetworkManager_GetStatus_Personal(t *testing.T) {
 
 	nm := &NetworkManager{
 		config: NetworkConfig{
-			Mode:    NetworkModePersonal,
-			NodeID:  "node-1",
+			Mode:     NetworkModePersonal,
+			NodeID:   "node-1",
 			NodeName: "test-node",
 		},
 		dataPath: dir + "/net.json",
@@ -1022,7 +1022,7 @@ func TestHB6_GlobalPool_TopContributors_WithData(t *testing.T) {
 
 func TestHB6_GlobalPool_SelectBestNode_Empty(t *testing.T) {
 	gp := &GlobalPool{
-		ParticipantNodes: []GlobalPoolNode{},
+		ParticipantNodes:  []GlobalPoolNode{},
 		NodeContributions: make(map[string]int64),
 		NodeConsumptions:  make(map[string]int64),
 	}
@@ -1772,8 +1772,8 @@ func TestHB6_PeerCapabilities_Fields(t *testing.T) {
 
 func TestHB6_GlobalPoolNode_Fields(t *testing.T) {
 	n := GlobalPoolNode{
-		NodeID:     "n1",
-		Region:     "us-east",
+		NodeID:      "n1",
+		Region:      "us-east",
 		Contributed: 1000,
 		Consumed:    200,
 		Ratio:       4.76,

@@ -7,12 +7,12 @@ import "testing"
 // Plaintext_ip = XOR(ip, 0x2112A442); plaintext_port = XOR(port, 0x2112).
 func makeSTUNBindingResponse(xorIP, xorPort []byte) []byte {
 	buf := make([]byte, 32)
-	buf[0], buf[1] = 0x01, 0x01 // Binding Response (success)
-	buf[2], buf[3] = 0x00, 0x08 // Message length = 8 (one attribute)
+	buf[0], buf[1] = 0x01, 0x01                             // Binding Response (success)
+	buf[2], buf[3] = 0x00, 0x08                             // Message length = 8 (one attribute)
 	buf[4], buf[5], buf[6], buf[7] = 0x21, 0x12, 0xA4, 0x42 // Magic cookie
-	buf[20], buf[21] = 0x00, 0x20 // XOR-MAPPED-ADDRESS
-	buf[22], buf[23] = 0x00, 0x08 // length 8
-	buf[25] = 0x01                // IPv4 family
+	buf[20], buf[21] = 0x00, 0x20                           // XOR-MAPPED-ADDRESS
+	buf[22], buf[23] = 0x00, 0x08                           // length 8
+	buf[25] = 0x01                                          // IPv4 family
 	buf[26], buf[27] = xorPort[0], xorPort[1]
 	buf[28], buf[29], buf[30], buf[31] = xorIP[0], xorIP[1], xorIP[2], xorIP[3]
 	return buf

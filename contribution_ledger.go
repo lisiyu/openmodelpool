@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -457,9 +458,9 @@ func (g *GossipLedger) GetTransparency() LedgerTransparency {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	t := LedgerTransparency{
-		PeerID:   g.peerID,
-		ByModel:  map[string]int64{},
-		ByPeer:   map[string]int64{},
+		PeerID:  g.peerID,
+		ByModel: map[string]int64{},
+		ByPeer:  map[string]int64{},
 	}
 	for _, r := range g.recs {
 		t.TotalTokens += r.Tokens
@@ -477,6 +478,63 @@ func (g *GossipLedger) GetTransparency() LedgerTransparency {
 	t.TransactionCount = len(g.txs)
 	t.ChainValid = g.chainValid()
 	return t
+}
+
+// ContributorHonor is a purely-visibility entry on the public-welfare honor
+// roll (P2 "让贡献者被看见"): how much compute a peer donated. It carries NO
+// economic meaning — no points, no exchange rate, no trading, no entitled
+// access. It exists so donors and volunteers see their real impact.
+type ContributorHonor struct {
+	PeerID   string    `json:"peer_id"`
+	Tokens   int64     `json:"tokens"`
+	Records  int       `json:"records"`
+	LastSeen time.Time `json:"last_seen"`
+}
+
+// GetContributorHonors aggregates contribution records per peer and returns
+// them sorted by donated tokens (desc), then record count (desc), then peer id
+// (asc) for deterministic ordering. Informational only — never consulted by any
+// quota, priority, or governance code path.
+func (g *GossipLedger) GetContributorHonors() []ContributorHonor {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	type agg struct {
+		tokens   int64
+		records  int
+		lastSeen time.Time
+	}
+	m := make(map[string]*agg)
+	for _, r := range g.recs {
+		a := m[r.PeerID]
+		if a == nil {
+			a = &agg{}
+			m[r.PeerID] = a
+		}
+		a.tokens += r.Tokens
+		a.records++
+		if r.Timestamp.After(a.lastSeen) {
+			a.lastSeen = r.Timestamp
+		}
+	}
+	out := make([]ContributorHonor, 0, len(m))
+	for id, a := range m {
+		out = append(out, ContributorHonor{
+			PeerID:   id,
+			Tokens:   a.tokens,
+			Records:  a.records,
+			LastSeen: a.lastSeen,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Tokens != out[j].Tokens {
+			return out[i].Tokens > out[j].Tokens
+		}
+		if out[i].Records != out[j].Records {
+			return out[i].Records > out[j].Records
+		}
+		return out[i].PeerID < out[j].PeerID
+	})
+	return out
 }
 
 // csvSafeCell neutralizes spreadsheet formula injection (SEC-P2-9): a cell
@@ -616,15 +674,15 @@ func (g *GossipLedger) PeerID() string {
 }
 
 type gossipLedgerData struct {
-	PeerID    string                        `json:"peer_id"`
+	PeerID    string                         `json:"peer_id"`
 	Recs      map[string]*ContributionRecord `json:"recs"`
 	Trusts    map[string]*TrustRecord        `json:"trusts"`
-	Claims    map[string]*CapabilityClaim     `json:"claims"`
-	Penalties map[string]*PenaltyRecord       `json:"penalties"`
-	Txs       []*SignedTransaction            `json:"txs"`
-	Seq       uint64                          `json:"seq"`
-	PubKey    []byte                          `json:"pub_key"`
-	PrivKey   []byte                          `json:"priv_key"`
+	Claims    map[string]*CapabilityClaim    `json:"claims"`
+	Penalties map[string]*PenaltyRecord      `json:"penalties"`
+	Txs       []*SignedTransaction           `json:"txs"`
+	Seq       uint64                         `json:"seq"`
+	PubKey    []byte                         `json:"pub_key"`
+	PrivKey   []byte                         `json:"priv_key"`
 }
 
 func (g *GossipLedger) Save(path string) error {

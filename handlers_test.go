@@ -20,11 +20,11 @@ func TestIsPrivateIPv4(t *testing.T) {
 		{"192.168.0.1", true},
 		{"192.168.255.254", true},
 		{"192.167.0.1", false},
-		{"169.254.1.1", false},   // APIPA
-		{"127.0.0.1", false},     // loopback
-		{"8.8.8.8", false},       // public
-		{"::1", false},           // IPv6
-		{"fe80::1", false},       // IPv6 link-local
+		{"169.254.1.1", false}, // APIPA
+		{"127.0.0.1", false},   // loopback
+		{"8.8.8.8", false},     // public
+		{"::1", false},         // IPv6
+		{"fe80::1", false},     // IPv6 link-local
 	}
 	for _, c := range cases {
 		got := isPrivateIPv4(net.ParseIP(c.ip))

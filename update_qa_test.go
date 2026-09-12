@@ -79,18 +79,18 @@ func TestQACompareVersionBoundaries(t *testing.T) {
 		a, b string
 		want int
 	}{
-		{"v4.2.0", "4.1.7", 1},          // leading v on one side only
-		{"v4.1.7", "v4.1.7", 0},        // both have v
-		{"4.1.7-rc1", "4.1.7", -1},      // pre-release < release
-		{"4.1.7", "4.1.7-rc1", 1},       // release > pre-release
-		{" 4.2.0 ", "4.1.7", 1},         // surrounding whitespace trimmed
-		{"4.2", "4.1.7", 1},             // short vs long, padded zero
+		{"v4.2.0", "4.1.7", 1},     // leading v on one side only
+		{"v4.1.7", "v4.1.7", 0},    // both have v
+		{"4.1.7-rc1", "4.1.7", -1}, // pre-release < release
+		{"4.1.7", "4.1.7-rc1", 1},  // release > pre-release
+		{" 4.2.0 ", "4.1.7", 1},    // surrounding whitespace trimmed
+		{"4.2", "4.1.7", 1},        // short vs long, padded zero
 		{"4.1.7", "4.2", -1},
-		{"5", "4.1.7", 1},               // single segment
-		{"4.1.7", "4.1.7.0", 0},         // equal after zero-pad
-		{"4.1.10", "4.1.9", 1},          // multi-digit segment
+		{"5", "4.1.7", 1},       // single segment
+		{"4.1.7", "4.1.7.0", 0}, // equal after zero-pad
+		{"4.1.10", "4.1.9", 1},  // multi-digit segment
 		{"0.0.1", "0.0.0", 1},
-		{"", "", 0},                     // both empty
+		{"", "", 0}, // both empty
 	}
 	for _, c := range cases {
 		if got := compareVersion(c.a, c.b); got != c.want {

@@ -126,10 +126,10 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Create response interceptor
 	interceptor := &anthropicResponseWriter{
-		realWriter:  w,
-		header:      make(http.Header),
-		statusCode:  200,
-		model:       ar.Model,
+		realWriter:    w,
+		header:        make(http.Header),
+		statusCode:    200,
+		model:         ar.Model,
 		streamStarted: false,
 	}
 
@@ -179,8 +179,8 @@ type anthropicResponseWriter struct {
 	// B10-U3: last usage seen in the OpenAI chunk stream, propagated into the
 	// Anthropic message_delta instead of the hardcoded zeros that made every
 	// streaming response report 0 output tokens.
-	lastPromptTokens   int
-	lastCompletionTok  int
+	lastPromptTokens  int
+	lastCompletionTok int
 }
 
 func (w *anthropicResponseWriter) Header() http.Header {
@@ -434,9 +434,9 @@ func (w *anthropicResponseWriter) finalize() {
 				"text": contentText,
 			},
 		},
-		"model":          resp.Model,
-		"stop_reason":    stopReason,
-		"stop_sequence":  nil,
+		"model":         resp.Model,
+		"stop_reason":   stopReason,
+		"stop_sequence": nil,
 		"usage": map[string]int{
 			"input_tokens":  inputTokens,
 			"output_tokens": outputTokens,

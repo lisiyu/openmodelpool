@@ -140,8 +140,8 @@ func TestBatch1_FindCandidates_DisabledModel(t *testing.T) {
 	pm.Add(Provider{
 		ID: "p1", Name: "TestProvider", Type: "openai_compatible",
 		BaseURL: "https://api.example.com/v1", APIKey: "sk-test",
-		Enabled: true,
-		Models: []ModelDef{{ID: "model-x", Name: "model-x", Enabled: false}},
+		Enabled:  true,
+		Models:   []ModelDef{{ID: "model-x", Name: "model-x", Enabled: false}},
 		Priority: 1,
 	})
 

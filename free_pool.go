@@ -24,10 +24,10 @@ const (
 // Default free providers — hardcoded so they exist even if remote sync fails.
 // Anyone deploying OMP gets these immediately, accessible via their own base URL.
 var defaultFreeProviders = []struct {
-	id       string
-	name     string
-	baseURL  string
-	models   []string
+	id      string
+	name    string
+	baseURL string
+	models  []string
 }{
 	{
 		id:      "free-kilo-code",

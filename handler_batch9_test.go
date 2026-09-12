@@ -576,7 +576,10 @@ func TestHB9_WAFEngine_Bans_Expired(t *testing.T) {
 // ============================================================
 
 func TestHB9_RegionCanonical(t *testing.T) {
-	tests := []struct{ in string; want Region }{
+	tests := []struct {
+		in   string
+		want Region
+	}{
 		{"ap", RegionAsiaPacific},
 		{"asia", RegionAsiaPacific},
 		{"eu", RegionEurope},
@@ -772,7 +775,7 @@ func TestHB9_MessageManager_GetInbox_WithMessages(t *testing.T) {
 			{ID: "1", Subject: "first"},
 			{ID: "2", Subject: "second"},
 		},
-		outbox: []FederationMessage{},
+		outbox:  []FederationMessage{},
 		dataDir: t.TempDir(),
 	}
 	result := m.GetInbox(10)
@@ -786,8 +789,8 @@ func TestHB9_MessageManager_GetInbox_WithMessages(t *testing.T) {
 
 func TestHB9_MessageManager_MarkAsRead(t *testing.T) {
 	m := &MessageManager{
-		inbox: []FederationMessage{{ID: "1", Read: false}},
-		outbox: []FederationMessage{},
+		inbox:   []FederationMessage{{ID: "1", Read: false}},
+		outbox:  []FederationMessage{},
 		dataDir: t.TempDir(),
 	}
 	if !m.MarkAsRead("1") {
@@ -812,7 +815,7 @@ func TestHB9_MessageManager_GetUnreadCount(t *testing.T) {
 			{ID: "2", Read: true},
 			{ID: "3", Read: false},
 		},
-		outbox: []FederationMessage{},
+		outbox:  []FederationMessage{},
 		dataDir: t.TempDir(),
 	}
 	if count := m.GetUnreadCount(); count != 2 {
@@ -890,7 +893,7 @@ func TestHB9_FederationManager_GetActiveNodes(t *testing.T) {
 
 func TestHB9_FederationManager_GetNode(t *testing.T) {
 	f := &FederationManager{
-		trustPool: TrustPool{Nodes: []NodeInfo{{NodeID: "n1"}}},
+		trustPool:  TrustPool{Nodes: []NodeInfo{{NodeID: "n1"}}},
 		localPeers: map[string]*NodeInfo{"n2": {NodeID: "n2"}},
 	}
 	if _, ok := f.GetNode("n1"); !ok {

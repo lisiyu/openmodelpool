@@ -114,8 +114,8 @@ func TestCapabilityVerify_Success(t *testing.T) {
 	setupLedgerTestEnv(t)
 
 	claim := &CapabilityClaim{
-		PeerID:   "mmx-testpeer",
-		Models:   []string{"gpt-4o"},
+		PeerID: "mmx-testpeer",
+		Models: []string{"gpt-4o"},
 	}
 	contributionLedger.RecordClaim(claim)
 
@@ -211,8 +211,8 @@ func TestGossipLedger_SaveLoad(t *testing.T) {
 		t.Fatalf("NewGossipLedger: %v", err)
 	}
 	gl.RecordClaim(&CapabilityClaim{
-		PeerID:   "test-peer",
-		Models:   []string{"gpt-4o"},
+		PeerID: "test-peer",
+		Models: []string{"gpt-4o"},
 	})
 	gl.AppendTransaction("contribution", "test-peer", 1000, "gpt-4o", "req-1")
 

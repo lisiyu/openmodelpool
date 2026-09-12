@@ -22,11 +22,11 @@ type UsageTicket struct {
 	RequestorID string `json:"requestor_id"`
 	ProviderID  string `json:"provider_id"`
 	ModelID     string `json:"model_id"`
-	Amount      int64  `json:"amount"`       // tokens consumed
-	Timestamp   string `json:"timestamp"`    // RFC3339
-	ReqSig      string `json:"req_sig"`      // requestor signature
-	ProvSig     string `json:"prov_sig"`     // provider signature
-	Fingerprint string `json:"fingerprint"`  // deterministic hash for dedup
+	Amount      int64  `json:"amount"`      // tokens consumed
+	Timestamp   string `json:"timestamp"`   // RFC3339
+	ReqSig      string `json:"req_sig"`     // requestor signature
+	ProvSig     string `json:"prov_sig"`    // provider signature
+	Fingerprint string `json:"fingerprint"` // deterministic hash for dedup
 }
 
 // TicketFingerprint computes a deterministic hash from ticket fields that
@@ -41,9 +41,9 @@ func TicketFingerprint(t *UsageTicket) string {
 
 // TicketStore tracks issued tickets and detects double-spending.
 type TicketStore struct {
-	mu       sync.RWMutex
-	seen     map[string]time.Time // fingerprint -> first-seen time
-	tickets  map[string]*UsageTicket
+	mu        sync.RWMutex
+	seen      map[string]time.Time // fingerprint -> first-seen time
+	tickets   map[string]*UsageTicket
 	notarized map[string]bool // fingerprint -> notarized by seed
 }
 
