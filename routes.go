@@ -74,10 +74,6 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/ledger/contribution-quota", rateLimitByIP(10, "ledger_quota")(withAuth(handleAdminLedgerContributionQuota)))
 	// Ledger export for research / openness (P4-1): JSON (full) or CSV (contributions)
 	mux.HandleFunc("GET /api/admin/ledger/export", rateLimitByIP(10, "ledger_export")(withAuth(handleLedgerExport)))
-	// Certified education/public-welfare quota grants (Phase 3): transparent + revocable + audited
-	mux.HandleFunc("GET /api/admin/ledger/grants", rateLimitByIP(10, "ledger_grants")(withAuth(handleAdminLedgerGrantsList)))
-	mux.HandleFunc("POST /api/admin/ledger/grants", rateLimitByIP(10, "ledger_grants")(withAuth(handleAdminLedgerGrantsGrant)))
-	mux.HandleFunc("DELETE /api/admin/ledger/grants", rateLimitByIP(10, "ledger_grants")(withAuth(handleAdminLedgerGrantsRevoke)))
 	mux.HandleFunc("GET /api/admin/audit", rateLimitByIP(10, "audit")(withAuth(handleAuditLog)))
 	mux.HandleFunc("POST /api/admin/change-password", rateLimitByIP(3, "change_password")(withAuth(handleChangePassword)))
 	mux.HandleFunc("POST /api/admin/update-email", rateLimitByIP(5, "update_email")(withAuth(handleUpdateEmail)))

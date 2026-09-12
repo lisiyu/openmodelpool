@@ -21,7 +21,6 @@ All data is stored in the `data/` directory as JSON. `data/` is git-ignored and 
 | `data/sider_token_status.json` | Sider Token status |
 | `data/guest_keys.json` | Guest Key store |
 | `data/discovered_platforms.json` | Auto-discovered platforms |
-| `data/grants.json` | Certified education/public-welfare quota grants (Phase 3). Managed via `POST|GET|DELETE /api/admin/ledger/grants` |
 | `data/access.log` | Request access log |
 
 ---
