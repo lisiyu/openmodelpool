@@ -28,6 +28,8 @@ OpenModelPool 提供全功能管理脚本，一条命令即可完成安装、升
 |------|------|
 | **Linux / 群晖** | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" \| sudo bash` |
 | **Windows** | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
+| **Linux 组件化（无交互）** | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh" \| sudo bash` |
+| **Windows 组件升级** | `irm ".../omp-manager.ps1?t=..." \| iex -- -Component xray` |
 
 运行后进入交互菜单：
 
@@ -150,7 +152,46 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/lisiyu/openmodelpool/m
 3. 创建 `data` 子目录
 4. 打开 CMD/PowerShell，进入安装目录，运行 `openmodelpool.exe`
 
-### 2.4 macOS
+### 2.4 运行期依赖组件（可单独安装/升级）
+
+服务运行期会调用以下外部二进制；缺哪个则对应功能不可用。安装脚本已组件化，支持**单独升级**任一组件，Linux 与 Windows 行为一致：
+
+| 组件 | 功能 | 作用位置（Linux ↔ Windows） |
+|------|------|------|
+| `core` | OpenModelPool 主程序 | `/opt/openmodelpool/openmodelpool` ↔ `C:\openmodelpool\openmodelpool.exe` |
+| `xray` | `vmess://` `vless://` provider 的本地代理（Xray-core） | `/opt/openmodelpool/xray/xray` ↔ `C:\openmodelpool\xray\xray.exe` |
+| `cloudflared` | Cloudflare 隧道（tunnel 模式） | `/usr/local/bin/cloudflared` ↔ `%ProgramFiles%\cloudflared\cloudflared.exe` |
+| `frp` | FRP 内网穿透（frps/frpc） | `/usr/local/bin/{frps,frpc}` ↔ `C:\openmodelpool\frp\frpc.exe` |
+| `ngrok` | ngrok 隧道 agent | `/usr/local/bin/ngrok` ↔ `%ProgramFiles%\ngrok\ngrok.exe` |
+| `browser` | 内置浏览器核心（headless Chrome，浏览器登录依赖） | `/opt/openmodelpool/browser` ↔ `C:\openmodelpool\browser`（并写入 `OMP_CHROME_PATH`） |
+
+**Linux（`scripts/install.sh`，无交互子命令）：**
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh" | sudo bash            # 全部组件，各取最新
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh" | sudo bash -s -- xray         # 仅升级 Xray
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh" | sudo bash -s -- cloudflared  # 仅升级 cloudflared
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh" | sudo bash -s -- frp          # 仅升级 frp
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh" | sudo bash -s -- ngrok        # 仅升级 ngrok
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh" | sudo bash -s -- browser      # 仅升级浏览器核心
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh" | sudo bash -s -- core 4.5.34   # 仅核心到固定版本
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh" | sudo bash -s -- status       # 查看各组件状态
+```
+
+**Windows（`omp-manager.ps1 -Component <name>`）：**
+
+```powershell
+irm ".../omp-manager.ps1?t=..." | iex -- -Component xray         # 仅升级 Xray
+irm ".../omp-manager.ps1?t=..." | iex -- -Component browser      # 仅升级浏览器核心
+irm ".../omp-manager.ps1?t=..." | iex -- -Component cloudflared  # 仅升级 cloudflared
+irm ".../omp-manager.ps1?t=..." | iex -- -Component frp          # 仅升级 frpc
+irm ".../omp-manager.ps1?t=..." | iex -- -Component ngrok        # 仅升级 ngrok
+irm ".../omp-manager.ps1?t=..." | iex -- -Component core         # 仅升级主程序
+```
+
+> 仅替换组件二进制，不触碰已有隧道配置与计划任务。可选组件不装不影响主程序运行，仅对应功能不可用；Linux 可用 `OMP_SKIP_XRAY=1` / `OMP_SKIP_CLOUDFLARED=1` / `OMP_SKIP_FRP=1` / `OMP_SKIP_NGROK=1` / `OMP_SKIP_BROWSER=1` 让「全部」模式跳过。
+
+### 2.5 macOS
 
 ```bash
 # 获取最新 Release 版本号

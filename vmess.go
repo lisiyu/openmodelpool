@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,14 +64,28 @@ type vmessInstance struct {
 }
 
 func initVMessManager(dataDir string) {
-	xrayPath := filepath.Join(dataDir, "..", "xray", "xray")
-	if _, err := os.Stat(xrayPath); err != nil {
-		// Try relative to working directory
-		xrayPath = "xray/xray"
-		if _, err := os.Stat(xrayPath); err != nil {
-			slog.Warn("xray binary not found, VMess proxy disabled")
-			xrayPath = ""
+	// Windows 上 Xray 可执行文件带 .exe 后缀，需一并探测
+	candidates := []string{
+		filepath.Join(dataDir, "..", "xray", "xray"),
+		"xray/xray",
+	}
+	if runtime.GOOS == "windows" {
+		candidates = []string{
+			filepath.Join(dataDir, "..", "xray", "xray.exe"),
+			"xray/xray.exe",
+			filepath.Join(dataDir, "..", "xray", "xray"),
+			"xray/xray",
 		}
+	}
+	xrayPath := ""
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			xrayPath = p
+			break
+		}
+	}
+	if xrayPath == "" {
+		slog.Warn("xray binary not found, VMess proxy disabled")
 	}
 	vmessManager = &VMessProxy{
 		proxies:  make(map[string]*vmessInstance),
