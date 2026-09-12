@@ -1,15 +1,10 @@
 # Changelog
 
-## v4.5.36 (2026-09-13)
+## v4.5.40 (2026-09-13)
 
-Post-quantum proxies, encrypted provider storage and smarter install reuse — first release built from `main` after the `feature/mvp-iteration` merge:
-
-- **ML-KEM post-quantum `vless://` support** — `ParseVLESSLink` accepts `mlkem768*` / `mlkem1024*` / `x25519` hybrid encryption presets and passes them straight through to Xray-core (v26+), with explicit `"none"` default for non-ML-KEM links.
-- **Xray binary discovery hardened** — `vmess.go` probes `data/xray/xray(.exe)` and falls back to `PATH` lookup; `install.sh` adds `_find_existing_xray()` to scan common locations, copy non-standard installs to the standard path (with `geoip.dat`/`geosite.dat`) and skip re-downloads.
-- **Existing-install reuse for all built-in components** — `cloudflared`, `frp` (frps+frpc both required), `ngrok` and the browser core are detected, normalized to the standard location and reused instead of re-downloaded.
-- **Interactive reuse prompt** — when an existing binary is found the script asks whether to skip the download: `all` mode defaults to reuse (`[Y/n]`, non-interactive keeps the default), explicit subcommands default to download/upgrade (`[y/N]`); copy failures degrade to a fresh download and a partial `frp` install is filled with the latest version.
-- **Proxy URL encrypted at rest** — `Proxy` is stored AES-256-GCM encrypted like API keys (same `enc:v1:` prefix / `IsEncrypted` guard / ephemeral-key refusal), decrypted on load; `vless://` links are validated on create/update, capped at 8192 chars (for 2000+ char ML-KEM links), and masked as `vless://***` in outputs and imports.
-- AppVersion bumped to 4.5.36 · full suite green.
+- **Interactive reuse prompt** — when an existing component binary is found the one-click script now asks whether to skip the download and reuse it: `all` mode defaults to reuse (`[Y/n]`, non-interactive keeps the default), explicit subcommands (`install.sh xray|cloudflared|frp|ngrok|browser`) default to download/upgrade (`[y/N]`); non-standard installs are copied to the standard location on reuse, and copy failures degrade to a fresh download. `frp` only prompts when both `frps` and `frpc` are present.
+- v4.5.36–v4.5.39 already shipped separately: ML-KEM post-quantum vless · xray discovery hardening · existing-install reuse for all built-in components · proxy URL encrypted at rest.
+- AppVersion bumped to 4.5.40 · full suite green.
 
 ## v4.5.35 (2026-09-12)
 
