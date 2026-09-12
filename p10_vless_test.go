@@ -60,6 +60,38 @@ func TestP10_ParseVLESSLink_Invalid(t *testing.T) {
 	}
 }
 
+func TestP10_ParseVLESSLink_MLKEMEncryption(t *testing.T) {
+	// ML-KEM + X25519 hybrid encryption with a long base64 payload (xray v26+).
+	link := "vless://1145530f-c556-486c-9863-43c7d4136aa2@www.wto.org:80?encryption=mlkem768x25519plus.native.0rtt.TestPubKeyMaterial1234567890abcdef&flow=xtls-rprx-vision&security=none&type=ws&host=v2ray.example.com&path=/test-vw#test-mlkem"
+	cfg, err := ParseVLESSLink(link)
+	if err != nil {
+		t.Fatalf("parse mlkem vless link: %v", err)
+	}
+	if !cfg.IsVLESS {
+		t.Fatal("IsVLESS = false, want true")
+	}
+	if !strings.HasPrefix(cfg.Encryption, "mlkem768x25519plus") {
+		t.Fatalf("Encryption = %q, want mlkem768x25519plus prefix", cfg.Encryption)
+	}
+	if cfg.Flow != "xtls-rprx-vision" {
+		t.Fatalf("Flow = %q, want xtls-rprx-vision", cfg.Flow)
+	}
+	if cfg.Net != "ws" {
+		t.Fatalf("Net = %q, want ws", cfg.Net)
+	}
+	// generateConfig must pass the encryption string through unchanged.
+	m := &VMessProxy{}
+	full := m.generateConfig(cfg, 20899)
+	outbounds := full["outbounds"].([]map[string]any)
+	ob := outbounds[0]
+	settings := ob["settings"].(map[string]any)
+	vnext := settings["vnext"].([]map[string]any)
+	user := vnext[0]["users"].([]map[string]any)[0]
+	if user["encryption"] != cfg.Encryption {
+		t.Fatalf("user encryption = %v, want %v", user["encryption"], cfg.Encryption)
+	}
+}
+
 func TestP10_GenerateConfig_VLESSOutbound(t *testing.T) {
 	cfg, err := ParseVLESSLink(testVLESSReality)
 	if err != nil {
