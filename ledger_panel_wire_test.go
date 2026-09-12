@@ -54,8 +54,10 @@ func TestLedgerPanelScriptCallsRealEndpoints(t *testing.T) {
 	for _, need := range []string{
 		"/api/admin/ledger/transparency",
 		"/api/admin/ledger/contribution-quota",
+		"/api/admin/ledger/contributors?limit=10",
 		"/api/admin/ledger/export?format=",
 		"function loadLedgerTransparency",
+		"function renderHonorRoll",
 		"function exportLedger",
 	} {
 		if !strings.Contains(j, need) {

@@ -67,6 +67,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/goroutines", rateLimitByIP(5, "goroutines")(withAuth(handleGoroutineDump)))
 	// Ledger transparency (P2-2): where contributed compute came from + integrity
 	mux.HandleFunc("GET /api/admin/ledger/transparency", rateLimitByIP(10, "ledger_transparency")(withAuth(handleAdminLedgerTransparency)))
+	mux.HandleFunc("GET /api/admin/ledger/contributors", rateLimitByIP(10, "ledger_contributors")(withAuth(handleAdminLedgerContributors)))
 	mux.HandleFunc("GET /api/admin/ledger/contribution-quota", rateLimitByIP(10, "ledger_quota")(withAuth(handleAdminLedgerContributionQuota)))
 	// Ledger export for research / openness (P4-1): JSON (full) or CSV (contributions)
 	mux.HandleFunc("GET /api/admin/ledger/export", rateLimitByIP(10, "ledger_export")(withAuth(handleLedgerExport)))
