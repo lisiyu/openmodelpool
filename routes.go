@@ -18,6 +18,10 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
 	mux.HandleFunc("POST /v1/completions", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
 	mux.HandleFunc("POST /v1/embeddings", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
+	// OpenAI v1/responses, v1/images, v1/audio downstream passthrough (P3-3(iii))
+	mux.HandleFunc("POST /v1/responses", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
+	mux.HandleFunc("POST /v1/images/generations", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
+	mux.HandleFunc("POST /v1/audio/speech", withProxyAuth(wafMiddleware(rateLimitMiddleware(handleGatewayRequest))))
 	// Anthropic Messages API compatibility — for Claude Code and other Anthropic clients
 	mux.HandleFunc("POST /v1/messages", anthropicAuthAdapter(withProxyAuth(wafMiddleware(rateLimitMiddleware(handleAnthropicMessages)))))
 	// Azure OpenAI URL compatibility — accepts /openai/deployments/{deployment}/chat/completions
@@ -268,9 +272,9 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/network/guest-keys", withAuth(handleGuestKeyIssue))
 	mux.HandleFunc("GET /api/network/guest-keys", withAuth(handleGuestKeyList))
 	mux.HandleFunc("DELETE /api/network/guest-keys/{key}", withAuth(handleGuestKeyRevoke))
-	mux.HandleFunc("DELETE /api/network/guest-keys/{key}/permanent", withAuth(handleGuestKeyDelete))       // B10-U2: was dead — UI button 404'd
+	mux.HandleFunc("DELETE /api/network/guest-keys/{key}/permanent", withAuth(handleGuestKeyDelete))                 // B10-U2: was dead — UI button 404'd
 	mux.HandleFunc("POST /api/network/guest-keys/{key}/mark-collaborator", withAuth(handleGuestKeyMarkCollaborator)) // B10-U2: was dead
-	mux.HandleFunc("POST /api/network/guest-keys/{key}/share-type", withAuth(handleGuestKeyShareType))    // B10-U2: was dead
+	mux.HandleFunc("POST /api/network/guest-keys/{key}/share-type", withAuth(handleGuestKeyShareType))               // B10-U2: was dead
 	mux.HandleFunc("POST /api/network/keys/validate", rateLimitByIP(30, "key_validate")(handleNetworkKeyValidate))
 	mux.HandleFunc("PUT /api/network/guest-keys/{key}/quota", withAuth(handleGuestKeyUpdateQuota))
 

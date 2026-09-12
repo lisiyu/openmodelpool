@@ -1101,6 +1101,11 @@ func handleGatewayFallback(w http.ResponseWriter, r *http.Request, bodyBytes []b
 	case "/v1/embeddings":
 		// Embeddings: pass through to local handler if available, else error
 		writeError(w, 501, "embeddings not supported in gateway fallback mode")
+	case "/v1/responses", "/v1/images/generations", "/v1/audio/speech":
+		// P3-3(iii): OpenAI v1/responses, v1/images, v1/audio — pass through
+		// the existing gateway mechanism; no dedicated local handler in
+		// fallback mode.
+		writeError(w, 501, "endpoint not supported in gateway fallback mode")
 	case "/v1/messages":
 		// Anthropic Messages API — handled by handleAnthropicMessages before reaching here
 		writeError(w, 404, "anthropic messages endpoint should not reach gateway fallback")
