@@ -25,6 +25,19 @@ All data is stored in the `data/` directory as JSON. `data/` is git-ignored and 
 
 ---
 
+## Audit & Privacy (审计与隐私)
+
+管理操作审计日志默认开启（写入 `data/audit/audit.log`，自动轮转，可经 `audit_webhook_url` 远程转发）。私有部署若要求本地零留存，可关闭整条审计链路：
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `audit_enabled` | `true` | 审计总开关。设 `false` 进入**零日志模式**：不创建 `data/audit/`、不写任何审计文件、不转发 webhook |
+| `audit_webhook_url` | empty | 可选远程审计转发端点；`audit_enabled=false` 时一并静默 |
+
+> 零日志模式下 `auditRecord` 恒为 no-op（无文件、无网络、无进程副作用）；`GET /api/admin/audit-log` 返回 `{"entries":[],"enabled":false}` 而非错误。默认值保持既有行为不变。
+
+---
+
 ## Sensitive Data Encryption
 
 All sensitive fields encrypted with **AES-256-GCM**:

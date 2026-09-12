@@ -71,8 +71,8 @@ func initCore() {
 	initAlgorithmGovernance("data")
 	initQuotaManager(algoChain)
 
-	// B161: Audit logging for admin actions
-	initAuditLog()
+	// B161: Audit logging for admin actions (zero-log privacy mode via audit_enabled=false)
+	initAuditLog("data")
 
 	// Global pool (Phase 4)
 	initGlobalPool("data")
