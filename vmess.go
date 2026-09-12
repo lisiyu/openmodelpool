@@ -43,7 +43,8 @@ type VMessConfig struct {
 	Security string `json:"security,omitempty"` // stream security: reality | tls | none
 	PBK     string `json:"pbk,omitempty"`   // REALITY public key
 	SID     string `json:"sid,omitempty"`   // REALITY short id
-	FP      string `json:"fp,omitempty"`    // uTLS fingerprint (e.g. chrome)
+	FP         string `json:"fp,omitempty"`    // uTLS fingerprint (e.g. chrome)
+	Encryption string `json:"encryption,omitempty"` // VLESS encryption: none | mlkem768x25519plus.* | mlkem1024.*
 }
 
 // VMessProxy manages a local Xray instance for a VMess proxy
@@ -186,9 +187,19 @@ func ParseVLESSLink(link string) (*VMessConfig, error) {
 	default:
 		return nil, fmt.Errorf("unsupported vless security %q", cfg.Security)
 	}
-	if enc := q.Get("encryption"); enc != "" && enc != "none" {
-		return nil, fmt.Errorf("unsupported vless encryption %q", enc)
+	enc := q.Get("encryption")
+	if enc != "" && enc != "none" {
+		// Accept ML-KEM post-quantum encryption strings
+		// (e.g. mlkem768x25519plus.native.0rtt.<base64-public-key>).
+		// Xray v26+ supports these natively; we pass them through unchanged.
+		isKnownMLKEM := strings.HasPrefix(enc, "mlkem768") ||
+			strings.HasPrefix(enc, "mlkem1024") ||
+			strings.Contains(enc, "x25519")
+		if !isKnownMLKEM {
+			return nil, fmt.Errorf("unsupported vless encryption %q", enc)
+		}
 	}
+	cfg.Encryption = enc
 	// B10-P1: cached — same private-IP guard as vmess links.
 	if cachedIsPrivateHost(net.JoinHostPort(cfg.Add, cfg.Port)) {
 		return nil, fmt.Errorf("vless address resolves to private/loopback IP: %s", cfg.Add)
@@ -461,9 +472,13 @@ func (m *VMessProxy) generateConfig(vmess *VMessConfig, localPort int) map[strin
 	// Outbound: vmess or vless (B10-WL6)
 	var outbound map[string]any
 	if vmess.IsVLESS {
+		encVal := vmess.Encryption
+		if encVal == "" {
+			encVal = "none"
+		}
 		user := map[string]any{
 			"id":         vmess.ID,
-			"encryption": "none",
+			"encryption": encVal,
 		}
 		if vmess.Flow != "" {
 			user["flow"] = vmess.Flow
