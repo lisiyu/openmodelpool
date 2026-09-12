@@ -62,7 +62,7 @@
 - [x] P3-3 调用格式扩展（下游消费格式，与上游 provider.Type 正交）：2026-08-09 拍板**以 OpenAI 兼容为通用语 + Anthropic 原生已内建，不引入专有格式**。普通调用方契约恒为"base URL + API Key"，复用 `withProxyAuth`。
   - [x] P3-3(i) **Gemini 下游入口**：`gemini_api.go` 接受 `POST /v1beta/models/{model}:generateContent` 与 `:streamGenerateContent`，请求翻译为 OpenAI 格式后复用 `handleGatewayRequest`（与 Anthropic 同模式），响应经 `geminiResponseWriter` 翻回 Gemini 格式（含流式 SSE、usageMetadata、finishReason 映射）。`geminiAuthAdapter` 支持 `x-goog-api-key` 头与 `?key=` 查询（后者在鉴权后从 query 剥离，避免令牌外泄）。`gemini_api_test.go` 覆盖解析/翻译/鉴权共 7 用例全绿
   - [x] P3-3(ii) **Azure 下游 URL 风格**：`azure_api.go` 接受 `POST /openai/deployments/{deployment}/chat/completions`（`azureAuthAdapter` 把 Azure SDK 的 `api-key` 头转 Bearer），从路径提取 `deployment` 作为 model 注入 OpenAI 请求体、重写路径为 `/v1/chat/completions` 后复用 `handleGatewayRequest`；响应本就是 OpenAI 格式，无需翻译。`azure_api_test.go` 覆盖注入/鉴权共 3 用例全绿
-  - [x] P3-3(iii) 候选增量（低优先级、社区明确诉求时再做，均收敛到"base url + key"契约）：OpenAI 新版 `/v1/responses`、`/v1/images`、`/v1/audio` 下游透传
+  - [x] P3-3(iii) 候选增量（低优先级、社区明确诉求时再做，均收敛到"base url + key"契约）：OpenAI 新版 `/v1/responses`、`/v1/images`、`/v1/audio` 下游透传。**实现（与既有格式翻译不同）：纯透传不翻译** —— `openai_passthrough.go::handleRawPassthrough` 把原始 body 用选中的 provider key 原样转发到上游 `BaseURL+子路径`（`/responses`、`/images/generations`、`/audio/speech`），响应原样回传（SSE/JSON/音频字节均保留 Content-Type）。透传复用 gateway 的全套前置检查（hop 计数、ShareBoundary、public/guest quota 预留估算），provider 失败自动回退下一候选，`no provider` 返回 404。`/v1/responses` 支持流式。`openai_passthrough_test.go` 覆盖子路径映射、verbatim 透传（JSON/音频/SSE）、无 provider 404 共 6 用例全绿
 
 ## Phase 4 — 教育科研
 
