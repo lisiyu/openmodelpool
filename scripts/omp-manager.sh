@@ -813,7 +813,85 @@ EOF
 }
 
 # ============================================================
-# 2. 升级
+# 2. 升级 —— 组件选择子菜单
+# ============================================================
+upgrade_component_menu() {
+    write_title "OpenModelPool 组件升级"
+    echo ""
+    echo -e "  ${CYAN}选择要升级的组件:${NC}"
+    echo ""
+    echo -e "    ${YELLOW}a${NC}. 全部组件 (ALL)        核心 + 所有附属组件"
+    echo -e "    ${YELLOW}b${NC}. 仅核心 (core)          OMP 主程序"
+    echo -e "    ${YELLOW}c${NC}. 仅 Xray               VMess/VLESS 代理"
+    echo -e "    ${YELLOW}d${NC}. 仅 Cloudflared        Cloudflare 隧道"
+    echo -e "    ${YELLOW}e${NC}. 仅 FRP                 frps/frpc 内网穿透"
+    echo -e "    ${YELLOW}f${NC}. 仅 ngrok               ngrok 隧道"
+    echo -e "    ${YELLOW}g${NC}. 仅浏览器核心           headless Chrome"
+    echo -e "    ${YELLOW}0${NC}. 返回主菜单"
+    echo ""
+    read -p "  请选择 [a-g/0]: " comp_choice < /dev/tty
+
+    case "$comp_choice" in
+        a|A)
+            upgrade_omp
+            ;;
+        b|B)
+            upgrade_single_component "core"
+            ;;
+        c|C)
+            upgrade_single_component "xray"
+            ;;
+        d|D)
+            upgrade_single_component "cloudflared"
+            ;;
+        e|E)
+            upgrade_single_component "frp"
+            ;;
+        f|F)
+            upgrade_single_component "ngrok"
+            ;;
+        g|G)
+            upgrade_single_component "browser"
+            ;;
+        0)
+            return
+            ;;
+        *)
+            write_err "无效选项"
+            ;;
+    esac
+}
+
+# 升级单个组件：下载 install.sh 并执行指定组件安装
+upgrade_single_component() {
+    local component="$1"
+    write_title "升级组件: ${component}"
+
+    local INSTALL_SH_URL="https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh?t=$(date +%s)"
+    local TMP_SCRIPT="/tmp/omp-install.sh"
+
+    write_info "下载 install.sh..."
+    if curl -fsSL "$INSTALL_SH_URL" -o "$TMP_SCRIPT" 2>/dev/null; then
+        chmod +x "$TMP_SCRIPT"
+        write_info "执行组件升级: ${component}"
+        echo ""
+        bash "$TMP_SCRIPT" "$component"
+        local rc=$?
+        rm -f "$TMP_SCRIPT"
+        if [ $rc -eq 0 ]; then
+            echo ""
+            write_ok "${component} 升级完成"
+        else
+            echo ""
+            write_err "${component} 升级异常 (exit=$rc)"
+        fi
+    else
+        write_err "下载 install.sh 失败，请检查网络"
+    fi
+}
+
+# ============================================================
+# 2a. 全量升级（核心 + Xray）
 # ============================================================
 upgrade_omp() {
     write_title "OpenModelPool 增量升级"
@@ -894,8 +972,8 @@ upgrade_omp() {
     if pgrep -f "$BINARY_NAME" > /dev/null 2>&1; then
         # 健康检查：验证 API 可访问且配置加载正常
         sleep 2
-        local HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/api/health" 2>/dev/null)
-        local PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers",0))' 2>/dev/null)
+        local HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/health" 2>/dev/null)
+        local PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers_enabled",0))' 2>/dev/null)
         if [ -n "$PROVIDERS" ] && [ "$PROVIDERS" -gt 0 ] 2>/dev/null; then
             write_ok "升级成功！数据已保留。providers=$PROVIDERS"
         else
@@ -908,8 +986,8 @@ upgrade_omp() {
                 cp "$LATEST_BAK" "$INSTALL_DIR/data/config.json"
                 start_omp 2>/dev/null || true
                 sleep 3
-                HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/api/health" 2>/dev/null)
-                PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers",0))' 2>/dev/null)
+                HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/health" 2>/dev/null)
+                PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers_enabled",0))' 2>/dev/null)
                 if [ -n "$PROVIDERS" ] && [ "$PROVIDERS" -gt 0 ] 2>/dev/null; then
                     write_ok "从备份恢复成功！providers=$PROVIDERS"
                 else
@@ -1889,8 +1967,8 @@ auto_update() {
     if pgrep -f "$BINARY_NAME" > /dev/null 2>&1; then
         # 健康检查：验证 API 可访问且配置加载正常
         sleep 2
-        local HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/api/health" 2>/dev/null)
-        local PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers",0))' 2>/dev/null)
+        local HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/health" 2>/dev/null)
+        local PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers_enabled",0))' 2>/dev/null)
         if [ -n "$PROVIDERS" ] && [ "$PROVIDERS" -gt 0 ] 2>/dev/null; then
             echo "[$(date)] ✅ 自动更新成功: $LATEST_TAG (providers=$PROVIDERS)" >> "$LOG_FILE"
         else
@@ -1903,8 +1981,8 @@ auto_update() {
                 cp "$LATEST_BAK" "$INSTALL_DIR/data/config.json"
                 start_omp 2>/dev/null || true
                 sleep 3
-                HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/api/health" 2>/dev/null)
-                PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers",0))' 2>/dev/null)
+                HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/health" 2>/dev/null)
+                PROVIDERS=$(echo "$HEALTH" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("providers_enabled",0))' 2>/dev/null)
                 if [ -n "$PROVIDERS" ] && [ "$PROVIDERS" -gt 0 ] 2>/dev/null; then
                     echo "[$(date)] ✅ 从备份恢复成功: providers=$PROVIDERS" >> "$LOG_FILE"
                 else
@@ -1949,7 +2027,7 @@ while true; do
     echo -e "${CYAN}  ║       OpenModelPool 全功能管理工具        ║${NC}"
     echo -e "${CYAN}  ╚══════════════════════════════════════════╝${NC}"
     echo -e "    1. 安装          全新安装 OMP"
-    echo -e "    2. 升级          增量更新 (保留配置)"
+    echo -e "    2. 升级          增量更新 (可选组件)"
     echo -e "    3. 卸载          彻底删除所有组件"
     echo -e "    4. 配置穿透      Cloudflare / FRP / ngrok"
     echo -e "    5. 重置穿透      选择重置任一/全部隧道"
@@ -1969,7 +2047,7 @@ while true; do
 
     case "$choice" in
         1) install_omp ;;
-        2) upgrade_omp ;;
+        2) upgrade_component_menu ;;
         3) uninstall_omp ;;
         4) setup_tunnel_menu ;;
         5) reset_tunnel_menu ;;
