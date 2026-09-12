@@ -91,8 +91,12 @@ jobs:
   #      never launches a browser.)
   # Soft gate on purpose: a second-run failure is a signal to investigate, not a
   # reason to block a PR whose hard gate is green.
-  test-integration:
-    name: Integration tests
+  # Renamed from test-integration/"Integration tests" (2026-09-12): the old name
+  # advertised a tier that does not exist — this is a second run of the same
+  # suite. Confirmed safe: branch protection has no required check under the
+  # old name.
+  test-flaky-watch:
+    name: Second run (flaky watch)
     needs: build-gate
     continue-on-error: true
     runs-on: ubuntu-latest
