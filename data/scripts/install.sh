@@ -468,21 +468,24 @@ install_xray() {
         return 1
     fi
 
-    # 校验：官方 .dgst（存在则 fail-closed，缺失则 warn 跳过）
+    # SHA256 校验（fail-closed：仅从 GitHub 官方直连获取 .dgst 校验文件）
     local dg_dir="$TMP_DIR/dgst" exp act
     mkdir -p "$dg_dir"
-    if curl -sSL --connect-timeout 10 --max-time 30 "${ZIP_URL}.dgst" -o "$dg_dir/$ASSET.dgst" 2>/dev/null; then
-        exp=$(extract_home_path "$dg_dir/$ASSET.dgst" "$ASSET")
-        act=$(sha256sum "$TMP_DIR/xray.zip" | awk '{print $1}')
-        if [[ -n "$exp" && "$exp" != "$act" ]]; then
-            rm -rf "$TMP_DIR"
-            warn "Xray SHA-256 校验失败，已跳过（expected=$exp actual=$act）"
-            return 1
-        fi
-        ok "Xray SHA-256 校验通过"
-    else
-        warn "未取得 Xray .dgst 校验文件（HTTPS+大小兜底）"
+    # 从 GitHub 官方 canonical 源获取校验和（不走镜像，确保可信）
+    local XRAY_CANONICAL="https://github.com/${XRAY_REPO}/releases/download/${XRAY_VER}/${ASSET}.dgst"
+    if ! curl -sSL --connect-timeout 10 --max-time 30 "$XRAY_CANONICAL" -o "$dg_dir/$ASSET.dgst" 2>/dev/null; then
+        rm -rf "$TMP_DIR"
+        warn "Xray SHA-256 校验失败（无法从 GitHub 官方获取校验文件），跳过安装"
+        return 1
     fi
+    exp=$(extract_home_path "$dg_dir/$ASSET.dgst" "$ASSET")
+    act=$(sha256sum "$TMP_DIR/xray.zip" | awk '{print $1}')
+    if [[ -z "$exp" || "$exp" != "$act" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "Xray SHA-256 校验不匹配，跳过安装（expected=$exp actual=$act）"
+        return 1
+    fi
+    ok "Xray SHA-256 校验通过（来源：GitHub 官方）"
 
     mkdir -p "$XRAY_DIR"
     if command -v unzip &>/dev/null; then
