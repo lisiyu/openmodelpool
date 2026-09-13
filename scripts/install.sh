@@ -728,7 +728,7 @@ install_frp() {
         info "frp 部分存在（frps=${frps_bin:-无}, frpc=${frpc_bin:-无}），将下载并按最新版本补齐"
     fi
 
-    local VER V ASSET UV TMP_DIR
+    local V ASSET UV TMP_DIR
 
     V="${VER#v}"
 
@@ -846,7 +846,7 @@ install_ngrok() {
         info "  将下载最新版本"
     fi
 
-    local VER V ASSET UV TMP_DIR
+    local V ASSET UV TMP_DIR
 
     V="${VER#v}"
 
@@ -917,7 +917,8 @@ install_browser() {
     # $1 = reuse 默认值：all 传 y，显式子命令传 n
     local reuse_default="${1:-n}"
     # 扫描常见位置已有安装，找到就复用
-    local browser_bin browser_candidates=(
+    local browser_bin
+    local browser_candidates=(
         "$BROWSER_DIR/chrome-headless-shell"        # 标准安装位置
         "$DEFAULT_INSTALL_DIR/browser/chrome-headless-shell"
     )
