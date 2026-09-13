@@ -17,12 +17,48 @@ BINARY_NAME="openmodelpool"
 PORT="8000"
 AUTO_UPDATE=false
 
+
+# 互斥锁：防止多个实例同时运行
+LOCK_FILE="/tmp/omp-manager.lock"
+if command -v flock >/dev/null 2>&1; then
+    exec 9>"$LOCK_FILE"
+    if ! flock -n 9; then
+        echo -e "${YELLOW}⚠️  另一个 OMP 管理脚本正在运行，请稍候再试${NC}"
+        exit 1
+    fi
+fi
+
+# 校验端口号是否合法 (1-65535)
+validate_port() {
+    local port="$1"
+    if ! [[ "$port" =~ ^[0-9]+$ ]]; then
+        return 1
+    fi
+    if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        return 1
+    fi
+    return 0
+}
+
 # 解析参数
 while [ $# -gt 0 ]; do
     case "$1" in
         --auto-update) AUTO_UPDATE=true ;;
-        --install-dir) INSTALL_DIR="$2"; shift ;;
-        --port)        PORT="$2"; shift ;;
+        --install-dir)
+            if command -v realpath >/dev/null 2>&1; then
+                INSTALL_DIR=$(realpath -m "$2")
+            else
+                INSTALL_DIR="$2"
+            fi
+            shift ;;
+        --port)
+            if validate_port "$2"; then
+                PORT="$2"
+            else
+                echo "错误: 无效端口号 (1-65535): $2"
+                exit 1
+            fi
+            shift ;;
         *) INSTALL_DIR="${1:-$INSTALL_DIR}"; PORT="${2:-$PORT}" ;;
     esac
     shift
@@ -611,10 +647,8 @@ install_omp() {
     # 下载（动态匹配资产，兼容裸二进制和压缩包）
     write_step 2 7 "下载 Release 资产..."
     TMP_DIR=$(mktemp -d)
-    download_omp_release "$RELEASE_TAG" "$TMP_DIR" || {
-        rm -rf "$TMP_DIR"
-        return 1
-    }
+    trap "rm -rf $TMP_DIR" RETURN
+    download_omp_release "$RELEASE_TAG" "$TMP_DIR" || return 1
     write_step 3 7 "资产就绪"
 
     # 安装
@@ -758,12 +792,12 @@ exec ./$BINARY_NAME >> "$INSTALL_DIR/data/app.log" 2>&1
 EOF
     chmod +x "$INSTALL_DIR/start.sh"
 
-    cat > "$INSTALL_DIR/stop.sh" << 'EOF'
+    cat > "$INSTALL_DIR/stop.sh" << EOF
 #!/bin/bash
-DIR="$(cd "$(dirname "$0")" && pwd)"
-PIDS=$(pgrep -f "$DIR/$BINARY_NAME")
-if [ -n "$PIDS" ]; then
-  kill $PIDS && echo "已停止 (PID: $PIDS)"
+DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+PIDS=\$(pgrep -f "\$DIR/$BINARY_NAME")
+if [ -n "\$PIDS" ]; then
+  kill \$PIDS && echo "已停止 (PID: \$PIDS)"
 else
   echo "服务未运行"
 fi
@@ -929,10 +963,8 @@ upgrade_omp() {
 
     write_step 2 5 "下载新版本..."
     TMP_DIR=$(mktemp -d)
-    download_omp_release "$RELEASE_TAG" "$TMP_DIR" || {
-        rm -rf "$TMP_DIR"
-        return 1
-    }
+    trap "rm -rf $TMP_DIR" RETURN
+    download_omp_release "$RELEASE_TAG" "$TMP_DIR" || return 1
     write_step 3 5 "资产就绪"
 
     write_step 4 5 "替换二进制..."
@@ -1323,6 +1355,10 @@ setup_frp() {
 
     read -p "  远程映射端口（默认 8001）: " REMOTE_PORT < /dev/tty
     REMOTE_PORT="${REMOTE_PORT:-8001}"
+    if ! validate_port "$REMOTE_PORT"; then
+        write_err "无效端口 (1-65535)"
+        return 1
+    fi
 
     # Install frpc
     if ! command -v frpc >/dev/null 2>&1; then
@@ -1361,6 +1397,7 @@ localIP = "127.0.0.1"
 localPort = $PORT
 remotePort = $REMOTE_PORT
 EOF
+    chmod 600 /etc/frp/frpc.toml
     write_ok "配置已写入 /etc/frp/frpc.toml"
 
     write_step 3 4 "测试连接..."
@@ -1648,6 +1685,10 @@ change_port() {
         write_err "端口不能为空"
         return
     fi
+    if ! validate_port "$NEW_PORT"; then
+        write_err "无效端口 (1-65535)"
+        return
+    fi
 
     # 更新 start.sh
     cat > "$INSTALL_DIR/start.sh" << EOF
@@ -1919,7 +1960,27 @@ auto_update() {
     CUR_N=$(normalize_version "$CURRENT_VERSION")
     LAT_N=$(normalize_version "$LATEST_TAG")
 
-    if [ "$CUR_N" = "$LAT_N" ]; then
+    # 版本号比较（支持多段数字版本，避免字符串比较错误如 v4.9 > v4.10）
+    local VER_CMP
+    VER_CMP=$(python3 -c "
+import sys
+def parse_ver(v):
+    parts = []
+    for p in v.split('.'):
+        try:
+            parts.append(int(p))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
+cur = parse_ver('$CUR_N')
+lat = parse_ver('$LAT_N')
+if cur >= lat:
+    print('skip')
+else:
+    print('update')
+" 2>/dev/null || echo "update")
+
+    if [ "$VER_CMP" = "skip" ]; then
         echo "[$(date)] 已是最新版本，跳过" >> "$LOG_FILE"
         exit 0
     fi
@@ -2007,10 +2068,17 @@ auto_update() {
             fi
         fi
     else
-        echo "[$(date)] ❌ 启动失败，回滚..." >> "$LOG_FILE"
+        echo "[$(date)] ❌ 启动失败，回滚二进制 + 配置..." >> "$LOG_FILE"
         cp "$INSTALL_DIR/${BINARY_NAME}.bak" "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
+        # 回滚配置文件（如果有备份）
+        for f in config.json admin.json providers.json; do
+            if [ -f "$INSTALL_DIR/data/${f}.bak.${BACKUP_TS}" ]; then
+                cp "$INSTALL_DIR/data/${f}.bak.${BACKUP_TS}" "$INSTALL_DIR/data/$f" 2>/dev/null || true
+                echo "[$(date)] 已回滚配置: $f" >> "$LOG_FILE"
+            fi
+        done
         start_omp 2>/dev/null || true
-        echo "[$(date)] 已回滚" >> "$LOG_FILE"
+        echo "[$(date)] 已回滚到旧版本" >> "$LOG_FILE"
     fi
 
     rm -rf "$TMP_DIR"

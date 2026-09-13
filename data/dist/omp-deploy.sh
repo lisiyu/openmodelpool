@@ -92,13 +92,49 @@ if [ ! -s "$TMP_DIR/${PKG}.tar.gz" ]; then
 fi
 echo -e "${GREEN}       下载完成 ($(du -h "$TMP_DIR/${PKG}.tar.gz" | cut -f1))${NC}"
 
+# ---- SHA256 校验（fail-closed，仅从 GitHub 官方直连获取校验和） ----
+echo -e "${CYAN}[3.5/7] SHA256 完整性校验...${NC}"
+SHA256_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${PKG}.tar.gz.sha256"
+SHA256_FILE="$TMP_DIR/${PKG}.tar.gz.sha256"
+
+if command -v curl &>/dev/null; then
+  curl -fsSL --connect-timeout 10 --max-time 30     "$SHA256_URL" -o "$SHA256_FILE" 2>/dev/null || true
+elif command -v wget &>/dev/null; then
+  wget -q -T 30 -O "$SHA256_FILE" "$SHA256_URL" 2>/dev/null || true
+fi
+
+if [ ! -s "$SHA256_FILE" ]; then
+  echo -e "${RED}[错误] 无法获取 SHA256 校验和（fail-closed），已中止${NC}"
+  echo "       请检查网络或设置 OMP_ALLOW_UNSIGNED=1 跳过（不推荐）"
+  exit 1
+fi
+
+# 校验
+EXPECTED_HASH=$(head -1 "$SHA256_FILE" | awk '{print $1}')
+if command -v sha256sum &>/dev/null; then
+  ACTUAL_HASH=$(sha256sum "$TMP_DIR/${PKG}.tar.gz" | awk '{print $1}')
+elif command -v shasum &>/dev/null; then
+  ACTUAL_HASH=$(shasum -a 256 "$TMP_DIR/${PKG}.tar.gz" | awk '{print $1}')
+else
+  echo -e "${RED}[错误] 缺少 sha256sum/shasum，无法校验完整性${NC}"
+  exit 1
+fi
+
+if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
+  echo -e "${RED}[错误] SHA256 校验失败，二进制可能被篡改，已中止${NC}"
+  echo "       期望: $EXPECTED_HASH"
+  echo "       实际: $ACTUAL_HASH"
+  exit 1
+fi
+echo -e "${GREEN}       SHA256 校验通过${NC}"
+
 # ---- 解压 ----
-echo -e "${CYAN}[4/7] 解压...${NC}"
+echo -e "${CYAN}[5/7] 解压...${NC}"
 tar xzf "$TMP_DIR/${PKG}.tar.gz" -C "$TMP_DIR"
 echo -e "${GREEN}       解压完成${NC}"
 
 # ---- 安装 ----
-echo -e "${CYAN}[5/7] 安装到 ${INSTALL_DIR}...${NC}"
+echo -e "${CYAN}[6/7] 安装到 ${INSTALL_DIR}...${NC}"
 mkdir -p "$INSTALL_DIR/data"
 cp "$TMP_DIR/openmodelpool" "$INSTALL_DIR/openmodelpool"
 chmod +x "$INSTALL_DIR/openmodelpool"
@@ -114,7 +150,7 @@ cp -r "$TMP_DIR/docs" "$INSTALL_DIR/docs" 2>/dev/null
 echo -e "${GREEN}       安装完成${NC}"
 
 # ---- 创建管理脚本 ----
-echo -e "${CYAN}[6/7] 配置服务 (端口 ${PORT})...${NC}"
+echo -e "${CYAN}[7/7] 配置服务 (端口 ${PORT})...${NC}"
 
 cat > "$INSTALL_DIR/start.sh" << EOF
 #!/bin/bash
@@ -191,7 +227,7 @@ else
 fi
 
 # ---- 启动 ----
-echo -e "${CYAN}[7/7] 启动服务...${NC}"
+echo -e "${CYAN}[8/7] 启动服务...${NC}"
 pkill -f "$INSTALL_DIR/openmodelpool" 2>/dev/null || true
 sleep 1
 $INSTALL_DIR/start.sh &

@@ -256,19 +256,28 @@ function Download-OMPRelease {
     }
     Write-OK "已下载: $assetName ($Tag)"
     
-    # SHA256 校验
-    $shaUrl = "$assetUrl.sha256"
+    # SHA256 校验（fail-closed：仅从 GitHub 官方直连获取校验和，缺失或不匹配均中止）
+    $canonicalShaUrl = "https://github.com/$GITHUB_REPO/releases/download/$Tag/$assetName.sha256"
     $tmpSha = Join-Path $TmpDir "$assetName.sha256"
-    try { Invoke-WebRequest -Uri $shaUrl -OutFile $tmpSha -UseBasicParsing } catch {}
-    if (Test-Path $tmpSha) {
-        $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
-        $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
-        if ($expectedHash.ToLower() -ne $actualHash) {
-            Write-Err "SHA256 校验失败"
-            return $null
-        }
-        Write-OK "SHA256 校验通过"
+    try {
+        Invoke-WebRequest -Uri $canonicalShaUrl -OutFile $tmpSha -UseBasicParsing -TimeoutSec 30
+    } catch {
+        Write-Err "无法从 GitHub 官方获取 SHA256 校验和（fail-closed），已中止"
+        return $null
     }
+    if (-not (Test-Path $tmpSha) -or (Get-Item $tmpSha).Length -eq 0) {
+        Write-Err "SHA256 校验文件为空，已中止"
+        return $null
+    }
+    $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split()[0].ToLower()
+    $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
+    if ($expectedHash -ne $actualHash) {
+        Write-Err "SHA256 校验失败，二进制可能被篡改"
+        Write-Host "  期望: $expectedHash" -ForegroundColor Red
+        Write-Host "  实际: $actualHash" -ForegroundColor Red
+        return $null
+    }
+    Write-OK "SHA256 校验通过（来源：GitHub 官方）"
     
     # 压缩包则解压
     if ($assetName -match "\.zip$") {

@@ -80,7 +80,23 @@ Write-Log "当前版本: $CURRENT_VERSION | 最新 Release: $LATEST_TAG"
 $CUR_N = Normalize-Version -v $CURRENT_VERSION
 $LAT_N = Normalize-Version -v $LATEST_TAG
 
-if ($CUR_N -eq $LAT_N) {
+# 版本号比较（使用 System.Version 避免字符串比较错误如 v4.9 > v4.10）
+function Compare-Version {
+    param([string]$a, [string]$b)
+    $partsA = $a -split '\.' | ForEach-Object { [int]$_ }
+    $partsB = $b -split '\.' | ForEach-Object { [int]$_ }
+    $maxLen = [Math]::Max($partsA.Count, $partsB.Count)
+    for ($i = 0; $i -lt $maxLen; $i++) {
+        $valA = if ($i -lt $partsA.Count) { $partsA[$i] } else { 0 }
+        $valB = if ($i -lt $partsB.Count) { $partsB[$i] } else { 0 }
+        if ($valA -gt $valB) { return 1 }
+        if ($valA -lt $valB) { return -1 }
+    }
+    return 0
+}
+
+$verCmp = Compare-Version $CUR_N $LAT_N
+if ($verCmp -ge 0) {
     Write-Log "已是最新版本，跳过更新"
     exit 0
 }
@@ -126,22 +142,31 @@ try {
     exit 1
 }
 
-# SHA256 校验
+# SHA256 校验（fail-closed：仅从 GitHub 官方直连获取校验和，缺失或不匹配均中止）
+$canonicalShaUrl = "https://github.com/$GITHUB_REPO/releases/download/$LATEST_TAG/$assetName.sha256"
 $tmpSha = Join-Path $tmpDir "$assetName.sha256"
-try { Invoke-WebRequest -Uri "$assetUrl.sha256" -OutFile $tmpSha -UseBasicParsing } catch {}
-
-if (Test-Path $tmpSha) {
-    $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
-    $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
-    if ($expectedHash.ToLower() -ne $actualHash) {
-        Write-Log "❌ SHA256 校验失败，终止更新，现有二进制保持不变"
-        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-        exit 1
-    }
-    Write-Log "✅ SHA256 校验通过"
-} else {
-    Write-Log "⚠️ 未找到校验文件，跳过校验"
+try {
+    Invoke-WebRequest -Uri $canonicalShaUrl -OutFile $tmpSha -UseBasicParsing -TimeoutSec 30
+} catch {
+    Write-Log "❌ 无法从 GitHub 官方获取 SHA256 校验和（fail-closed），终止更新"
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
 }
+if (-not (Test-Path $tmpSha) -or (Get-Item $tmpSha).Length -eq 0) {
+    Write-Log "❌ SHA256 校验文件为空，终止更新"
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+$expectedHash = (Get-Content $tmpSha -Raw).Trim().Split()[0].ToLower()
+$actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
+if ($expectedHash -ne $actualHash) {
+    Write-Log "❌ SHA256 校验失败，二进制可能被篡改，终止更新"
+    Write-Log "  期望: $expectedHash"
+    Write-Log "  实际: $actualHash"
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+Write-Log "✅ SHA256 校验通过（来源：GitHub 官方）"
 
 # 解压（如果是 .zip）
 $ompExe = $tmpFile

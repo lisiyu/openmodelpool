@@ -82,6 +82,40 @@ try {
 $size = [math]::Round((Get-Item $tmpZip).Length / 1MB, 1)
 Write-Host "      下载完成 (${size} MB)" -ForegroundColor Green
 
+# [1.5/5] SHA256 完整性校验（fail-closed，仅从 GitHub 官方直连获取校验和）
+Write-Host "[1.5/5] SHA256 完整性校验..." -ForegroundColor Cyan
+$sha256Url = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/$PKG.sha256"
+$sha256File = Join-Path $env:TEMP "omp-deploy.sha256"
+try {
+    Invoke-WebRequest -Uri $sha256Url -OutFile $sha256File -UseBasicParsing -TimeoutSec 30
+} catch {
+    Write-Host "[错误] 无法获取 SHA256 校验和（fail-closed），已中止" -ForegroundColor Red
+    Write-Host "       请检查网络或设置环境变量 OMP_ALLOW_UNSIGNED=1 跳过（不推荐）"
+    Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+
+if (-not (Test-Path $sha256File) -or (Get-Item $sha256File).Length -eq 0) {
+    Write-Host "[错误] SHA256 校验文件为空，已中止" -ForegroundColor Red
+    Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+
+# 解析期望 hash
+$expectedHash = (Get-Content $sha256File -Raw).Trim().Split()[0].ToLower()
+$actualHash = (Get-FileHash -Path $tmpZip -Algorithm SHA256).Hash.ToLower()
+
+if ($expectedHash -ne $actualHash) {
+    Write-Host "[错误] SHA256 校验失败，二进制可能被篡改，已中止" -ForegroundColor Red
+    Write-Host "       期望: $expectedHash"
+    Write-Host "       实际: $actualHash"
+    Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+    Remove-Item $sha256File -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+Write-Host "      SHA256 校验通过" -ForegroundColor Green
+Remove-Item $sha256File -Force -ErrorAction SilentlyContinue
+
 # [2/5] 解压
 Write-Host "[2/5] 解压..." -ForegroundColor Cyan
 $tmpDir = Join-Path $env:TEMP "omp-deploy-extract"
