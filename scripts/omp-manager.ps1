@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  OpenModelPool 全功能管理脚本 (Windows)
 #  集成：安装 / 升级 / 卸载 / 穿透配置(CF/FRP/ngrok) / 端口修改 / 状态查看 / 重启
 #
@@ -430,6 +430,128 @@ function Upgrade-Component-Menu {
         "0" { return }
         default { Write-Host "  无效选项" -ForegroundColor $R }
     }
+}
+
+# ============================================================
+# 升级单个组件
+# ============================================================
+function Update-Component {
+    param(
+        [string]$Component
+    )
+
+    Write-Title "升级组件: $Component"
+
+    # 获取当前版本
+    $curVer = "unknown"
+    $xrayDir = Join-Path $InstallDir "xray"
+
+    switch ($Component) {
+        "core" {
+            $curVer = Get-LocalVersion
+        }
+        "xray" {
+            $xrayExe = Join-Path $xrayDir "xray.exe"
+            if (Test-Path $xrayExe) {
+                try {
+                    $v = & $xrayExe version 2>$null | Select-String "Xray" | Select-Object -First 1
+                    if ($v) { $curVer = ($v -split ' ')[1] }
+                } catch {}
+            } else { $curVer = "未安装" }
+        }
+        "cloudflared" {
+            if (Get-Command cloudflared -ErrorAction SilentlyContinue) {
+                $curVer = (cloudflared --version 2>$null | Select-Object -First 1)
+            } else { $curVer = "未安装" }
+        }
+        "frp" {
+            $frpc = Join-Path $InstallDir "frprpc.exe"
+            if (Test-Path $frpc) {
+                try { $curVer = (& $frpc --version 2>$null) } catch {}
+            } else { $curVer = "未安装" }
+        }
+        "ngrok" {
+            if (Get-Command ngrok -ErrorAction SilentlyContinue) {
+                $curVer = (ngrok version 2>$null | Select-Object -First 1)
+            } else { $curVer = "未安装" }
+        }
+        "browser" {
+            $chrome = Join-Path $InstallDir "browser\chrome.exe"
+            if (Test-Path $chrome) {
+                try { $curVer = (& $chrome --version 2>$null) } catch {}
+            } else { $curVer = "未安装" }
+        }
+        default {
+            Write-Err "不支持的组件: $Component"
+            return
+        }
+    }
+
+    Write-Info "当前版本: $curVer"
+
+    if ($Component -eq "core") {
+        Write-Info "最新版本: $RELEASE_TAG"
+        Upgrade-OMP
+        return
+    }
+
+    if ($Component -eq "xray") {
+        Write-Info "目标版本: $XRAY_VERSION"
+        Write-Step 1 2 "下载 Xray..."
+        try {
+            New-Item -ItemType Directory -Force -Path $xrayDir | Out-Null
+            $xrayUrl = "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
+            $xrayTmp = Join-Path $env:TEMP "xray-upgrade-$(Get-Random).zip"
+            Invoke-WebRequest -Uri $xrayUrl -OutFile $xrayTmp -UseBasicParsing
+            $xrayExtract = Join-Path $env:TEMP "xray-upgrade-extract-$(Get-Random)"
+            if (Test-Path $xrayExtract) { Remove-Item $xrayExtract -Recurse -Force }
+            Expand-Archive -Path $xrayTmp -DestinationPath $xrayExtract -Force
+            Copy-Item (Join-Path $xrayExtract "xray.exe") -Destination (Join-Path $xrayDir "xray.exe") -Force
+            Copy-Item (Join-Path $xrayExtract "geoip.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
+            Copy-Item (Join-Path $xrayExtract "geosite.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
+            Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
+            Remove-Item $xrayExtract -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Step 2 2 "完成"
+            Write-OK "Xray 升级到 $XRAY_VERSION"
+        } catch {
+            Write-Err "Xray 升级失败: $($_.Exception.Message)"
+        }
+        Write-Host ""
+        return
+    }
+
+    # 其他组件：调用对应的 Setup-函数重新配置
+    switch ($Component) {
+        "cloudflared" {
+            if (Get-Command cloudflared -ErrorAction SilentlyContinue) {
+                Write-Info "准备重新配置 Cloudflare Tunnel..."
+                Setup-Cloudflare
+            } else {
+                Write-Err "Cloudflared 未安装，请先通过穿透配置安装"
+            }
+        }
+        "frp" {
+            $frpc = Join-Path $InstallDir "frprpc.exe"
+            if (Test-Path $frpc) {
+                Write-Info "准备重新配置 FRP..."
+                Setup-FRP
+            } else {
+                Write-Err "FRP 未安装，请先通过穿透配置安装"
+            }
+        }
+        "ngrok" {
+            if (Get-Command ngrok -ErrorAction SilentlyContinue) {
+                Write-Info "准备重新配置 ngrok..."
+                Setup-Ngrok
+            } else {
+                Write-Err "ngrok 未安装，请先通过穿透配置安装"
+            }
+        }
+        "browser" {
+            Write-Info "浏览器组件升级功能开发中"
+        }
+    }
+    Write-Host ""
 }
 
 # ============================================================

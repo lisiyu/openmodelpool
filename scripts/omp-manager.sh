@@ -862,27 +862,95 @@ upgrade_component_menu() {
     esac
 }
 
+# 获取组件当前版本
+_get_component_version() {
+    local component="$1"
+    case "$component" in
+        core)
+            if [ -x "$INSTALL_DIR/$BINARY_NAME" ]; then
+                "$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null || echo "unknown"
+            else
+                echo "未安装"
+            fi
+            ;;
+        xray)
+            if [ -x "$INSTALL_DIR/xray/xray" ]; then
+                "$INSTALL_DIR/xray/xray" version 2>/dev/null | grep -o 'Xray [^ ]*' | head -1 | cut -d' ' -f2 || echo "unknown"
+            else
+                echo "未安装"
+            fi
+            ;;
+        cloudflared)
+            if command -v cloudflared >/dev/null 2>&1; then
+                cloudflared --version 2>&1 | head -1
+            else
+                echo "未安装"
+            fi
+            ;;
+        frp)
+            if [ -x "$INSTALL_DIR/frp/frpc" ]; then
+                "$INSTALL_DIR/frp/frpc" --version 2>/dev/null || echo "unknown"
+            else
+                echo "未安装"
+            fi
+            ;;
+        ngrok)
+            if command -v ngrok >/dev/null 2>&1; then
+                ngrok version 2>&1 | head -1
+            else
+                echo "未安装"
+            fi
+            ;;
+        browser)
+            if [ -f "$INSTALL_DIR/browser/chrome" ]; then
+                "$INSTALL_DIR/browser/chrome" --version 2>/dev/null || echo "unknown"
+            else
+                echo "未安装"
+            fi
+            ;;
+        *)
+            echo "unknown"
+            ;;
+    esac
+}
+
 # 升级单个组件：下载 install.sh 并执行指定组件安装
 upgrade_single_component() {
     local component="$1"
     write_title "升级组件: ${component}"
 
+    detect_deployment
+    detect_arch || return 1
+
+    # 显示当前版本
+    local cur_ver
+    cur_ver=$(_get_component_version "$component")
+    write_info "当前版本: ${cur_ver}"
+
+    # 获取最新版本（core 走 OMP release，其他走对应 repo）
+    local latest_ver=""
+    if [ "$component" = "core" ]; then
+        latest_ver=$(get_release_tag 2>/dev/null)
+    fi
+    if [ -n "$latest_ver" ]; then
+        write_info "最新版本: ${latest_ver}"
+    fi
+
     local INSTALL_SH_URL="https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh?t=$(date +%s)"
     local TMP_SCRIPT="/tmp/omp-install.sh"
 
     write_info "下载 install.sh..."
-    if curl -fsSL "$INSTALL_SH_URL" -o "$TMP_SCRIPT" 2>/dev/null; then
+    if curl -fSL --connect-timeout 10 --max-time 60 "$INSTALL_SH_URL" -o "$TMP_SCRIPT"; then
         chmod +x "$TMP_SCRIPT"
         write_info "执行组件升级: ${component}"
         echo ""
         bash "$TMP_SCRIPT" "$component"
         local rc=$?
         rm -f "$TMP_SCRIPT"
+        echo ""
         if [ $rc -eq 0 ]; then
-            echo ""
             write_ok "${component} 升级完成"
         else
-            echo ""
             write_err "${component} 升级异常 (exit=$rc)"
         fi
     else
@@ -909,7 +977,12 @@ upgrade_omp() {
     fi
 
     detect_arch || return 1
+
+    # 显示当前版本 & 目标版本对比
+    local cur_ver
+    cur_ver=$(_get_component_version "core")
     RELEASE_TAG=$(get_release_tag) || return 1
+    write_info "当前版本: ${cur_ver}"
     write_info "目标版本: $RELEASE_TAG"
 
     write_step 1 5 "停止服务..."
