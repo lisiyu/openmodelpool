@@ -338,6 +338,24 @@ func compareVersion(a, b string) int {
 	return 0
 }
 
+// vLabel renders a version string with exactly one leading "v", so
+// operator-facing log lines stay consistent whether AppVersion carries the
+// prefix (CI release builds inject the tag name "v4.5.51" via
+// -ldflags "-X main.AppVersion=...") or not (a bare `go build` uses the
+// main.go default). Mirrors vLabel() in admin-update.js: a value that is
+// already "v"-labelled (lower- or upper-case) is passed through unchanged,
+// and an empty value degrades to "-" rather than the meaningless "v".
+func vLabel(ver string) string {
+	ver = strings.TrimSpace(ver)
+	if ver == "" {
+		return "-"
+	}
+	if ver[0] == 'v' || ver[0] == 'V' {
+		return ver
+	}
+	return "v" + ver
+}
+
 // GetLatestVersion returns the cached (or freshly fetched) GitHub release info.
 // The result is cached for versionCacheTTL to avoid hammering the
 // unauthenticated GitHub API.
@@ -472,7 +490,7 @@ func (um *UpdateManager) reconcilePending() {
 		um.local.TargetVersion = AppVersion
 		um.local.Progress = 100
 		um.local.Error = ""
-		um.local.Log = fmt.Sprintf("已更新至 v%s", AppVersion)
+		um.local.Log = fmt.Sprintf("已更新至 %s", vLabel(AppVersion))
 		um.local.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		um.persistLocked()
 		_ = os.Remove(path)
@@ -498,7 +516,7 @@ func (um *UpdateManager) reconcileLocalStaleSuccessLocked() {
 		um.local.TargetVersion = AppVersion
 		um.local.Progress = 100
 		um.local.Error = ""
-		um.local.Log = fmt.Sprintf("当前运行 v%s（外部部署）", AppVersion)
+		um.local.Log = fmt.Sprintf("当前运行 %s（外部部署）", vLabel(AppVersion))
 		um.local.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		um.persistLocked()
 	}
@@ -618,7 +636,7 @@ func platformAssetName() string {
 // and returns WITHOUT exiting (Q3: no automatic rollback).
 func (um *UpdateManager) TriggerSelfUpdate(target string) {
 	um.setLocalTarget(target)
-	um.setLocalPhase(PhaseDownloading, 5, fmt.Sprintf("开始更新至 v%s", target), "")
+	um.setLocalPhase(PhaseDownloading, 5, fmt.Sprintf("开始更新至 %s", vLabel(target)), "")
 
 	exePath, err := os.Executable()
 	if err != nil {

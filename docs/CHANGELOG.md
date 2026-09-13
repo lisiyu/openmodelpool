@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.5.51 (2026-09-13)
+
+- **`scripts/omp-manager.ps1`（Windows）** — 停止/重启隧道时调用已有的 `Remove-CloudflaredService` 清理历史遗留的 cloudflared Windows 服务（原 `Stop-Cloudflared` 只 `Stop-Service` 不 `sc delete`，导致状态页 WARNING 常驻且可能与计划任务冲突）；`Restart-All` 的 Cloudflare 步骤改为 `try/catch` 包裹启动 + 轮询最多 10 秒等待进程 + 失败时输出计划任务 `LastTaskResult`（十六进制）；状态页残留服务 WARNING 后新增一行提示「运行「重启服务」或「重置穿透」可自动清理」。
+- **`scripts/install.sh`（Linux）** — `install_ngrok` 改走 ngrok **官方 CDN**（从 `https://ngrok.com/download/linux` 抓 `https://bin.ngrok.com/c/<cache_key>/ngrok-v3-stable-<arch>.tgz`）。ngrok 不在 GitHub 发布二进制（`ngrok/ngrok-v3` 仅有源码镜像、无 release），原 GitHub release 下载路径永久 404，导致「✗ ngrok 升级异常 (exit=1)」。现以 URL 中的 cache_key 作版本标识写入 `$DATA_DIR/.ngrok_cache_key`，一致则跳过重复安装；官方 CDN 不提供 SHA256 sidecar，故移除哈希校验（fail-open 并在注释中说明）；`linux-armv7` 映射到官方 `linux-arm` 包。
+- **版本口径统一** — `main.go` 的 `AppVersion` 加 `v` 前缀（`v4.5.51`），与 CI 通过 `-X main.AppVersion=${GITHUB_REF_NAME}` 注入的 tag 名保持一致（此前源码为 `4.5.50`、出包为 `v4.5.50`，存在漂移）；`scripts/omp-manager.ps1` 的 `$RELEASE_TAG` 兜底值同步为 `v4.5.51`；README 版本徽章同步为 `v4.5.51`。
+- **修复双 v 日志（`update.go`）** — 新增 `vLabel()` helper（保证恰好一个前导 `v`，与 `admin-update.js` 同名 helper 对齐），修正 3 处硬编码 `"v%s"` 与带 v 的 `AppVersion` 叠加后输出 `vv4.5.51` 的日志（自更新完成日志、外部部署日志、开始更新日志）。
+
 ## v4.5.50 (2026-09-13)
 
 - **Xray Windows 动态版本** — `scripts/omp-manager.ps1` 新增 `Get-LatestTag`，安装/升级时动态获取 `XTLS/Xray-core` 最新 release tag（GitHub API，失败静默回退内置 `$XRAY_VERSION` 常量），与 Linux `install.sh::get_latest_tag` 对齐；六个镜像源（GitHub 官方 + ghfast.top / gh-proxy.com / ghproxy.net / mirror.ghproxy.com / gh.api.99988866.xyz）统一改用动态版本变量。
