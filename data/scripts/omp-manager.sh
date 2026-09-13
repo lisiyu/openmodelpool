@@ -1066,7 +1066,8 @@ uninstall_omp() {
     write_info "${RED}数据目录 $INSTALL_DIR/data/ 默认保留${NC}（可手动删除）"
     echo ""
     read -p "  确认卸载？输入 yes 继续: " confirm < /dev/tty
-    if [ "$confirm" != "yes" ]; then
+    confirm_lower=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
+    if [ "$confirm_lower" != "yes" ]; then
         write_info "已取消"
         return
     fi

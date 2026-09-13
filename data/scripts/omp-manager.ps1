@@ -546,7 +546,7 @@ function Uninstall-OMP {
     Write-Title "彻底卸载 OpenModelPool"
 
     $confirm = Read-Host "  确认卸载？将删除所有组件和配置 (输入 yes 确认)"
-    if ($confirm -ne "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
+    if ($confirm -ine "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
 
     Write-Step 1 6 "停止所有服务..."
     Stop-OMP
@@ -1159,7 +1159,7 @@ function Reset-Tunnel-Menu {
 function Reset-Cloudflare {
     Write-Title "重置 Cloudflare Tunnel"
     $confirm = Read-Host "  确认重置？(输入 yes 确认)"
-    if ($confirm -ne "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
+    if ($confirm -ine "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
 
     Write-Step 1 5 "删除隧道..."
     if (Test-Path $cfExe) { & $cfExe tunnel delete openmodelpool 2>&1 | Out-Null }
@@ -1186,7 +1186,7 @@ function Reset-Cloudflare {
 function Reset-FRP {
     Write-Title "重置 FRP"
     $confirm = Read-Host "  确认重置？(输入 yes 确认)"
-    if ($confirm -ne "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
+    if ($confirm -ine "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
 
     Write-Step 1 3 "停止服务和进程..."
     Stop-FRP
@@ -1204,7 +1204,7 @@ function Reset-FRP {
 function Reset-Ngrok {
     Write-Title "重置 ngrok"
     $confirm = Read-Host "  确认重置？(输入 yes 确认)"
-    if ($confirm -ne "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
+    if ($confirm -ine "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
 
     Write-Step 1 3 "停止服务和进程..."
     Stop-Ngrok
