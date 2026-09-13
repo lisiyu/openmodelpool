@@ -12,6 +12,12 @@ param(
     [switch]$AutoUpdate
 )
 
+# ---- 兼容 irm | iex 与 -File 两种运行方式 ----
+# 通过 `irm ... | iex` 执行时，param() 默认值可能不生效（变量为空）
+# 此处做兜底赋值，确保 $InstallDir / $Port 始终有合理值
+if (-not $InstallDir) { $InstallDir = "C:\openmodelpool" }
+if (-not $Port -or $Port -eq 0) { $Port = 8000 }
+
 $ErrorActionPreference = "Continue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -23,11 +29,12 @@ if ($Port -lt 1 -or $Port -gt 65535) {
 
 # 安装目录规范化
 try {
-    $InstallDir = (Resolve-Path $InstallDir -ErrorAction SilentlyContinue).Path
+    $resolved = (Resolve-Path $InstallDir -ErrorAction SilentlyContinue).Path
+    if ($resolved) { $InstallDir = $resolved }
 } catch {}
+# 如果 InstallDir 仍为空（irm | iex 下 PSBoundParameters 也为空），使用默认值
 if (-not $InstallDir) {
-    # 路径不存在时使用原始值（安装时会创建）
-    $InstallDir = $PSBoundParameters["InstallDir"]
+    $InstallDir = "C:\openmodelpool"
 }
 
 # 互斥锁：防止多个实例同时运行
