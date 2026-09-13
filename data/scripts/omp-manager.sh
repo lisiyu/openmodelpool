@@ -587,7 +587,12 @@ stop_omp() {
     elif [ -f /usr/local/etc/rc.d/openmodelpool.sh ]; then
         /usr/local/etc/rc.d/openmodelpool.sh stop 2>/dev/null || true
     else
-        pkill -f "$BINARY_NAME" 2>/dev/null || true
+        # 用完整路径精确匹配，避免误杀含同名的其他进程
+        if [[ -n "$INSTALL_DIR" ]] && command -v pgrep >/dev/null 2>&1; then
+            pkill -f "^${INSTALL_DIR}/${BINARY_NAME}$" 2>/dev/null || true
+        else
+            pkill -x "$BINARY_NAME" 2>/dev/null || true
+        fi
     fi
 }
 

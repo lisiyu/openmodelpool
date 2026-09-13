@@ -346,14 +346,42 @@ UNIT
     start_core_service "$USE_SYSTEMCTL" "$DEFAULT_INSTALL_DIR"
 
     sleep 2
-    HEALTH=$(curl -s http://localhost:${OMP_PORT}/health 2>/dev/null || true)
-    if [[ -n "$HEALTH" ]]; then
+    local health_ok=false
+    for _ in 1 2 3; do
+        HEALTH=$(curl -s http://localhost:${OMP_PORT}/health 2>/dev/null || true)
+        if [[ -n "$HEALTH" ]]; then
+            health_ok=true
+            break
+        fi
+        sleep 3
+    done
+    if $health_ok; then
         H_VER=$(echo "$HEALTH" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
         H_MOD=$(echo "$HEALTH" | grep -o '"models_available":[0-9]*' | cut -d: -f2)
         H_PROV=$(echo "$HEALTH" | grep -o '"providers_enabled":[0-9]*' | cut -d: -f2)
         ok "健康检查: version=$H_VER, models=$H_MOD, providers=$H_PROV"
+        # 清理备份
+        rm -f "$DEFAULT_INSTALL_DIR/$BINARY_NAME.bak"
     else
-        warn "健康检查未响应，服务可能仍在初始化"
+        warn "健康检查未响应，正在回滚到旧版本..."
+        if [[ -f "$DEFAULT_INSTALL_DIR/$BINARY_NAME.bak" ]]; then
+            stop_core_service "$USE_SYSTEMCTL"
+            mv "$DEFAULT_INSTALL_DIR/$BINARY_NAME.bak" "$DEFAULT_INSTALL_DIR/$BINARY_NAME"
+            chmod 755 "$DEFAULT_INSTALL_DIR/$BINARY_NAME"
+            start_core_service "$USE_SYSTEMCTL" "$DEFAULT_INSTALL_DIR"
+            warn "已回滚到旧版本，请检查新版本兼容性"
+        else
+            warn "无备份文件，无法回滚"
+        fi
+        return 1
+    fi
+    
+    # 收紧敏感配置文件权限
+    if [[ -d "$DATA_DIR" ]]; then
+        chmod 700 "$DATA_DIR" 2>/dev/null || true
+        find "$DATA_DIR" -maxdepth 1 -name "admin.json" -exec chmod 600 {} \; 2>/dev/null || true
+        find "$DATA_DIR" -maxdepth 1 -name "*.key" -exec chmod 600 {} \; 2>/dev/null || true
+        find "$DATA_DIR" -maxdepth 2 -path "*/providers/*.json" -exec chmod 600 {} \; 2>/dev/null || true
     fi
 }
 
@@ -485,7 +513,7 @@ install_xray() {
     local dg_dir="$TMP_DIR/dgst" exp act
     mkdir -p "$dg_dir"
     # 从 GitHub 官方 canonical 源获取校验和（不走镜像，确保可信）
-    local XRAY_CANONICAL="https://github.com/${XRAY_REPO}/releases/download/${XRAY_VER}/${ASSET}.dgst"
+    local XRAY_CANONICAL="https://github.com/${XRAY_REPO}/releases/download/${VER}/${ASSET}.dgst"
     if ! curl -sSL --connect-timeout 10 --max-time 30 "$XRAY_CANONICAL" -o "$dg_dir/$ASSET.dgst" 2>/dev/null; then
         rm -rf "$TMP_DIR"
         warn "Xray SHA-256 校验失败（无法从 GitHub 官方获取校验文件），跳过安装"
@@ -527,6 +555,11 @@ install_xray() {
 install_cloudflared() {
     # $1 = reuse 默认值：all 传 y，显式子命令传 n
     local reuse_default="${1:-n}"
+    # 先获取最新版本号
+    local VER ASSET UV TMP_DIR
+    VER=$(get_latest_tag "$CLOUDFLARED_REPO")
+    [[ -z "$VER" ]] && { warn "获取 cloudflared 版本失败，跳过"; return 1; }
+
     # 扫描常见位置已有安装，找到就复用
     local cf_bin cf_candidates=(
         "$LOCAL_BIN/cloudflared"                    # 标准安装位置
@@ -573,9 +606,6 @@ install_cloudflared() {
     fi
 
     local VER ASSET UV TMP_DIR
-    VER=$(get_latest_tag "$CLOUDFLARED_REPO")
-    [[ -z "$VER" ]] && { warn "获取 cloudflared 版本失败，跳过"; return 1; }
-
     case "$PLATFORM" in
         linux-amd64)  ASSET="cloudflared-linux-amd64" ;;
         linux-arm64)  ASSET="cloudflared-linux-arm64" ;;
@@ -628,6 +658,11 @@ install_cloudflared() {
 # ══════════════════════════════════════════════════
 
 install_frp() {
+    # 先获取最新版本号
+    local VER ASSET UV TMP_DIR
+    VER=$(get_latest_tag "$FRP_REPO")
+    [[ -z "$VER" ]] && { warn "获取 frp 版本失败，跳过"; return 1; }
+
     # $1 = reuse 默认值：all 传 y，显式子命令传 n
     local reuse_default="${1:-n}"
     # 扫描常见位置已有安装，找到就复用
@@ -694,8 +729,7 @@ install_frp() {
     fi
 
     local VER V ASSET UV TMP_DIR
-    VER=$(get_latest_tag "$FRP_REPO")
-    [[ -z "$VER" ]] && { warn "获取 frp 版本失败，跳过"; return 1; }
+
     V="${VER#v}"
 
     case "$PLATFORM" in
@@ -760,6 +794,11 @@ install_frp() {
 # ══════════════════════════════════════════════════
 
 install_ngrok() {
+    # 先获取最新版本号
+    local VER ASSET UV TMP_DIR
+    VER=$(get_latest_tag "$NGROK_REPO")
+    [[ -z "$VER" ]] && { warn "获取 ngrok 版本失败，跳过"; return 1; }
+
     # $1 = reuse 默认值：all 传 y，显式子命令传 n
     local reuse_default="${1:-n}"
     # 扫描常见位置已有安装，找到就复用
@@ -808,8 +847,7 @@ install_ngrok() {
     fi
 
     local VER V ASSET UV TMP_DIR
-    VER=$(get_latest_tag "$NGROK_REPO")
-    [[ -z "$VER" ]] && { warn "获取 ngrok 版本失败，跳过"; return 1; }
+
     V="${VER#v}"
 
     case "$PLATFORM" in

@@ -147,6 +147,11 @@ echo -e "${GREEN}       解压完成${NC}"
 # ---- 安装 ----
 echo -e "${CYAN}[6/7] 安装到 ${INSTALL_DIR}...${NC}"
 mkdir -p "$INSTALL_DIR/data"
+# 备份旧版本（如果存在），启动失败时可回滚
+if [ -f "$INSTALL_DIR/openmodelpool" ]; then
+  cp "$INSTALL_DIR/openmodelpool" "$INSTALL_DIR/openmodelpool.bak"
+  echo -e "${YELLOW}       已备份旧版本${NC}"
+fi
 cp "$TMP_DIR/openmodelpool" "$INSTALL_DIR/openmodelpool"
 chmod +x "$INSTALL_DIR/openmodelpool"
 
@@ -158,6 +163,9 @@ for html in admin.html setup.html login.html; do
 done
 
 cp -r "$TMP_DIR/docs" "$INSTALL_DIR/docs" 2>/dev/null
+# 收紧敏感文件权限
+chmod 700 "$INSTALL_DIR/data" 2>/dev/null || true
+chmod 600 "$INSTALL_DIR/data/admin.json" 2>/dev/null || true
 echo -e "${GREEN}       安装完成${NC}"
 
 # ---- 创建管理脚本 ----
@@ -266,5 +274,13 @@ if pgrep -f "$INSTALL_DIR/openmodelpool" >/dev/null; then
 else
   echo -e "${RED}[错误] 服务启动失败${NC}"
   echo "  查看日志: tail -f $INSTALL_DIR/data/app.log"
+  # 回滚到旧版本
+  if [ -f "$INSTALL_DIR/openmodelpool.bak" ]; then
+    echo -e "${YELLOW}  正在回滚到旧版本...${NC}"
+    pkill -f "$INSTALL_DIR/openmodelpool" 2>/dev/null || true
+    mv "$INSTALL_DIR/openmodelpool.bak" "$INSTALL_DIR/openmodelpool"
+    chmod +x "$INSTALL_DIR/openmodelpool"
+    echo -e "${YELLOW}  已回滚，请手动启动: $INSTALL_DIR/start.sh${NC}"
+  fi
   exit 1
 fi
