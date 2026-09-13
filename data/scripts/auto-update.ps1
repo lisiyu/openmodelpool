@@ -19,6 +19,11 @@ param(
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# 自动检测 OMP 计划任务名（兼容可能的重命名）
+$ompTaskName = "OpenModelPool"
+$foundTask = Get-ScheduledTask -TaskName "OpenModelPool*" -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like "*OpenModelPool*" } | Select-Object -First 1
+if ($foundTask) { $ompTaskName = $foundTask.TaskName }
+
 $GITHUB_REPO = "lisiyu/openmodelpool"
 $exeName = "openmodelpool.exe"
 $exePath = Join-Path $InstallDir $exeName
@@ -202,7 +207,7 @@ foreach ($cf in $configFiles) {
 
 # 停止服务
 Write-Log "停止服务..."
-Stop-ScheduledTask -TaskName "OpenModelPool" -ErrorAction SilentlyContinue
+Stop-ScheduledTask -TaskName $ompTaskName -ErrorAction SilentlyContinue
 Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 # 确保端口已释放
 try {
@@ -219,9 +224,9 @@ Write-Log "二进制已替换"
 
 # 启动服务（统一使用计划任务，与 omp-manager.ps1 一致）
 Write-Log "启动服务..."
-$task = Get-ScheduledTask -TaskName "OpenModelPool" -ErrorAction SilentlyContinue
+$task = Get-ScheduledTask -TaskName $ompTaskName -ErrorAction SilentlyContinue
 if ($task) {
-    Start-ScheduledTask -TaskName "OpenModelPool"
+    Start-ScheduledTask -TaskName $ompTaskName
 } else {
     # fallback: 直接启动（设置 PORT 环境变量）
     $env:PORT = $Port
@@ -249,9 +254,9 @@ if ($proc) {
                 Write-Log "已回滚配置: $cf"
             }
         }
-        $task = Get-ScheduledTask -TaskName "OpenModelPool" -ErrorAction SilentlyContinue
+        $task = Get-ScheduledTask -TaskName $ompTaskName -ErrorAction SilentlyContinue
         if ($task) {
-            Start-ScheduledTask -TaskName "OpenModelPool"
+            Start-ScheduledTask -TaskName $ompTaskName
         } else {
             $env:PORT = $Port
             Start-Process -FilePath $exePath -WorkingDirectory $InstallDir -WindowStyle Hidden

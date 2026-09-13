@@ -654,7 +654,10 @@ install_omp() {
     # 安装
     write_step 4 7 "安装到 $INSTALL_DIR ..."
     mkdir -p "$INSTALL_DIR/data"
-    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME"
+    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME" || {
+        write_err "安装失败：无法复制二进制文件"
+        return 1
+    }
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
     write_ok "安装完成"
 
@@ -968,7 +971,10 @@ upgrade_omp() {
     write_step 3 5 "资产就绪"
 
     write_step 4 5 "替换二进制..."
-    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME"
+    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME" || {
+        write_err "替换失败：无法复制二进制文件"
+        return 1
+    }
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
     write_ok "替换完成"
 
