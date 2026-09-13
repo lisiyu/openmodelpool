@@ -907,6 +907,20 @@ localIP = "127.0.0.1"
 localPort = $Port
 remotePort = $remotePort
 "@ | Set-Content $frpConfig -Encoding UTF8
+        # 收紧 FRP 配置文件权限（仅管理员可读取，防止 token 泄露）
+        try {
+            $acl = Get-Acl $frpConfig
+            $acl.SetAccessRuleProtection($true, $false)  # 禁用继承并清除继承的权限
+            $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "BUILTIN\Administrators", "FullControl", "Allow")
+            $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "NT AUTHORITY\SYSTEM", "FullControl", "Allow")
+            $acl.AddAccessRule($adminRule)
+            $acl.AddAccessRule($systemRule)
+            Set-Acl -Path $frpConfig -AclObject $acl
+        } catch {
+            Write-Info "提示：无法设置 FRP 配置文件 ACL（非关键）"
+        }
         Write-OK "配置已写入 $frpConfig"
 
         Write-Step 3 3 "测试连接..."
