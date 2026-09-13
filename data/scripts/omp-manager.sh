@@ -997,7 +997,7 @@ upgrade_omp() {
 
     rm -rf "$TMP_DIR"
 
-    write_step 7 7 "启动服务..."
+    write_step 5 5 "启动服务..."
     start_omp
     sleep 3
 

@@ -184,11 +184,20 @@ if ($assetName -match "\.zip$") {
     }
 }
 
-# 备份当前二进制
+# 备份当前二进制和配置
 $backupPath = Join-Path $InstallDir "$exeName.bak"
 if (Test-Path $exePath) {
     Copy-Item $exePath -Destination $backupPath -Force
     Write-Log "已备份旧版本"
+}
+$backupTs = Get-Date -Format "yyyyMMddHHmmss"
+$configFiles = @("config.json", "admin.json", "providers.json")
+$dataDir = Join-Path $InstallDir "data"
+foreach ($cf in $configFiles) {
+    $cfPath = Join-Path $dataDir $cf
+    if (Test-Path $cfPath) {
+        Copy-Item $cfPath "$cfPath.bak.$backupTs" -Force
+    }
 }
 
 # 停止服务
@@ -225,11 +234,21 @@ $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
 if ($proc) {
     Write-Log "✅ 更新成功！版本: $LATEST_TAG"
 } else {
-    Write-Log "❌ 更新后服务未正常启动，回滚..."
+    Write-Log "❌ 更新后服务未正常启动，回滚二进制 + 配置..."
     Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
     if (Test-Path $backupPath) {
         Copy-Item $backupPath -Destination $exePath -Force
+        # 回滚配置文件（找最新备份）
+        $dataDir = Join-Path $InstallDir "data"
+        foreach ($cf in $configFiles) {
+            $cfPath = Join-Path $dataDir $cf
+            $bakFile = "$cfPath.bak.$backupTs"
+            if (Test-Path $bakFile) {
+                Copy-Item $bakFile $cfPath -Force
+                Write-Log "已回滚配置: $cf"
+            }
+        }
         $task = Get-ScheduledTask -TaskName "OpenModelPool" -ErrorAction SilentlyContinue
         if ($task) {
             Start-ScheduledTask -TaskName "OpenModelPool"

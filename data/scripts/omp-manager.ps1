@@ -15,6 +15,30 @@ param(
 $ErrorActionPreference = "Continue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# 端口范围校验
+if ($Port -lt 1 -or $Port -gt 65535) {
+    Write-Host "[错误] 无效端口号 (1-65535): $Port" -ForegroundColor Red
+    exit 1
+}
+
+# 安装目录规范化
+try {
+    $InstallDir = (Resolve-Path $InstallDir -ErrorAction SilentlyContinue).Path
+} catch {}
+if (-not $InstallDir) {
+    # 路径不存在时使用原始值（安装时会创建）
+    $InstallDir = $PSBoundParameters["InstallDir"]
+}
+
+# 互斥锁：防止多个实例同时运行
+$mutex = New-Object System.Threading.Mutex($false, "OpenModelPool-Manager-Lock")
+if (-not $mutex.WaitOne(0)) {
+    Write-Host "[警告] 另一个 OMP 管理脚本正在运行，请稍候再试" -ForegroundColor Yellow
+    exit 1
+}
+# 脚本退出时自动释放锁
+$null = Register-EngineEvent PowerShell.Exit -Action { $mutex.ReleaseMutex() }
+
 $C = "Cyan"; $Y = "Yellow"; $G = "Green"; $R = "Red"; $W = "White"
 
 # 常量 - OMP
@@ -764,7 +788,15 @@ function Setup-FRP {
         Write-Host "  例如填 8001，则外网访问地址为 http://服务器IP:8001" -ForegroundColor DarkGray
         Write-Host "  确保该端口已在服务器安全组中放行！" -ForegroundColor $Y
         $remotePortStr = Read-Host "  远程映射端口 [默认: 8001]"
-        if (-not $remotePortStr) { $remotePort = 8001 } else { $remotePort = [int]$remotePortStr }
+        if (-not $remotePortStr) { $remotePort = 8001 } else {
+            try {
+                $remotePort = [int]$remotePortStr
+                if ($remotePort -lt 1 -or $remotePort -gt 65535) { throw "端口超出范围" }
+            } catch {
+                Write-Err "无效端口 (1-65535)"
+                return
+            }
+        }
     }
 
     $nodeName = ($env:COMPUTERNAME).ToLower() -replace '[^a-z0-9-]', ''
