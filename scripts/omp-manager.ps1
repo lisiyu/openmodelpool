@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  OpenModelPool 全功能管理脚本 (Windows)
 #  集成：安装 / 升级 / 卸载 / 穿透配置(CF/FRP/ngrok) / 端口修改 / 状态查看 / 重启
 #
@@ -342,19 +342,23 @@ function Install-OMP {
     }
 
     $startBat = Join-Path $InstallDir "start.bat"
-    @"
+    $_hsContent1 = @"
+
 @echo off
 cd /d "$InstallDir"
 set PORT=$Port
 $exeName >> "$logFile" 2>&1
-"@ | Set-Content $startBat -Encoding ASCII
+"@
+    $_hsContent1 | Set-Content $startBat -Encoding ASCII
 
     $stopBat = Join-Path $InstallDir "stop.bat"
-    @"
+    $_hsContent2 = @"
+
 @echo off
 taskkill /f /im $exeName 2>nul
 echo stopped
-"@ | Set-Content $stopBat -Encoding ASCII
+"@
+    $_hsContent2 | Set-Content $stopBat -Encoding ASCII
 
     Write-Step 3 3 "配置服务 (端口 $Port)..."
     # 使用 start.bat 启动以确保 PORT 环境变量正确传递
@@ -390,7 +394,46 @@ echo stopped
 }
 
 # ============================================================
-# 2. 升级
+# 2. 升级 —— 组件选择子菜单
+# ============================================================
+function Upgrade-Component-Menu {
+    Write-Title "OpenModelPool 组件升级"
+    Write-Host ""
+    Write-Host "  选择要升级的组件:" -ForegroundColor $C
+    Write-Host ""
+    Write-Host "    a. 全部组件 (ALL)        核心 + 所有附属组件" -ForegroundColor $W
+    Write-Host "    b. 仅核心 (core)          OMP 主程序" -ForegroundColor $W
+    Write-Host "    c. 仅 Xray               VMess/VLESS 代理" -ForegroundColor $W
+    Write-Host "    d. 仅 Cloudflared        Cloudflare 隧道" -ForegroundColor $W
+    Write-Host "    e. 仅 FRP                 frps/frpc 内网穿透" -ForegroundColor $W
+    Write-Host "    f. 仅 ngrok               ngrok 隧道" -ForegroundColor $W
+    Write-Host "    g. 仅浏览器核心           headless Chrome" -ForegroundColor $W
+    Write-Host "    0. 返回主菜单" -ForegroundColor $W
+    Write-Host ""
+    $compChoice = Read-Host "  请选择 [a-g/0]"
+
+    switch ($compChoice) {
+        "a" { Upgrade-OMP }
+        "A" { Upgrade-OMP }
+        "b" { Update-Component "core" }
+        "B" { Update-Component "core" }
+        "c" { Update-Component "xray" }
+        "C" { Update-Component "xray" }
+        "d" { Update-Component "cloudflared" }
+        "D" { Update-Component "cloudflared" }
+        "e" { Update-Component "frp" }
+        "E" { Update-Component "frp" }
+        "f" { Update-Component "ngrok" }
+        "F" { Update-Component "ngrok" }
+        "g" { Update-Component "browser" }
+        "G" { Update-Component "browser" }
+        "0" { return }
+        default { Write-Host "  无效选项" -ForegroundColor $R }
+    }
+}
+
+# ============================================================
+# 2a. 全量升级（核心 + Xray）
 # ============================================================
 function Upgrade-OMP {
     Write-Title "OpenModelPool 增量升级"
@@ -632,7 +675,8 @@ function Setup-Cloudflare {
     Write-Step 5 5 "配置并启动..."
     if (-not (Test-Path $cfConfigDir)) { New-Item -ItemType Directory -Path $cfConfigDir -Force | Out-Null }
     $credFile = "$cfConfigDir\$tunnelId.json"
-    @"
+    $_hsContent3 = @"
+
 tunnel: $tunnelId
 credentials-file: $credFile
 
@@ -640,7 +684,8 @@ ingress:
   - hostname: $subdomain
     service: http://localhost:$Port
   - service: http_status:404
-"@ | Set-Content "$cfConfigDir\config.yml" -Encoding UTF8
+"@
+    $_hsContent3 | Set-Content "$cfConfigDir\config.yml" -Encoding UTF8
 
     Stop-Cloudflared
     $action = New-ScheduledTaskAction -Execute $cfExe -Argument "tunnel run openmodelpool"
@@ -780,7 +825,8 @@ function Setup-FRP {
 
     if (-not $skipFrpConfig) {
         Write-Step 2 3 "创建配置..."
-        @"
+        $_hsContent4 = @"
+
 serverAddr = "$frpServer"
 serverPort = 7000
 auth.token = "$frpToken"
@@ -791,7 +837,8 @@ type = "tcp"
 localIP = "127.0.0.1"
 localPort = $Port
 remotePort = $remotePort
-"@ | Set-Content $frpConfig -Encoding UTF8
+"@
+        $_hsContent4 | Set-Content $frpConfig -Encoding UTF8
         Write-OK "配置已写入 $frpConfig"
 
         Write-Step 3 3 "测试连接..."
@@ -1121,12 +1168,14 @@ function Change-Port {
 
     Write-Step 2 4 "更新 OMP 配置..."
     $startBat = Join-Path $InstallDir "start.bat"
-    @"
+    $_hsContent5 = @"
+
 @echo off
 cd /d "$InstallDir"
 set PORT=$newPort
 $exeName >> "$logFile" 2>&1
-"@ | Set-Content $startBat -Encoding ASCII
+"@
+    $_hsContent5 | Set-Content $startBat -Encoding ASCII
 
     # 使用 start.bat 启动以确保 PORT 环境变量正确传递
     $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$startBat`"" -WorkingDirectory $InstallDir
@@ -1157,10 +1206,12 @@ $exeName >> "$logFile" 2>&1
         $ngrokDomain = ""
         $batContent = Get-Content $ngrokStartBat -Raw
         if ($batContent -match "--domain=(\S+)") { $ngrokDomain = $Matches[1] }
-        @"
+        $_hsContent6 = @"
+
 @echo off
 "$ngrokExe" http $newPort$(if ($ngrokDomain) { " --domain=$ngrokDomain" })
-"@ | Set-Content $ngrokStartBat -Encoding ASCII
+"@
+        $_hsContent6 | Set-Content $ngrokStartBat -Encoding ASCII
         Write-OK "ngrok 已更新"
     }
 
@@ -1455,7 +1506,7 @@ while ($true) {
     Write-Host "       OpenModelPool 全功能管理工具" -ForegroundColor $C
     Write-Host "  ============================================" -ForegroundColor $C
     Write-Host "    1. 安装          全新安装 OMP" -ForegroundColor $W
-    Write-Host "    2. 升级          增量更新 (保留配置)" -ForegroundColor $W
+    Write-Host "    2. 升级          增量更新 (可选组件)" -ForegroundColor $W
     Write-Host "    3. 卸载          彻底删除所有组件" -ForegroundColor $W
     Write-Host "    4. 配置穿透      Cloudflare / FRP / ngrok" -ForegroundColor $W
     Write-Host "    5. 重置穿透      选择重置任一/全部隧道" -ForegroundColor $W
@@ -1469,7 +1520,7 @@ while ($true) {
 
     switch ($choice) {
         "1" { Install-OMP }
-        "2" { Upgrade-OMP }
+        "2" { Upgrade-Component-Menu }
         "3" { Uninstall-OMP }
         "4" { Setup-Tunnel-Menu }
         "5" { Reset-Tunnel-Menu }
