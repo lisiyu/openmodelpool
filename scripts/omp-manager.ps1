@@ -5,15 +5,11 @@
 #  用法 (管理员 PowerShell):
 #    交互菜单:  irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex
 #    自动更新:  irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex -- -AutoUpdate
-#    单独升级组件 (core/xray/cloudflared/frp/ngrok/browser):
-#               $s = irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')"
-#               iex "$s -Component xray"
 # ============================================================
 param(
     [string]$InstallDir = "C:\openmodelpool",
     [int]$Port = 8000,
-    [switch]$AutoUpdate,
-    [string]$Component = ""
+    [switch]$AutoUpdate
 )
 
 $ErrorActionPreference = "Continue"
@@ -21,51 +17,16 @@ $ErrorActionPreference = "Continue"
 
 $C = "Cyan"; $Y = "Yellow"; $G = "Green"; $R = "Red"; $W = "White"
 
-# ============================================================
-# 区域检测 + 智能镜像（与 omp-manager.sh / install.sh 完全一致）
-#   cn     -> 中国大陆：镜像优先，直连兜底
-#   global -> 海外/其他：直连优先，镜像兜底
-# 镜像列表顺序与 Go 侧自动更新逻辑 (commit 61f4bd5) 保持一致。
-# ============================================================
-# GitHub 镜像列表（按优先级排序）
-$GITHUB_MIRRORS = @(
-    "https://ghfast.top/",
-    "https://gh-proxy.com/",
-    "https://ghproxy.net/",
-    "https://mirror.ghproxy.com/"
-)
-
-# 检测网络区域：返回 "cn"（中国大陆）或 "global"（海外）。无法判定时默认 global（直连优先）。
-function Get-Region {
-    $ip = $null
-    foreach ($svc in @("https://ifconfig.me", "https://api.ipify.org", "https://icanhazip.com")) {
-        try {
-            $ip = (Invoke-RestMethod -Uri $svc -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop).Trim()
-            if ($ip) { break }
-        } catch {}
-    }
-    if (-not $ip) { return "global" }
-    try {
-        $country = (Invoke-RestMethod -Uri "http://ip-api.com/line/$ip`?fields=countryCode" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop).Trim()
-        if ($country -eq "CN") { return "cn" }
-    } catch {}
-    return "global"
-}
-
-$REGION = Get-Region
-if ($REGION -eq "cn") { Write-Host "  检测到中国大陆网络环境，镜像优先下载" -ForegroundColor $C }
-else { Write-Host "  检测到海外网络环境，直连优先下载" -ForegroundColor $C }
-
 # 常量 - OMP
 $GITHUB_REPO = "lisiyu/openmodelpool"
 # 动态获取最新 Release tag（可通过环境变量 OMP_RELEASE_TAG 覆盖）
 $RELEASE_TAG = $env:OMP_RELEASE_TAG
 if (-not $RELEASE_TAG) {
-    $releaseInfo = Invoke-RestWithRetry "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
-    if ($releaseInfo) {
+    try {
+        $releaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/$GITHUB_REPO/releases/latest" -UseBasicParsing
         $RELEASE_TAG = $releaseInfo.tag_name
-    } else {
-        $RELEASE_TAG = "v4.5.2"  # fallback
+    } catch {
+        $RELEASE_TAG = "v4.5.0"  # fallback 版本，仅 GitHub API 不可用时使用
     }
 }
 $exeName = "openmodelpool.exe"
@@ -80,78 +41,6 @@ $cfExe = "$cfDir\cloudflared.exe"
 $cfConfigDir = "$env:USERPROFILE\.cloudflared"
 $cfCertFile = "$cfConfigDir\cert.pem"
 $cfTaskName = "CloudflaredTunnel"
-
-# ============================================================
-# 网络请求封装（超时 / 重试 / 区域感知智能镜像回退）
-#   避免在中国大陆网络下无限挂起；GitHub 下载按区域选择优先源：
-#     * 中国大陆 (cn)：镜像优先，直连兜底
-#     * 海外 (global)：直连优先，镜像兜底
-#   镜像列表 $GITHUB_MIRRORS 与区域 $REGION 在脚本顶部定义。
-# ============================================================
-$NET_TIMEOUT_SEC = 300        # 文件下载超时（秒）
-$NET_API_TIMEOUT_SEC = 120    # API 查询超时（秒）
-$NET_RETRIES = 3
-$NET_RETRY_DELAY_MS = 2000
-
-function Test-IsGitHubUrl {
-    param([string]$Uri)
-    return ($Uri -like "https://github.com/*" -or $Uri -like "https://api.github.com/*" `
-        -or $Uri -like "http://github.com/*" -or $Uri -like "http://api.github.com/*")
-}
-
-# 生成候选下载地址列表，已按 $REGION 排序：
-#   cn     -> 镜像优先，最后直连兜底
-#   global -> 直连优先，最后镜像兜底
-function Get-GitHubCandidates {
-    param([string]$Uri)
-    $direct = @($Uri)
-    $mirrored = $GITHUB_MIRRORS | ForEach-Object { "$_$Uri" }
-    if ($REGION -eq "cn") { return ($mirrored + $direct) }
-    return ($direct + $mirrored)
-}
-
-# 下载文件（带超时/重试/智能镜像回退）。成功返回 $true，失败返回 $false。
-function Invoke-DownloadWithRetry {
-    param([string]$Uri, [string]$OutFile)
-    $candidates = if (Test-IsGitHubUrl $Uri) { Get-GitHubCandidates $Uri } else { @($Uri) }
-    foreach ($u in $candidates) {
-        for ($i = 1; $i -le $NET_RETRIES; $i++) {
-            try {
-                Invoke-WebRequest -Uri $u -OutFile $OutFile -UseBasicParsing `
-                    -TimeoutSec $NET_TIMEOUT_SEC -ErrorAction Stop | Out-Null
-                return $true
-            } catch {
-                if ($i -lt $NET_RETRIES) { Start-Sleep -Milliseconds $NET_RETRY_DELAY_MS }
-            }
-        }
-        if ($u -ne $candidates[-1]) {
-            $label = ($u -replace '^https?://', '' -split '/')[0]
-            Write-Host "  $label 下载失败，尝试下一个源..." -ForegroundColor $C
-        }
-    }
-    return $false
-}
-
-# API 查询（带超时/重试/智能镜像回退）。成功返回响应对象，失败返回 $null。
-function Invoke-RestWithRetry {
-    param([string]$Uri)
-    $candidates = if (Test-IsGitHubUrl $Uri) { Get-GitHubCandidates $Uri } else { @($Uri) }
-    foreach ($u in $candidates) {
-        for ($i = 1; $i -le $NET_RETRIES; $i++) {
-            try {
-                return (Invoke-RestMethod -Uri $u -UseBasicParsing `
-                    -TimeoutSec $NET_API_TIMEOUT_SEC -ErrorAction Stop)
-            } catch {
-                if ($i -lt $NET_RETRIES) { Start-Sleep -Milliseconds $NET_RETRY_DELAY_MS }
-            }
-        }
-        if ($u -ne $candidates[-1]) {
-            $label = ($u -replace '^https?://', '' -split '/')[0]
-            Write-Host "  $label 查询失败，尝试下一个源..." -ForegroundColor $C
-        }
-    }
-    return $null
-}
 
 # 常量 - FRP
 $frpDir = Join-Path $InstallDir "frp"
@@ -328,7 +217,7 @@ function Download-OMPRelease {
     # 查询 Release API
     try {
         $apiUrl = "https://api.github.com/repos/$GITHUB_REPO/releases/tags/$Tag"
-        $release = Invoke-RestWithRetry $apiUrl
+        $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing
         $bestBin = $null
         $bestArc = $null
         foreach ($asset in $release.assets) {
@@ -359,78 +248,26 @@ function Download-OMPRelease {
     Write-Host "    文件: $assetName" -ForegroundColor $C
     Write-Host "    地址: $assetUrl" -ForegroundColor DarkGray
     $tmpFile = Join-Path $TmpDir $assetName
-    if (-not (Invoke-DownloadWithRetry $assetUrl $tmpFile)) {
-        Write-Err "下载失败: $assetUrl（直连与镜像均失败，请配置代理或镜像后重试）"
+    try {
+        Invoke-WebRequest -Uri $assetUrl -OutFile $tmpFile -UseBasicParsing
+    } catch {
+        Write-Err "下载失败: $_"
         return $null
     }
     Write-OK "已下载: $assetName ($Tag)"
     
-    # v4.4.44 信任模型（fail-closed）：校验和与签名必须仅从 canonical GitHub 官方发布资产获取
-    # （绝不走镜像）；缺失或不匹配即中止安装/更新。二进制本体仍允许经镜像下载以提升连通性。
-    $canonicalBase = "https://github.com/$GITHUB_REPO/releases/download/$Tag"
-    $canonicalShaUrl = "$canonicalBase/$assetName.sha256"
-    $canonicalSigUrl = "$canonicalBase/$assetName.sig"
+    # SHA256 校验
+    $shaUrl = "$assetUrl.sha256"
     $tmpSha = Join-Path $TmpDir "$assetName.sha256"
-    $tmpSig = Join-Path $TmpDir "$assetName.sig"
-
-    # 仅从 canonical GitHub 直连获取校验和（不经镜像）。
-    $shaOk = $false
-    for ($i = 1; $i -le $NET_RETRIES; $i++) {
-        try {
-            Invoke-WebRequest -Uri $canonicalShaUrl -OutFile $tmpSha -UseBasicParsing `
-                -TimeoutSec $NET_TIMEOUT_SEC -ErrorAction Stop | Out-Null
-            $shaOk = $true; break
-        } catch {
-            if ($i -lt $NET_RETRIES) { Start-Sleep -Milliseconds $NET_RETRY_DELAY_MS }
-        }
-    }
-    if (-not $shaOk -or -not (Test-Path $tmpSha)) {
-        Write-Err "无法从 GitHub 官方获取 SHA256 校验和，已中止（fail-closed）"
-        return $null
-    }
-    $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
-    $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
-    if ($expectedHash.ToLower() -ne $actualHash) {
-        Write-Err "SHA256 校验失败，二进制可能被篡改，已中止"
-        return $null
-    }
-    Write-OK "SHA256 校验通过（来源：GitHub 官方）"
-
-    # Ed25519 签名（v4.4.44）：仅从 canonical GitHub 获取 .sig；缺失即中止（fail-closed），
-    # 除非显式 $env:OMP_ALLOW_UNSIGNED=1（仅用于无签名的旧版本紧急安装）。提供官方公钥时验签。
-    $sigOk = $false
-    for ($i = 1; $i -le $NET_RETRIES; $i++) {
-        try {
-            Invoke-WebRequest -Uri $canonicalSigUrl -OutFile $tmpSig -UseBasicParsing `
-                -TimeoutSec $NET_TIMEOUT_SEC -ErrorAction Stop | Out-Null
-            $sigOk = $true; break
-        } catch {
-            if ($i -lt $NET_RETRIES) { Start-Sleep -Milliseconds $NET_RETRY_DELAY_MS }
-        }
-    }
-    if (-not $sigOk -or -not (Test-Path $tmpSig)) {
-        if (-not $env:OMP_ALLOW_UNSIGNED) {
-            Write-Err "无法从 GitHub 官方获取 Ed25519 签名，已中止（fail-closed）；旧版本可设 `$env:OMP_ALLOW_UNSIGNED=1"
+    try { Invoke-WebRequest -Uri $shaUrl -OutFile $tmpSha -UseBasicParsing } catch {}
+    if (Test-Path $tmpSha) {
+        $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
+        $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
+        if ($expectedHash.ToLower() -ne $actualHash) {
+            Write-Err "SHA256 校验失败"
             return $null
         }
-        Write-Err "未提供签名且 OMP_ALLOW_UNSIGNED=1，跳过签名校验（不安全）"
-    } elseif ($env:OMP_RELEASE_PUBKEY) {
-        # 验签依赖 openssl；缺失公钥时仅 SHA256 已校验。
-        try {
-            $pubPem = "$env:OMP_RELEASE_PUBKEY"
-            $verify = & openssl pkeyutl -verify -pubin -inkey $pubPem `
-                -rawin -digest sha256 -in $tmpFile -sigfile $tmpSig 2>$null
-            if ($LASTEXITCODE -ne 0) {
-                Write-Err "Ed25519 签名验证失败，已中止"
-                return $null
-            }
-            Write-OK "Ed25519 签名验证通过（来源：GitHub 官方）"
-        } catch {
-            Write-Err "缺少 openssl，无法验证 Ed25519 签名，已中止（fail-closed）"
-            return $null
-        }
-    } else {
-        Write-Info "未提供 OMP_RELEASE_PUBKEY，跳过 Ed25519 验签（仅 SHA256 已校验）"
+        Write-OK "SHA256 校验通过"
     }
     
     # 压缩包则解压
@@ -491,7 +328,7 @@ function Install-OMP {
     Write-Host "  下载 Xray (VMess 代理)..." -ForegroundColor $C
     try {
         $xrayTmp = Join-Path $env:TEMP "xray-install.zip"
-        if (-not (Invoke-DownloadWithRetry $xrayUrl $xrayTmp)) { throw "Xray 下载失败" }
+        Invoke-WebRequest -Uri $xrayUrl -OutFile $xrayTmp -UseBasicParsing
         $xrayExtract = Join-Path $env:TEMP "xray-install-extract"
         if (Test-Path $xrayExtract) { Remove-Item $xrayExtract -Recurse -Force }
         Expand-Archive -Path $xrayTmp -DestinationPath $xrayExtract -Force
@@ -520,7 +357,8 @@ echo stopped
 "@ | Set-Content $stopBat -Encoding ASCII
 
     Write-Step 3 3 "配置服务 (端口 $Port)..."
-    $action = New-ScheduledTaskAction -Execute $exePath -WorkingDirectory $InstallDir
+    # 使用 start.bat 启动以确保 PORT 环境变量正确传递
+    $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$startBat`"" -WorkingDirectory $InstallDir
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
     Register-ScheduledTask -TaskName $ompTaskName -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
@@ -543,7 +381,6 @@ echo stopped
         Write-Err "启动失败，查看日志: Get-Content '$logFile' -Tail 50"
     }
 
-    Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
     Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 
     # 询问穿透
@@ -699,10 +536,7 @@ function Setup-Cloudflare {
     if (-not (Test-Path $cfExe)) {
         New-Item -ItemType Directory -Path $cfDir -Force | Out-Null
         $cfUrl = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
-        if (-not (Invoke-DownloadWithRetry $cfUrl $cfExe)) {
-            Write-Err "cloudflared 下载失败，请手动安装"
-            return
-        }
+        Invoke-WebRequest -Uri $cfUrl -OutFile $cfExe -UseBasicParsing
         $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
         if ($currentPath -notlike "*$cfDir*") {
             [Environment]::SetEnvironmentVariable("Path", "$currentPath;$cfDir", "Machine")
@@ -932,10 +766,7 @@ function Setup-FRP {
         $frpVer = "0.61.1"
         $frpUrl = "https://github.com/fatedier/frp/releases/download/v$frpVer/frp_${frpVer}_windows_amd64.zip"
         $tmpZip = Join-Path $env:TEMP "frp-download.zip"
-        if (-not (Invoke-DownloadWithRetry $frpUrl $tmpZip)) {
-            Write-Err "frp 下载失败，请手动安装"
-            return
-        }
+        Invoke-WebRequest -Uri $frpUrl -OutFile $tmpZip -UseBasicParsing
         $tmpDir = Join-Path $env:TEMP "frp-extract"
         if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
         Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
@@ -964,10 +795,32 @@ remotePort = $remotePort
         Write-OK "配置已写入 $frpConfig"
 
         Write-Step 3 3 "测试连接..."
-        $testProc = Start-Process -FilePath $frpExe -ArgumentList "-c", $frpConfig -PassThru -NoNewWindow
+        $testLog = Join-Path $env:TEMP "frp-test-$(Get-Random).log"
+        $testProc = Start-Process -FilePath $frpExe -ArgumentList "-c", $frpConfig -PassThru -NoNewWindow `
+            -RedirectStandardOutput $testLog -RedirectStandardError $testLog
         Start-Sleep -Seconds 3
-        Stop-Process -Id $testProc.Id -Force -ErrorAction SilentlyContinue
-        Write-OK "测试完成"
+        
+        $testOk = $false
+        if (-not $testProc.HasExited) {
+            # 进程仍在运行 → 连接成功
+            $testOk = $true
+            Stop-Process -Id $testProc.Id -Force -ErrorAction SilentlyContinue
+        } else {
+            # 进程已退出，检查日志是否含成功标识
+            if (Test-Path $testLog) {
+                $logContent = Get-Content $testLog -Raw -ErrorAction SilentlyContinue
+                if ($logContent -match "login to server success|start proxy success|proxy.*started|TCP.*Type.*TCP") {
+                    $testOk = $true
+                }
+            }
+        }
+        Remove-Item $testLog -Force -ErrorAction SilentlyContinue
+        
+        if ($testOk) {
+            Write-OK "测试完成"
+        } else {
+            Write-Err "FRP 连接测试失败，请检查服务器地址、端口和 Token"
+        }
     } else {
         Write-Step 2 3 "复用已有配置，跳过..."
         Write-OK "跳过"
@@ -1034,7 +887,7 @@ function Setup-Ngrok {
     $ngrokDomain = ""
     $skipNgrokConfig = $false
     
-    $ngrokConfigFile = "$env:USERPROFILE\AppData\Local\ngrok\ngrok.yml"
+    $ngrokConfigFile = "$env:APPDATA\ngrok\ngrok.yml"
     $ngrokStartBat = Join-Path $ngrokDir "start-ngrok.bat"
     
     if (Test-Path $ngrokConfigFile) {
@@ -1065,7 +918,7 @@ function Setup-Ngrok {
         $ngrokUrl = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
         $tmpZip = Join-Path $env:TEMP "ngrok-download.zip"
         try {
-            if (-not (Invoke-DownloadWithRetry $ngrokUrl $tmpZip)) { throw "ngrok 下载失败" }
+            Invoke-WebRequest -Uri $ngrokUrl -OutFile $tmpZip -UseBasicParsing
             $tmpDir = Join-Path $env:TEMP "ngrok-extract"
             if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
             Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
@@ -1090,22 +943,23 @@ function Setup-Ngrok {
         Write-Step 2 4 "配置 Authtoken..."
         $authErr = Join-Path $env:TEMP "ngrok-auth-err.txt"
         $authOut = Join-Path $env:TEMP "ngrok-auth-out.txt"
-        Start-Process -FilePath $ngrokExe -ArgumentList "config", "add-authtoken", $ngrokToken `
+        New-Item -ItemType Directory -Path (Split-Path $ngrokConfigFile) -Force | Out-Null
+        Start-Process -FilePath $ngrokExe -ArgumentList "config", "add-authtoken", $ngrokToken, "--config=$ngrokConfigFile" `
             -NoNewWindow -Wait -PassThru `
             -RedirectStandardOutput $authOut -RedirectStandardError $authErr | Out-Null
         Remove-Item $authOut, $authErr -Force -ErrorAction SilentlyContinue
         Write-OK "Authtoken 已配置"
 
         Write-Step 3 4 "测试连接..."
-        $testArgs = @("http", "$Port")
-        if ($ngrokDomain) { $testArgs = @("http", "--domain=$ngrokDomain", "$Port") }
+        $testArgs = @("http", "--config=$ngrokConfigFile", "$Port")
+        if ($ngrokDomain) { $testArgs = @("http", "--config=$ngrokConfigFile", "--domain=$ngrokDomain", "$Port") }
         $testProc = Start-Process -FilePath $ngrokExe -ArgumentList $testArgs -PassThru -NoNewWindow
         Start-Sleep -Seconds 5
 
     # 尝试获取 ngrok 分配的公网 URL
     $ngrokUrl = ""
     try {
-        $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+        $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -ErrorAction Stop
         $tunnels = $resp.Content | ConvertFrom-Json
         if ($tunnels.tunnels.Count -gt 0) {
             $ngrokUrl = $tunnels.tunnels[0].public_url
@@ -1116,8 +970,7 @@ function Setup-Ngrok {
         Start-Sleep -Seconds 1
         Write-OK "测试完成"
     } else {
-        Write-Step 2 4 "复用已有配置，跳过..."
-        Write-Step 3 4 "复用已有配置，跳过..."
+        Write-Step 2 3 "复用已有配置，跳过..."
         Write-OK "跳过"
     }
 
@@ -1127,7 +980,7 @@ function Setup-Ngrok {
     # 创建/更新启动脚本
     $batContent = @"
 @echo off
-"$ngrokExe" http $Port$(if ($ngrokDomain) { " --domain=$ngrokDomain" })
+"$ngrokExe" http --config="$ngrokConfigFile" $Port$(if ($ngrokDomain) { " --domain=$ngrokDomain" })
 "@
     $batContent | Set-Content $ngrokStartBat -Encoding ASCII
 
@@ -1144,7 +997,7 @@ function Setup-Ngrok {
         if (-not $ngrokUrl) {
             try {
                 Start-Sleep -Seconds 2
-                $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+                $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -ErrorAction Stop
                 $tunnels = $resp.Content | ConvertFrom-Json
                 if ($tunnels.tunnels.Count -gt 0) { $ngrokUrl = $tunnels.tunnels[0].public_url }
             } catch {}
@@ -1244,7 +1097,7 @@ function Reset-Ngrok {
     Write-OK "完成"
 
     Write-Step 2 3 "删除配置..."
-    $ngrokConfig = "$env:USERPROFILE\AppData\Local\ngrok\ngrok.yml"
+    $ngrokConfig = "$env:APPDATA\ngrok\ngrok.yml"
     if (Test-Path $ngrokConfig) { Remove-Item $ngrokConfig -Force -ErrorAction SilentlyContinue }
     Write-OK "完成"
 
@@ -1275,7 +1128,8 @@ set PORT=$newPort
 $exeName >> "$logFile" 2>&1
 "@ | Set-Content $startBat -Encoding ASCII
 
-    $action = New-ScheduledTaskAction -Execute $exePath -WorkingDirectory $InstallDir
+    # 使用 start.bat 启动以确保 PORT 环境变量正确传递
+    $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$startBat`"" -WorkingDirectory $InstallDir
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
     Register-ScheduledTask -TaskName $ompTaskName -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
@@ -1414,29 +1268,10 @@ function Show-Status {
     $ngrokTask = Get-ScheduledTask -TaskName $ngrokTaskName -ErrorAction SilentlyContinue
     if ($ngrokTask) { Write-Info "计划任务: $ngrokTaskName ($($ngrokTask.State))" }
 
-    # Xray (vmess/vless 本地代理)
-    Write-Host ""
-    Write-Host "  [Xray]" -ForegroundColor $C
-    $xrayExePath = Join-Path $InstallDir "xray\xray.exe"
-    if (Test-Path $xrayExePath) { Write-Info "xray: 已安装 ($xrayExePath)" }
-    else { Write-Info "xray: 未安装（vmess/vless 代理不可用）" }
-    $xrayProc = Get-Process -Name "xray" -ErrorAction SilentlyContinue
-    if ($xrayProc) { Write-OK "使用中 (PID: $($xrayProc.Id))" }
-    else { Write-Info "未运行" }
-
-    # 浏览器核心 (chromedp 登录)
-    Write-Host ""
-    Write-Host "  [浏览器核心]" -ForegroundColor $C
-    $shellPath = Join-Path $InstallDir "browser\chrome-headless-shell.exe"
-    $envPath = [Environment]::GetEnvironmentVariable("OMP_CHROME_PATH", "User")
-    if (Test-Path $shellPath) { Write-Info "headless-shell: 已安装 ($shellPath)" }
-    elseif ($envPath) { Write-Info "headless-shell: 经由 OMP_CHROME_PATH ($envPath)" }
-    else { Write-Info "headless-shell: 未安装（浏览器登录不可用）" }
-
     # 尝试获取 ngrok URL
     if ($ngrokProc) {
         try {
-            $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+            $resp = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing -ErrorAction Stop
             $tunnels = $resp.Content | ConvertFrom-Json
             if ($tunnels.tunnels.Count -gt 0) {
                 Write-Info "公网地址: $($tunnels.tunnels[0].public_url)"
@@ -1503,191 +1338,11 @@ function Restart-All {
 }
 
 # ============================================================
-# 组件单独升级（Windows 与 Linux install.sh 组件清单对齐）
-#   用法:  iex (irm ".../omp-manager.ps1...") -Component <name>
-#             name ∈ core | xray | cloudflared | frp | ngrok | browser
-#   仅升级对应二进制，不改动既有隧道配置与计划任务。
-# ============================================================
-
-function Get-LatestTag {
-    param([string]$Repo)
-    $ri = Invoke-RestWithRetry "https://api.github.com/repos/$Repo/releases/latest"
-    if ($ri) { return $ri.tag_name }
-    return $null
-}
-
-function Install-Xray {
-    param([string]$Tag)
-    if (-not $Tag) { $Tag = Get-LatestTag "XTLS/Xray-core" }
-    if (-not $Tag) { Write-Err "获取 Xray 最新版本失败"; return $false }
-
-    $arch = [Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE")
-    if ($arch -match "ARM64") { $asset = "Xray-windows-arm64-v8a.zip" }
-    else { $asset = "Xray-windows-64.zip" }
-    Write-Title "升级 Xray (vmess/vless 本地代理) → $Tag"
-
-    $url = "https://github.com/XTLS/Xray-core/releases/download/$Tag/$asset"
-    $tmpZip = Join-Path $env:TEMP "omp-xray-$(Get-Random).zip"
-    if (-not (Invoke-DownloadWithRetry $url $tmpZip)) { Write-Err "Xray 下载失败"; return $false }
-
-    $xrayDir = Join-Path $InstallDir "xray"
-    New-Item -ItemType Directory -Force -Path $xrayDir | Out-Null
-    $tmpDir = Join-Path $env:TEMP "omp-xray-x-$(Get-Random)"
-    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-    try {
-        Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force -ErrorAction Stop
-    } catch {
-        Write-Err "Xray 解压失败: $($_.Exception.Message)"
-        Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-        return $false
-    }
-    $xrayExe = Join-Path $xrayDir "xray.exe"
-    $src = Get-ChildItem $tmpDir -Recurse -Filter "xray.exe" | Select-Object -First 1
-    if (-not $src) { Write-Err "解压后未找到 xray.exe"; return $false }
-    Copy-Item $src.FullName -Destination $xrayExe -Force
-    Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-    Write-OK "Xray 已升级: $xrayExe ($Tag)"
-    return $true
-}
-
-function Install-BrowserCore {
-    Write-Title "升级内置浏览器核心 (headless Chrome for Testing)"
-    $json = Invoke-RestWithRetry "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
-    if (-not $json) { Write-Err "获取 Chrome for Testing 版本失败"; return $false }
-
-    $entry = $json.downloads.'chrome-headless-shell'.windows64
-    if (-not $entry) { Write-Err "无 windows64 headless shell 下载地址"; return $false }
-    $url = $entry[0].url
-    $ver = $json.channels.Stable.version
-    $tmpZip = Join-Path $env:TEMP "omp-browser-$(Get-Random).zip"
-    if (-not (Invoke-DownloadWithRetry $url $tmpZip)) { Write-Err "浏览器核心下载失败"; return $false }
-
-    $browserDir = Join-Path $InstallDir "browser"
-    New-Item -ItemType Directory -Force -Path $browserDir | Out-Null
-    $tmpDir = Join-Path $env:TEMP "omp-browser-x-$(Get-Random)"
-    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-    try {
-        Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force -ErrorAction Stop
-    } catch {
-        Write-Err "浏览器核心解压失败: $($_.Exception.Message)"
-        Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-        return $false
-    }
-    $shellExe = Get-ChildItem $tmpDir -Recurse -Filter "chrome-headless-shell.exe" | Select-Object -First 1
-    if (-not $shellExe) { Write-Err "解压后未找到 chrome-headless-shell.exe"; return $false }
-    $dest = Join-Path $browserDir "chrome-headless-shell.exe"
-    Copy-Item $shellExe.FullName -Destination $dest -Force
-    Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-
-    [Environment]::SetEnvironmentVariable("OMP_CHROME_PATH", $dest, "User")
-    $env:OMP_CHROME_PATH = $dest
-    Write-OK "浏览器核心已升级: $dest ($ver)"
-    Write-Info "已设置用户环境变量 OMP_CHROME_PATH（新进程生效；当前进程需手动 export）"
-    return $true
-}
-
-function Install-CloudflaredBin {
-    param([string]$Tag)
-    if (-not $Tag) { $Tag = Get-LatestTag "cloudflare/cloudflared" }
-    if (-not $Tag) { Write-Err "获取 cloudflared 最新版本失败"; return $false }
-    Write-Title "升级 cloudflared (Cloudflare 隧道) → $Tag"
-
-    $arch = [Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE")
-    if ($arch -match "ARM64") { $asset = "cloudflared-windows-arm64.exe" }
-    else { $asset = "cloudflared-windows-amd64.exe" }
-    $url = "https://github.com/cloudflare/cloudflared/releases/download/$Tag/$asset"
-    $tmpExe = Join-Path $env:TEMP "omp-cf-$(Get-Random).exe"
-    if (-not (Invoke-DownloadWithRetry $url $tmpExe)) { Write-Err "cloudflared 下载失败"; return $false }
-
-    New-Item -ItemType Directory -Force -Path $cfDir | Out-Null
-    Copy-Item $tmpExe -Destination $cfExe -Force
-    Remove-Item $tmpExe -Force -ErrorAction SilentlyContinue
-    Write-OK "cloudflared 已升级: $cfExe ($Tag)"
-    return $true
-}
-
-function Install-FrpBin {
-    param([string]$Tag)
-    if (-not $Tag) { $Tag = Get-LatestTag "fatedier/frp" }
-    if (-not $Tag) { Write-Err "获取 frp 最新版本失败"; return $false }
-    $ver = $Tag.TrimStart("v")
-    Write-Title "升级 frpc (FRP 隧道) → $Tag"
-
-    $url = "https://github.com/fatedier/frp/releases/download/$Tag/frp_${ver}_windows_amd64.zip"
-    $tmpZip = Join-Path $env:TEMP "omp-frp-$(Get-Random).zip"
-    if (-not (Invoke-DownloadWithRetry $url $tmpZip)) { Write-Err "frpc 下载失败"; return $false }
-    $tmpDir = Join-Path $env:TEMP "omp-frp-x-$(Get-Random)"
-    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-    try {
-        Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force -ErrorAction Stop
-    } catch {
-        Write-Err "frpc 解压失败"; return $false
-    }
-    $frpc = Get-ChildItem $tmpDir -Recurse -Filter "frpc.exe" | Select-Object -First 1
-    if (-not $frpc) { Write-Err "解压后未找到 frpc.exe"; return $false }
-    New-Item -ItemType Directory -Force -Path $frpDir | Out-Null
-    Copy-Item $frpc.FullName -Destination $frpExe -Force
-    Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-    Write-OK "frpc 已升级: $frpExe ($Tag)"
-    return $true
-}
-
-function Install-NgrokBin {
-    param([string]$Tag)
-    if (-not $Tag) { $Tag = Get-LatestTag "ngrok/ngrok-v3" }
-    if (-not $Tag) { Write-Err "获取 ngrok 最新版本失败"; return $false }
-    $ver = $Tag.TrimStart("v")
-    Write-Title "升级 ngrok (ngrok 隧道) → $Tag"
-
-    $url = "https://github.com/ngrok/ngrok-v3/releases/download/$Tag/ngrok-v3-${ver}-windows-amd64.zip"
-    $tmpZip = Join-Path $env:TEMP "omp-ngrok-$(Get-Random).zip"
-    if (-not (Invoke-DownloadWithRetry $url $tmpZip)) { Write-Err "ngrok 下载失败"; return $false }
-    $tmpDir = Join-Path $env:TEMP "omp-ngrok-x-$(Get-Random)"
-    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-    try {
-        Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force -ErrorAction Stop
-    } catch {
-        Write-Err "ngrok 解压失败"; return $false
-    }
-    $ng = Get-ChildItem $tmpDir -Recurse -Filter "ngrok.exe" | Select-Object -First 1
-    if (-not $ng) { Write-Err "解压后未找到 ngrok.exe"; return $false }
-    New-Item -ItemType Directory -Force -Path $ngrokDir | Out-Null
-    Copy-Item $ng.FullName -Destination $ngrokExe -Force
-    Remove-Item $tmpZip,$tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-    Write-OK "ngrok 已升级: $ngrokExe ($Tag)"
-    return $true
-}
-
-function Update-Component {
-    param([string]$Name)
-    $Name = $Name.ToLower().Trim()
-    switch ($Name) {
-        "core"       { Upgrade-OMP; return }
-        "xray"       { Install-Xray; return }
-        "browser"    { Install-BrowserCore; return }
-        "cloudflared" { Install-CloudflaredBin; return }
-        "frp"        { Install-FrpBin; return }
-        "ngrok"      { Install-NgrokBin; return }
-        default {
-            Write-Host ""
-            Write-Host "  可用组件: core | xray | cloudflared | frp | ngrok | browser" -ForegroundColor $Y
-            Write-Host "  示例: iex (irm '.../omp-manager.ps1') -Component xray" -ForegroundColor DarkGray
-        }
-    }
-}
-
-# ============================================================
 # 主菜单
 # ============================================================
 if (-not (Test-Admin)) {
     Write-Host "[ERROR] 请使用管理员权限运行 PowerShell" -ForegroundColor $R
     exit 1
-}
-
-# 组件单独升级模式（非交互）
-if ($Component) {
-    Update-Component $Component
-    exit 0
 }
 
 
@@ -1723,10 +1378,10 @@ function Auto-Update {
     # 最新版本
     $latestTag = $env:OMP_RELEASE_TAG
     if (-not $latestTag) {
-        $ri = Invoke-RestWithRetry "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
-        if ($ri) {
+        try {
+            $ri = Invoke-RestMethod -Uri "https://api.github.com/repos/$GITHUB_REPO/releases/latest" -UseBasicParsing
             $latestTag = $ri.tag_name
-        } else {
+        } catch {
             Write-AULog "无法获取最新 Release tag"
             exit 1
         }
@@ -1810,7 +1465,6 @@ while ($true) {
     Write-Host "    0. 退出" -ForegroundColor $W
     Write-Host "  ============================================" -ForegroundColor $C
     Write-Host "  安装目录: $InstallDir  端口: $Port" -ForegroundColor DarkGray
-    Write-Host "  单独升级组件: iex ... -Component xray|browser|frp|ngrok|cloudflared|core" -ForegroundColor DarkGray
     $choice = Read-Host "  请选择 [0-8]"
 
     switch ($choice) {
