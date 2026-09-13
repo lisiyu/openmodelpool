@@ -84,8 +84,8 @@ $ngrokDir = "$env:ProgramFiles\ngrok"
 $ngrokExe = "$ngrokDir\ngrok.exe"
 $ngrokTaskName = "OpenModelPoolNgrok"
 
-# 常量 - Xray (VMess proxy) —— 仅作为“动态获取最新版本失败”时的回退版本
-$XRAY_VERSION = "v25.7.16"
+# 常量 - Xray (VMess proxy)
+$XRAY_VERSION = "v26.3.27"
 
 # ============================================================
 # 工具函数
@@ -105,6 +105,15 @@ function Write-OK($text) { Write-Host "  OK  $text" -ForegroundColor $G }
 function Write-Err($text) { Write-Host "  X   $text" -ForegroundColor $R }
 function Write-Info($text) { Write-Host "  $text" -ForegroundColor DarkGray }
 
+# 动态获取 GitHub 仓库最新 release tag（失败静默返回空串，由调用方回退内置常量）
+function Get-LatestTag($repo) {
+    try {
+        $url = "https://api.github.com/repos/$repo/releases/latest"
+        $resp = Invoke-RestMethod -Uri $url -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+        if ($resp -and $resp.tag_name) { return $resp.tag_name }
+    } catch {}
+    return ""
+}
 function Test-Admin {
     return ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
@@ -330,19 +339,6 @@ function Download-OMPRelease {
 
 # 1. 安装
 # ============================================================
-# 获取 GitHub 仓库最新 release tag（与 Linux install.sh get_latest_tag 对齐）
-# 失败（网络不可达 / API 限流）时返回空字符串，调用方回退到内置 $XRAY_VERSION 常量
-function Get-LatestTag {
-    param([string]$Repo)
-    try {
-        $info = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing -TimeoutSec 15
-        if ($info -and $info.tag_name) { return $info.tag_name }
-    } catch {
-        # 静默回退
-    }
-    return ""
-}
-
 function Install-OMP {
     Write-Title "OpenModelPool 全新安装"
     Write-Info "目标版本: $RELEASE_TAG"
@@ -392,7 +388,6 @@ function Install-OMP {
     }
     
     # 如果已安装且版本相同，跳过
-    # 动态获取 Xray 最新版本（与 Linux install.sh / Install-Xray 对齐）；网络不可达时回退到内置常量
     $xrayVer = Get-LatestTag "XTLS/Xray-core"
     if (-not $xrayVer) { $xrayVer = $XRAY_VERSION }
     $xrayTargetVer = $xrayVer -replace "^v", ""
@@ -401,12 +396,14 @@ function Install-OMP {
     } else {
         Write-Host "  下载 Xray v$xrayTargetVer (VMess 代理)..." -ForegroundColor $C
         
-        # 多镜像源 fallback
+        # 多镜像源 fallback（GitHub 官方源优先，已验证国内可直接访问）
         $xrayMirrorSources = @(
+            "https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
             "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
             "https://gh-proxy.com/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
             "https://ghproxy.net/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
-            "https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip"
+            "https://mirror.ghproxy.com/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
+            "https://gh.api.99988866.xyz/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip"
         )
         
         $xrayDownloaded = $false
@@ -1014,6 +1011,15 @@ ingress:
     $_hsContent3 | Set-Content "$cfConfigDir\config.yml" -Encoding UTF8
 
     Stop-Cloudflared
+    # 清理残留的 cloudflared Windows 服务，避免与计划任务冲突
+    try {
+        $svc = Get-Service cloudflared -ErrorAction SilentlyContinue
+        if ($svc) {
+            Stop-Service cloudflared -Force -ErrorAction SilentlyContinue
+            sc.exe delete cloudflared 2>&1 | Out-Null
+            Start-Sleep -Milliseconds 500
+        }
+    } catch {}
     $action = New-ScheduledTaskAction -Execute $cfExe -Argument "tunnel run openmodelpool"
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
