@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -992,40 +994,51 @@ func isValidDomain(d string) bool {
 // resolveBoundDomain derives the externally accessible domain name this OMP
 // instance is (or should be) reachable at. It returns the bare hostname
 // (no scheme/port), a flag indicating whether a domain was explicitly bound,
-// and the resolved public base URL (with scheme).
+// the resolved public base URL (with scheme), and the config source that
+// produced the result (empty when nothing was bound).
 //
 // Resolution priority (most accurate first):
 //  1. bound_domain        config — explicitly bound via manual/auto bind [strongest]
 //  2. public_domain       config / PUBLIC_DOMAIN env (e.g. https://openmodelpool.io)
 //  3. public_url          config — admin-facing public base URL
 //  4. federation_endpoint config
-//  5. r.Host              — the host the operator is actually accessing through
-func resolveBoundDomain(r *http.Request) (string, bool, string) {
+//  5. cloudflared config  — ~/.cloudflared/config.yml written by the deploy scripts
+//  6. r.Host              — the host the operator is actually accessing through
+func resolveBoundDomain(r *http.Request) (string, bool, string, string) {
 	// 1. Explicitly bound domain (manual bind or auto bind via Cloudflare API).
 	if d := cfg.Get("bound_domain", ""); d != "" {
-		return hostOf(d), true, ensureHTTPS(d)
+		return hostOf(d), true, ensureHTTPS(d), "bound_domain"
 	}
 	// 2. public_domain config / PUBLIC_DOMAIN env (e.g. https://openmodelpool.io).
 	if pd := cfg.Get("public_domain", ""); pd != "" {
-		return hostOf(pd), false, ensureHTTPS(pd)
+		return hostOf(pd), false, ensureHTTPS(pd), "public_domain"
 	}
 	// 3. public_url config.
 	if pu := cfg.Get("public_url", ""); pu != "" {
-		return hostOf(pu), false, ensureHTTPS(pu)
+		return hostOf(pu), false, ensureHTTPS(pu), "public_url"
 	}
 	// 4. federation_endpoint config.
 	if fe := cfg.Get("federation_endpoint", ""); fe != "" {
-		return hostOf(fe), false, ensureHTTPS(fe)
+		return hostOf(fe), false, ensureHTTPS(fe), "federation_endpoint"
 	}
-	// 5. Request Host — what the operator is actually accessing through.
+	// 5. Local cloudflared config — the deploy scripts (omp-manager.{ps1,sh})
+	//    configure the named tunnel and its DNS route without writing OMP's
+	//    config, so this is the only place that domain shows up. Placed after
+	//    the explicit config sources (never override operator intent) but
+	//    before r.Host, which for a locally-opened admin page is just
+	//    "127.0.0.1" and tells the operator nothing.
+	if h := cloudflaredConfigHostname(); h != "" {
+		return hostOf(h), false, ensureHTTPS(h), "cloudflared_config"
+	}
+	// 6. Request Host — what the operator is actually accessing through.
 	if r != nil && r.Host != "" {
 		h := r.Host
 		if i := strings.Index(h, ":"); i >= 0 {
 			h = h[:i]
 		}
-		return h, false, "https://" + h
+		return h, false, "https://" + h, "request_host"
 	}
-	return "", false, ""
+	return "", false, "", ""
 }
 
 // hostOf extracts the bare hostname from a URL or host:port string.
@@ -1063,14 +1076,109 @@ func ensureHTTPS(s string) string {
 	return s
 }
 
+// maxCloudflaredConfigBytes bounds how large a cloudflared config we are willing
+// to read (a named-tunnel config is a few hundred bytes).
+const maxCloudflaredConfigBytes = 64 << 10
+
+// cloudflaredConfigHostname best-effort reads the local cloudflared config
+// written by the deploy scripts (scripts/omp-manager.{ps1,sh}) and returns its
+// first "hostname:" entry. Those scripts wire up the named tunnel and its DNS
+// route themselves and never write OMP's config, so without this the admin
+// domain guide falls through to the request Host (e.g. "127.0.0.1") and reports
+// a meaningless domain. Read-only and failure-tolerant: any error yields "".
+func cloudflaredConfigHostname() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	for _, name := range []string{"config.yml", "config.yaml"} {
+		path := filepath.Join(home, ".cloudflared", name)
+		info, statErr := os.Stat(path)
+		if statErr != nil || info.Size() > maxCloudflaredConfigBytes {
+			// Missing, unreadable, or implausibly large: refuse rather than
+			// parse a truncated view that could yield a half-formed hostname.
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if h := firstHostnameInYAML(string(data)); h != "" {
+			return h
+		}
+	}
+	return ""
+}
+
+// firstHostnameInYAML extracts the first "hostname: <value>" entry from a
+// cloudflared config. Deliberately line-based: OMP is stdlib-only and this file
+// only ever holds simple key/value ingress rules.
+func firstHostnameInYAML(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "\ufeff") // UTF-8 BOM glued to the key
+		line = strings.TrimSpace(strings.TrimPrefix(line, "-"))
+		if !strings.HasPrefix(line, "hostname:") {
+			continue
+		}
+		v := strings.TrimSpace(strings.TrimPrefix(line, "hostname:"))
+		// Drop a YAML inline comment FIRST, so a quoted value followed by a
+		// comment ("a.example.com" # c) still trims down to a bare hostname.
+		// "#" is illegal in a hostname, so truncating at it is always safe.
+		if i := strings.Index(v, "#"); i >= 0 {
+			v = strings.TrimSpace(v[:i])
+		}
+		v = strings.Trim(v, "\"'")
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// isProbeablePublicDomain reports whether host looks like a public DNS name that
+// could plausibly serve https://<host>/health. IP literals and local names
+// cannot: probing them only yields a meaningless dial error.
+func isProbeablePublicDomain(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	host = strings.Trim(host, "[]")      // strip IPv6 literal brackets before checks
+	host = strings.TrimSuffix(host, ".") // root form ("localhost.", "api.example.com.")
+	if host == "" || host == "localhost" {
+		return false
+	}
+	if net.ParseIP(host) != nil { // IPv4 / IPv6 literals cannot serve a public domain
+		return false
+	}
+	if !strings.Contains(host, ".") { // single-label hostname (LAN short name)
+		return false
+	}
+	for _, suffix := range []string{".local", ".internal", ".lan", ".localdomain", ".home.arpa", ".localhost"} {
+		if strings.HasSuffix(host, suffix) {
+			return false
+		}
+	}
+	return true
+}
+
 // probeDomainHealth performs a short, best-effort HTTPS health check against
-// https://<domain>/health. It returns (reachable, errorDetail). TLS verification
-// is kept ON because the public domain is fronted by Cloudflare and should
-// present a valid certificate; InsecureSkipVerify is intentionally NOT used to
-// avoid masking real certificate problems.
+// https://<domain>/health. It returns (reachable, errorDetail).
+//
+// NOTE: the client comes from GetSharedHTTPClientWithTimeout, i.e. the shared
+// internalTransport, which sets InsecureSkipVerify. The probed domain's
+// certificate is therefore NOT verified and a TLS problem cannot surface here
+// as a health failure. That is inherited from the shared transport, not a
+// deliberate choice for this probe, and it is covered by the same open item as
+// internalTransport (docs/reference/REVIEW-TRIAGE-2026-08-10.md P1-3).
 func probeDomainHealth(domain string) (bool, string) {
 	if domain == "" || domain == "localhost" {
 		return false, "未配置可探测的域名"
+	}
+	if !isProbeablePublicDomain(domain) {
+		// An IP literal / LAN name is not a public domain: dialling it would
+		// only produce a meaningless error (and for an IPv4 literal the tcp6
+		// fallback in dialPreferIPv4 would hide the real cause behind
+		// "no suitable address found").
+		return false, fmt.Sprintf("未绑定公网域名（当前解析到 %s，非公网域名，跳过健康检查）", domain)
 	}
 	client := GetSharedHTTPClientWithTimeout(4 * time.Second)
 	probeURL := "https://" + domain + "/health"
@@ -1097,7 +1205,7 @@ func probeDomainHealth(domain string) (bool, string) {
 // whether the domain's /health endpoint is reachable, and the app version.
 // This endpoint is display-only and does NOT mutate any state.
 func handleDomainBindingStatus(w http.ResponseWriter, r *http.Request) {
-	domain, bound, publicURL := resolveBoundDomain(r)
+	domain, bound, publicURL, domainSource := resolveBoundDomain(r)
 
 	// Tunnel state. tunnel_running reflects whether OMP's managed tunnel process
 	// is alive. In "manual" mode there is no cloudflared process managed by OMP,
@@ -1130,6 +1238,7 @@ func handleDomainBindingStatus(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, 200, map[string]any{
 		"domain":         domain,
+		"domain_source":  domainSource,
 		"bound":          bound,
 		"public_url":     publicURL,
 		"tunnel_running": tunnelRunning,

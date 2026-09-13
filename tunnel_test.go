@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -36,11 +37,18 @@ import (
 // ---------------------------------------------------------------------------
 
 // qaDomainResetConfig clears all config keys that resolveBoundDomain consults,
-// so each priority sub-case starts from a known-empty baseline.
-func qaDomainResetConfig() {
+// so each priority sub-case starts from a known-empty baseline. It also points
+// HOME/USERPROFILE at an empty temp dir so a real ~/.cloudflared/config.yml on
+// the developer machine cannot leak into the cloudflared_config discovery step
+// and perturb the priority-chain assertions.
+func qaDomainResetConfig(t *testing.T) {
+	t.Helper()
 	for _, k := range []string{"bound_domain", "public_domain", "public_url", "federation_endpoint"} {
 		cfg.Set(k, "")
 	}
+	isolatedHome := t.TempDir()
+	t.Setenv("HOME", isolatedHome)
+	t.Setenv("USERPROFILE", isolatedHome)
 }
 
 // qaDomainToken returns a valid admin bearer token for the test auth instance.
@@ -90,7 +98,7 @@ func TestQADomainBindingStatusRequiresAuth(t *testing.T) {
 
 func TestQADomainBindingStatusStructure(t *testing.T) {
 	_ = setupTestEnv(t)
-	qaDomainResetConfig()
+	qaDomainResetConfig(t)
 	// Ensure no PUBLIC_DOMAIN leakage from the environment.
 	origEnv := os.Getenv("PUBLIC_DOMAIN")
 	os.Unsetenv("PUBLIC_DOMAIN")
@@ -169,7 +177,7 @@ func TestQADomainBindingStatusStructure(t *testing.T) {
 // with withAuth (valid token -> 200, not 401/404).
 func TestQADomainBindingStatusRouteRegistered(t *testing.T) {
 	_ = setupTestEnv(t)
-	qaDomainResetConfig()
+	qaDomainResetConfig(t)
 	origEnv := os.Getenv("PUBLIC_DOMAIN")
 	os.Unsetenv("PUBLIC_DOMAIN")
 	defer os.Setenv("PUBLIC_DOMAIN", origEnv)
@@ -219,7 +227,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		{
 			name: "1_bound_domain_wins",
 			setup: func(t *testing.T) {
-				qaDomainResetConfig()
+				qaDomainResetConfig(t)
 				cfg.Set("bound_domain", "https://bound.example.com")
 			},
 			host:      "ignored.example.com",
@@ -230,7 +238,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		{
 			name: "2_public_domain_config",
 			setup: func(t *testing.T) {
-				qaDomainResetConfig()
+				qaDomainResetConfig(t)
 				cfg.Set("public_domain", "https://pool.example.com")
 			},
 			host:      "ignored.example.com",
@@ -241,7 +249,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		{
 			name: "2b_public_domain_env_PUBLIC_DOMAIN",
 			setup: func(t *testing.T) {
-				qaDomainResetConfig()
+				qaDomainResetConfig(t)
 				// Scoped to this subtest only; auto-restored afterwards so it
 				// cannot leak into the public_url / federation_endpoint cases.
 				t.Setenv("PUBLIC_DOMAIN", "openmodelpool.io")
@@ -254,7 +262,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		{
 			name: "3_public_url_config",
 			setup: func(t *testing.T) {
-				qaDomainResetConfig()
+				qaDomainResetConfig(t)
 				cfg.Set("public_url", "https://pub.example.com:9000")
 			},
 			host:      "ignored.example.com",
@@ -265,7 +273,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		{
 			name: "4_federation_endpoint_config",
 			setup: func(t *testing.T) {
-				qaDomainResetConfig()
+				qaDomainResetConfig(t)
 				cfg.Set("federation_endpoint", "https://fed.example.com/v1")
 			},
 			host:      "ignored.example.com",
@@ -276,7 +284,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 		{
 			name: "5_request_host_fallback",
 			setup: func(t *testing.T) {
-				qaDomainResetConfig()
+				qaDomainResetConfig(t)
 				os.Unsetenv("PUBLIC_DOMAIN")
 			},
 			host:      "host.example.com:8000",
@@ -293,7 +301,7 @@ func TestQAResolveBoundDomainPriority(t *testing.T) {
 			if c.host != "" {
 				req.Host = c.host
 			}
-			dom, bound, pu := resolveBoundDomain(req)
+			dom, bound, pu, _ := resolveBoundDomain(req)
 			if dom != c.wantDom {
 				t.Errorf("domain = %q, want %q", dom, c.wantDom)
 			}
@@ -373,7 +381,7 @@ func TestQAProbeDomainHealthUnreachable(t *testing.T) {
 
 func TestQADomainBindingStatusWithTunnel(t *testing.T) {
 	_ = setupTestEnv(t)
-	qaDomainResetConfig()
+	qaDomainResetConfig(t)
 	origEnv := os.Getenv("PUBLIC_DOMAIN")
 	os.Unsetenv("PUBLIC_DOMAIN")
 	defer os.Setenv("PUBLIC_DOMAIN", origEnv)
@@ -435,7 +443,7 @@ func TestQADomainBindingStatusWithTunnel(t *testing.T) {
 // (reachable == (reach_error == "")).
 func TestQADomainBindingStatusBoundDomainProbe(t *testing.T) {
 	_ = setupTestEnv(t)
-	qaDomainResetConfig()
+	qaDomainResetConfig(t)
 	cfg.Set("bound_domain", "test.invalid") // DNS-fail TLD, probe returns quickly
 	origEnv := os.Getenv("PUBLIC_DOMAIN")
 	os.Unsetenv("PUBLIC_DOMAIN")
@@ -487,6 +495,16 @@ func TestQADomainBindingFrontendWiring(t *testing.T) {
 		`onclick="refreshDomainBinding()"`,
 		`function refreshDomainBinding`,
 		`/api/domain/binding-status`,
+		// The card must actually consume the backend domain_source field,
+		// otherwise it stays a dead field and the tunnel badge regresses to a
+		// false "未运行" for an externally-managed cloudflared tunnel.
+		`d.domain_source`,
+		`cloudflared_config`,
+		// Only the badge branch contains this exact expression: the srcLabel
+		// map just above it holds the bare strings, so without this the guard
+		// would still pass if the branch were deleted and the false "未运行"
+		// badge silently came back.
+		`d.domain_source === 'cloudflared_config'`,
 	} {
 		if !strings.Contains(h, need) {
 			t.Errorf("admin.html missing required fragment: %q", need)
@@ -507,5 +525,135 @@ func TestQADomainBindingFrontendWiring(t *testing.T) {
 	}
 	if count("<details") != count("</details>") {
 		t.Errorf("unbalanced <details> tags: open=%d close=%d", count("<details"), count("</details>"))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T-10: cloudflared config as a domain source (end-to-end, real file on disk)
+// ---------------------------------------------------------------------------
+
+// This proves the deploy-script-written ~/.cloudflared/config.yml is discovered
+// as a domain source, that it sits BELOW the explicit OMP config sources, and
+// that the handler surfaces both the domain and its source. It writes a real
+// config into a temp HOME (rather than stubbing the reader) so the actual
+// os.ReadFile + parser path is exercised. It deliberately does NOT call
+// qaDomainResetConfig, which would repoint HOME and clobber the file.
+func TestQAResolveBoundDomainCloudflaredSource(t *testing.T) {
+	_ = setupTestEnv(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir() reads USERPROFILE on Windows
+	origEnv := os.Getenv("PUBLIC_DOMAIN")
+	os.Unsetenv("PUBLIC_DOMAIN")
+	defer os.Setenv("PUBLIC_DOMAIN", origEnv)
+
+	dir := filepath.Join(home, ".cloudflared")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Byte-for-byte recreation of the file shape that triggered the bug report:
+	// UTF-8 BOM, hostname after "- " with a 2-space indent, and a trailing
+	// "service: http_status:404" entry that must NOT be mistaken for a hostname.
+	realCfg := "\ufeff\ntunnel: 5ee6f865-b1d2-44af-bfba-5676cf3999b9\n" +
+		"credentials-file: C:\\Users\\licha\\.cloudflared\\5ee6f865-b1d2-44af-bfba-5676cf3999b9.json\n" +
+		"\ningress:\n  - hostname: api.zuinew.com\n    service: http://localhost:8000\n" +
+		"  - service: http_status:404\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(realCfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Scenario 1: all four OMP config sources empty -> cloudflared wins. This is
+	// the operator's real situation (the wizard never writes OMP's config).
+	for _, k := range []string{"bound_domain", "public_domain", "public_url", "federation_endpoint"} {
+		cfg.Set(k, "")
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "127.0.0.1:8000" // the admin opened the panel at the loopback address
+	dom, bound, pu, src := resolveBoundDomain(req)
+	if dom != "api.zuinew.com" {
+		t.Errorf("domain = %q, want api.zuinew.com", dom)
+	}
+	if src != "cloudflared_config" {
+		t.Errorf("source = %q, want cloudflared_config", src)
+	}
+	if pu != "https://api.zuinew.com" {
+		t.Errorf("public_url = %q, want https://api.zuinew.com", pu)
+	}
+	if bound {
+		t.Error("bound = true, want false (cloudflared discovery is not an explicit bind)")
+	}
+
+	// Scenario 2: an explicit bound_domain must still outrank the cloudflared config.
+	cfg.Set("bound_domain", "bound.example.com")
+	dom2, _, _, src2 := resolveBoundDomain(req)
+	if src2 != "bound_domain" || dom2 != "bound.example.com" {
+		t.Errorf("bound_domain priority broken: dom=%q src=%q, want bound.example.com/bound_domain", dom2, src2)
+	}
+	cfg.Set("bound_domain", "")
+
+	// Scenario 3: end-to-end — the handler must expose both domain and source.
+	// (The health probe may perform a real request; its outcome is not asserted.)
+	r2 := httptest.NewRequest(http.MethodGet, "/api/domain/binding-status", nil)
+	r2.Header.Set("Authorization", "Bearer "+qaDomainToken(t))
+	rec := httptest.NewRecorder()
+	withAuth(handleDomainBindingStatus)(rec, r2)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	m := qaParseJSON(t, rec.Body.String())
+	if v, _ := m["domain"].(string); v != "api.zuinew.com" {
+		t.Errorf("handler domain = %#v, want api.zuinew.com", m["domain"])
+	}
+	if v, _ := m["domain_source"].(string); v != "cloudflared_config" {
+		t.Errorf("handler domain_source = %#v, want cloudflared_config", m["domain_source"])
+	}
+}
+
+// TestFirstHostnameInYAML unit-tests the stdlib-only parser against the real
+// file shape plus the tricky cases (quoting, comments, absence).
+func TestFirstHostnameInYAML(t *testing.T) {
+	realCfg := "\ufeff\ntunnel: 5ee6f865-b1d2-44af-bfba-5676cf3999b9\n" +
+		"credentials-file: C:\\Users\\licha\\.cloudflared\\5ee6f865-b1d2-44af-bfba-5676cf3999b9.json\n" +
+		"\ningress:\n  - hostname: api.zuinew.com\n    service: http://localhost:8000\n" +
+		"  - service: http_status:404\n"
+	cases := []struct{ name, in, want string }{
+		{"real_file_shape", realCfg, "api.zuinew.com"},
+		{"quoted_value", "ingress:\n  - hostname: \"a.example.com\"\n", "a.example.com"},
+		{"commented_out", "ingress:\n  # hostname: x.example.com\n", ""},
+		{"absent", "tunnel: 5ee6f865-b1d2-44af-bfba-5676cf3999b9\n", ""},
+		{"inline_comment", "ingress:\n  - hostname: api.zuinew.com # 主域名\n", "api.zuinew.com"},
+		{"hash_only_value", "ingress:\n  - hostname: # 待定\n  - hostname: real.example.com\n", "real.example.com"},
+		{"bom_glued_to_key", "\ufeffhostname: a.example.com\n", "a.example.com"},
+		{"trailing_comment_after_quotes", "ingress:\n  - hostname: \"a.example.com\" # c\n", "a.example.com"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := firstHostnameInYAML(c.in); got != c.want {
+				t.Errorf("firstHostnameInYAML(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// TestIsProbeablePublicDomain locks down the boundary between "a public DNS name
+// worth probing" and "an IP literal / LAN name that would only yield a
+// meaningless dial error". This function had no in-repo coverage before.
+func TestIsProbeablePublicDomain(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"", false}, {"localhost", false}, {"localhost.", false},
+		{"127.0.0.1", false}, {"[::1]", false}, {"::1", false},
+		{"192.168.1.1", false}, {"169.254.169.254", false}, {"10.0.0.5", false},
+		{"myhost", false}, {"a.local", false}, {"x.internal", false},
+		{"foo.home.arpa", false}, {"a.lan", false},
+		{"api.zuinew.com", true}, {"sub.domain.co.uk", true},
+		{"xn--fiqs8s.cn", true}, {"API.Zuinew.COM", true}, {"a.b.", true},
+	}
+	for _, c := range cases {
+		if got := isProbeablePublicDomain(c.in); got != c.want {
+			t.Errorf("isProbeablePublicDomain(%q) = %v, want %v", c.in, got, c.want)
+		}
 	}
 }

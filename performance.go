@@ -65,8 +65,14 @@ func getMemoryUsage() MemoryStats {
 // head-of-line blocking between internal and external traffic.
 
 // internalTransport is the shared connection pool for ALL internal communications.
-// TLSClientConfig skips cert verification for pool-internal self-signed certificates.
-// All nodes in the trust pool are mutually trusted.
+//
+// NOTE: TLSClientConfig skips certificate verification. That was originally
+// justified by "pool-internal self-signed certificates only", but the same
+// transport now also carries public-internet traffic (audit webhooks in
+// audit.go, free-pool sync in free_pool.go, release downloads, and the public
+// domain health probe in tunnel.go). The skip is therefore NOT justified for
+// those callers and is tracked as an open item — see
+// docs/reference/REVIEW-TRIAGE-2026-08-10.md (P1-3).
 var internalTransport = &http.Transport{
 	MaxIdleConns:          100,
 	MaxIdleConnsPerHost:   10,
@@ -75,7 +81,7 @@ var internalTransport = &http.Transport{
 	TLSHandshakeTimeout:   10 * time.Second,
 	ExpectContinueTimeout: 1 * time.Second,
 	ForceAttemptHTTP2:     true,
-	TLSClientConfig:       &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, // #nosec G402 -- internalTransport only talks to mutually-trusted pool nodes; self-signed certs are expected
+	TLSClientConfig:       &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, // #nosec G402 -- TLS verification skip is a pre-existing, explicitly-tracked open item (see docs/reference/REVIEW-TRIAGE-2026-08-10.md P1-3); this transport also carries public-internet traffic, so it is NOT limited to mutually-trusted pool nodes. Value intentionally unchanged.
 	DialContext:           dialPreferIPv4,
 }
 
@@ -88,29 +94,56 @@ var internalTransport = &http.Transport{
 // back to tcp6 when IPv4 is unavailable. This is transport-level and applies
 // uniformly to every peer, regardless of whether the node is reached via a
 // tunnel or a direct public address — non-tunneled nodes are unaffected.
+//
+// Two correctness rules:
+//   - An explicit family request (network != "tcp"; net/http always passes
+//     "tcp") is honoured verbatim rather than second-guessed, so callers that
+//     deliberately target tcp4/tcp6 still work.
+//   - When both families fail, the ACTIONABLE family error is surfaced rather
+//     than the meaningless one. For an IPv4 literal the tcp6 attempt is
+//     guaranteed to fail with the uninformative "no suitable address found", so
+//     err4 is returned; for an IPv6 literal it is the tcp4 attempt that is
+//     uninformative, so err6 is returned instead. For a hostname neither attempt
+//     is inherently uninformative (both resolve through the same DNS answer), so
+//     err4 is returned — IPv4 is the preferred path here (see above), so its
+//     error is the one worth surfacing first.
 func dialPreferIPv4(ctx context.Context, network, addr string) (net.Conn, error) {
 	d := net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
-	switch network {
-	case "tcp", "tcp4", "tcp6":
-		if network != "tcp6" {
-			if conn, err := d.DialContext(ctx, "tcp4", addr); err == nil {
-				return conn, nil
-			}
-		}
-		if network != "tcp4" {
-			return d.DialContext(ctx, "tcp6", addr)
-		}
-		return nil, errNoIPv4
-	default:
+	if network != "tcp" {
+		// Explicit family request (net/http always uses "tcp", so this is for
+		// direct callers): honour it instead of second-guessing the caller.
 		return d.DialContext(ctx, network, addr)
 	}
+	// Try IPv4 first: some pool hosts black-hole their IPv6 egress path while
+	// IPv4 is healthy, and Go's net/http has no Happy-Eyeballs fallback.
+	conn4, err4 := d.DialContext(ctx, "tcp4", addr)
+	if err4 == nil {
+		return conn4, nil
+	}
+	// Classify the target so the error we finally surface is the actionable one:
+	// for an IPv4 literal the tcp6 attempt is guaranteed to fail with the
+	// uninformative "no suitable address found"; for an IPv6 literal it is the
+	// tcp4 attempt that is uninformative.
+	ipv6Literal := false
+	if host, _, splitErr := net.SplitHostPort(addr); splitErr == nil {
+		if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+			if ip.To4() != nil {
+				return nil, err4 // IPv4 literal: tcp6 cannot possibly succeed
+			}
+			ipv6Literal = true
+		}
+	}
+	conn6, err6 := d.DialContext(ctx, "tcp6", addr)
+	if err6 == nil {
+		return conn6, nil
+	}
+	if ipv6Literal {
+		// The tcp4 error is the meaningless family error here; surface the IPv6
+		// one instead.
+		return nil, err6
+	}
+	return nil, err4
 }
-
-var errNoIPv4 = &net.OpError{Op: "dial", Net: "tcp", Err: errNoIPv4Inner{}}
-
-type errNoIPv4Inner struct{}
-
-func (errNoIPv4Inner) Error() string { return "no usable IP family (tcp4 unavailable)" }
 
 var internalHTTPClient *http.Client
 

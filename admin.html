@@ -1044,9 +1044,22 @@ select.form-input{appearance:none;cursor:pointer}
     var domain = d.domain || '';
     var domainText = domain ? escapeHtml(domain) : '未绑定';
 
+    // 域名来源（与后端 domain_source 一一对应），用于自证当前域名从哪来——
+    // 历史上显示 127.0.0.1 却不说来源，导致排查绕远路。
+    var srcLabel = {
+      bound_domain: 'OMP 配置', public_domain: 'OMP 配置', public_url: 'OMP 配置',
+      federation_endpoint: '联邦端点', cloudflared_config: 'cloudflared 配置',
+      request_host: '页面访问地址'
+    }[d.domain_source] || '';
+
     // 隧道状态徽章
     var tunnelBadge;
-    if (d.tunnel_mode === 'manual') {
+    if (d.domain_source === 'cloudflared_config') {
+      // 域名的 cloudflared 配置由部署脚本（omp-manager.{ps1,sh}）维护，OMP 不托管
+      // 该隧道进程，所以 tunnel_running 恒为 false。这里不能断言"未运行"——那是
+      // 与事实相反的结论。
+      tunnelBadge = renderDomainBadge('外部托管（OMP 未管理）', 'neutral');
+    } else if (d.tunnel_mode === 'manual') {
       tunnelBadge = renderDomainBadge('手动绑定（外部隧道/反代）', 'neutral');
     } else if (d.tunnel_running) {
       tunnelBadge = renderDomainBadge('运行中', 'ok');
@@ -1068,7 +1081,7 @@ select.form-input{appearance:none;cursor:pointer}
 
     var html = '';
     html += '<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">';
-    html += '  <div><div style="font-size:11px;color:var(--text-muted)">当前域名</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + domainText + '</div></div>';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">当前域名</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + domainText + '</div>' + (srcLabel ? '<div style="font-size:11px;color:var(--text-muted);margin-top:1px">（来源：' + srcLabel + '）</div>' : '') + '</div>';
     html += '  <div><div style="font-size:11px;color:var(--text-muted)">隧道状态</div><div style="margin-top:4px">' + tunnelBadge + '</div></div>';
     html += '  <div><div style="font-size:11px;color:var(--text-muted)">健康检查</div><div style="margin-top:4px">' + healthBadge + '</div></div>';
     html += '</div>';

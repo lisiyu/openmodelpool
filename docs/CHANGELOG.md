@@ -1,5 +1,44 @@
 # Changelog
 
+## v4.5.52 (2026-09-13)
+
+- **域名绑定引导三处误报修复（`tunnel.go` / `admin.html`）**：
+  - **当前域名显示 `127.0.0.1`**：`resolveBoundDomain` 新增第 5 个发现源——本地
+    `~/.cloudflared/config.yml`。部署脚本（`omp-manager.{ps1,sh}`）配置的域名只落在这里，
+    OMP 自身配置中并无记录，因此原优先级链四级全空、兜底到页面访问地址。新源位于 4 个
+    显式配置源之后、请求 Host 兜底之前，不覆盖运维在 OMP 中的显式设置。
+  - **隧道状态误报「未运行」**：该场景下隧道由脚本/计划任务托管，OMP 并不管理其进程，
+    `tunnel_running` 恒为 false。新增 `domain_source` 字段，卡片据此显示「外部托管（OMP 未管理）」，
+    不再输出与事实相反的结论；「当前域名」同时标注来源。
+  - **健康检查报 `dial tcp6: ... no suitable address found`**：`probeDomainHealth` 对非公网域名
+    （IP 字面量 / 局域网名）短路返回可读原因，不再将其当公网域名拼 HTTPS 探测。
+
+- **`dialPreferIPv4` 错误覆盖修复（`performance.go`，影响所有内部 HTTP）**：IPv4 拨号失败后不再
+  无条件回退 tcp6——对 IPv4 字面量 tcp6 必然失败，会把真正原因（如 `connection refused`）掩盖为
+  `no suitable address found`。现改为双族失败时返回**可操作**的那一族错误（IPv4 字面量返 `err4`、
+  IPv6 字面量返 `err6`），并修复显式 `tcp4` 请求丢弃真实错误、改返回合成 `errNoIPv4` 的缺陷。
+  该 dialer 服务于 gossip / 账本对账 / 联邦中继 / 节点发现 / 自更新。
+
+- **发版前回归评审的修复项**：上述 IPv6 错误归属回归；`firstHostnameInYAML` 未剥离 YAML 行内注释
+  （会显示畸形域名并谎报「不可达」）；`isProbeablePublicDomain` 对 `localhost.` 尾点误判；
+  cloudflared 配置读取加大小上限；测试注释不实（原称旧实现「不拨号」，实为丢弃真实错误）已更正。
+
+- **`internalTransport` 的 `#nosec G402` 理由更正**：原注释称「仅与互相信任的池内节点通信」，
+  与事实不符——该 transport 亦承载公网流量（审计 webhook、免费池同步、更新下载、域名健康探测）。
+  仅更正注释，`InsecureSkipVerify` 取值不变；TLS 收紧为独立决策项。
+
+- **`probeDomainHealth` 的 TLS 注释更正**：原注释称「TLS 验证保持开启 / `InsecureSkipVerify`
+  刻意不使用」，但该探测走的是 `GetSharedHTTPClientWithTimeout` → 共享 `internalTransport`，
+  实际**不验证**证书——注释与代码相反。已改为如实描述并指向同一个 P1-3 待办；探测行为不变
+  （收紧证书校验需评估「证书异常是否应显示为不可达」，留作独立决策项）。
+
+- **新增测试**：`performance_dial_test.go`（6 个 `dialPreferIPv4` 用例，含两条真回归护栏）、
+  `TestQAResolveBoundDomainCloudflaredSource`（以真实 `config.yml` 形状端到端验证）、
+  `TestFirstHostnameInYAML`、`TestIsProbeablePublicDomain`、`TestCloudflaredConfigHostnameSizeCap`、
+  前端接线护栏收紧（可捕获徽章分支被删的回归）。
+
+- AppVersion bumped to v4.5.52.
+
 ## v4.5.51 (2026-09-13)
 
 - **`scripts/omp-manager.ps1`（Windows）** — 停止/重启隧道时调用已有的 `Remove-CloudflaredService` 清理历史遗留的 cloudflared Windows 服务（原 `Stop-Cloudflared` 只 `Stop-Service` 不 `sc delete`，导致状态页 WARNING 常驻且可能与计划任务冲突）；`Restart-All` 的 Cloudflare 步骤改为 `try/catch` 包裹启动 + 轮询最多 10 秒等待进程 + 失败时输出计划任务 `LastTaskResult`（十六进制）；状态页残留服务 WARNING 后新增一行提示「运行「重启服务」或「重置穿透」可自动清理」。
