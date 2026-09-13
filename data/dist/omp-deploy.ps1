@@ -139,9 +139,24 @@ Write-Host "[3/5] 安装到 $InstallDir ..." -ForegroundColor Cyan
 $dataDir = Join-Path $InstallDir "data"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+# 收紧 data 目录权限（仅管理员和 SYSTEM 可写）
+try {
+    $acl = Get-Acl $dataDir -ErrorAction Stop
+    $acl.SetAccessRuleProtection($true, $false)
+    $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule("BUILTIN\Administrators", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule("NT AUTHORITY\SYSTEM", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $acl.AddAccessRule($adminRule)
+    $acl.AddAccessRule($systemRule)
+    Set-Acl $dataDir -AclObject $acl -ErrorAction Stop
+} catch {}
 
 # 复制二进制文件（HTML 已嵌入，无需复制 HTML 文件）
-Copy-Item (Join-Path $tmpDir "openmodelpool.exe") -Destination (Join-Path $InstallDir "openmodelpool.exe") -Force
+$binPath = Join-Path $InstallDir "openmodelpool.exe"
+$bakPath = Join-Path $InstallDir "openmodelpool.exe.bak"
+if (Test-Path $binPath) {
+    Copy-Item $binPath -Destination $bakPath -Force
+}
+Copy-Item (Join-Path $tmpDir "openmodelpool.exe") -Destination $binPath -Force
 
 if (Test-Path (Join-Path $tmpDir "docs")) {
     Copy-Item (Join-Path $tmpDir "docs") -Destination $InstallDir -Force -Recurse
@@ -203,6 +218,13 @@ if ($proc) {
 } else {
     Write-Host "[错误] 服务启动失败" -ForegroundColor Red
     Write-Host "  查看日志: Get-Content $dataDir\app.log -Tail 50"
+    if (Test-Path $bakPath) {
+        Write-Host "  正在回滚到旧版本..." -ForegroundColor Yellow
+        Stop-ScheduledTask -TaskName "OpenModelPool" -ErrorAction SilentlyContinue
+        taskkill /f /im openmodelpool.exe 2>nul | Out-Null
+        Move-Item $bakPath -Destination $binPath -Force
+        Write-Host "  已回滚，请手动启动: $startBat" -ForegroundColor Yellow
+    }
     exit 1
 }
 

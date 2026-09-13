@@ -672,14 +672,28 @@ install_omp() {
     mkdir -p "$XRAY_DIR"
     XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}"
     if curl_dl "$XRAY_URL" "$TMP_DIR/xray.zip" 2>/dev/null; then
-        if unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || \
-           python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null; then
-            cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
-            cp "$TMP_DIR/xray/geoip.dat" "$XRAY_DIR/" 2>/dev/null
-            cp "$TMP_DIR/xray/geosite.dat" "$XRAY_DIR/" 2>/dev/null
-            write_ok "Xray 安装完成"
+        # SHA256 fail-closed 校验：从 canonical GitHub 官方获取 .dgst
+        local _xray_dgst="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}.dgst"
+        local _xray_expected
+        _xray_expected=$(curl -fsSL --connect-timeout 10 --max-time 20 --retry 2 "$_xray_dgst" 2>/dev/null             | grep -i "SHA256" | grep -oE '[a-fA-F0-9]{64}' | head -1) || true
+        if [ -z "$_xray_expected" ]; then
+            echo -e "  ${YELLOW}⚠️ 无法获取 Xray 官方 SHA256 校验和，跳过安装（不影响其他功能）${NC}"
         else
-            echo -e "  ${YELLOW}⚠️ Xray 解压失败，VMess 代理不可用（不影响其他功能）${NC}"
+            local _xray_actual
+            _xray_actual=$(sha256sum "$TMP_DIR/xray.zip" 2>/dev/null | cut -d' ' -f1)
+            if [ "$_xray_expected" != "$_xray_actual" ]; then
+                echo -e "  ${RED}✗ Xray SHA256 校验失败（可能被篡改），跳过安装${NC}"
+            else
+                if unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || \
+                   python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null; then
+                    cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
+                    cp "$TMP_DIR/xray/geoip.dat" "$XRAY_DIR/" 2>/dev/null
+                    cp "$TMP_DIR/xray/geosite.dat" "$XRAY_DIR/" 2>/dev/null
+                    write_ok "Xray 安装完成 (SHA256 校验通过)"
+                else
+                    echo -e "  ${YELLOW}⚠️ Xray 解压失败，VMess 代理不可用（不影响其他功能）${NC}"
+                fi
+            fi
         fi
     else
         echo -e "  ${YELLOW}⚠️ Xray 下载失败，VMess 代理不可用（不影响其他功能）${NC}"
@@ -976,12 +990,20 @@ upgrade_omp() {
     write_step 3 5 "资产就绪"
 
     write_step 4 5 "替换二进制..."
+    # 备份当前二进制，启动失败时可回滚
+    if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
+        cp "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME.bak" || true
+    fi
     cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME" || {
         write_err "替换失败：无法复制二进制文件"
+        # 回滚备份
+        if [ -f "$INSTALL_DIR/$BINARY_NAME.bak" ]; then
+            mv "$INSTALL_DIR/$BINARY_NAME.bak" "$INSTALL_DIR/$BINARY_NAME"
+        fi
         return 1
     }
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
-    write_ok "替换完成"
+    write_ok "替换完成（旧版本已备份）"
 
     # 检查 Xray
     XRAY_DIR="$INSTALL_DIR/xray"
@@ -990,12 +1012,26 @@ upgrade_omp() {
         mkdir -p "$XRAY_DIR"
         XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}"
         if curl_dl "$XRAY_URL" "$TMP_DIR/xray.zip" 2>/dev/null; then
-            unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || \
-                python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null
-            cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
-            cp "$TMP_DIR/xray/geoip.dat" "$XRAY_DIR/" 2>/dev/null
-            cp "$TMP_DIR/xray/geosite.dat" "$XRAY_DIR/" 2>/dev/null
-            write_ok "Xray 安装完成"
+            # SHA256 fail-closed 校验
+            local _xray_dgst2="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}.dgst"
+            local _xray_expected2
+            _xray_expected2=$(curl -fsSL --connect-timeout 10 --max-time 20 --retry 2 "$_xray_dgst2" 2>/dev/null                 | grep -i "SHA256" | grep -oE '[a-fA-F0-9]{64}' | head -1) || true
+            if [ -z "$_xray_expected2" ]; then
+                echo -e "  ${YELLOW}⚠️ 无法获取 Xray 官方 SHA256 校验和，跳过安装${NC}"
+            else
+                local _xray_actual2
+                _xray_actual2=$(sha256sum "$TMP_DIR/xray.zip" 2>/dev/null | cut -d' ' -f1)
+                if [ "$_xray_expected2" != "$_xray_actual2" ]; then
+                    echo -e "  ${RED}✗ Xray SHA256 校验失败（可能被篡改），跳过安装${NC}"
+                else
+                    unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || \
+                        python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null
+                    cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
+                    cp "$TMP_DIR/xray/geoip.dat" "$XRAY_DIR/" 2>/dev/null
+                    cp "$TMP_DIR/xray/geosite.dat" "$XRAY_DIR/" 2>/dev/null
+                    write_ok "Xray 安装完成 (SHA256 校验通过)"
+                fi
+            fi
         else
             echo -e "  ${YELLOW}⚠️ Xray 下载失败（不影响其他功能）${NC}"
         fi
@@ -1044,7 +1080,17 @@ upgrade_omp() {
                 if [ -n "$PROVIDERS" ] && [ "$PROVIDERS" -gt 0 ] 2>/dev/null; then
                     write_ok "从备份恢复成功！providers=$PROVIDERS"
                 else
-                    write_err "恢复后仍异常，请检查日志: $INSTALL_DIR/data/app.log"
+                    write_err "配置恢复后仍异常，回滚二进制版本..."
+                    # 回滚二进制
+                    if [ -f "$INSTALL_DIR/$BINARY_NAME.bak" ]; then
+                        stop_omp 2>/dev/null || true
+                        sleep 2
+                        mv "$INSTALL_DIR/$BINARY_NAME.bak" "$INSTALL_DIR/$BINARY_NAME"
+                        chmod +x "$INSTALL_DIR/$BINARY_NAME"
+                        start_omp 2>/dev/null || true
+                        write_info "二进制已回滚到旧版本"
+                    fi
+                    write_err "升级失败，请检查日志: $INSTALL_DIR/data/app.log"
                 fi
             else
                 write_err "未找到配置备份，请检查日志: $INSTALL_DIR/data/app.log"
