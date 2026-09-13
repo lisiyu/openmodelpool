@@ -15,6 +15,30 @@ param(
 $ErrorActionPreference = "Continue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# 端口范围校验
+if ($Port -lt 1 -or $Port -gt 65535) {
+    Write-Host "[错误] 无效端口号 (1-65535): $Port" -ForegroundColor Red
+    exit 1
+}
+
+# 安装目录规范化
+try {
+    $InstallDir = (Resolve-Path $InstallDir -ErrorAction SilentlyContinue).Path
+} catch {}
+if (-not $InstallDir) {
+    # 路径不存在时使用原始值（安装时会创建）
+    $InstallDir = $PSBoundParameters["InstallDir"]
+}
+
+# 互斥锁：防止多个实例同时运行
+$mutex = New-Object System.Threading.Mutex($false, "OpenModelPool-Manager-Lock")
+if (-not $mutex.WaitOne(0)) {
+    Write-Host "[警告] 另一个 OMP 管理脚本正在运行，请稍候再试" -ForegroundColor Yellow
+    exit 1
+}
+# 脚本退出时自动释放锁
+$null = Register-EngineEvent PowerShell.Exit -Action { $mutex.ReleaseMutex() }
+
 $C = "Cyan"; $Y = "Yellow"; $G = "Green"; $R = "Red"; $W = "White"
 
 # 常量 - OMP
@@ -256,19 +280,28 @@ function Download-OMPRelease {
     }
     Write-OK "已下载: $assetName ($Tag)"
     
-    # SHA256 校验
-    $shaUrl = "$assetUrl.sha256"
+    # SHA256 校验（fail-closed：仅从 GitHub 官方直连获取校验和，缺失或不匹配均中止）
+    $canonicalShaUrl = "https://github.com/$GITHUB_REPO/releases/download/$Tag/$assetName.sha256"
     $tmpSha = Join-Path $TmpDir "$assetName.sha256"
-    try { Invoke-WebRequest -Uri $shaUrl -OutFile $tmpSha -UseBasicParsing } catch {}
-    if (Test-Path $tmpSha) {
-        $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
-        $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
-        if ($expectedHash.ToLower() -ne $actualHash) {
-            Write-Err "SHA256 校验失败"
-            return $null
-        }
-        Write-OK "SHA256 校验通过"
+    try {
+        Invoke-WebRequest -Uri $canonicalShaUrl -OutFile $tmpSha -UseBasicParsing -TimeoutSec 30
+    } catch {
+        Write-Err "无法从 GitHub 官方获取 SHA256 校验和（fail-closed），已中止"
+        return $null
     }
+    if (-not (Test-Path $tmpSha) -or (Get-Item $tmpSha).Length -eq 0) {
+        Write-Err "SHA256 校验文件为空，已中止"
+        return $null
+    }
+    $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split()[0].ToLower()
+    $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
+    if ($expectedHash -ne $actualHash) {
+        Write-Err "SHA256 校验失败，二进制可能被篡改"
+        Write-Host "  期望: $expectedHash" -ForegroundColor Red
+        Write-Host "  实际: $actualHash" -ForegroundColor Red
+        return $null
+    }
+    Write-OK "SHA256 校验通过（来源：GitHub 官方）"
     
     # 压缩包则解压
     if ($assetName -match "\.zip$") {
@@ -324,21 +357,93 @@ function Install-OMP {
     # 安装 Xray (VMess 代理支持)
     $xrayDir = Join-Path $InstallDir "xray"
     New-Item -ItemType Directory -Force -Path $xrayDir | Out-Null
-    $xrayUrl = "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
-    Write-Host "  下载 Xray (VMess 代理)..." -ForegroundColor $C
-    try {
-        $xrayTmp = Join-Path $env:TEMP "xray-install.zip"
-        Invoke-WebRequest -Uri $xrayUrl -OutFile $xrayTmp -UseBasicParsing
-        $xrayExtract = Join-Path $env:TEMP "xray-install-extract"
-        if (Test-Path $xrayExtract) { Remove-Item $xrayExtract -Recurse -Force }
-        Expand-Archive -Path $xrayTmp -DestinationPath $xrayExtract -Force
-        Copy-Item (Join-Path $xrayExtract "xray.exe") -Destination (Join-Path $xrayDir "xray.exe") -Force
-        Copy-Item (Join-Path $xrayExtract "geoip.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
-        Copy-Item (Join-Path $xrayExtract "geosite.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
-        Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
-        Write-OK "Xray 安装完成"
-    } catch {
-        Write-Host "  Xray 下载失败，VMess 代理不可用（不影响其他功能）" -ForegroundColor $Y
+    $xrayExe = Join-Path $xrayDir "xray.exe"
+    
+    # 检查现有 Xray 版本
+    $xrayCurrentVer = ""
+    if (Test-Path $xrayExe) {
+        try {
+            $xrayVerOutput = & $xrayExe version 2>&1 | Select-Object -First 1
+            if ($xrayVerOutput -match "(\d+\.\d+\.\d+)") {
+                $xrayCurrentVer = $Matches[1]
+                Write-Host "  已安装 Xray: v$xrayCurrentVer" -ForegroundColor $C
+            }
+        } catch {}
+    }
+    
+    # 如果已安装且版本相同，跳过
+    $xrayTargetVer = $XRAY_VERSION -replace "^v", ""
+    if ($xrayCurrentVer -eq $xrayTargetVer) {
+        Write-OK "Xray 已是最新版本 (v$xrayCurrentVer)，跳过"
+    } else {
+        Write-Host "  下载 Xray v$xrayTargetVer (VMess 代理)..." -ForegroundColor $C
+        
+        # 多镜像源 fallback
+        $xrayMirrorSources = @(
+            "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
+            "https://gh-proxy.com/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
+            "https://ghproxy.net/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
+            "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
+        )
+        
+        $xrayDownloaded = $false
+        $xrayTmp = Join-Path $env:TEMP "xray-install-$(Get-Random).zip"
+        
+        foreach ($src in $xrayMirrorSources) {
+            $srcName = ($src -split "/")[2]
+            try {
+                Write-Host "    尝试源: $srcName" -ForegroundColor Gray
+                Invoke-WebRequest -Uri $src -OutFile $xrayTmp -UseBasicParsing -TimeoutSec 60
+                if ((Get-Item $xrayTmp).Length -gt 100KB) {
+                    $xrayDownloaded = $true
+                    break
+                }
+            } catch {
+                Write-Host "    源 $srcName 失败，换下一个" -ForegroundColor Gray
+            }
+        }
+        
+        if (-not $xrayDownloaded) {
+            Write-Host "  Xray 下载失败（所有源均不可用），VMess 代理不可用（不影响其他功能）" -ForegroundColor $Y
+        } else {
+            try {
+                # SHA256 校验（fail-closed，从 GitHub 官方获取 .dgst）
+                $dgstUrl = "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip.dgst"
+                $expectedSha = ""
+                try {
+                    $dgstContent = Invoke-WebRequest -Uri $dgstUrl -UseBasicParsing -TimeoutSec 30
+                    $dgstText = $dgstContent.Content
+                    if ($dgstText -match "SHA256= ([a-fA-F0-9]+)") {
+                        $expectedSha = $Matches[1].ToLower()
+                    }
+                } catch {}
+                
+                if ([string]::IsNullOrEmpty($expectedSha)) {
+                    Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
+                    Write-Host "  Xray SHA256 校验失败（无法获取官方校验和），跳过安装" -ForegroundColor $Y
+                    return
+                }
+                
+                $actualSha = (Get-FileHash $xrayTmp -Algorithm SHA256).Hash.ToLower()
+                if ($actualSha -ne $expectedSha) {
+                    Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
+                    Write-Host "  Xray SHA256 校验不匹配（可能被篡改），跳过安装" -ForegroundColor Red
+                    return
+                }
+                
+                $xrayExtract = Join-Path $env:TEMP "xray-install-extract-$(Get-Random)"
+                if (Test-Path $xrayExtract) { Remove-Item $xrayExtract -Recurse -Force }
+                Expand-Archive -Path $xrayTmp -DestinationPath $xrayExtract -Force
+                Copy-Item (Join-Path $xrayExtract "xray.exe") -Destination $xrayExe -Force
+                Copy-Item (Join-Path $xrayExtract "geoip.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
+                Copy-Item (Join-Path $xrayExtract "geosite.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
+                Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
+                Remove-Item $xrayExtract -Recurse -Force -ErrorAction SilentlyContinue
+                Write-OK "Xray 安装完成 (v$xrayTargetVer，SHA256 校验通过)"
+            } catch {
+                Write-Host "  Xray 安装失败，VMess 代理不可用（不影响其他功能）" -ForegroundColor $Y
+            }
+        }
     }
 
     $startBat = Join-Path $InstallDir "start.bat"
@@ -569,7 +674,30 @@ function Upgrade-OMP {
     Write-Info "当前版本: $localVer"
     Write-Info "目标版本: $RELEASE_TAG"
 
-    Write-Step 1 3 "下载最新版本..."
+    # 语义化版本比较：目标版本必须 > 当前版本才升级
+    function Compare-Version {
+        param([string]$a, [string]$b)
+        $partsA = $a -replace '^v' -replace '-.*$' -split '\.' | ForEach-Object { [int]$_ }
+        $partsB = $b -replace '^v' -replace '-.*$' -split '\.' | ForEach-Object { [int]$_ }
+        $maxLen = [Math]::Max($partsA.Count, $partsB.Count)
+        for ($i = 0; $i -lt $maxLen; $i++) {
+            $valA = if ($i -lt $partsA.Count) { $partsA[$i] } else { 0 }
+            $valB = if ($i -lt $partsB.Count) { $partsB[$i] } else { 0 }
+            if ($valA -gt $valB) { return 1 }
+            if ($valA -lt $valB) { return -1 }
+        }
+        return 0
+    }
+
+    $verCmp = Compare-Version $localVer $RELEASE_TAG
+    if ($verCmp -ge 0) {
+        Write-Info "当前版本已是最新或更高，跳过升级"
+        return
+    }
+
+    $dataDir = Join-Path $InstallDir "data"
+
+    Write-Step 1 5 "下载最新版本..."
     $tmpDir = Join-Path $env:TEMP "omp-upgrade-$(Get-Random)"
     New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
     $downloadedExe = Download-OMPRelease -Tag $RELEASE_TAG -TmpDir $tmpDir
@@ -578,21 +706,72 @@ function Upgrade-OMP {
         return
     }
 
-    Write-Step 2 3 "停止服务并替换二进制文件..."
+    Write-Step 2 5 "备份配置与二进制..."
+    $backupTs = Get-Date -Format "yyyyMMddHHmmss"
+    $backupDir = Join-Path $tmpDir "backup-$backupTs"
+    New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+    # 备份二进制
+    Copy-Item $exePath -Destination (Join-Path $backupDir "openmodelpool.exe") -Force
+    # 备份关键配置文件
+    foreach ($cfg in @("config.json", "providers.json", "admin.json", ".key")) {
+        $src = Join-Path $dataDir $cfg
+        if (Test-Path $src) {
+            Copy-Item $src -Destination (Join-Path $backupDir $cfg) -Force
+        }
+    }
+    Write-OK "备份完成 (时间戳: $backupTs)"
+
+    Write-Step 3 5 "停止服务并替换二进制文件..."
     Stop-OMP
     Copy-Item $downloadedExe -Destination $exePath -Force
-    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
     Write-OK "替换完成"
 
-    Write-Step 3 3 "重启服务..."
+    Write-Step 4 5 "启动服务并健康检查..."
     Start-OMP
     Start-Configured-Tunnels
-    $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
-    if ($proc) {
-        Write-OK "升级完成 (PID: $($proc.Id))"
+
+    # 健康检查：验证服务正常启动且配置加载成功
+    $healthy = $false
+    $providers = 0
+    for ($i = 0; $i -lt 6; $i++) {
+        Start-Sleep -Seconds 3
+        try {
+            $resp = Invoke-WebRequest -Uri "http://localhost:$Port/health" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+            $healthData = $resp.Content | ConvertFrom-Json
+            if ($healthData.providers_enabled -gt 0) {
+                $healthy = $true
+                $providers = $healthData.providers_enabled
+                break
+            }
+        } catch {
+            # 服务可能还在启动中，继续等待
+        }
+    }
+
+    if ($healthy) {
+        Write-OK "升级成功！providers=$providers"
         Write-Host "  管理面板: http://localhost:$Port/admin" -ForegroundColor $C
+        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
     } else {
-        Write-Err "启动失败"
+        Write-Err "启动失败或配置异常，正在回滚..."
+        try {
+            Stop-OMP
+            Start-Sleep -Seconds 2
+            # 回滚二进制
+            Copy-Item (Join-Path $backupDir "openmodelpool.exe") -Destination $exePath -Force
+            # 回滚所有配置文件
+            foreach ($cfg in @("config.json", "providers.json", "admin.json", ".key")) {
+                $bak = Join-Path $backupDir $cfg
+                if (Test-Path $bak) {
+                    Copy-Item $bak -Destination (Join-Path $dataDir $cfg) -Force
+                }
+            }
+            Start-OMP
+            Start-Configured-Tunnels
+            Write-OK "已回滚到旧版本 ($localVer)"
+        } catch {
+            Write-Err "回滚失败，请手动检查: $backupDir"
+        }
     }
     Write-Host ""
 }
@@ -604,7 +783,7 @@ function Uninstall-OMP {
     Write-Title "彻底卸载 OpenModelPool"
 
     $confirm = Read-Host "  确认卸载？将删除所有组件和配置 (输入 yes 确认)"
-    if ($confirm -ne "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
+    if ($confirm -ine "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
 
     Write-Step 1 6 "停止所有服务..."
     Stop-OMP
@@ -922,7 +1101,15 @@ function Setup-FRP {
         Write-Host "  例如填 8001，则外网访问地址为 http://服务器IP:8001" -ForegroundColor DarkGray
         Write-Host "  确保该端口已在服务器安全组中放行！" -ForegroundColor $Y
         $remotePortStr = Read-Host "  远程映射端口 [默认: 8001]"
-        if (-not $remotePortStr) { $remotePort = 8001 } else { $remotePort = [int]$remotePortStr }
+        if (-not $remotePortStr) { $remotePort = 8001 } else {
+            try {
+                $remotePort = [int]$remotePortStr
+                if ($remotePort -lt 1 -or $remotePort -gt 65535) { throw "端口超出范围" }
+            } catch {
+                Write-Err "无效端口 (1-65535)"
+                return
+            }
+        }
     }
 
     $nodeName = ($env:COMPUTERNAME).ToLower() -replace '[^a-z0-9-]', ''
@@ -959,8 +1146,21 @@ type = "tcp"
 localIP = "127.0.0.1"
 localPort = $Port
 remotePort = $remotePort
-"@
-        $_hsContent4 | Set-Content $frpConfig -Encoding UTF8
+"@ | Set-Content $frpConfig -Encoding UTF8
+        # 收紧 FRP 配置文件权限（仅管理员可读取，防止 token 泄露）
+        try {
+            $acl = Get-Acl $frpConfig
+            $acl.SetAccessRuleProtection($true, $false)  # 禁用继承并清除继承的权限
+            $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "BUILTIN\Administrators", "FullControl", "Allow")
+            $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "NT AUTHORITY\SYSTEM", "FullControl", "Allow")
+            $acl.AddAccessRule($adminRule)
+            $acl.AddAccessRule($systemRule)
+            Set-Acl -Path $frpConfig -AclObject $acl
+        } catch {
+            Write-Info "提示：无法设置 FRP 配置文件 ACL（非关键）"
+        }
         Write-OK "配置已写入 $frpConfig"
 
         Write-Step 3 3 "测试连接..."
@@ -1213,7 +1413,7 @@ function Reset-Tunnel-Menu {
 function Reset-Cloudflare {
     Write-Title "重置 Cloudflare Tunnel"
     $confirm = Read-Host "  确认重置？(输入 yes 确认)"
-    if ($confirm -ne "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
+    if ($confirm -ine "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
 
     Write-Step 1 5 "删除隧道..."
     if (Test-Path $cfExe) { & $cfExe tunnel delete openmodelpool 2>&1 | Out-Null }
@@ -1240,7 +1440,7 @@ function Reset-Cloudflare {
 function Reset-FRP {
     Write-Title "重置 FRP"
     $confirm = Read-Host "  确认重置？(输入 yes 确认)"
-    if ($confirm -ne "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
+    if ($confirm -ine "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
 
     Write-Step 1 3 "停止服务和进程..."
     Stop-FRP
@@ -1258,7 +1458,7 @@ function Reset-FRP {
 function Reset-Ngrok {
     Write-Title "重置 ngrok"
     $confirm = Read-Host "  确认重置？(输入 yes 确认)"
-    if ($confirm -ne "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
+    if ($confirm -ine "yes") { Write-Host "  已取消" -ForegroundColor $Y; return }
 
     Write-Step 1 3 "停止服务和进程..."
     Stop-Ngrok

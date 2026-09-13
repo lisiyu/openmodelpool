@@ -17,12 +17,48 @@ BINARY_NAME="openmodelpool"
 PORT="8000"
 AUTO_UPDATE=false
 
+
+# 互斥锁：防止多个实例同时运行
+LOCK_FILE="/tmp/omp-manager.lock"
+if command -v flock >/dev/null 2>&1; then
+    exec 9>"$LOCK_FILE"
+    if ! flock -n 9; then
+        echo -e "${YELLOW}⚠️  另一个 OMP 管理脚本正在运行，请稍候再试${NC}"
+        exit 1
+    fi
+fi
+
+# 校验端口号是否合法 (1-65535)
+validate_port() {
+    local port="$1"
+    if ! [[ "$port" =~ ^[0-9]+$ ]]; then
+        return 1
+    fi
+    if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        return 1
+    fi
+    return 0
+}
+
 # 解析参数
 while [ $# -gt 0 ]; do
     case "$1" in
         --auto-update) AUTO_UPDATE=true ;;
-        --install-dir) INSTALL_DIR="$2"; shift ;;
-        --port)        PORT="$2"; shift ;;
+        --install-dir)
+            if command -v realpath >/dev/null 2>&1; then
+                INSTALL_DIR=$(realpath -m "$2")
+            else
+                INSTALL_DIR="$2"
+            fi
+            shift ;;
+        --port)
+            if validate_port "$2"; then
+                PORT="$2"
+            else
+                echo "错误: 无效端口号 (1-65535): $2"
+                exit 1
+            fi
+            shift ;;
         *) INSTALL_DIR="${1:-$INSTALL_DIR}"; PORT="${2:-$PORT}" ;;
     esac
     shift
@@ -56,7 +92,7 @@ detect_region() {
     fi
     
     # 查询 IP 归属地
-    country=$(curl -s --connect-timeout 3 "http://ip-api.com/line/${ip}?fields=countryCode" 2>/dev/null) || country=""
+    country=$(curl -s --connect-timeout 3 "https://ipapi.co/${ip}/country_code/" 2>/dev/null) || country=""
     
     if [[ "$country" == "CN" ]]; then
         echo "cn"
@@ -551,7 +587,12 @@ stop_omp() {
     elif [ -f /usr/local/etc/rc.d/openmodelpool.sh ]; then
         /usr/local/etc/rc.d/openmodelpool.sh stop 2>/dev/null || true
     else
-        pkill -f "$BINARY_NAME" 2>/dev/null || true
+        # 用完整路径精确匹配，避免误杀含同名的其他进程
+        if [[ -n "$INSTALL_DIR" ]] && command -v pgrep >/dev/null 2>&1; then
+            pkill -f "^${INSTALL_DIR}/${BINARY_NAME}$" 2>/dev/null || true
+        else
+            pkill -x "$BINARY_NAME" 2>/dev/null || true
+        fi
     fi
 }
 
@@ -611,16 +652,17 @@ install_omp() {
     # 下载（动态匹配资产，兼容裸二进制和压缩包）
     write_step 2 7 "下载 Release 资产..."
     TMP_DIR=$(mktemp -d)
-    download_omp_release "$RELEASE_TAG" "$TMP_DIR" || {
-        rm -rf "$TMP_DIR"
-        return 1
-    }
+    trap "rm -rf $TMP_DIR" RETURN
+    download_omp_release "$RELEASE_TAG" "$TMP_DIR" || return 1
     write_step 3 7 "资产就绪"
 
     # 安装
     write_step 4 7 "安装到 $INSTALL_DIR ..."
     mkdir -p "$INSTALL_DIR/data"
-    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME"
+    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME" || {
+        write_err "安装失败：无法复制二进制文件"
+        return 1
+    }
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
     write_ok "安装完成"
 
@@ -630,14 +672,28 @@ install_omp() {
     mkdir -p "$XRAY_DIR"
     XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}"
     if curl_dl "$XRAY_URL" "$TMP_DIR/xray.zip" 2>/dev/null; then
-        if unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || \
-           python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null; then
-            cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
-            cp "$TMP_DIR/xray/geoip.dat" "$XRAY_DIR/" 2>/dev/null
-            cp "$TMP_DIR/xray/geosite.dat" "$XRAY_DIR/" 2>/dev/null
-            write_ok "Xray 安装完成"
+        # SHA256 fail-closed 校验：从 canonical GitHub 官方获取 .dgst
+        local _xray_dgst="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}.dgst"
+        local _xray_expected
+        _xray_expected=$(curl -fsSL --connect-timeout 10 --max-time 20 --retry 2 "$_xray_dgst" 2>/dev/null             | grep -i "SHA256" | grep -oE '[a-fA-F0-9]{64}' | head -1) || true
+        if [ -z "$_xray_expected" ]; then
+            echo -e "  ${YELLOW}⚠️ 无法获取 Xray 官方 SHA256 校验和，跳过安装（不影响其他功能）${NC}"
         else
-            echo -e "  ${YELLOW}⚠️ Xray 解压失败，VMess 代理不可用（不影响其他功能）${NC}"
+            local _xray_actual
+            _xray_actual=$(sha256sum "$TMP_DIR/xray.zip" 2>/dev/null | cut -d' ' -f1)
+            if [ "$_xray_expected" != "$_xray_actual" ]; then
+                echo -e "  ${RED}✗ Xray SHA256 校验失败（可能被篡改），跳过安装${NC}"
+            else
+                if unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || \
+                   python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null; then
+                    cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
+                    cp "$TMP_DIR/xray/geoip.dat" "$XRAY_DIR/" 2>/dev/null
+                    cp "$TMP_DIR/xray/geosite.dat" "$XRAY_DIR/" 2>/dev/null
+                    write_ok "Xray 安装完成 (SHA256 校验通过)"
+                else
+                    echo -e "  ${YELLOW}⚠️ Xray 解压失败，VMess 代理不可用（不影响其他功能）${NC}"
+                fi
+            fi
         fi
     else
         echo -e "  ${YELLOW}⚠️ Xray 下载失败，VMess 代理不可用（不影响其他功能）${NC}"
@@ -758,12 +814,12 @@ exec ./$BINARY_NAME >> "$INSTALL_DIR/data/app.log" 2>&1
 EOF
     chmod +x "$INSTALL_DIR/start.sh"
 
-    cat > "$INSTALL_DIR/stop.sh" << 'EOF'
+    cat > "$INSTALL_DIR/stop.sh" << EOF
 #!/bin/bash
-DIR="$(cd "$(dirname "$0")" && pwd)"
-PIDS=$(pgrep -f "$DIR/$BINARY_NAME")
-if [ -n "$PIDS" ]; then
-  kill $PIDS && echo "已停止 (PID: $PIDS)"
+DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+PIDS=\$(pgrep -f "\$DIR/$BINARY_NAME")
+if [ -n "\$PIDS" ]; then
+  kill \$PIDS && echo "已停止 (PID: \$PIDS)"
 else
   echo "服务未运行"
 fi
@@ -1002,16 +1058,25 @@ upgrade_omp() {
 
     write_step 2 5 "下载新版本..."
     TMP_DIR=$(mktemp -d)
-    download_omp_release "$RELEASE_TAG" "$TMP_DIR" || {
-        rm -rf "$TMP_DIR"
-        return 1
-    }
+    trap "rm -rf $TMP_DIR" RETURN
+    download_omp_release "$RELEASE_TAG" "$TMP_DIR" || return 1
     write_step 3 5 "资产就绪"
 
     write_step 4 5 "替换二进制..."
-    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME"
+    # 备份当前二进制，启动失败时可回滚
+    if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
+        cp "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME.bak" || true
+    fi
+    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME" || {
+        write_err "替换失败：无法复制二进制文件"
+        # 回滚备份
+        if [ -f "$INSTALL_DIR/$BINARY_NAME.bak" ]; then
+            mv "$INSTALL_DIR/$BINARY_NAME.bak" "$INSTALL_DIR/$BINARY_NAME"
+        fi
+        return 1
+    }
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
-    write_ok "替换完成"
+    write_ok "替换完成（旧版本已备份）"
 
     # 检查 Xray
     XRAY_DIR="$INSTALL_DIR/xray"
@@ -1020,12 +1085,26 @@ upgrade_omp() {
         mkdir -p "$XRAY_DIR"
         XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}"
         if curl_dl "$XRAY_URL" "$TMP_DIR/xray.zip" 2>/dev/null; then
-            unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || \
-                python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null
-            cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
-            cp "$TMP_DIR/xray/geoip.dat" "$XRAY_DIR/" 2>/dev/null
-            cp "$TMP_DIR/xray/geosite.dat" "$XRAY_DIR/" 2>/dev/null
-            write_ok "Xray 安装完成"
+            # SHA256 fail-closed 校验
+            local _xray_dgst2="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}.dgst"
+            local _xray_expected2
+            _xray_expected2=$(curl -fsSL --connect-timeout 10 --max-time 20 --retry 2 "$_xray_dgst2" 2>/dev/null                 | grep -i "SHA256" | grep -oE '[a-fA-F0-9]{64}' | head -1) || true
+            if [ -z "$_xray_expected2" ]; then
+                echo -e "  ${YELLOW}⚠️ 无法获取 Xray 官方 SHA256 校验和，跳过安装${NC}"
+            else
+                local _xray_actual2
+                _xray_actual2=$(sha256sum "$TMP_DIR/xray.zip" 2>/dev/null | cut -d' ' -f1)
+                if [ "$_xray_expected2" != "$_xray_actual2" ]; then
+                    echo -e "  ${RED}✗ Xray SHA256 校验失败（可能被篡改），跳过安装${NC}"
+                else
+                    unzip -o "$TMP_DIR/xray.zip" -d "$TMP_DIR/xray" 2>/dev/null || \
+                        python3 -c "import zipfile; zipfile.ZipFile('$TMP_DIR/xray.zip').extractall('$TMP_DIR/xray')" 2>/dev/null
+                    cp "$TMP_DIR/xray/xray" "$XRAY_DIR/xray" 2>/dev/null && chmod +x "$XRAY_DIR/xray"
+                    cp "$TMP_DIR/xray/geoip.dat" "$XRAY_DIR/" 2>/dev/null
+                    cp "$TMP_DIR/xray/geosite.dat" "$XRAY_DIR/" 2>/dev/null
+                    write_ok "Xray 安装完成 (SHA256 校验通过)"
+                fi
+            fi
         else
             echo -e "  ${YELLOW}⚠️ Xray 下载失败（不影响其他功能）${NC}"
         fi
@@ -1038,7 +1117,7 @@ upgrade_omp() {
 
     rm -rf "$TMP_DIR"
 
-    write_step 7 7 "启动服务..."
+    write_step 5 5 "启动服务..."
     start_omp
     sleep 3
 
@@ -1052,11 +1131,21 @@ upgrade_omp() {
         else
             # 配置可能加载失败（格式不兼容），尝试从备份恢复
             write_info "⚠️ 配置加载异常，尝试从备份恢复..."
-            local LATEST_BAK=$(ls -t "$INSTALL_DIR/data/config.json.bak."* 2>/dev/null | head -1)
-            if [ -n "$LATEST_BAK" ]; then
+            local LATEST_BAK_TS=""
+                # 找到最新的备份时间戳（通过 config.json.bak 推断）
+                local bak_files=($(ls -t "$INSTALL_DIR/data/config.json.bak."* 2>/dev/null))
+                if [ ${#bak_files[@]} -gt 0 ]; then
+                    LATEST_BAK_TS="${bak_files[0]##*.bak.}"
+                fi
+            if [ -n "$LATEST_BAK_TS" ]; then
                 stop_omp 2>/dev/null || true
                 sleep 2
-                cp "$LATEST_BAK" "$INSTALL_DIR/data/config.json"
+                # 恢复所有关键配置文件（config/providers/admin/key）
+                for cf in config.json providers.json admin.json .key; do
+                    if [ -f "$INSTALL_DIR/data/${cf}.bak.${LATEST_BAK_TS}" ]; then
+                        cp "$INSTALL_DIR/data/${cf}.bak.${LATEST_BAK_TS}" "$INSTALL_DIR/data/$cf"
+                    fi
+                done
                 start_omp 2>/dev/null || true
                 sleep 3
                 HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/health" 2>/dev/null)
@@ -1064,7 +1153,17 @@ upgrade_omp() {
                 if [ -n "$PROVIDERS" ] && [ "$PROVIDERS" -gt 0 ] 2>/dev/null; then
                     write_ok "从备份恢复成功！providers=$PROVIDERS"
                 else
-                    write_err "恢复后仍异常，请检查日志: $INSTALL_DIR/data/app.log"
+                    write_err "配置恢复后仍异常，回滚二进制版本..."
+                    # 回滚二进制
+                    if [ -f "$INSTALL_DIR/$BINARY_NAME.bak" ]; then
+                        stop_omp 2>/dev/null || true
+                        sleep 2
+                        mv "$INSTALL_DIR/$BINARY_NAME.bak" "$INSTALL_DIR/$BINARY_NAME"
+                        chmod +x "$INSTALL_DIR/$BINARY_NAME"
+                        start_omp 2>/dev/null || true
+                        write_info "二进制已回滚到旧版本"
+                    fi
+                    write_err "升级失败，请检查日志: $INSTALL_DIR/data/app.log"
                 fi
             else
                 write_err "未找到配置备份，请检查日志: $INSTALL_DIR/data/app.log"
@@ -1091,7 +1190,8 @@ uninstall_omp() {
     write_info "${RED}数据目录 $INSTALL_DIR/data/ 默认保留${NC}（可手动删除）"
     echo ""
     read -p "  确认卸载？输入 yes 继续: " confirm < /dev/tty
-    if [ "$confirm" != "yes" ]; then
+    confirm_lower=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
+    if [ "$confirm_lower" != "yes" ]; then
         write_info "已取消"
         return
     fi
@@ -1234,6 +1334,14 @@ setup_cloudflare() {
         systemctl stop cloudflared 2>/dev/null || true
         systemctl disable cloudflared 2>/dev/null || true
 
+        # 将 Cloudflare token 写入 EnvironmentFile（600 权限），避免明文出现在 ExecStart 中
+        mkdir -p /etc/cloudflared
+        cat > /etc/cloudflared/tunnel-token.env << EOF
+TUNNEL_TOKEN=$CF_TOKEN
+EOF
+        chmod 600 /etc/cloudflared/tunnel-token.env
+        chmod 700 /etc/cloudflared
+
         # 创建 systemd 服务
         cat > /etc/systemd/system/cloudflared.service << EOF
 [Unit]
@@ -1242,7 +1350,8 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/cloudflared tunnel run --token $CF_TOKEN
+EnvironmentFile=/etc/cloudflared/tunnel-token.env
+ExecStart=/usr/bin/cloudflared tunnel run --token \$TUNNEL_TOKEN
 Restart=on-failure
 RestartSec=5
 
@@ -1337,6 +1446,12 @@ ingress:
   - service: http_status:404
 EOF
 
+    # 收紧 Cloudflare 凭证文件权限（防止其他本地用户读取 tunnel token / cert.pem）
+    chmod 600 "$CONFIG_DIR/config.yml" 2>/dev/null || true
+    chmod 600 "$CONFIG_DIR/$TUNNEL_ID.json" 2>/dev/null || true
+    chmod 600 "$CONFIG_DIR/cert.pem" 2>/dev/null || true
+    chmod 700 "$CONFIG_DIR" 2>/dev/null || true
+
     if systemctl is-active --quiet cloudflared 2>/dev/null; then
         write_ok "cloudflared 服务已运行，重启中..."
         systemctl restart cloudflared
@@ -1396,6 +1511,10 @@ setup_frp() {
 
     read -p "  远程映射端口（默认 8001）: " REMOTE_PORT < /dev/tty
     REMOTE_PORT="${REMOTE_PORT:-8001}"
+    if ! validate_port "$REMOTE_PORT"; then
+        write_err "无效端口 (1-65535)"
+        return 1
+    fi
 
     # Install frpc
     if ! command -v frpc >/dev/null 2>&1; then
@@ -1434,6 +1553,7 @@ localIP = "127.0.0.1"
 localPort = $PORT
 remotePort = $REMOTE_PORT
 EOF
+    chmod 600 /etc/frp/frpc.toml
     write_ok "配置已写入 /etc/frp/frpc.toml"
 
     write_step 3 4 "测试连接..."
@@ -1557,7 +1677,7 @@ setup_ngrok() {
 
     if [ "$SKIP_NGROK_CONFIG" = false ]; then
         write_step 2 4 "配置 Authtoken..."
-        "$NGROK_BIN" config add-authtoken "$NGROK_TOKEN" 2>/dev/null
+        "$NGROK_BIN" config add-authtoken "$NGROK_TOKEN" --config="$NGROK_CONFIG" 2>/dev/null
         write_ok "Authtoken 已配置"
 
         # 如果有固定域名，写入配置
@@ -1578,8 +1698,8 @@ setup_ngrok() {
     pkill -f "ngrok http" 2>/dev/null || true
     sleep 1
 
-    NGROK_ARGS="http $PORT"
-    [ -n "$NGROK_DOMAIN" ] && NGROK_ARGS="http --domain=$NGROK_DOMAIN $PORT"
+    NGROK_ARGS="http --config=$NGROK_CONFIG $PORT"
+    [ -n "$NGROK_DOMAIN" ] && NGROK_ARGS="http --config=$NGROK_CONFIG --domain=$NGROK_DOMAIN $PORT"
     nohup "$NGROK_BIN" $NGROK_ARGS >/dev/null 2>&1 &
     sleep 5
 
@@ -1598,8 +1718,8 @@ setup_ngrok() {
     pkill -f "ngrok http" 2>/dev/null || true
 
     if command -v systemctl >/dev/null 2>&1; then
-        NGROK_ARGS_ESCAPED="http $PORT"
-        [ -n "$NGROK_DOMAIN" ] && NGROK_ARGS_ESCAPED="http --domain=$NGROK_DOMAIN $PORT"
+        NGROK_ARGS_ESCAPED="http --config=$NGROK_CONFIG $PORT"
+        [ -n "$NGROK_DOMAIN" ] && NGROK_ARGS_ESCAPED="http --config=$NGROK_CONFIG --domain=$NGROK_DOMAIN $PORT"
         cat > /etc/systemd/system/ngrok.service << EOF
 [Unit]
 Description=ngrok tunnel
@@ -1721,6 +1841,10 @@ change_port() {
         write_err "端口不能为空"
         return
     fi
+    if ! validate_port "$NEW_PORT"; then
+        write_err "无效端口 (1-65535)"
+        return
+    fi
 
     # 更新 start.sh
     cat > "$INSTALL_DIR/start.sh" << EOF
@@ -1751,9 +1875,17 @@ EOF
         write_ok "FRP 配置已更新"
     fi
 
-    # 更新 ngrok systemd service
+    # 更新 ngrok systemd service（从现有 service 推导配置路径和域名）
     if command -v systemctl >/dev/null 2>&1 && [ -f /etc/systemd/system/ngrok.service ]; then
-        sed -i "s|ExecStart=/usr/local/bin/ngrok http.*|ExecStart=/usr/local/bin/ngrok http $NEW_PORT|" /etc/systemd/system/ngrok.service
+        local ngrokExeLine=$(grep "ExecStart=" /etc/systemd/system/ngrok.service 2>/dev/null | head -1)
+        local cp_ngrok_config=$(echo "$ngrokExeLine" | grep -oP -- "--config=\K[^ ]+" || echo "$HOME/.config/ngrok/ngrok.yml")
+        local cp_ngrok_domain=$(echo "$ngrokExeLine" | grep -oP -- "--domain=\K[^ ]+" || echo "")
+        [ -z "$cp_ngrok_config" ] && cp_ngrok_config="$HOME/.config/ngrok/ngrok.yml"
+        if [ -n "$cp_ngrok_domain" ]; then
+            sed -i "s|http --config=[^ ]* --domain=[^ ]* [0-9]*|http --config=$cp_ngrok_config --domain=$cp_ngrok_domain $NEW_PORT|" /etc/systemd/system/ngrok.service
+        else
+            sed -i "s|http --config=[^ ]* [0-9]*|http --config=$cp_ngrok_config $NEW_PORT|" /etc/systemd/system/ngrok.service
+        fi
         systemctl daemon-reload
         if systemctl is-active --quiet ngrok 2>/dev/null; then
             systemctl restart ngrok
@@ -1940,8 +2072,8 @@ restart_all() {
         NGROK_CONFIG="/root/.config/ngrok/ngrok.yml"
         [ ! -f "$NGROK_CONFIG" ] && NGROK_CONFIG="$HOME/.config/ngrok/ngrok.yml"
         NGROK_DOM=$(grep -m1 "domain:" "$NGROK_CONFIG" 2>/dev/null | sed 's/domain:[[:space:]]*//' | tr -d '[:space:]')
-        NGROK_ARGS="http $PORT"
-        [ -n "$NGROK_DOM" ] && NGROK_ARGS="http --domain=$NGROK_DOM $PORT"
+        NGROK_ARGS="http --config=$NGROK_CONFIG $PORT"
+        [ -n "$NGROK_DOM" ] && NGROK_ARGS="http --config=$NGROK_CONFIG --domain=$NGROK_DOM $PORT"
         nohup "$NGROK_BIN" $NGROK_ARGS >> "$INSTALL_DIR/data/ngrok.log" 2>&1 &
         write_ok "ngrok 已重启 (后台进程)"
     else
@@ -1984,7 +2116,27 @@ auto_update() {
     CUR_N=$(normalize_version "$CURRENT_VERSION")
     LAT_N=$(normalize_version "$LATEST_TAG")
 
-    if [ "$CUR_N" = "$LAT_N" ]; then
+    # 版本号比较（支持多段数字版本，避免字符串比较错误如 v4.9 > v4.10）
+    local VER_CMP
+    VER_CMP=$(python3 -c "
+import sys
+def parse_ver(v):
+    parts = []
+    for p in v.split('.'):
+        try:
+            parts.append(int(p))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
+cur = parse_ver('$CUR_N')
+lat = parse_ver('$LAT_N')
+if cur >= lat:
+    print('skip')
+else:
+    print('update')
+" 2>/dev/null || echo "update")
+
+    if [ "$VER_CMP" = "skip" ]; then
         echo "[$(date)] 已是最新版本，跳过" >> "$LOG_FILE"
         exit 0
     fi
@@ -2047,11 +2199,21 @@ auto_update() {
         else
             # 配置可能加载失败，尝试从备份恢复
             echo "[$(date)] ⚠️ 配置加载异常，尝试从备份恢复..." >> "$LOG_FILE"
-            local LATEST_BAK=$(ls -t "$INSTALL_DIR/data/config.json.bak."* 2>/dev/null | head -1)
-            if [ -n "$LATEST_BAK" ]; then
+            local LATEST_BAK_TS=""
+                # 找到最新的备份时间戳（通过 config.json.bak 推断）
+                local bak_files=($(ls -t "$INSTALL_DIR/data/config.json.bak."* 2>/dev/null))
+                if [ ${#bak_files[@]} -gt 0 ]; then
+                    LATEST_BAK_TS="${bak_files[0]##*.bak.}"
+                fi
+            if [ -n "$LATEST_BAK_TS" ]; then
                 stop_omp 2>/dev/null || true
                 sleep 2
-                cp "$LATEST_BAK" "$INSTALL_DIR/data/config.json"
+                # 恢复所有关键配置文件（config/providers/admin/key）
+                for cf in config.json providers.json admin.json .key; do
+                    if [ -f "$INSTALL_DIR/data/${cf}.bak.${LATEST_BAK_TS}" ]; then
+                        cp "$INSTALL_DIR/data/${cf}.bak.${LATEST_BAK_TS}" "$INSTALL_DIR/data/$cf"
+                    fi
+                done
                 start_omp 2>/dev/null || true
                 sleep 3
                 HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/health" 2>/dev/null)
@@ -2072,10 +2234,17 @@ auto_update() {
             fi
         fi
     else
-        echo "[$(date)] ❌ 启动失败，回滚..." >> "$LOG_FILE"
+        echo "[$(date)] ❌ 启动失败，回滚二进制 + 配置..." >> "$LOG_FILE"
         cp "$INSTALL_DIR/${BINARY_NAME}.bak" "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
+        # 回滚配置文件（如果有备份）
+        for f in config.json admin.json providers.json; do
+            if [ -f "$INSTALL_DIR/data/${f}.bak.${BACKUP_TS}" ]; then
+                cp "$INSTALL_DIR/data/${f}.bak.${BACKUP_TS}" "$INSTALL_DIR/data/$f" 2>/dev/null || true
+                echo "[$(date)] 已回滚配置: $f" >> "$LOG_FILE"
+            fi
+        done
         start_omp 2>/dev/null || true
-        echo "[$(date)] 已回滚" >> "$LOG_FILE"
+        echo "[$(date)] 已回滚到旧版本" >> "$LOG_FILE"
     fi
 
     rm -rf "$TMP_DIR"

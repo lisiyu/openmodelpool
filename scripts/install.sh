@@ -29,6 +29,17 @@
 
 set -euo pipefail
 
+# ===== 并发锁：防止多个 install.sh 实例同时运行损坏文件 =====
+LOCK_FILE="/tmp/omp-install.lock"
+if command -v flock >/dev/null 2>&1; then
+    exec 8>"$LOCK_FILE"
+    if ! flock -n 8; then
+        echo "⚠️  检测到另一个 install.sh 正在运行，已退出以避免冲突"
+        echo "   如确认无其他实例，可删除 $LOCK_FILE 后重试"
+        exit 1
+    fi
+fi
+
 REPO="lisiyu/openmodelpool"
 XRAY_REPO="XTLS/Xray-core"
 CLOUDFLARED_REPO="cloudflare/cloudflared"
@@ -42,6 +53,13 @@ XRAY_DIR="$DEFAULT_INSTALL_DIR/xray"
 XRAY_BIN="$XRAY_DIR/xray"
 BROWSER_DIR="$DEFAULT_INSTALL_DIR/browser"
 LOCAL_BIN="/usr/local/bin"
+
+# 端口：支持 OMP_PORT 环境变量覆盖，默认 8000
+OMP_PORT="${OMP_PORT:-8000}"
+# 校验端口合法性
+if ! [[ "$OMP_PORT" =~ ^[0-9]+$ ]] || [ "$OMP_PORT" -lt 1 ] || [ "$OMP_PORT" -gt 65535 ]; then
+    fail "无效端口号: $OMP_PORT (必须为 1-65535 的整数)"
+fi
 
 RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; CYAN=$'\033[0;36m'; NC=$'\033[0m'
 info() { echo -e "${CYAN}->${NC} $*"; }
@@ -90,7 +108,7 @@ detect_region() {
     ip=$(curl -s --connect-timeout 3 https://api.ipify.org 2>/dev/null) || \
     ip=$(curl -s --connect-timeout 3 https://icanhazip.com 2>/dev/null) || true
     if [[ -z "$ip" ]]; then echo "global"; return; fi
-    country=$(curl -s --connect-timeout 3 "http://ip-api.com/line/${ip}?fields=countryCode" 2>/dev/null) || country=""
+    country=$(curl -s --connect-timeout 3 "https://ipapi.co/${ip}/country_code/" 2>/dev/null) || country=""
     if [[ "$country" == "CN" ]]; then echo "cn"; else echo "global"; fi
 }
 
@@ -328,14 +346,42 @@ UNIT
     start_core_service "$USE_SYSTEMCTL" "$DEFAULT_INSTALL_DIR"
 
     sleep 2
-    HEALTH=$(curl -s http://localhost:8000/health 2>/dev/null || true)
-    if [[ -n "$HEALTH" ]]; then
+    local health_ok=false
+    for _ in 1 2 3; do
+        HEALTH=$(curl -s http://localhost:${OMP_PORT}/health 2>/dev/null || true)
+        if [[ -n "$HEALTH" ]]; then
+            health_ok=true
+            break
+        fi
+        sleep 3
+    done
+    if $health_ok; then
         H_VER=$(echo "$HEALTH" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
         H_MOD=$(echo "$HEALTH" | grep -o '"models_available":[0-9]*' | cut -d: -f2)
         H_PROV=$(echo "$HEALTH" | grep -o '"providers_enabled":[0-9]*' | cut -d: -f2)
         ok "健康检查: version=$H_VER, models=$H_MOD, providers=$H_PROV"
+        # 清理备份
+        rm -f "$DEFAULT_INSTALL_DIR/$BINARY_NAME.bak"
     else
-        warn "健康检查未响应，服务可能仍在初始化"
+        warn "健康检查未响应，正在回滚到旧版本..."
+        if [[ -f "$DEFAULT_INSTALL_DIR/$BINARY_NAME.bak" ]]; then
+            stop_core_service "$USE_SYSTEMCTL"
+            mv "$DEFAULT_INSTALL_DIR/$BINARY_NAME.bak" "$DEFAULT_INSTALL_DIR/$BINARY_NAME"
+            chmod 755 "$DEFAULT_INSTALL_DIR/$BINARY_NAME"
+            start_core_service "$USE_SYSTEMCTL" "$DEFAULT_INSTALL_DIR"
+            warn "已回滚到旧版本，请检查新版本兼容性"
+        else
+            warn "无备份文件，无法回滚"
+        fi
+        return 1
+    fi
+    
+    # 收紧敏感配置文件权限
+    if [[ -d "$DATA_DIR" ]]; then
+        chmod 700 "$DATA_DIR" 2>/dev/null || true
+        find "$DATA_DIR" -maxdepth 1 -name "admin.json" -exec chmod 600 {} \; 2>/dev/null || true
+        find "$DATA_DIR" -maxdepth 1 -name "*.key" -exec chmod 600 {} \; 2>/dev/null || true
+        find "$DATA_DIR" -maxdepth 2 -path "*/providers/*.json" -exec chmod 600 {} \; 2>/dev/null || true
     fi
 }
 
@@ -402,7 +448,20 @@ install_xray() {
         local cur
         cur=$("$existing" version 2>/dev/null | grep -o 'Xray [^ ]*' | head -1 | cut -d' ' -f2)
         info "Xray 已存在: ${cur:-unknown} ($existing)"
-        if prompt_reuse "$reuse_default" "Xray ${cur:-}"; then
+        # 版本对比：先获取最新版本号再判断
+        local latest_ver
+        latest_ver=$(get_latest_tag "$XRAY_REPO" 2>/dev/null || echo "")
+        local cur_ver latest_num
+        cur_ver=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        latest_num="${latest_ver#v}"
+        if [[ -n "$latest_ver" ]]; then
+            info "最新版本: ${YELLOW}${latest_ver}${NC}"
+            if [[ "$cur_ver" == "$latest_num" ]]; then
+                ok "Xray 已是最新版本 (${cur_ver})，跳过"
+                return 0
+            fi
+        fi
+        if prompt_reuse "$reuse_default" "Xray ${cur:-} → ${latest_ver:-latest}"; then
             # 选择复用：非标准位置统一复制到 $XRAY_BIN
             if [[ "$existing" != "$XRAY_BIN" ]]; then
                 info "  复制到标准位置 $XRAY_BIN"
@@ -450,21 +509,24 @@ install_xray() {
         return 1
     fi
 
-    # 校验：官方 .dgst（存在则 fail-closed，缺失则 warn 跳过）
+    # SHA256 校验（fail-closed：仅从 GitHub 官方直连获取 .dgst 校验文件）
     local dg_dir="$TMP_DIR/dgst" exp act
     mkdir -p "$dg_dir"
-    if curl -sSL --connect-timeout 10 --max-time 30 "${ZIP_URL}.dgst" -o "$dg_dir/$ASSET.dgst" 2>/dev/null; then
-        exp=$(extract_home_path "$dg_dir/$ASSET.dgst" "$ASSET")
-        act=$(sha256sum "$TMP_DIR/xray.zip" | awk '{print $1}')
-        if [[ -n "$exp" && "$exp" != "$act" ]]; then
-            rm -rf "$TMP_DIR"
-            warn "Xray SHA-256 校验失败，已跳过（expected=$exp actual=$act）"
-            return 1
-        fi
-        ok "Xray SHA-256 校验通过"
-    else
-        warn "未取得 Xray .dgst 校验文件（HTTPS+大小兜底）"
+    # 从 GitHub 官方 canonical 源获取校验和（不走镜像，确保可信）
+    local XRAY_CANONICAL="https://github.com/${XRAY_REPO}/releases/download/${VER}/${ASSET}.dgst"
+    if ! curl -sSL --connect-timeout 10 --max-time 30 "$XRAY_CANONICAL" -o "$dg_dir/$ASSET.dgst" 2>/dev/null; then
+        rm -rf "$TMP_DIR"
+        warn "Xray SHA-256 校验失败（无法从 GitHub 官方获取校验文件），跳过安装"
+        return 1
     fi
+    exp=$(extract_home_path "$dg_dir/$ASSET.dgst" "$ASSET")
+    act=$(sha256sum "$TMP_DIR/xray.zip" | awk '{print $1}')
+    if [[ -z "$exp" || "$exp" != "$act" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "Xray SHA-256 校验不匹配，跳过安装（expected=$exp actual=$act）"
+        return 1
+    fi
+    ok "Xray SHA-256 校验通过（来源：GitHub 官方）"
 
     mkdir -p "$XRAY_DIR"
     if command -v unzip &>/dev/null; then
@@ -493,6 +555,11 @@ install_xray() {
 install_cloudflared() {
     # $1 = reuse 默认值：all 传 y，显式子命令传 n
     local reuse_default="${1:-n}"
+    # 先获取最新版本号
+    local VER ASSET UV TMP_DIR
+    VER=$(get_latest_tag "$CLOUDFLARED_REPO")
+    [[ -z "$VER" ]] && { warn "获取 cloudflared 版本失败，跳过"; return 1; }
+
     # 扫描常见位置已有安装，找到就复用
     local cf_bin cf_candidates=(
         "$LOCAL_BIN/cloudflared"                    # 标准安装位置
@@ -506,10 +573,18 @@ install_cloudflared() {
         if [[ -x "$p" ]]; then cf_bin="$p"; break; fi
     done
     if [[ -n "$cf_bin" ]]; then
-        local cur
+        local cur cur_ver
         cur=$("$cf_bin" --version 2>/dev/null | head -1)
+        cur_ver=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        local latest_num="${VER#v}"
         info "cloudflared 已存在: ${cur:-unknown} ($cf_bin)"
-        if prompt_reuse "$reuse_default" "cloudflared ${cur:-}"; then
+        info "最新版本: ${YELLOW}${VER}${NC}"
+        # 版本相同自动跳过
+        if [[ "$cur_ver" == "$latest_num" ]]; then
+            ok "cloudflared 已是最新版本 (${cur_ver})，跳过"
+            return 0
+        fi
+        if prompt_reuse "$reuse_default" "cloudflared ${cur:-} → ${VER}"; then
             # 非标准位置复制一份统一管理
             if [[ "$cf_bin" != "$LOCAL_BIN/cloudflared" ]]; then
                 info "  复制到标准位置 $LOCAL_BIN/cloudflared"
@@ -531,9 +606,6 @@ install_cloudflared() {
     fi
 
     local VER ASSET UV TMP_DIR
-    VER=$(get_latest_tag "$CLOUDFLARED_REPO")
-    [[ -z "$VER" ]] && { warn "获取 cloudflared 版本失败，跳过"; return 1; }
-
     case "$PLATFORM" in
         linux-amd64)  ASSET="cloudflared-linux-amd64" ;;
         linux-arm64)  ASSET="cloudflared-linux-arm64" ;;
@@ -551,6 +623,27 @@ install_cloudflared() {
         return 1
     fi
 
+    # SHA256 校验（fail-closed：仅从 GitHub 官方直连获取 checksums.txt）
+    local CHECKSUMS_URL="https://github.com/${CLOUDFLARED_REPO}/releases/download/${VER}/checksums.txt"
+    local SHA_FILE="$TMP_DIR/checksums.txt"
+    local EXPECTED_SHA=""
+    if curl -fsSL --connect-timeout 10 --max-time 30 "$CHECKSUMS_URL" -o "$SHA_FILE" 2>/dev/null; then
+        EXPECTED_SHA=$(grep -E "[a-f0-9]{64}.*${ASSET}" "$SHA_FILE" 2>/dev/null | awk '{print $1}' | head -1)
+    fi
+    if [[ -z "$EXPECTED_SHA" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "cloudflared SHA256 校验失败（无法从 GitHub 官方获取校验和），跳过安装"
+        return 1
+    fi
+    local ACTUAL_SHA
+    ACTUAL_SHA=$(sha256sum "$TMP_DIR/cloudflared" | awk '{print $1}')
+    if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "cloudflared SHA256 校验不匹配，跳过安装（可能文件被篡改）"
+        return 1
+    fi
+    ok "cloudflared SHA256 校验通过"
+
     install -m 755 "$TMP_DIR/cloudflared" "$LOCAL_BIN/cloudflared"
     rm -rf "$TMP_DIR"
     if "$LOCAL_BIN/cloudflared" --version &>/dev/null; then
@@ -565,6 +658,11 @@ install_cloudflared() {
 # ══════════════════════════════════════════════════
 
 install_frp() {
+    # 先获取最新版本号
+    local VER ASSET UV TMP_DIR
+    VER=$(get_latest_tag "$FRP_REPO")
+    [[ -z "$VER" ]] && { warn "获取 frp 版本失败，跳过"; return 1; }
+
     # $1 = reuse 默认值：all 传 y，显式子命令传 n
     local reuse_default="${1:-n}"
     # 扫描常见位置已有安装，找到就复用
@@ -595,7 +693,16 @@ install_frp() {
         local cur
         cur=$("$frps_bin" --version 2>/dev/null | head -1)
         info "frp 已存在: ${cur:-unknown} (frps=$frps_bin, frpc=$frpc_bin)"
-        if prompt_reuse "$reuse_default" "frp ${cur:-}"; then
+        info "最新版本: ${YELLOW}${VER}${NC}"
+        # 版本相同自动跳过
+        local cur_ver latest_num
+        cur_ver=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        latest_num="${VER#v}"
+        if [[ "$cur_ver" == "$latest_num" ]]; then
+            ok "frp 已是最新版本 (${cur_ver})，跳过"
+            return 0
+        fi
+        if prompt_reuse "$reuse_default" "frp ${cur:-} → ${VER}"; then
             local needs_copy=0
             if [[ "$frps_bin" != "$LOCAL_BIN/frps" ]]; then needs_copy=1; fi
             if [[ "$frpc_bin" != "$LOCAL_BIN/frpc" ]]; then needs_copy=1; fi
@@ -622,8 +729,7 @@ install_frp() {
     fi
 
     local VER V ASSET UV TMP_DIR
-    VER=$(get_latest_tag "$FRP_REPO")
-    [[ -z "$VER" ]] && { warn "获取 frp 版本失败，跳过"; return 1; }
+
     V="${VER#v}"
 
     case "$PLATFORM" in
@@ -639,9 +745,30 @@ install_frp() {
     TMP_DIR=$(mktemp -d)
     if ! download_multisource "$UV" "$TMP_DIR/frp.tar.gz" "frp"; then
         rm -rf "$TMP_DIR"
-        warn "frp 下载失败，跳过"
+        warn "frp 下载失败，跳过（已保留现有版本）"
         return 1
     fi
+
+    # SHA256 校验（fail-closed：仅从 GitHub 官方直连获取 sha256_checksums.txt）
+    local FRP_SHA_URL="https://github.com/${FRP_REPO}/releases/download/${VER}/sha256_checksums.txt"
+    local FRP_SHA_FILE="$TMP_DIR/sha256_checksums.txt"
+    local EXPECTED_SHA=""
+    if curl -fsSL --connect-timeout 10 --max-time 30 "$FRP_SHA_URL" -o "$FRP_SHA_FILE" 2>/dev/null; then
+        EXPECTED_SHA=$(grep -E "[a-f0-9]{64}.*${ASSET}" "$FRP_SHA_FILE" 2>/dev/null | awk '{print $1}' | head -1)
+    fi
+    if [[ -z "$EXPECTED_SHA" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "frp SHA256 校验失败（无法从 GitHub 官方获取校验和），跳过安装"
+        return 1
+    fi
+    local ACTUAL_SHA
+    ACTUAL_SHA=$(sha256sum "$TMP_DIR/frp.tar.gz" | awk '{print $1}')
+    if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "frp SHA256 校验不匹配，跳过安装（可能文件被篡改）"
+        return 1
+    fi
+    ok "frp SHA256 校验通过"
 
     mkdir -p "$TMP_DIR/unpack"
     tar -xzf "$TMP_DIR/frp.tar.gz" -C "$TMP_DIR/unpack" 2>/dev/null || { rm -rf "$TMP_DIR"; warn "frp 解压失败，跳过"; return 1; }
@@ -667,6 +794,11 @@ install_frp() {
 # ══════════════════════════════════════════════════
 
 install_ngrok() {
+    # 先获取最新版本号
+    local VER ASSET UV TMP_DIR
+    VER=$(get_latest_tag "$NGROK_REPO")
+    [[ -z "$VER" ]] && { warn "获取 ngrok 版本失败，跳过"; return 1; }
+
     # $1 = reuse 默认值：all 传 y，显式子命令传 n
     local reuse_default="${1:-n}"
     # 扫描常见位置已有安装，找到就复用
@@ -682,10 +814,19 @@ install_ngrok() {
         if [[ -x "$p" ]]; then ng_bin="$p"; break; fi
     done
     if [[ -n "$ng_bin" ]]; then
-        local cur
+        local cur cur_ver
         cur=$("$ng_bin" version 2>/dev/null | head -1)
+        # 提取版本号（数字+点）
+        cur_ver=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        local latest_num="${VER#v}"
         info "ngrok 已存在: ${cur:-unknown} ($ng_bin)"
-        if prompt_reuse "$reuse_default" "ngrok ${cur:-}"; then
+        info "最新版本: ${YELLOW}${VER}${NC}"
+        # 版本相同自动跳过
+        if [[ "$cur_ver" == "$latest_num" ]]; then
+            ok "ngrok 已是最新版本 (${cur_ver})，跳过"
+            return 0
+        fi
+        if prompt_reuse "$reuse_default" "ngrok ${cur:-} → ${VER}"; then
             if [[ "$ng_bin" != "$LOCAL_BIN/ngrok" ]]; then
                 info "  复制到标准位置 $LOCAL_BIN/ngrok"
                 mkdir -p "$LOCAL_BIN"
@@ -706,8 +847,7 @@ install_ngrok() {
     fi
 
     local VER V ASSET UV TMP_DIR
-    VER=$(get_latest_tag "$NGROK_REPO")
-    [[ -z "$VER" ]] && { warn "获取 ngrok 版本失败，跳过"; return 1; }
+
     V="${VER#v}"
 
     case "$PLATFORM" in
@@ -723,9 +863,37 @@ install_ngrok() {
     TMP_DIR=$(mktemp -d)
     if ! download_multisource "$UV" "$TMP_DIR/ngrok.tar.gz" "ngrok"; then
         rm -rf "$TMP_DIR"
-        warn "ngrok 下载失败，跳过"
+        warn "ngrok 下载失败，跳过（已保留现有版本）"
         return 1
     fi
+
+    # SHA256 校验（fail-closed：仅从 GitHub 官方直连获取 checksums 文件）
+    local NGROK_SHA_URL="https://github.com/${NGROK_REPO}/releases/download/${VER}/ngrok_${V}_linux_checksums.txt"
+    local NGROK_SHA_FILE="$TMP_DIR/checksums.txt"
+    local EXPECTED_SHA=""
+    if curl -fsSL --connect-timeout 10 --max-time 30 "$NGROK_SHA_URL" -o "$NGROK_SHA_FILE" 2>/dev/null; then
+        EXPECTED_SHA=$(grep -E "[a-f0-9]{64}.*${ASSET}" "$NGROK_SHA_FILE" 2>/dev/null | awk '{print $1}' | head -1)
+    fi
+    if [[ -z "$EXPECTED_SHA" ]]; then
+        # 尝试备用文件名格式
+        local NGROK_SHA_URL2="https://github.com/${NGROK_REPO}/releases/download/${VER}/checksums.txt"
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$NGROK_SHA_URL2" -o "$NGROK_SHA_FILE" 2>/dev/null; then
+            EXPECTED_SHA=$(grep -E "[a-f0-9]{64}.*${ASSET}" "$NGROK_SHA_FILE" 2>/dev/null | awk '{print $1}' | head -1)
+        fi
+    fi
+    if [[ -z "$EXPECTED_SHA" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "ngrok SHA256 校验失败（无法从 GitHub 官方获取校验和），跳过安装"
+        return 1
+    fi
+    local ACTUAL_SHA
+    ACTUAL_SHA=$(sha256sum "$TMP_DIR/ngrok.tar.gz" | awk '{print $1}')
+    if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "ngrok SHA256 校验不匹配，跳过安装（可能文件被篡改）"
+        return 1
+    fi
+    ok "ngrok SHA256 校验通过"
 
     mkdir -p "$TMP_DIR/unpack"
     tar -xzf "$TMP_DIR/ngrok.tar.gz" -C "$TMP_DIR/unpack" 2>/dev/null || { rm -rf "$TMP_DIR"; warn "ngrok 解压失败，跳过"; return 1; }
@@ -763,7 +931,19 @@ install_browser() {
         local cur
         cur=$("$browser_bin" --version 2>/dev/null | head -1)
         info "浏览器核心已存在: ${cur:-unknown} ($browser_bin)"
-        if prompt_reuse "$reuse_default" "浏览器核心 ${cur:-}"; then
+        # 预获取最新版本用于对比
+        local browser_latest_json browser_latest_ver cur_clean
+        cur_clean=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        browser_latest_json=$(curl -sSL --connect-timeout 5 --max-time 10             "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json" 2>/dev/null) || true
+        browser_latest_ver=$(echo "$browser_latest_json" | grep -o '"Stable".*"version":"[^"]*"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        if [[ -n "$browser_latest_ver" ]]; then
+            info "最新版本: ${YELLOW}${browser_latest_ver}${NC}"
+            if [[ "$cur_clean" == "$browser_latest_ver" ]]; then
+                ok "浏览器核心已是最新版本 (${cur_clean})，跳过"
+                return 0
+            fi
+        fi
+        if prompt_reuse "$reuse_default" "浏览器核心 ${cur:-} → ${browser_latest_ver:-latest}"; then
             # 不在标准位置时复制整个目录
             if [[ "$(dirname "$browser_bin")" != "$BROWSER_DIR" ]]; then
                 info "  复制到标准位置 $BROWSER_DIR/"
@@ -858,7 +1038,7 @@ cmd_status() {
 
     if [[ -x "$DEFAULT_INSTALL_DIR/$BINARY_NAME" ]]; then
         local hv vv
-        hv=$(curl -s --max-time 3 http://localhost:8000/health 2>/dev/null || true)
+        hv=$(curl -s --max-time 3 http://localhost:${OMP_PORT}/health 2>/dev/null || true)
         vv=$(echo "$hv" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
         echo "  core        : 已安装 ${vv:-版本未知（服务未运行?）}"
     else

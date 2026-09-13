@@ -19,6 +19,11 @@ param(
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# 自动检测 OMP 计划任务名（兼容可能的重命名）
+$ompTaskName = "OpenModelPool"
+$foundTask = Get-ScheduledTask -TaskName "OpenModelPool*" -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like "*OpenModelPool*" } | Select-Object -First 1
+if ($foundTask) { $ompTaskName = $foundTask.TaskName }
+
 $GITHUB_REPO = "lisiyu/openmodelpool"
 $exeName = "openmodelpool.exe"
 $exePath = Join-Path $InstallDir $exeName
@@ -80,7 +85,23 @@ Write-Log "当前版本: $CURRENT_VERSION | 最新 Release: $LATEST_TAG"
 $CUR_N = Normalize-Version -v $CURRENT_VERSION
 $LAT_N = Normalize-Version -v $LATEST_TAG
 
-if ($CUR_N -eq $LAT_N) {
+# 版本号比较（使用 System.Version 避免字符串比较错误如 v4.9 > v4.10）
+function Compare-Version {
+    param([string]$a, [string]$b)
+    $partsA = $a -split '\.' | ForEach-Object { [int]$_ }
+    $partsB = $b -split '\.' | ForEach-Object { [int]$_ }
+    $maxLen = [Math]::Max($partsA.Count, $partsB.Count)
+    for ($i = 0; $i -lt $maxLen; $i++) {
+        $valA = if ($i -lt $partsA.Count) { $partsA[$i] } else { 0 }
+        $valB = if ($i -lt $partsB.Count) { $partsB[$i] } else { 0 }
+        if ($valA -gt $valB) { return 1 }
+        if ($valA -lt $valB) { return -1 }
+    }
+    return 0
+}
+
+$verCmp = Compare-Version $CUR_N $LAT_N
+if ($verCmp -ge 0) {
     Write-Log "已是最新版本，跳过更新"
     exit 0
 }
@@ -126,22 +147,31 @@ try {
     exit 1
 }
 
-# SHA256 校验
+# SHA256 校验（fail-closed：仅从 GitHub 官方直连获取校验和，缺失或不匹配均中止）
+$canonicalShaUrl = "https://github.com/$GITHUB_REPO/releases/download/$LATEST_TAG/$assetName.sha256"
 $tmpSha = Join-Path $tmpDir "$assetName.sha256"
-try { Invoke-WebRequest -Uri "$assetUrl.sha256" -OutFile $tmpSha -UseBasicParsing } catch {}
-
-if (Test-Path $tmpSha) {
-    $expectedHash = (Get-Content $tmpSha -Raw).Trim().Split(' ')[0]
-    $actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
-    if ($expectedHash.ToLower() -ne $actualHash) {
-        Write-Log "❌ SHA256 校验失败，终止更新，现有二进制保持不变"
-        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-        exit 1
-    }
-    Write-Log "✅ SHA256 校验通过"
-} else {
-    Write-Log "⚠️ 未找到校验文件，跳过校验"
+try {
+    Invoke-WebRequest -Uri $canonicalShaUrl -OutFile $tmpSha -UseBasicParsing -TimeoutSec 30
+} catch {
+    Write-Log "❌ 无法从 GitHub 官方获取 SHA256 校验和（fail-closed），终止更新"
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
 }
+if (-not (Test-Path $tmpSha) -or (Get-Item $tmpSha).Length -eq 0) {
+    Write-Log "❌ SHA256 校验文件为空，终止更新"
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+$expectedHash = (Get-Content $tmpSha -Raw).Trim().Split()[0].ToLower()
+$actualHash = (Get-FileHash $tmpFile -Algorithm SHA256).Hash.ToLower()
+if ($expectedHash -ne $actualHash) {
+    Write-Log "❌ SHA256 校验失败，二进制可能被篡改，终止更新"
+    Write-Log "  期望: $expectedHash"
+    Write-Log "  实际: $actualHash"
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+Write-Log "✅ SHA256 校验通过（来源：GitHub 官方）"
 
 # 解压（如果是 .zip）
 $ompExe = $tmpFile
@@ -159,34 +189,48 @@ if ($assetName -match "\.zip$") {
     }
 }
 
-# 备份当前二进制
+# 备份当前二进制和配置
 $backupPath = Join-Path $InstallDir "$exeName.bak"
 if (Test-Path $exePath) {
     Copy-Item $exePath -Destination $backupPath -Force
     Write-Log "已备份旧版本"
 }
+$backupTs = Get-Date -Format "yyyyMMddHHmmss"
+$configFiles = @("config.json", "admin.json", "providers.json")
+$dataDir = Join-Path $InstallDir "data"
+foreach ($cf in $configFiles) {
+    $cfPath = Join-Path $dataDir $cf
+    if (Test-Path $cfPath) {
+        Copy-Item $cfPath "$cfPath.bak.$backupTs" -Force
+    }
+}
 
 # 停止服务
 Write-Log "停止服务..."
+Stop-ScheduledTask -TaskName $ompTaskName -ErrorAction SilentlyContinue
 Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+# 确保端口已释放
+try {
+    $portConns = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
+    if ($portConns) {
+        $portConns | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+    }
+} catch {}
 Start-Sleep -Seconds 2
 
 # 替换二进制
 Copy-Item $ompExe -Destination $exePath -Force
 Write-Log "二进制已替换"
 
-# 启动服务
+# 启动服务（统一使用计划任务，与 omp-manager.ps1 一致）
 Write-Log "启动服务..."
-$svc = Get-Service -Name "openmodelpool" -ErrorAction SilentlyContinue
-if ($svc) {
-    & nssm start openmodelpool 2>$null
+$task = Get-ScheduledTask -TaskName $ompTaskName -ErrorAction SilentlyContinue
+if ($task) {
+    Start-ScheduledTask -TaskName $ompTaskName
 } else {
-    $task = Get-ScheduledTask -TaskName "OpenModelPool" -ErrorAction SilentlyContinue
-    if ($task) {
-        Start-ScheduledTask -TaskName "OpenModelPool"
-    } else {
-        Start-Process -FilePath $exePath -WorkingDirectory $InstallDir -WindowStyle Hidden
-    }
+    # fallback: 直接启动（设置 PORT 环境变量）
+    $env:PORT = $Port
+    Start-Process -FilePath $exePath -WorkingDirectory $InstallDir -WindowStyle Hidden
 }
 Start-Sleep -Seconds 3
 
@@ -195,12 +239,28 @@ $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
 if ($proc) {
     Write-Log "✅ 更新成功！版本: $LATEST_TAG"
 } else {
-    Write-Log "❌ 更新后服务未正常启动，回滚..."
+    Write-Log "❌ 更新后服务未正常启动，回滚二进制 + 配置..."
     Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
     if (Test-Path $backupPath) {
         Copy-Item $backupPath -Destination $exePath -Force
-        Start-Process -FilePath $exePath -WorkingDirectory $InstallDir -WindowStyle Hidden
+        # 回滚配置文件（找最新备份）
+        $dataDir = Join-Path $InstallDir "data"
+        foreach ($cf in $configFiles) {
+            $cfPath = Join-Path $dataDir $cf
+            $bakFile = "$cfPath.bak.$backupTs"
+            if (Test-Path $bakFile) {
+                Copy-Item $bakFile $cfPath -Force
+                Write-Log "已回滚配置: $cf"
+            }
+        }
+        $task = Get-ScheduledTask -TaskName $ompTaskName -ErrorAction SilentlyContinue
+        if ($task) {
+            Start-ScheduledTask -TaskName $ompTaskName
+        } else {
+            $env:PORT = $Port
+            Start-Process -FilePath $exePath -WorkingDirectory $InstallDir -WindowStyle Hidden
+        }
         Write-Log "已回滚到上一版本"
     }
 }

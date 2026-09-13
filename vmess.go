@@ -501,10 +501,7 @@ func (m *VMessProxy) generateConfig(vmess *VMessConfig, localPort int) map[strin
 	// Outbound: vmess or vless (B10-WL6)
 	var outbound map[string]any
 	if vmess.IsVLESS {
-		encVal := vmess.Encryption
-		if encVal == "" {
-			encVal = "none"
-		}
+		encVal := normalizeVlesSEncryption(vmess.Encryption)
 		user := map[string]any{
 			"id":         vmess.ID,
 			"encryption": encVal,
@@ -619,4 +616,60 @@ func StopProviderProxy(providerID string) {
 	if vmessManager != nil {
 		vmessManager.StopProxy(providerID)
 	}
+}
+
+// normalizeVlesSEncryption validates the VLESS encryption string against
+// xray-core's accepted ML-KEM public key sizes (32 / 1184 bytes for mlkem768,
+// 1568 bytes for mlkem1024). If the key is malformed or unsupported, it
+// gracefully falls back to "none" so the proxy can still establish a TLS
+// connection rather than fail to start entirely.
+//
+// Rationale: ML-KEM is a post-quantum forward-secrecy enhancement layered on
+// top of TLS. When the key is non-standard (e.g. truncated or from a fork),
+// degrading to "none" preserves basic connectivity — the outer TLS tunnel
+// still provides confidentiality and integrity.
+func normalizeVlesSEncryption(enc string) string {
+	if enc == "" || enc == "none" {
+		return "none"
+	}
+	// Must look like mlkem<digits>... or contain x25519
+	if !strings.HasPrefix(enc, "mlkem") && !strings.Contains(enc, "x25519") {
+		return "none"
+	}
+	parts := strings.Split(enc, ".")
+	// Expected minimum: mlkem768x25519plus.native.0rtt.<pubkey>  = 4+ parts
+	if len(parts) < 4 {
+		return "none"
+	}
+	// Find the last part(s) that decode to a key length.
+	// Xray v26 accepts per-segment lengths of exactly 32 or 1184 bytes
+	// (mlkem768) and by extension 1568 (mlkem1024).
+	hasValidKey := false
+	for _, p := range parts[3:] {
+		if len(p) < 20 {
+			// padding / short segment — ignore
+			continue
+		}
+		raw, err := base64.RawURLEncoding.DecodeString(p)
+		if err != nil {
+			// try std + padding variant
+			raw, err = base64.StdEncoding.DecodeString(strings.TrimRight(p, "="))
+			if err != nil {
+				return "none"
+			}
+		}
+		switch len(raw) {
+		case 32, 1184, 1568:
+			hasValidKey = true
+		default:
+			// Non-standard key size — xray will reject this config
+			slog.Warn("vless ML-KEM key has non-standard size, falling back to none",
+				"size_bytes", len(raw), "segment", p[:20]+"...")
+			return "none"
+		}
+	}
+	if !hasValidKey {
+		return "none"
+	}
+	return enc
 }
