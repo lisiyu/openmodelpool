@@ -85,7 +85,7 @@ $ngrokExe = "$ngrokDir\ngrok.exe"
 $ngrokTaskName = "OpenModelPoolNgrok"
 
 # 常量 - Xray (VMess proxy)
-$XRAY_VERSION = "v25.7.16"
+$XRAY_VERSION = "v26.3.27"
 
 # ============================================================
 # 工具函数
@@ -105,6 +105,15 @@ function Write-OK($text) { Write-Host "  OK  $text" -ForegroundColor $G }
 function Write-Err($text) { Write-Host "  X   $text" -ForegroundColor $R }
 function Write-Info($text) { Write-Host "  $text" -ForegroundColor DarkGray }
 
+# 动态获取 GitHub 仓库最新 release tag（失败静默返回空串，由调用方回退内置常量）
+function Get-LatestTag($repo) {
+    try {
+        $url = "https://api.github.com/repos/$repo/releases/latest"
+        $resp = Invoke-RestMethod -Uri $url -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+        if ($resp -and $resp.tag_name) { return $resp.tag_name }
+    } catch {}
+    return ""
+}
 function Test-Admin {
     return ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
@@ -379,18 +388,22 @@ function Install-OMP {
     }
     
     # 如果已安装且版本相同，跳过
-    $xrayTargetVer = $XRAY_VERSION -replace "^v", ""
+    $xrayVer = Get-LatestTag "XTLS/Xray-core"
+    if (-not $xrayVer) { $xrayVer = $XRAY_VERSION }
+    $xrayTargetVer = $xrayVer -replace "^v", ""
     if ($xrayCurrentVer -eq $xrayTargetVer) {
         Write-OK "Xray 已是最新版本 (v$xrayCurrentVer)，跳过"
     } else {
         Write-Host "  下载 Xray v$xrayTargetVer (VMess 代理)..." -ForegroundColor $C
         
-        # 多镜像源 fallback
+        # 多镜像源 fallback（GitHub 官方源优先，已验证国内可直接访问）
         $xrayMirrorSources = @(
-            "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
-            "https://gh-proxy.com/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
-            "https://ghproxy.net/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
-            "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
+            "https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
+            "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
+            "https://gh-proxy.com/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
+            "https://ghproxy.net/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
+            "https://mirror.ghproxy.com/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
+            "https://gh.api.99988866.xyz/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip"
         )
         
         $xrayDownloaded = $false
@@ -415,7 +428,7 @@ function Install-OMP {
         } else {
             try {
                 # SHA256 校验（fail-closed，从 GitHub 官方获取 .dgst）
-                $dgstUrl = "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip.dgst"
+                $dgstUrl = "https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip.dgst"
                 $expectedSha = ""
                 try {
                     $dgstContent = Invoke-WebRequest -Uri $dgstUrl -UseBasicParsing -TimeoutSec 30
@@ -608,11 +621,13 @@ function Update-Component {
     }
 
     if ($Component -eq "xray") {
-        Write-Info "目标版本: $XRAY_VERSION"
+        $xrayVer = Get-LatestTag "XTLS/Xray-core"
+        if (-not $xrayVer) { $xrayVer = $XRAY_VERSION }
+        Write-Info "目标版本: $xrayVer"
         Write-Step 1 2 "下载 Xray..."
         try {
             New-Item -ItemType Directory -Force -Path $xrayDir | Out-Null
-            $xrayUrl = "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
+            $xrayUrl = "https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip"
             $xrayTmp = Join-Path $env:TEMP "xray-upgrade-$(Get-Random).zip"
             Invoke-WebRequest -Uri $xrayUrl -OutFile $xrayTmp -UseBasicParsing
             $xrayExtract = Join-Path $env:TEMP "xray-upgrade-extract-$(Get-Random)"
@@ -624,7 +639,7 @@ function Update-Component {
             Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
             Remove-Item $xrayExtract -Recurse -Force -ErrorAction SilentlyContinue
             Write-Step 2 2 "完成"
-            Write-OK "Xray 升级到 $XRAY_VERSION"
+            Write-OK "Xray 升级到 $xrayVer"
         } catch {
             Write-Err "Xray 升级失败: $($_.Exception.Message)"
         }
@@ -996,6 +1011,15 @@ ingress:
     $_hsContent3 | Set-Content "$cfConfigDir\config.yml" -Encoding UTF8
 
     Stop-Cloudflared
+    # 清理残留的 cloudflared Windows 服务，避免与计划任务冲突
+    try {
+        $svc = Get-Service cloudflared -ErrorAction SilentlyContinue
+        if ($svc) {
+            Stop-Service cloudflared -Force -ErrorAction SilentlyContinue
+            sc.exe delete cloudflared 2>&1 | Out-Null
+            Start-Sleep -Milliseconds 500
+        }
+    } catch {}
     $action = New-ScheduledTaskAction -Execute $cfExe -Argument "tunnel run openmodelpool"
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)

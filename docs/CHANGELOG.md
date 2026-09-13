@@ -1,5 +1,11 @@
 # Changelog
 
+## v4.5.50 (2026-09-13)
+
+- **Xray Windows 动态版本** — `scripts/omp-manager.ps1` 新增 `Get-LatestTag`，安装/升级时动态获取 `XTLS/Xray-core` 最新 release tag（GitHub API，失败静默回退内置 `$XRAY_VERSION` 常量），与 Linux `install.sh::get_latest_tag` 对齐；六个镜像源（GitHub 官方 + ghfast.top / gh-proxy.com / ghproxy.net / mirror.ghproxy.com / gh.api.99988866.xyz）统一改用动态版本变量。
+- **合并 v4.5.49 修复** — 镜像源优化、Cloudflared 残留 Windows 服务清理（避免与计划任务冲突）、`install.sh` 升级模式 `VER` 未绑定变量修复、browser 候选数组声明修复。
+- AppVersion bumped to 4.5.50 · 全量测试通过（`go build` / `go vet` / `go test -count=1 ./...` 均 green）。
+
 ## v4.5.40 (2026-09-13)
 
 - **Interactive reuse prompt** — when an existing component binary is found the one-click script now asks whether to skip the download and reuse it: `all` mode defaults to reuse (`[Y/n]`, non-interactive keeps the default), explicit subcommands (`install.sh xray|cloudflared|frp|ngrok|browser`) default to download/upgrade (`[y/N]`); non-standard installs are copied to the standard location on reuse, and copy failures degrade to a fresh download. `frp` only prompts when both `frps` and `frpc` are present.
