@@ -85,7 +85,7 @@ $ngrokExe = "$ngrokDir\ngrok.exe"
 $ngrokTaskName = "OpenModelPoolNgrok"
 
 # 常量 - Xray (VMess proxy)
-$XRAY_VERSION = "v25.7.16"
+$XRAY_VERSION = "v26.3.27"
 
 # ============================================================
 # 工具函数
@@ -385,12 +385,14 @@ function Install-OMP {
     } else {
         Write-Host "  下载 Xray v$xrayTargetVer (VMess 代理)..." -ForegroundColor $C
         
-        # 多镜像源 fallback
+        # 多镜像源 fallback（GitHub 官方源优先，已验证国内可直接访问）
         $xrayMirrorSources = @(
+            "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
             "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
             "https://gh-proxy.com/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
             "https://ghproxy.net/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
-            "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
+            "https://mirror.ghproxy.com/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
+            "https://gh.api.99988866.xyz/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
         )
         
         $xrayDownloaded = $false
@@ -996,6 +998,15 @@ ingress:
     $_hsContent3 | Set-Content "$cfConfigDir\config.yml" -Encoding UTF8
 
     Stop-Cloudflared
+    # 清理残留的 cloudflared Windows 服务，避免与计划任务冲突
+    try {
+        $svc = Get-Service cloudflared -ErrorAction SilentlyContinue
+        if ($svc) {
+            Stop-Service cloudflared -Force -ErrorAction SilentlyContinue
+            sc.exe delete cloudflared 2>&1 | Out-Null
+            Start-Sleep -Milliseconds 500
+        }
+    } catch {}
     $action = New-ScheduledTaskAction -Execute $cfExe -Argument "tunnel run openmodelpool"
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
