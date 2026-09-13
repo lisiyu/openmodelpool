@@ -357,21 +357,93 @@ function Install-OMP {
     # 安装 Xray (VMess 代理支持)
     $xrayDir = Join-Path $InstallDir "xray"
     New-Item -ItemType Directory -Force -Path $xrayDir | Out-Null
-    $xrayUrl = "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
-    Write-Host "  下载 Xray (VMess 代理)..." -ForegroundColor $C
-    try {
-        $xrayTmp = Join-Path $env:TEMP "xray-install.zip"
-        Invoke-WebRequest -Uri $xrayUrl -OutFile $xrayTmp -UseBasicParsing
-        $xrayExtract = Join-Path $env:TEMP "xray-install-extract"
-        if (Test-Path $xrayExtract) { Remove-Item $xrayExtract -Recurse -Force }
-        Expand-Archive -Path $xrayTmp -DestinationPath $xrayExtract -Force
-        Copy-Item (Join-Path $xrayExtract "xray.exe") -Destination (Join-Path $xrayDir "xray.exe") -Force
-        Copy-Item (Join-Path $xrayExtract "geoip.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
-        Copy-Item (Join-Path $xrayExtract "geosite.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
-        Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
-        Write-OK "Xray 安装完成"
-    } catch {
-        Write-Host "  Xray 下载失败，VMess 代理不可用（不影响其他功能）" -ForegroundColor $Y
+    $xrayExe = Join-Path $xrayDir "xray.exe"
+    
+    # 检查现有 Xray 版本
+    $xrayCurrentVer = ""
+    if (Test-Path $xrayExe) {
+        try {
+            $xrayVerOutput = & $xrayExe version 2>&1 | Select-Object -First 1
+            if ($xrayVerOutput -match "(\d+\.\d+\.\d+)") {
+                $xrayCurrentVer = $Matches[1]
+                Write-Host "  已安装 Xray: v$xrayCurrentVer" -ForegroundColor $C
+            }
+        } catch {}
+    }
+    
+    # 如果已安装且版本相同，跳过
+    $xrayTargetVer = $XRAY_VERSION -replace "^v", ""
+    if ($xrayCurrentVer -eq $xrayTargetVer) {
+        Write-OK "Xray 已是最新版本 (v$xrayCurrentVer)，跳过"
+    } else {
+        Write-Host "  下载 Xray v$xrayTargetVer (VMess 代理)..." -ForegroundColor $C
+        
+        # 多镜像源 fallback
+        $xrayMirrorSources = @(
+            "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
+            "https://gh-proxy.com/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
+            "https://ghproxy.net/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
+            "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
+        )
+        
+        $xrayDownloaded = $false
+        $xrayTmp = Join-Path $env:TEMP "xray-install-$(Get-Random).zip"
+        
+        foreach ($src in $xrayMirrorSources) {
+            $srcName = ($src -split "/")[2]
+            try {
+                Write-Host "    尝试源: $srcName" -ForegroundColor Gray
+                Invoke-WebRequest -Uri $src -OutFile $xrayTmp -UseBasicParsing -TimeoutSec 60
+                if ((Get-Item $xrayTmp).Length -gt 100KB) {
+                    $xrayDownloaded = $true
+                    break
+                }
+            } catch {
+                Write-Host "    源 $srcName 失败，换下一个" -ForegroundColor Gray
+            }
+        }
+        
+        if (-not $xrayDownloaded) {
+            Write-Host "  Xray 下载失败（所有源均不可用），VMess 代理不可用（不影响其他功能）" -ForegroundColor $Y
+        } else {
+            try {
+                # SHA256 校验（fail-closed，从 GitHub 官方获取 .dgst）
+                $dgstUrl = "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip.dgst"
+                $expectedSha = ""
+                try {
+                    $dgstContent = Invoke-WebRequest -Uri $dgstUrl -UseBasicParsing -TimeoutSec 30
+                    $dgstText = $dgstContent.Content
+                    if ($dgstText -match "SHA256= ([a-fA-F0-9]+)") {
+                        $expectedSha = $Matches[1].ToLower()
+                    }
+                } catch {}
+                
+                if ([string]::IsNullOrEmpty($expectedSha)) {
+                    Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
+                    Write-Host "  Xray SHA256 校验失败（无法获取官方校验和），跳过安装" -ForegroundColor $Y
+                    return
+                }
+                
+                $actualSha = (Get-FileHash $xrayTmp -Algorithm SHA256).Hash.ToLower()
+                if ($actualSha -ne $expectedSha) {
+                    Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
+                    Write-Host "  Xray SHA256 校验不匹配（可能被篡改），跳过安装" -ForegroundColor Red
+                    return
+                }
+                
+                $xrayExtract = Join-Path $env:TEMP "xray-install-extract-$(Get-Random)"
+                if (Test-Path $xrayExtract) { Remove-Item $xrayExtract -Recurse -Force }
+                Expand-Archive -Path $xrayTmp -DestinationPath $xrayExtract -Force
+                Copy-Item (Join-Path $xrayExtract "xray.exe") -Destination $xrayExe -Force
+                Copy-Item (Join-Path $xrayExtract "geoip.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
+                Copy-Item (Join-Path $xrayExtract "geosite.dat") -Destination $xrayDir -Force -ErrorAction SilentlyContinue
+                Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
+                Remove-Item $xrayExtract -Recurse -Force -ErrorAction SilentlyContinue
+                Write-OK "Xray 安装完成 (v$xrayTargetVer，SHA256 校验通过)"
+            } catch {
+                Write-Host "  Xray 安装失败，VMess 代理不可用（不影响其他功能）" -ForegroundColor $Y
+            }
+        }
     }
 
     $startBat = Join-Path $InstallDir "start.bat"
