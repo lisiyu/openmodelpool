@@ -794,17 +794,33 @@ install_frp() {
 # ══════════════════════════════════════════════════
 
 install_ngrok() {
-    # 先获取最新版本号
-    local VER ASSET UV TMP_DIR
-    VER=$(get_latest_tag "$NGROK_REPO")
-    [[ -z "$VER" ]] && { warn "获取 ngrok 版本失败，跳过"; return 1; }
+    # ngrok 不在 GitHub 发布二进制（仅有源码镜像，无 release），必须从官方 ngrok.com 抓取下载链接。
+    # 官方下载页：https://ngrok.com/download/linux（URL 含版本 cache_key，例如 bNyj1mQVY4c）。
+    local arch_ngrok NG_URL CACHE_KEY ASSET TMP_DIR VER
 
-    # $1 = reuse 默认值：all 传 y，显式子命令传 n
+    case "$PLATFORM" in
+        linux-amd64)  arch_ngrok="linux-amd64"  ;;
+        linux-arm64)  arch_ngrok="linux-arm64"  ;;
+        linux-armv7)  arch_ngrok="linux-arm"    ;;  # 官方仅提供 linux-arm；armv7 用其兼容
+        *)  warn "不支持 ngrok 平台: $PLATFORM，跳过"; return 1 ;;
+    esac
+
+    NG_URL=$(curl -sSL --connect-timeout 10 --max-time 30 \
+        "https://ngrok.com/download/linux" 2>/dev/null \
+        | grep -oE "https://bin\.ngrok\.com/c/[A-Za-z0-9]+/ngrok-v3-stable-${arch_ngrok}\.tgz" \
+        | head -1)
+    if [[ -z "$NG_URL" ]]; then
+        warn "无法从 ngrok.com 获取下载链接（请检查网络），跳过"
+        return 1
+    fi
+    CACHE_KEY=$(echo "$NG_URL" | sed -nE 's|.*/c/([A-Za-z0-9]+)/.*|\1|p')
+    ASSET="$(basename "$NG_URL")"
+    VER="stable-${CACHE_KEY}"  # 仅用于显示/对比；无法做传统 semver 比较
+
     local reuse_default="${1:-n}"
-    # 扫描常见位置已有安装，找到就复用
     local ng_bin ng_candidates=(
-        "$LOCAL_BIN/ngrok"                          # 标准安装位置
-        "$DEFAULT_INSTALL_DIR/ngrok/ngrok"          # 兼容手动放置
+        "$LOCAL_BIN/ngrok"
+        "$DEFAULT_INSTALL_DIR/ngrok/ngrok"
         "/usr/bin/ngrok"
     )
     if command -v ngrok &>/dev/null; then
@@ -813,99 +829,76 @@ install_ngrok() {
     for p in "${ng_candidates[@]}"; do
         if [[ -x "$p" ]]; then ng_bin="$p"; break; fi
     done
-    if [[ -n "$ng_bin" ]]; then
-        local cur cur_ver
+
+    # 若已有 ngrok 且 cache_key 一致（marker 文件），则跳过
+    local installed_ck=""
+    if [[ -f "$DATA_DIR/.ngrok_cache_key" ]]; then
+        installed_ck=$(cat "$DATA_DIR/.ngrok_cache_key" 2>/dev/null | tr -d '[:space:]')
+    fi
+    if [[ -n "$ng_bin" && -n "$installed_ck" && "$installed_ck" == "$CACHE_KEY" ]]; then
+        local cur
         cur=$("$ng_bin" version 2>/dev/null | head -1)
-        # 提取版本号（数字+点）
-        cur_ver=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-        local latest_num="${VER#v}"
+        ok "ngrok 已是最新稳定版 (${cur:-unknown}, cache_key=${installed_ck})，跳过"
+        return 0
+    fi
+
+    if [[ -n "$ng_bin" ]]; then
+        local cur
+        cur=$("$ng_bin" version 2>/dev/null | head -1)
         info "ngrok 已存在: ${cur:-unknown} ($ng_bin)"
-        info "最新版本: ${YELLOW}${VER}${NC}"
-        # 版本相同自动跳过
-        if [[ "$cur_ver" == "$latest_num" ]]; then
-            ok "ngrok 已是最新版本 (${cur_ver})，跳过"
+        info "目标稳定版: ${YELLOW}${VER}${NC}"
+        if ! prompt_reuse "$reuse_default" "ngrok ${cur:-} → ${VER}"; then
+            info "  跳过 ngrok 安装"
             return 0
         fi
-        if prompt_reuse "$reuse_default" "ngrok ${cur:-} → ${VER}"; then
-            if [[ "$ng_bin" != "$LOCAL_BIN/ngrok" ]]; then
-                info "  复制到标准位置 $LOCAL_BIN/ngrok"
-                mkdir -p "$LOCAL_BIN"
-                cp "$ng_bin" "$LOCAL_BIN/ngrok" 2>/dev/null || true
-                chmod 755 "$LOCAL_BIN/ngrok" 2>/dev/null || true
-                if [[ ! -x "$LOCAL_BIN/ngrok" ]]; then
-                    warn "复制到标准位置失败，改为下载最新版本"
-                else
-                    ok "ngrok 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
-                    return 0
-                fi
-            else
+        if [[ "$ng_bin" != "$LOCAL_BIN/ngrok" ]]; then
+            info "  复制到标准位置 $LOCAL_BIN/ngrok"
+            mkdir -p "$LOCAL_BIN"
+            cp "$ng_bin" "$LOCAL_BIN/ngrok" 2>/dev/null || true
+            chmod 755 "$LOCAL_BIN/ngrok" 2>/dev/null || true
+            if [[ -x "$LOCAL_BIN/ngrok" ]]; then
+                echo "$CACHE_KEY" > "$DATA_DIR/.ngrok_cache_key" 2>/dev/null || true
                 ok "ngrok 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
                 return 0
             fi
+            warn "复制到标准位置失败，改为下载最新版本"
+        else
+            echo "$CACHE_KEY" > "$DATA_DIR/.ngrok_cache_key" 2>/dev/null || true
+            ok "ngrok 已就绪: ${cur:-unknown}（复用现有安装，跳过下载）"
+            return 0
         fi
-        info "  将下载最新版本"
     fi
-
-    local V ASSET UV TMP_DIR
-
-    V="${VER#v}"
-
-    case "$PLATFORM" in
-        linux-amd64)  NGROK_OSA="linux-amd64" ;;
-        linux-arm64)  NGROK_OSA="linux-arm64" ;;
-        linux-armv7)  NGROK_OSA="linux-arm" ;;
-        *)  warn "不支持 ngrok 平台: $PLATFORM，跳过"; return 1 ;;
-    esac
-    ASSET="ngrok-v3-${V}-${NGROK_OSA}.tar.gz"
-    UV="https://github.com/${NGROK_REPO}/releases/download/${VER}/${ASSET}"
 
     info "ngrok 版本: ${YELLOW}${VER}${NC} ($ASSET)"
     TMP_DIR=$(mktemp -d)
-    if ! download_multisource "$UV" "$TMP_DIR/ngrok.tar.gz" "ngrok"; then
+    if ! download_with_retry "$NG_URL" "$TMP_DIR/ngrok.tgz" 3 120; then
         rm -rf "$TMP_DIR"
         warn "ngrok 下载失败，跳过（已保留现有版本）"
         return 1
     fi
 
-    # SHA256 校验（fail-closed：仅从 GitHub 官方直连获取 checksums 文件）
-    local NGROK_SHA_URL="https://github.com/${NGROK_REPO}/releases/download/${VER}/ngrok_${V}_linux_checksums.txt"
-    local NGROK_SHA_FILE="$TMP_DIR/checksums.txt"
-    local EXPECTED_SHA=""
-    if curl -fsSL --connect-timeout 10 --max-time 30 "$NGROK_SHA_URL" -o "$NGROK_SHA_FILE" 2>/dev/null; then
-        EXPECTED_SHA=$(grep -E "[a-f0-9]{64}.*${ASSET}" "$NGROK_SHA_FILE" 2>/dev/null | awk '{print $1}' | head -1)
-    fi
-    if [[ -z "$EXPECTED_SHA" ]]; then
-        # 尝试备用文件名格式
-        local NGROK_SHA_URL2="https://github.com/${NGROK_REPO}/releases/download/${VER}/checksums.txt"
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$NGROK_SHA_URL2" -o "$NGROK_SHA_FILE" 2>/dev/null; then
-            EXPECTED_SHA=$(grep -E "[a-f0-9]{64}.*${ASSET}" "$NGROK_SHA_FILE" 2>/dev/null | awk '{print $1}' | head -1)
-        fi
-    fi
-    if [[ -z "$EXPECTED_SHA" ]]; then
-        rm -rf "$TMP_DIR"
-        warn "ngrok SHA256 校验失败（无法从 GitHub 官方获取校验和），跳过安装"
-        return 1
-    fi
-    local ACTUAL_SHA
-    ACTUAL_SHA=$(sha256sum "$TMP_DIR/ngrok.tar.gz" | awk '{print $1}')
-    if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
-        rm -rf "$TMP_DIR"
-        warn "ngrok SHA256 校验不匹配，跳过安装（可能文件被篡改）"
-        return 1
-    fi
-    ok "ngrok SHA256 校验通过"
+    # 注：ngrok 官方 CDN (bin.ngrok.com) 不提供 SHA256 sidecar 校验文件，
+    #     故跳过哈希校验（fail-open，业界惯例；如需校验请改用 ngrok apt/snap 源以获得 GPG 签名）。
 
     mkdir -p "$TMP_DIR/unpack"
-    tar -xzf "$TMP_DIR/ngrok.tar.gz" -C "$TMP_DIR/unpack" 2>/dev/null || { rm -rf "$TMP_DIR"; warn "ngrok 解压失败，跳过"; return 1; }
+    if ! tar -xzf "$TMP_DIR/ngrok.tgz" -C "$TMP_DIR/unpack" 2>/dev/null; then
+        rm -rf "$TMP_DIR"
+        warn "ngrok 解压失败，跳过"
+        return 1
+    fi
     local ng_src
     ng_src=$(find "$TMP_DIR/unpack" -type f -name ngrok | head -1)
     if [[ -n "$ng_src" ]]; then
         install -m 755 "$ng_src" "$LOCAL_BIN/ngrok"
+        echo "$CACHE_KEY" > "$DATA_DIR/.ngrok_cache_key" 2>/dev/null || true
         rm -rf "$TMP_DIR"
-        ok "ngrok 已安装: $LOCAL_BIN/ngrok (${VER})"
+        local installed_ver
+        installed_ver=$("$LOCAL_BIN/ngrok" version 2>/dev/null | head -1)
+        ok "ngrok 已安装: $LOCAL_BIN/ngrok (${installed_ver:-unknown}, cache_key=${CACHE_KEY})"
     else
         rm -rf "$TMP_DIR"
         warn "ngrok 解压后未找到二进制，跳过"
+        return 1
     fi
 }
 
