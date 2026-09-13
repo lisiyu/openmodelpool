@@ -211,7 +211,8 @@ function Get-LocalVersion {
 function Stop-Cloudflared {
     Stop-ScheduledTask -TaskName $cfTaskName -ErrorAction SilentlyContinue
     Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue
-    try { Stop-Service cloudflared -Force -ErrorAction SilentlyContinue } catch {}
+    # 同时删除历史遗留的 cloudflared Windows 服务，避免与计划任务冲突 / 残留 WARNING
+    Remove-CloudflaredService
     Start-Sleep -Seconds 1
 }
 
@@ -1638,6 +1639,7 @@ function Show-Status {
     $cfSvc = Get-Service -Name cloudflared -ErrorAction SilentlyContinue
     if ($cfSvc) {
         Write-Host "  WARNING  检测到残留 Windows 服务: cloudflared ($($cfSvc.Status))" -ForegroundColor $Y
+        Write-Host "          运行「重启服务」或「重置穿透」可自动清理该残留服务" -ForegroundColor DarkGray
     }
 
     # FRP
@@ -1709,11 +1711,28 @@ function Restart-All {
     if (Get-ScheduledTask -TaskName $cfTaskName -ErrorAction SilentlyContinue) {
         Stop-Cloudflared
         Start-Sleep -Seconds 2
-        Start-ScheduledTask -TaskName $cfTaskName
-        Start-Sleep -Seconds 3
-        $cfProc = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
-        if ($cfProc) { Write-OK "Tunnel 已启动 (PID: $($cfProc.Id))" }
-        else { Write-Err "Tunnel 启动失败" }
+        try {
+            Start-ScheduledTask -TaskName $cfTaskName -ErrorAction Stop
+        } catch {
+            Write-Err "计划任务启动失败: $_"
+        }
+        # 轮询等待 cloudflared 进程起来（最多 10 秒，给 Task Scheduler 留足启动时间）
+        $cfProc = $null
+        for ($i = 0; $i -lt 10; $i++) {
+            $cfProc = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
+            if ($cfProc) { break }
+            Start-Sleep -Seconds 1
+        }
+        if ($cfProc) {
+            Write-OK "Tunnel 已启动 (PID: $($cfProc.Id))"
+        } else {
+            $cfTask = Get-ScheduledTask -TaskName $cfTaskName -ErrorAction SilentlyContinue
+            if ($cfTask) {
+                Write-Err ("Tunnel 启动失败 (计划任务 LastResult: 0x{0:X8})" -f $cfTask.LastTaskResult)
+            } else {
+                Write-Err "Tunnel 启动失败"
+            }
+        }
     } else { Write-Info "Cloudflare Tunnel 未配置，跳过" }
 
     Write-Step 3 4 "重启 FRP..."
