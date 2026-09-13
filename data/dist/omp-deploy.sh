@@ -20,6 +20,17 @@ fi
 INSTALL_DIR="${1:-/opt/openmodelpool}"
 PORT="${2:-8000}"
 
+# 端口范围校验
+if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+    echo -e "\033[0;31m[错误] 无效端口号: $PORT (必须为 1-65535 的整数)\033[0m"
+    exit 1
+fi
+
+# 规范化安装目录路径
+if command -v realpath >/dev/null 2>&1; then
+    INSTALL_DIR=$(realpath -m "$INSTALL_DIR")
+fi
+
 if [ -d /volume1 ]; then
   INSTALL_DIR="${1:-/volume1/@appstore/openmodelpool}"
 fi

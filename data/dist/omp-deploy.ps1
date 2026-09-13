@@ -13,6 +13,17 @@ param(
     [int]$Port = 8000
 )
 
+# 端口范围校验
+if ($Port -lt 1 -or $Port -gt 65535) {
+    Write-Host "[错误] 无效端口号 (1-65535): $Port" -ForegroundColor Red
+    exit 1
+}
+
+# 规范化安装目录
+if (Test-Path $InstallDir) {
+    $InstallDir = (Resolve-Path $InstallDir).Path
+}
+
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $GITHUB_REPO = "lisiyu/openmodelpool"
