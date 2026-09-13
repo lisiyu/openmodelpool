@@ -84,7 +84,7 @@ $ngrokDir = "$env:ProgramFiles\ngrok"
 $ngrokExe = "$ngrokDir\ngrok.exe"
 $ngrokTaskName = "OpenModelPoolNgrok"
 
-# 常量 - Xray (VMess proxy)
+# 常量 - Xray (VMess proxy) —— 仅作为“动态获取最新版本失败”时的回退版本
 $XRAY_VERSION = "v25.7.16"
 
 # ============================================================
@@ -330,6 +330,19 @@ function Download-OMPRelease {
 
 # 1. 安装
 # ============================================================
+# 获取 GitHub 仓库最新 release tag（与 Linux install.sh get_latest_tag 对齐）
+# 失败（网络不可达 / API 限流）时返回空字符串，调用方回退到内置 $XRAY_VERSION 常量
+function Get-LatestTag {
+    param([string]$Repo)
+    try {
+        $info = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing -TimeoutSec 15
+        if ($info -and $info.tag_name) { return $info.tag_name }
+    } catch {
+        # 静默回退
+    }
+    return ""
+}
+
 function Install-OMP {
     Write-Title "OpenModelPool 全新安装"
     Write-Info "目标版本: $RELEASE_TAG"
@@ -379,7 +392,10 @@ function Install-OMP {
     }
     
     # 如果已安装且版本相同，跳过
-    $xrayTargetVer = $XRAY_VERSION -replace "^v", ""
+    # 动态获取 Xray 最新版本（与 Linux install.sh / Install-Xray 对齐）；网络不可达时回退到内置常量
+    $xrayVer = Get-LatestTag "XTLS/Xray-core"
+    if (-not $xrayVer) { $xrayVer = $XRAY_VERSION }
+    $xrayTargetVer = $xrayVer -replace "^v", ""
     if ($xrayCurrentVer -eq $xrayTargetVer) {
         Write-OK "Xray 已是最新版本 (v$xrayCurrentVer)，跳过"
     } else {
@@ -387,10 +403,10 @@ function Install-OMP {
         
         # 多镜像源 fallback
         $xrayMirrorSources = @(
-            "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
-            "https://gh-proxy.com/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
-            "https://ghproxy.net/https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip",
-            "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
+            "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
+            "https://gh-proxy.com/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
+            "https://ghproxy.net/https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip",
+            "https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip"
         )
         
         $xrayDownloaded = $false
@@ -415,7 +431,7 @@ function Install-OMP {
         } else {
             try {
                 # SHA256 校验（fail-closed，从 GitHub 官方获取 .dgst）
-                $dgstUrl = "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip.dgst"
+                $dgstUrl = "https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip.dgst"
                 $expectedSha = ""
                 try {
                     $dgstContent = Invoke-WebRequest -Uri $dgstUrl -UseBasicParsing -TimeoutSec 30
@@ -608,11 +624,13 @@ function Update-Component {
     }
 
     if ($Component -eq "xray") {
-        Write-Info "目标版本: $XRAY_VERSION"
+        $xrayVer = Get-LatestTag "XTLS/Xray-core"
+        if (-not $xrayVer) { $xrayVer = $XRAY_VERSION }
+        Write-Info "目标版本: $xrayVer"
         Write-Step 1 2 "下载 Xray..."
         try {
             New-Item -ItemType Directory -Force -Path $xrayDir | Out-Null
-            $xrayUrl = "https://github.com/XTLS/Xray-core/releases/download/$XRAY_VERSION/Xray-windows-64.zip"
+            $xrayUrl = "https://github.com/XTLS/Xray-core/releases/download/$xrayVer/Xray-windows-64.zip"
             $xrayTmp = Join-Path $env:TEMP "xray-upgrade-$(Get-Random).zip"
             Invoke-WebRequest -Uri $xrayUrl -OutFile $xrayTmp -UseBasicParsing
             $xrayExtract = Join-Path $env:TEMP "xray-upgrade-extract-$(Get-Random)"
@@ -624,7 +642,7 @@ function Update-Component {
             Remove-Item $xrayTmp -Force -ErrorAction SilentlyContinue
             Remove-Item $xrayExtract -Recurse -Force -ErrorAction SilentlyContinue
             Write-Step 2 2 "完成"
-            Write-OK "Xray 升级到 $XRAY_VERSION"
+            Write-OK "Xray 升级到 $xrayVer"
         } catch {
             Write-Err "Xray 升级失败: $($_.Exception.Message)"
         }
