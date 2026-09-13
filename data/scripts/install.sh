@@ -420,7 +420,20 @@ install_xray() {
         local cur
         cur=$("$existing" version 2>/dev/null | grep -o 'Xray [^ ]*' | head -1 | cut -d' ' -f2)
         info "Xray 已存在: ${cur:-unknown} ($existing)"
-        if prompt_reuse "$reuse_default" "Xray ${cur:-}"; then
+        # 版本对比：先获取最新版本号再判断
+        local latest_ver
+        latest_ver=$(get_latest_tag "$XRAY_REPO" 2>/dev/null || echo "")
+        local cur_ver latest_num
+        cur_ver=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        latest_num="${latest_ver#v}"
+        if [[ -n "$latest_ver" ]]; then
+            info "最新版本: ${YELLOW}${latest_ver}${NC}"
+            if [[ "$cur_ver" == "$latest_num" ]]; then
+                ok "Xray 已是最新版本 (${cur_ver})，跳过"
+                return 0
+            fi
+        fi
+        if prompt_reuse "$reuse_default" "Xray ${cur:-} → ${latest_ver:-latest}"; then
             # 选择复用：非标准位置统一复制到 $XRAY_BIN
             if [[ "$existing" != "$XRAY_BIN" ]]; then
                 info "  复制到标准位置 $XRAY_BIN"
@@ -527,10 +540,18 @@ install_cloudflared() {
         if [[ -x "$p" ]]; then cf_bin="$p"; break; fi
     done
     if [[ -n "$cf_bin" ]]; then
-        local cur
+        local cur cur_ver
         cur=$("$cf_bin" --version 2>/dev/null | head -1)
+        cur_ver=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        local latest_num="${VER#v}"
         info "cloudflared 已存在: ${cur:-unknown} ($cf_bin)"
-        if prompt_reuse "$reuse_default" "cloudflared ${cur:-}"; then
+        info "最新版本: ${YELLOW}${VER}${NC}"
+        # 版本相同自动跳过
+        if [[ "$cur_ver" == "$latest_num" ]]; then
+            ok "cloudflared 已是最新版本 (${cur_ver})，跳过"
+            return 0
+        fi
+        if prompt_reuse "$reuse_default" "cloudflared ${cur:-} → ${VER}"; then
             # 非标准位置复制一份统一管理
             if [[ "$cf_bin" != "$LOCAL_BIN/cloudflared" ]]; then
                 info "  复制到标准位置 $LOCAL_BIN/cloudflared"
@@ -637,7 +658,16 @@ install_frp() {
         local cur
         cur=$("$frps_bin" --version 2>/dev/null | head -1)
         info "frp 已存在: ${cur:-unknown} (frps=$frps_bin, frpc=$frpc_bin)"
-        if prompt_reuse "$reuse_default" "frp ${cur:-}"; then
+        info "最新版本: ${YELLOW}${VER}${NC}"
+        # 版本相同自动跳过
+        local cur_ver latest_num
+        cur_ver=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        latest_num="${VER#v}"
+        if [[ "$cur_ver" == "$latest_num" ]]; then
+            ok "frp 已是最新版本 (${cur_ver})，跳过"
+            return 0
+        fi
+        if prompt_reuse "$reuse_default" "frp ${cur:-} → ${VER}"; then
             local needs_copy=0
             if [[ "$frps_bin" != "$LOCAL_BIN/frps" ]]; then needs_copy=1; fi
             if [[ "$frpc_bin" != "$LOCAL_BIN/frpc" ]]; then needs_copy=1; fi
@@ -681,9 +711,30 @@ install_frp() {
     TMP_DIR=$(mktemp -d)
     if ! download_multisource "$UV" "$TMP_DIR/frp.tar.gz" "frp"; then
         rm -rf "$TMP_DIR"
-        warn "frp 下载失败，跳过"
+        warn "frp 下载失败，跳过（已保留现有版本）"
         return 1
     fi
+
+    # SHA256 校验（fail-closed：仅从 GitHub 官方直连获取 sha256_checksums.txt）
+    local FRP_SHA_URL="https://github.com/${FRP_REPO}/releases/download/${VER}/sha256_checksums.txt"
+    local FRP_SHA_FILE="$TMP_DIR/sha256_checksums.txt"
+    local EXPECTED_SHA=""
+    if curl -fsSL --connect-timeout 10 --max-time 30 "$FRP_SHA_URL" -o "$FRP_SHA_FILE" 2>/dev/null; then
+        EXPECTED_SHA=$(grep -E "[a-f0-9]{64}.*${ASSET}" "$FRP_SHA_FILE" 2>/dev/null | awk '{print $1}' | head -1)
+    fi
+    if [[ -z "$EXPECTED_SHA" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "frp SHA256 校验失败（无法从 GitHub 官方获取校验和），跳过安装"
+        return 1
+    fi
+    local ACTUAL_SHA
+    ACTUAL_SHA=$(sha256sum "$TMP_DIR/frp.tar.gz" | awk '{print $1}')
+    if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "frp SHA256 校验不匹配，跳过安装（可能文件被篡改）"
+        return 1
+    fi
+    ok "frp SHA256 校验通过"
 
     mkdir -p "$TMP_DIR/unpack"
     tar -xzf "$TMP_DIR/frp.tar.gz" -C "$TMP_DIR/unpack" 2>/dev/null || { rm -rf "$TMP_DIR"; warn "frp 解压失败，跳过"; return 1; }
@@ -724,10 +775,19 @@ install_ngrok() {
         if [[ -x "$p" ]]; then ng_bin="$p"; break; fi
     done
     if [[ -n "$ng_bin" ]]; then
-        local cur
+        local cur cur_ver
         cur=$("$ng_bin" version 2>/dev/null | head -1)
+        # 提取版本号（数字+点）
+        cur_ver=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        local latest_num="${VER#v}"
         info "ngrok 已存在: ${cur:-unknown} ($ng_bin)"
-        if prompt_reuse "$reuse_default" "ngrok ${cur:-}"; then
+        info "最新版本: ${YELLOW}${VER}${NC}"
+        # 版本相同自动跳过
+        if [[ "$cur_ver" == "$latest_num" ]]; then
+            ok "ngrok 已是最新版本 (${cur_ver})，跳过"
+            return 0
+        fi
+        if prompt_reuse "$reuse_default" "ngrok ${cur:-} → ${VER}"; then
             if [[ "$ng_bin" != "$LOCAL_BIN/ngrok" ]]; then
                 info "  复制到标准位置 $LOCAL_BIN/ngrok"
                 mkdir -p "$LOCAL_BIN"
@@ -765,9 +825,37 @@ install_ngrok() {
     TMP_DIR=$(mktemp -d)
     if ! download_multisource "$UV" "$TMP_DIR/ngrok.tar.gz" "ngrok"; then
         rm -rf "$TMP_DIR"
-        warn "ngrok 下载失败，跳过"
+        warn "ngrok 下载失败，跳过（已保留现有版本）"
         return 1
     fi
+
+    # SHA256 校验（fail-closed：仅从 GitHub 官方直连获取 checksums 文件）
+    local NGROK_SHA_URL="https://github.com/${NGROK_REPO}/releases/download/${VER}/ngrok_${V}_linux_checksums.txt"
+    local NGROK_SHA_FILE="$TMP_DIR/checksums.txt"
+    local EXPECTED_SHA=""
+    if curl -fsSL --connect-timeout 10 --max-time 30 "$NGROK_SHA_URL" -o "$NGROK_SHA_FILE" 2>/dev/null; then
+        EXPECTED_SHA=$(grep -E "[a-f0-9]{64}.*${ASSET}" "$NGROK_SHA_FILE" 2>/dev/null | awk '{print $1}' | head -1)
+    fi
+    if [[ -z "$EXPECTED_SHA" ]]; then
+        # 尝试备用文件名格式
+        local NGROK_SHA_URL2="https://github.com/${NGROK_REPO}/releases/download/${VER}/checksums.txt"
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$NGROK_SHA_URL2" -o "$NGROK_SHA_FILE" 2>/dev/null; then
+            EXPECTED_SHA=$(grep -E "[a-f0-9]{64}.*${ASSET}" "$NGROK_SHA_FILE" 2>/dev/null | awk '{print $1}' | head -1)
+        fi
+    fi
+    if [[ -z "$EXPECTED_SHA" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "ngrok SHA256 校验失败（无法从 GitHub 官方获取校验和），跳过安装"
+        return 1
+    fi
+    local ACTUAL_SHA
+    ACTUAL_SHA=$(sha256sum "$TMP_DIR/ngrok.tar.gz" | awk '{print $1}')
+    if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+        rm -rf "$TMP_DIR"
+        warn "ngrok SHA256 校验不匹配，跳过安装（可能文件被篡改）"
+        return 1
+    fi
+    ok "ngrok SHA256 校验通过"
 
     mkdir -p "$TMP_DIR/unpack"
     tar -xzf "$TMP_DIR/ngrok.tar.gz" -C "$TMP_DIR/unpack" 2>/dev/null || { rm -rf "$TMP_DIR"; warn "ngrok 解压失败，跳过"; return 1; }
@@ -805,7 +893,19 @@ install_browser() {
         local cur
         cur=$("$browser_bin" --version 2>/dev/null | head -1)
         info "浏览器核心已存在: ${cur:-unknown} ($browser_bin)"
-        if prompt_reuse "$reuse_default" "浏览器核心 ${cur:-}"; then
+        # 预获取最新版本用于对比
+        local browser_latest_json browser_latest_ver cur_clean
+        cur_clean=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        browser_latest_json=$(curl -sSL --connect-timeout 5 --max-time 10             "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json" 2>/dev/null) || true
+        browser_latest_ver=$(echo "$browser_latest_json" | grep -o '"Stable".*"version":"[^"]*"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        if [[ -n "$browser_latest_ver" ]]; then
+            info "最新版本: ${YELLOW}${browser_latest_ver}${NC}"
+            if [[ "$cur_clean" == "$browser_latest_ver" ]]; then
+                ok "浏览器核心已是最新版本 (${cur_clean})，跳过"
+                return 0
+            fi
+        fi
+        if prompt_reuse "$reuse_default" "浏览器核心 ${cur:-} → ${browser_latest_ver:-latest}"; then
             # 不在标准位置时复制整个目录
             if [[ "$(dirname "$browser_bin")" != "$BROWSER_DIR" ]]; then
                 info "  复制到标准位置 $BROWSER_DIR/"
