@@ -109,9 +109,12 @@ func TestGossipLedger_RecordTrust(t *testing.T) {
 	if id == "" {
 		t.Fatal("RecordTrust returned empty ID")
 	}
-	got, err := ledger.GetContribution(id)
-	// Trust records have a different storage mechanism; just verify no panic
-	_ = got
+	// Trust records have a different storage mechanism; just verify no panic.
+	// Called as a statement (Go permits discarding all of a call's results) so
+	// neither the value nor the error is bound to a variable that is then never
+	// read -- the previous `got, err := ...` / `_ = got` pair tripped
+	// ineffassign, which is one of the three linters .golangci.yml enables.
+	ledger.GetContribution(id)
 }
 
 func TestGossipLedger_RecordClaim(t *testing.T) {

@@ -1,5 +1,27 @@
 # Changelog
 
+## v4.5.53 (2026-09-13)
+
+- **CI 转绿：修掉让 main 上 `CI` 工作流长期变红的两处问题**（自当日 05:55 起连续 8 次 push 均失败，
+  与 v4.5.52 的改动无关；两处根因均已在开发机复现后才修）：
+  - **`Lint (golangci-lint)`**：`contribution_ledger_test.go:112` 的
+    `got, err := ledger.GetContribution(id)` 把结果赋给变量后 `err` 从未被读取，触发
+    `ineffassign`（`.golangci.yml` 启用的三个 linter 之一）。该调用改为语句形式
+    `ledger.GetContribution(id)`——Go 允许函数调用作语句丢弃全部返回值，"只验证不 panic" 的原意
+    不变，也不再产生未被读取的赋值。已确认 `errcheck` **未**在 `.golangci.yml` 中启用，
+    故裸调用不会引出新的 lint 报告（先查配置再改，避免"修好一个 lint 踩出另一个"）。
+  - **`Security scan` 的 `govulncheck` 一步**：CI 钉的是
+    `golang.org/x/vuln/cmd/govulncheck@v1.1.3`，该版本依赖 `golang.org/x/tools@v0.23.0`，
+    其 `internal/tokeninternal/tokeninternal.go:64` 在 Go 1.26 下无法编译
+    （`invalid array length -delta * delta`）——于是 `go install` 自身就失败，**漏洞扫描其实从未
+    真正运行过**（该步 `continue-on-error: true`，失败被静默为绿）。升到 `@v1.8.0`
+    （依赖 `x/tools@v0.50.0`）后构建与运行均正常，仍保持钉死具体版本的风格。
+    注：这与 OMP 自身依赖无关——`golang.org/x/tools` 在 `go.mod` / `go.sum` / 源码中零出现，
+    因此**不应**用 `go get -u golang.org/x/tools` 处理（那只会凭空引入一个新依赖，且修不到工具的
+    构建上下文）。
+
+- AppVersion bumped to v4.5.53.
+
 ## v4.5.52 (2026-09-13)
 
 - **域名绑定引导三处误报修复（`tunnel.go` / `admin.html`）**：

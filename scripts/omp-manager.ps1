@@ -57,7 +57,7 @@ if (-not $RELEASE_TAG) {
         $releaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/$GITHUB_REPO/releases/latest" -UseBasicParsing
         $RELEASE_TAG = $releaseInfo.tag_name
     } catch {
-        $RELEASE_TAG = "v4.5.52"  # fallback 版本，仅 GitHub API 不可用时使用
+        $RELEASE_TAG = "v4.5.53"  # fallback 版本，仅 GitHub API 不可用时使用
     }
 }
 $exeName = "openmodelpool.exe"
