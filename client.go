@@ -1920,7 +1920,9 @@ func fetchRemoteModels(p Provider) []map[string]string {
 	var out []map[string]string
 	for _, m := range data.Data {
 		if m.ID != "" {
-			out = append(out, map[string]string{"id": m.ID, "name": m.ID})
+			// Normalize model ID: strip "models/" prefix (e.g. Gemini OpenAI-compatible API)
+			id := strings.TrimPrefix(m.ID, "models/")
+			out = append(out, map[string]string{"id": id, "name": id})
 		}
 	}
 	return out
