@@ -1210,6 +1210,14 @@ setup_cloudflare() {
         systemctl stop cloudflared 2>/dev/null || true
         systemctl disable cloudflared 2>/dev/null || true
 
+        # 将 Cloudflare token 写入 EnvironmentFile（600 权限），避免明文出现在 ExecStart 中
+        mkdir -p /etc/cloudflared
+        cat > /etc/cloudflared/tunnel-token.env << EOF
+TUNNEL_TOKEN=$CF_TOKEN
+EOF
+        chmod 600 /etc/cloudflared/tunnel-token.env
+        chmod 700 /etc/cloudflared
+
         # 创建 systemd 服务
         cat > /etc/systemd/system/cloudflared.service << EOF
 [Unit]
@@ -1218,7 +1226,8 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/cloudflared tunnel run --token $CF_TOKEN
+EnvironmentFile=/etc/cloudflared/tunnel-token.env
+ExecStart=/usr/bin/cloudflared tunnel run --token \$TUNNEL_TOKEN
 Restart=on-failure
 RestartSec=5
 
