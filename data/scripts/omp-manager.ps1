@@ -379,7 +379,7 @@ function Install-OMP {
 @echo off
 cd /d "$InstallDir"
 set PORT=$Port
-$exeName >> "$logFile" 2>&1
+$exeName 1>> $logFile 2>&1
 "@ | Set-Content $startBat -Encoding ASCII
 
     $stopBat = Join-Path $InstallDir "stop.bat"
@@ -437,7 +437,30 @@ function Upgrade-OMP {
     Write-Info "当前版本: $localVer"
     Write-Info "目标版本: $RELEASE_TAG"
 
-    Write-Step 1 3 "下载最新版本..."
+    # 语义化版本比较：目标版本必须 > 当前版本才升级
+    function Compare-Version {
+        param([string]$a, [string]$b)
+        $partsA = $a -replace '^v' -replace '-.*$' -split '\.' | ForEach-Object { [int]$_ }
+        $partsB = $b -replace '^v' -replace '-.*$' -split '\.' | ForEach-Object { [int]$_ }
+        $maxLen = [Math]::Max($partsA.Count, $partsB.Count)
+        for ($i = 0; $i -lt $maxLen; $i++) {
+            $valA = if ($i -lt $partsA.Count) { $partsA[$i] } else { 0 }
+            $valB = if ($i -lt $partsB.Count) { $partsB[$i] } else { 0 }
+            if ($valA -gt $valB) { return 1 }
+            if ($valA -lt $valB) { return -1 }
+        }
+        return 0
+    }
+
+    $verCmp = Compare-Version $localVer $RELEASE_TAG
+    if ($verCmp -ge 0) {
+        Write-Info "当前版本已是最新或更高，跳过升级"
+        return
+    }
+
+    $dataDir = Join-Path $InstallDir "data"
+
+    Write-Step 1 5 "下载最新版本..."
     $tmpDir = Join-Path $env:TEMP "omp-upgrade-$(Get-Random)"
     New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
     $downloadedExe = Download-OMPRelease -Tag $RELEASE_TAG -TmpDir $tmpDir
@@ -446,21 +469,72 @@ function Upgrade-OMP {
         return
     }
 
-    Write-Step 2 3 "停止服务并替换二进制文件..."
+    Write-Step 2 5 "备份配置与二进制..."
+    $backupTs = Get-Date -Format "yyyyMMddHHmmss"
+    $backupDir = Join-Path $tmpDir "backup-$backupTs"
+    New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+    # 备份二进制
+    Copy-Item $exePath -Destination (Join-Path $backupDir "openmodelpool.exe") -Force
+    # 备份关键配置文件
+    foreach ($cfg in @("config.json", "providers.json", "admin.json", ".key")) {
+        $src = Join-Path $dataDir $cfg
+        if (Test-Path $src) {
+            Copy-Item $src -Destination (Join-Path $backupDir $cfg) -Force
+        }
+    }
+    Write-OK "备份完成 (时间戳: $backupTs)"
+
+    Write-Step 3 5 "停止服务并替换二进制文件..."
     Stop-OMP
     Copy-Item $downloadedExe -Destination $exePath -Force
-    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
     Write-OK "替换完成"
 
-    Write-Step 3 3 "重启服务..."
+    Write-Step 4 5 "启动服务并健康检查..."
     Start-OMP
     Start-Configured-Tunnels
-    $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
-    if ($proc) {
-        Write-OK "升级完成 (PID: $($proc.Id))"
+
+    # 健康检查：验证服务正常启动且配置加载成功
+    $healthy = $false
+    $providers = 0
+    for ($i = 0; $i -lt 6; $i++) {
+        Start-Sleep -Seconds 3
+        try {
+            $resp = Invoke-WebRequest -Uri "http://localhost:$Port/health" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+            $healthData = $resp.Content | ConvertFrom-Json
+            if ($healthData.providers_enabled -gt 0) {
+                $healthy = $true
+                $providers = $healthData.providers_enabled
+                break
+            }
+        } catch {
+            # 服务可能还在启动中，继续等待
+        }
+    }
+
+    if ($healthy) {
+        Write-OK "升级成功！providers=$providers"
         Write-Host "  管理面板: http://localhost:$Port/admin" -ForegroundColor $C
+        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
     } else {
-        Write-Err "启动失败"
+        Write-Err "启动失败或配置异常，正在回滚..."
+        try {
+            Stop-OMP
+            Start-Sleep -Seconds 2
+            # 回滚二进制
+            Copy-Item (Join-Path $backupDir "openmodelpool.exe") -Destination $exePath -Force
+            # 回滚所有配置文件
+            foreach ($cfg in @("config.json", "providers.json", "admin.json", ".key")) {
+                $bak = Join-Path $backupDir $cfg
+                if (Test-Path $bak) {
+                    Copy-Item $bak -Destination (Join-Path $dataDir $cfg) -Force
+                }
+            }
+            Start-OMP
+            Start-Configured-Tunnels
+            Write-OK "已回滚到旧版本 ($localVer)"
+        } catch {
+            Write-Err "回滚失败，请手动检查: $backupDir"
+        }
     }
     Write-Host ""
 }
@@ -1166,7 +1240,7 @@ function Change-Port {
 @echo off
 cd /d "$InstallDir"
 set PORT=$newPort
-$exeName >> "$logFile" 2>&1
+$exeName 1>> $logFile 2>&1
 "@ | Set-Content $startBat -Encoding ASCII
 
     # 使用 start.bat 启动以确保 PORT 环境变量正确传递

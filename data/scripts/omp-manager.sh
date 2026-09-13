@@ -92,7 +92,7 @@ detect_region() {
     fi
     
     # 查询 IP 归属地
-    country=$(curl -s --connect-timeout 3 "http://ip-api.com/line/${ip}?fields=countryCode" 2>/dev/null) || country=""
+    country=$(curl -s --connect-timeout 3 "https://ipapi.co/${ip}/country_code/" 2>/dev/null) || country=""
     
     if [[ "$country" == "CN" ]]; then
         echo "cn"
@@ -1017,11 +1017,21 @@ upgrade_omp() {
         else
             # 配置可能加载失败（格式不兼容），尝试从备份恢复
             write_info "⚠️ 配置加载异常，尝试从备份恢复..."
-            local LATEST_BAK=$(ls -t "$INSTALL_DIR/data/config.json.bak."* 2>/dev/null | head -1)
-            if [ -n "$LATEST_BAK" ]; then
+            local LATEST_BAK_TS=""
+                # 找到最新的备份时间戳（通过 config.json.bak 推断）
+                local bak_files=($(ls -t "$INSTALL_DIR/data/config.json.bak."* 2>/dev/null))
+                if [ ${#bak_files[@]} -gt 0 ]; then
+                    LATEST_BAK_TS="${bak_files[0]##*.bak.}"
+                fi
+            if [ -n "$LATEST_BAK_TS" ]; then
                 stop_omp 2>/dev/null || true
                 sleep 2
-                cp "$LATEST_BAK" "$INSTALL_DIR/data/config.json"
+                # 恢复所有关键配置文件（config/providers/admin/key）
+                for cf in config.json providers.json admin.json .key; do
+                    if [ -f "$INSTALL_DIR/data/${cf}.bak.${LATEST_BAK_TS}" ]; then
+                        cp "$INSTALL_DIR/data/${cf}.bak.${LATEST_BAK_TS}" "$INSTALL_DIR/data/$cf"
+                    fi
+                done
                 start_omp 2>/dev/null || true
                 sleep 3
                 HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/health" 2>/dev/null)
@@ -1301,6 +1311,12 @@ ingress:
     service: http://localhost:$PORT
   - service: http_status:404
 EOF
+
+    # 收紧 Cloudflare 凭证文件权限（防止其他本地用户读取 tunnel token / cert.pem）
+    chmod 600 "$CONFIG_DIR/config.yml" 2>/dev/null || true
+    chmod 600 "$CONFIG_DIR/$TUNNEL_ID.json" 2>/dev/null || true
+    chmod 600 "$CONFIG_DIR/cert.pem" 2>/dev/null || true
+    chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 
     if systemctl is-active --quiet cloudflared 2>/dev/null; then
         write_ok "cloudflared 服务已运行，重启中..."
@@ -2049,11 +2065,21 @@ else:
         else
             # 配置可能加载失败，尝试从备份恢复
             echo "[$(date)] ⚠️ 配置加载异常，尝试从备份恢复..." >> "$LOG_FILE"
-            local LATEST_BAK=$(ls -t "$INSTALL_DIR/data/config.json.bak."* 2>/dev/null | head -1)
-            if [ -n "$LATEST_BAK" ]; then
+            local LATEST_BAK_TS=""
+                # 找到最新的备份时间戳（通过 config.json.bak 推断）
+                local bak_files=($(ls -t "$INSTALL_DIR/data/config.json.bak."* 2>/dev/null))
+                if [ ${#bak_files[@]} -gt 0 ]; then
+                    LATEST_BAK_TS="${bak_files[0]##*.bak.}"
+                fi
+            if [ -n "$LATEST_BAK_TS" ]; then
                 stop_omp 2>/dev/null || true
                 sleep 2
-                cp "$LATEST_BAK" "$INSTALL_DIR/data/config.json"
+                # 恢复所有关键配置文件（config/providers/admin/key）
+                for cf in config.json providers.json admin.json .key; do
+                    if [ -f "$INSTALL_DIR/data/${cf}.bak.${LATEST_BAK_TS}" ]; then
+                        cp "$INSTALL_DIR/data/${cf}.bak.${LATEST_BAK_TS}" "$INSTALL_DIR/data/$cf"
+                    fi
+                done
                 start_omp 2>/dev/null || true
                 sleep 3
                 HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/health" 2>/dev/null)
