@@ -204,6 +204,36 @@ func TestEncryptField_DecryptField(t *testing.T) {
 			t.Error("decryptField should return unchanged when enc is nil")
 		}
 	})
+
+	t.Run("decrypt failure returns ciphertext (no save clobber)", func(t *testing.T) {
+		enc = newTestEncryptor()
+		// Invalid ciphertext body: prefix ok but base64 does not decode → Decrypt err.
+		bad := "omp:e:" + base64.StdEncoding.EncodeToString([]byte("this-is-not-a-valid-ciphertext-body"))
+		if !IsEncrypted(bad) {
+			t.Fatal("fixture should look encrypted")
+		}
+		got := decryptField(bad)
+		if got != bad {
+			t.Errorf("decryptField on failing ciphertext = %q, want original ciphertext %q (must never be re-encrypted on save)", got, bad)
+		}
+		disp := decryptFieldDisplay(bad)
+		if !strings.HasPrefix(disp, "DECRYPT_FAILED:") {
+			t.Errorf("decryptFieldDisplay = %q, want DECRYPT_FAILED: prefix for display", disp)
+		}
+		if !strings.HasSuffix(disp, bad) {
+			t.Errorf("decryptFieldDisplay = %q, want it to retain the ciphertext after prefix", disp)
+		}
+	})
+
+	t.Run("decryptField display leaves plaintext untouched", func(t *testing.T) {
+		enc = newTestEncryptor()
+		if decryptFieldDisplay("plain-value") != "plain-value" {
+			t.Error("decryptFieldDisplay should return plaintext unchanged")
+		}
+		if decryptFieldDisplay("omp:e:") != "DECRYPT_FAILED:omp:e:" {
+			t.Error("decryptFieldDisplay should mark undecryptable prefix-only value")
+		}
+	})
 }
 
 func TestDecryptAPIKey(t *testing.T) {

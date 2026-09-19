@@ -346,7 +346,7 @@ func (m *MultiUserManager) ListConsumers() []Consumer {
 		// Decrypt for display then mask
 		displayKey := c.APIKey
 		if IsEncrypted(c.APIKey) {
-			displayKey = decryptField(c.APIKey)
+			displayKey = decryptFieldDisplay(c.APIKey)
 		}
 		if len(displayKey) > 8 {
 			safe.APIKey = displayKey[:6] + "..." + displayKey[len(displayKey)-4:]
@@ -369,7 +369,7 @@ func (m *MultiUserManager) GetConsumerFull(id string) (*Consumer, bool) {
 	result := *c
 	// Decrypt API key for admin display
 	if IsEncrypted(result.APIKey) {
-		result.APIKey = decryptField(result.APIKey)
+		result.APIKey = decryptFieldDisplay(result.APIKey)
 	}
 	return &result, true
 }

@@ -293,25 +293,17 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			proxyKey := cfg.Get("proxy_api_key", "")
 			if proxyKey == "" && !multiUser.HasConsumers() {
-				// C3-fix: Only allow anonymous admin access from localhost/private networks.
-				// SEC-P1-5: restrict to a configurable OMP_ANONYMOUS_ADMIN_IPS env var (comma-separated).
-				// If unset, default to loopback only (127.0.0.1/::1) — private-range access is too
-				// permissive on shared networks (corporate Wi-Fi, dorms, co-working spaces).
-				allowedIPs := cfg.Get("anonymous_admin_ips", "")
-				if allowedIPs == "" {
-					allowedIPs = "127.0.0.1,::1" // default: loopback only
-				}
-				clientIP := extractClientIP(r.RemoteAddr)
-				// SEC-P0-1: a relay-dispatched request is never anonymous admin,
-				// even if its preserved RemoteAddr looks local.
-				if !isRelayDispatched(r) && isAllowedAnonymousIP(clientIP, allowedIPs) {
+				// SEC-P1-5: anonymous admin only from addresses on the allowlist.
+				// Config key "anonymous_admin_ips" (comma-separated) or env var
+				// ANONYMOUS_ADMIN_IPS (fallback toUpper(key)); default loopback only.
+				if anonymousAdminAllowed(r) {
 					r.Header.Set("X-Request-Owner", "")
 					r.Header.Set("X-Request-Role", "admin")
 					handler(w, r)
 					return
 				}
 				// Non-local anonymous access rejected even in unprotected mode
-				slog.Warn("rejected anonymous access from non-local IP", "ip", clientIP, "path", r.URL.Path)
+				slog.Warn("rejected anonymous access from non-local IP", "ip", extractClientIP(r.RemoteAddr), "path", r.URL.Path)
 				writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
 					Message: "API key required",
 					Type:    "authentication_error",
@@ -348,17 +340,13 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// C3-fix: Fallback anonymous admin only from localhost/private networks
+		// C3-fix: Fallback anonymous admin only from allowlisted addresses (SEC-P1-5).
 		if proxyKey == "" {
-			if !multiUser.HasConsumers() {
-				clientIP := extractClientIP(r.RemoteAddr)
-				// SEC-P0-1: relay-dispatched requests are never anonymous admin.
-				if !isRelayDispatched(r) && isLocalOrPrivateIP(clientIP) {
-					r.Header.Set("X-Request-Owner", "")
-					r.Header.Set("X-Request-Role", "admin")
-					handler(w, r)
-					return
-				}
+			if !multiUser.HasConsumers() && anonymousAdminAllowed(r) {
+				r.Header.Set("X-Request-Owner", "")
+				r.Header.Set("X-Request-Role", "admin")
+				handler(w, r)
+				return
 			}
 		}
 
@@ -476,12 +464,31 @@ func isLocalOrPrivateIP(ip string) bool {
 	return false
 }
 
+// anonymousAdminAllowed reports whether the request may proceed as anonymous
+// admin based on its remote address. SEC-P1-5: allowlist via the
+// "anonymous_admin_ips" config key (comma-separated IPs); if unset, defaults to
+// loopback only (127.0.0.1/::1). SEC-P0-1: relay-dispatched requests are never
+// anonymous admin, even if their preserved RemoteAddr looks local.
+func anonymousAdminAllowed(r *http.Request) bool {
+	if isRelayDispatched(r) {
+		return false
+	}
+	allowedIPs := cfg.Get("anonymous_admin_ips", "")
+	if strings.TrimSpace(allowedIPs) == "" {
+		allowedIPs = "127.0.0.1,::1" // default: loopback only
+	}
+	return isAllowedAnonymousIP(extractClientIP(r.RemoteAddr), allowedIPs)
+}
+
 // isAllowedAnonymousIP checks if an IP is in a comma-separated allowlist.
-// If the list is empty or contains only "*", all IPs are allowed (legacy behavior).
+// The list entries are exact matches against the client IP (no CIDR/wildcard).
+// NOTE: an empty list or a literal "*" both result in NO anonymous admin being
+// allowed — "*" is treated as an explicit "deny all" (do not mistake it for a
+// wildcard; this is intentional so an accidental "*" cannot open admin access).
 func isAllowedAnonymousIP(ip, allowlist string) bool {
 	allowlist = strings.TrimSpace(allowlist)
 	if allowlist == "" || allowlist == "*" {
-		return false // default: no anonymous admin access
+		return false // deny all — see NOTE above
 	}
 	for _, candidate := range strings.Split(allowlist, ",") {
 		candidate = strings.TrimSpace(candidate)

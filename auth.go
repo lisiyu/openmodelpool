@@ -537,7 +537,7 @@ func (a *Auth) GenerateResetCode() (string, time.Time, error) {
 
 	// Generate a random code: 16 bytes = 128 bits of entropy → base64url 22 chars.
 	// 6-byte (48-bit) codes were brute-forceable if intercepted; 16 bytes gives
-	// ~2²² possibilities per character position, making offline guessing infeasible.
+	// 2^128 total combinations, making offline guessing infeasible.
 	codeBytes := make([]byte, 16)
 	if _, err := rand.Read(codeBytes); err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to generate reset code: %w", err)

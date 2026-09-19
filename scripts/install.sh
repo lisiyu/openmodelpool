@@ -70,10 +70,13 @@ fail() { echo -e "${RED}x${NC} $*"; exit 1; }
 [[ $EUID -ne 0 ]] && fail "请使用 sudo 执行: sudo bash install.sh [组件] [版本号]"
 
 # version_ge a b — returns 0 (true) if version a >= version b (semver-aware).
-# Compares numeric segments left-to-right; non-numeric suffixes are ignored.
+# Compares numeric segments (split on '.') left-to-right; non-numeric residues in
+# a segment (e.g. "27-beta", "1rc1") are stripped before numeric comparison, and
+# missing/empty segments count as 0. No leading-segment truncation: "26.3.28" stays
+# three segments so a same-major minor/patch upgrade is correctly detected.
 # Usage: if version_ge "26.3.27" "1.9.0"; then ...
 version_ge() {
-    local a="${1%%[!0-9]*}" b="${2%%[!0-9]*}"
+    local a="$1" b="$2"
     [[ -z "$a" || -z "$b" ]] && return 1
     local IFS='.'
     read -ra av <<< "$a"
@@ -81,7 +84,10 @@ version_ge() {
     local max=${#av[@]}
     (( ${#bv[@]} > max )) && max=${#bv[@]}
     for (( i=0; i<max; i++ )); do
-        local ai=$((10#${av[$i]:-0})) bi=$((10#${bv[$i]:-0}))
+        local segA="${av[$i]//[^0-9]/}" segB="${bv[$i]//[^0-9]/}"
+        [[ -z "$segA" ]] && segA=0
+        [[ -z "$segB" ]] && segB=0
+        local ai=$((10#$segA)) bi=$((10#$segB))
         if (( ai > bi )); then return 0; fi
         if (( ai < bi )); then return 1; fi
     done

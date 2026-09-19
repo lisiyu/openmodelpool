@@ -161,22 +161,41 @@ func encryptField(s string) string {
 	return e
 }
 
-// decryptField best-effort decrypts a field, returning the input unchanged on error.
-// P1-fix: when decryption fails (wrong key / corrupted ciphertext), log at ERROR level
-// and return the original value prefixed with "DECRYPT_FAILED:" so callers can distinguish
-// between "was plaintext" and "decryption failed". This prevents silent data corruption
-// from being mistaken for valid plaintext.
+// decryptField best-effort decrypts a field for internal use (i.e. in-memory data
+// that may later be persisted). On failure it returns the ORIGINAL ciphertext
+// unchanged — never a derived/marked string — so callers that re-encrypt on save
+// (provider/config/node persistence) cannot overwrite the stored ciphertext with a
+// garbage value. Use decryptFieldDisplay instead when the result is shown to humans.
 func decryptField(s string) string {
 	if enc == nil || s == "" {
 		return s
 	}
 	if !IsEncrypted(s) {
-		return s // not encrypted, return as-is
+		return s // not encrypted, return as-is (e.g. legacy plaintext, or DECRYPT_FAILED markers never reach here)
 	}
 	d, err := enc.Decrypt(s)
 	if err != nil {
-		slog.Error("decrypt failed — field may be corrupted or key mismatch", "err", err, "prefix_hint", encPrefix)
-		return "DECRYPT_FAILED:" + s // mark so callers can detect and alert
+		slog.Error("decrypt failed — field may be corrupted or key mismatch", "err", err, "hint", "original ciphertext kept to avoid clobbering on save")
+		return s // keep ciphertext; save paths skip it because IsEncrypted(s) is true
+	}
+	return d
+}
+
+// decryptFieldDisplay decrypts a field for DISPLAY ONLY (admin UI, logs, masking).
+// Unlike decryptField it never feeds a persist path back, so on failure it marks the
+// result with a "DECRYPT_FAILED:" prefix so operators can spot a bad value instead of
+// mistaking undecryptable ciphertext for plaintext.
+func decryptFieldDisplay(s string) string {
+	if enc == nil || s == "" {
+		return s
+	}
+	if !IsEncrypted(s) {
+		return s
+	}
+	d, err := enc.Decrypt(s)
+	if err != nil {
+		slog.Error("decrypt display failed — field may be corrupted or key mismatch", "err", err, "prefix_hint", encPrefix)
+		return "DECRYPT_FAILED:" + s
 	}
 	return d
 }

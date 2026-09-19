@@ -1,5 +1,27 @@
 # Changelog
 
+## v4.5.55 (2026-09-19)
+
+- **v4.5.54 安全修复的回归收尾（review 后补修）**：
+  - **decryptField 失败不再破坏持久化数据**：v4.5.54 把解密失败返回值改为 `DECRYPT_FAILED:` 前缀串，
+    该值会经 provider/config/node 的 load→save 回路被当作明文重新加密写盘，永久覆盖原始密文
+    （即使修复密钥也无法恢复）。现 `decryptField` 内部路径失败时**返回原密文**（`IsEncrypted` 判定
+    为真，save 跳过重写），日志升为 ERROR；新增 `decryptFieldDisplay` 专供展示层（admin UI /
+    掩码）使用，失败仍带 `DECRYPT_FAILED:` 前缀帮助运维识别。展示层调用点（multiuser.go）已切换。
+  - **匿名 admin 第二入口未堵**：v4.5.54 只改了「无 Bearer 头」分支；「错误 Bearer token + 私网 IP」
+    仍会经 `isLocalOrPrivateIP` 获得 admin。两个入口现统一走 `anonymousAdminAllowed()` 白名单
+    （config `anonymous_admin_ips` / env `ANONYMOUS_ADMIN_IPS`，默认仅 loopback）。
+  - **`version_ge` 只比较主版本号导致漏升级**：`${1%%[!0-9]*}` 把 `26.3.27` 截成 `26`，
+    同主版本内的 minor/patch 升级（frp / cloudflared / browser / Xray 26.x）被判「已最新」而跳过。
+    改为逐数字段比较（剥除非数字残留、空段记 0），16 个边界用例全部验证通过。
+  - **`anonymous_admin_ips="*"` 语义修复**：注释宣称 `*` 代表「允许全部（legacy）」，实际返回拒绝，
+    行为与文档相反。现注释明确 `*` = 显式拒绝（防误开 admin）。
+  - **文档纠正**：匿名 admin 的环境变量实为 `ANONYMOUS_ADMIN_IPS`（`toUpper` 映射，非 `OMP_` 前缀）；
+    重置码注释熵值表述修正为 2^128。
+  - 新增 encryptor 失败行为测试（保留密文 / 展示前缀），全量测试 45.8s 通过。
+
+- AppVersion bumped to v4.5.55.
+
 ## v4.5.53 (2026-09-13)
 
 - **CI 转绿：修掉让 main 上 `CI` 工作流长期变红的两处问题**（自当日 05:55 起连续 8 次 push 均失败，
