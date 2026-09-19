@@ -126,14 +126,13 @@ func init() {
 	var err error
 	enc, err = NewEncryptor()
 	if err != nil {
-		// Last-resort: ephemeral key so the process can still run.
-		key := make([]byte, 32)
-		if _, err := rand.Read(key); err != nil {
-			slog.Error("crypto/rand.Read failed for ephemeral key fallback", "err", err) // B10
-		}
-		enc = &Encryptor{key: key, ready: true, ephemeral: true}
-		slog.Error("CRITICAL: encryptor fell back to ephemeral key — all encrypted data from previous sessions is UNRECOVERABLE. Resolve the key file issue before storing any sensitive data.")
-		return
+		// P0-fix: abort the process on ephemeral-key fallback. Continuing with an
+		// in-memory key silently breaks encryption for all previously-stored
+		// secrets (SMTP passwords, API keys) — a denial-of-service that also masks
+		// the real incident (key file missing/corrupted). The operator must fix the
+		// key source before any sensitive data can be stored or recovered.
+		slog.Error("CRITICAL: encryptor init failed — aborting to prevent silent data loss", "err", err)
+		os.Exit(1)
 	}
 	enc.ready = true
 }
@@ -163,14 +162,21 @@ func encryptField(s string) string {
 }
 
 // decryptField best-effort decrypts a field, returning the input unchanged on error.
+// P1-fix: when decryption fails (wrong key / corrupted ciphertext), log at ERROR level
+// and return the original value prefixed with "DECRYPT_FAILED:" so callers can distinguish
+// between "was plaintext" and "decryption failed". This prevents silent data corruption
+// from being mistaken for valid plaintext.
 func decryptField(s string) string {
 	if enc == nil || s == "" {
 		return s
 	}
+	if !IsEncrypted(s) {
+		return s // not encrypted, return as-is
+	}
 	d, err := enc.Decrypt(s)
 	if err != nil {
-		slog.Warn("decrypt failed", "err", err)
-		return s
+		slog.Error("decrypt failed — field may be corrupted or key mismatch", "err", err, "prefix_hint", encPrefix)
+		return "DECRYPT_FAILED:" + s // mark so callers can detect and alert
 	}
 	return d
 }

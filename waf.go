@@ -304,9 +304,10 @@ var wafAttackPatterns = []struct {
 	{"xss_expression", "expression("},
 	{"xss_document_cookie", "document.cookie"},
 	{"xss_document_write", "document.write"},
-	// Path traversal
-	{"path_traversal_dotdot", ".."},
+	// Path traversal — only match actual traversal sequences (../, ..\) not bare ".."
+	// which appears in legitimate URLs (version suffixes like "app..js", query params).
 	{"path_traversal_dotdot_slash", "../"},
+	{"path_traversal_dotdot_backslash", "..\\"},
 	// path_traversal_dotdot_backslash removed: ".." already covered above
 	{"path_traversal_etc_passwd", "/etc/passwd"},
 	{"path_traversal_etc_shadow", "/etc/shadow"},

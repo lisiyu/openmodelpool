@@ -69,6 +69,25 @@ fail() { echo -e "${RED}x${NC} $*"; exit 1; }
 
 [[ $EUID -ne 0 ]] && fail "请使用 sudo 执行: sudo bash install.sh [组件] [版本号]"
 
+# version_ge a b — returns 0 (true) if version a >= version b (semver-aware).
+# Compares numeric segments left-to-right; non-numeric suffixes are ignored.
+# Usage: if version_ge "26.3.27" "1.9.0"; then ...
+version_ge() {
+    local a="${1%%[!0-9]*}" b="${2%%[!0-9]*}"
+    [[ -z "$a" || -z "$b" ]] && return 1
+    local IFS='.'
+    read -ra av <<< "$a"
+    read -ra bv <<< "$b"
+    local max=${#av[@]}
+    (( ${#bv[@]} > max )) && max=${#bv[@]}
+    for (( i=0; i<max; i++ )); do
+        local ai=$((10#${av[$i]:-0})) bi=$((10#${bv[$i]:-0}))
+        if (( ai > bi )); then return 0; fi
+        if (( ai < bi )); then return 1; fi
+    done
+    return 0 # equal
+}
+
 show_help() {
     cat <<'EOF'
 用法: sudo bash install.sh [组件] [版本]
@@ -371,7 +390,9 @@ UNIT
             start_core_service "$USE_SYSTEMCTL" "$DEFAULT_INSTALL_DIR"
             warn "已回滚到旧版本，请检查新版本兼容性"
         else
-            warn "无备份文件，无法回滚"
+            # P2-fix: 无备份时仍尝试启动新服务（best-effort），避免节点永久停机
+            warn "无备份文件，尝试直接启动新版本..."
+            start_core_service "$USE_SYSTEMCTL" "$DEFAULT_INSTALL_DIR" || true
         fi
         return 1
     fi
@@ -448,7 +469,7 @@ install_xray() {
         local cur
         cur=$("$existing" version 2>/dev/null | grep -o 'Xray [^ ]*' | head -1 | cut -d' ' -f2)
         info "Xray 已存在: ${cur:-unknown} ($existing)"
-        # 版本对比：先获取最新版本号再判断
+        # 版本对比：先获取最新版本号再判断（使用语义化版本号比较）
         local latest_ver
         latest_ver=$(get_latest_tag "$XRAY_REPO" 2>/dev/null || echo "")
         local cur_ver latest_num
@@ -456,8 +477,8 @@ install_xray() {
         latest_num="${latest_ver#v}"
         if [[ -n "$latest_ver" ]]; then
             info "最新版本: ${YELLOW}${latest_ver}${NC}"
-            if [[ "$cur_ver" == "$latest_num" ]]; then
-                ok "Xray 已是最新版本 (${cur_ver})，跳过"
+            if version_ge "${cur_ver:-0.0.0}" "${latest_num}"; then
+                ok "Xray 已是最新版本或更新 (${cur_ver})，跳过"
                 return 0
             fi
         fi
@@ -579,8 +600,8 @@ install_cloudflared() {
         local latest_num="${VER#v}"
         info "cloudflared 已存在: ${cur:-unknown} ($cf_bin)"
         info "最新版本: ${YELLOW}${VER}${NC}"
-        # 版本相同自动跳过
-        if [[ "$cur_ver" == "$latest_num" ]]; then
+        # 当前版本 >= 最新则跳过（语义化版本号比较）
+        if version_ge "${cur_ver:-0.0.0}" "${latest_num}"; then
             ok "cloudflared 已是最新版本 (${cur_ver})，跳过"
             return 0
         fi
@@ -694,11 +715,11 @@ install_frp() {
         cur=$("$frps_bin" --version 2>/dev/null | head -1)
         info "frp 已存在: ${cur:-unknown} (frps=$frps_bin, frpc=$frpc_bin)"
         info "最新版本: ${YELLOW}${VER}${NC}"
-        # 版本相同自动跳过
+        # 当前版本 >= 最新则跳过（语义化版本号比较）
         local cur_ver latest_num
         cur_ver=$(echo "$cur" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
         latest_num="${VER#v}"
-        if [[ "$cur_ver" == "$latest_num" ]]; then
+        if version_ge "${cur_ver:-0.0.0}" "${latest_num}"; then
             ok "frp 已是最新版本 (${cur_ver})，跳过"
             return 0
         fi
@@ -932,7 +953,7 @@ install_browser() {
         browser_latest_ver=$(echo "$browser_latest_json" | grep -o '"Stable".*"version":"[^"]*"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
         if [[ -n "$browser_latest_ver" ]]; then
             info "最新版本: ${YELLOW}${browser_latest_ver}${NC}"
-            if [[ "$cur_clean" == "$browser_latest_ver" ]]; then
+            if version_ge "${cur_clean:-0.0.0.0}" "${browser_latest_ver}"; then
                 ok "浏览器核心已是最新版本 (${cur_clean})，跳过"
                 return 0
             fi

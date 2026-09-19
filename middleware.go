@@ -61,21 +61,24 @@ func corsMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 		}
 
-		// B10-WL: the client-browser-login bookmarklet executes on arbitrary
-		// provider sites (sider.ai, coze.cn, poe.com, ...) whose origins can
-		// never be enumerated in the whitelist. Grant wildcard CORS ONLY to
-		// the provider-update write path used by the bookmarklet — auth still
-		// requires a valid bearer token, so this exposes nothing to attackers
-		// (they cannot read responses without the token anyway).
+		// Bookmarklet CORS: the client-browser-login bookmarklet executes on
+		// arbitrary provider sites whose origins can never be enumerated in the
+		// whitelist. Grant wildcard CORS ONLY to the provider-update write path
+		// used by the bookmarklet — auth still requires a valid bearer token, so
+		// this exposes nothing to attackers (they cannot read responses without
+		// the token anyway). Use Vary: Origin so browsers cache per-origin
+		// preflight results instead of caching a wildcard that could leak to
+		// other origins.
 		wantsBookmarkletScope := strings.HasPrefix(r.URL.Path, "/api/providers/") &&
 			(r.Method == http.MethodPut || r.Method == http.MethodOptions)
 		if !originAllowed && origin != "" && wantsBookmarkletScope {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Vary", "Origin")
 		}
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
-		w.Header().Set("Access-Control-Max-Age", "86400") // Cache preflight for 24h
+		w.Header().Set("Access-Control-Max-Age", "3600") // Cache preflight for 1h (was 24h; P2-fix)
 		// SEC-P2-17: only advertise Allow-Credentials when the origin actually
 		// matched the whitelist — never for arbitrary origins.
 		if originAllowed {
@@ -290,11 +293,18 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			proxyKey := cfg.Get("proxy_api_key", "")
 			if proxyKey == "" && !multiUser.HasConsumers() {
-				// C3-fix: Only allow anonymous admin access from localhost/private networks
+				// C3-fix: Only allow anonymous admin access from localhost/private networks.
+				// SEC-P1-5: restrict to a configurable OMP_ANONYMOUS_ADMIN_IPS env var (comma-separated).
+				// If unset, default to loopback only (127.0.0.1/::1) — private-range access is too
+				// permissive on shared networks (corporate Wi-Fi, dorms, co-working spaces).
+				allowedIPs := cfg.Get("anonymous_admin_ips", "")
+				if allowedIPs == "" {
+					allowedIPs = "127.0.0.1,::1" // default: loopback only
+				}
 				clientIP := extractClientIP(r.RemoteAddr)
 				// SEC-P0-1: a relay-dispatched request is never anonymous admin,
 				// even if its preserved RemoteAddr looks local.
-				if !isRelayDispatched(r) && isLocalOrPrivateIP(clientIP) {
+				if !isRelayDispatched(r) && isAllowedAnonymousIP(clientIP, allowedIPs) {
 					r.Header.Set("X-Request-Owner", "")
 					r.Header.Set("X-Request-Role", "admin")
 					handler(w, r)
@@ -460,6 +470,22 @@ func isLocalOrPrivateIP(ip string) bool {
 	for _, r := range privateRanges {
 		_, cidr, _ := net.ParseCIDR(r.network)
 		if cidr.Contains(parsed) {
+			return true
+		}
+	}
+	return false
+}
+
+// isAllowedAnonymousIP checks if an IP is in a comma-separated allowlist.
+// If the list is empty or contains only "*", all IPs are allowed (legacy behavior).
+func isAllowedAnonymousIP(ip, allowlist string) bool {
+	allowlist = strings.TrimSpace(allowlist)
+	if allowlist == "" || allowlist == "*" {
+		return false // default: no anonymous admin access
+	}
+	for _, candidate := range strings.Split(allowlist, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == ip {
 			return true
 		}
 	}

@@ -591,7 +591,7 @@ function Update-Component {
             } else { $curVer = "未安装" }
         }
         "frp" {
-            $frpc = Join-Path $InstallDir "frprpc.exe"
+            $frpc = Join-Path $InstallDir "frp\frpc.exe"
             if (Test-Path $frpc) {
                 try { $curVer = (& $frpc --version 2>$null) } catch {}
             } else { $curVer = "未安装" }
@@ -659,7 +659,7 @@ function Update-Component {
             }
         }
         "frp" {
-            $frpc = Join-Path $InstallDir "frprpc.exe"
+            $frpc = Join-Path $InstallDir "frp\frpc.exe"
             if (Test-Path $frpc) {
                 Write-Info "准备重新配置 FRP..."
                 Setup-FRP

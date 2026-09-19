@@ -535,12 +535,14 @@ func (a *Auth) GenerateResetCode() (string, time.Time, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Generate a random code: 8 chars, human-friendly
-	codeBytes := make([]byte, 6)
+	// Generate a random code: 16 bytes = 128 bits of entropy → base64url 22 chars.
+	// 6-byte (48-bit) codes were brute-forceable if intercepted; 16 bytes gives
+	// ~2²² possibilities per character position, making offline guessing infeasible.
+	codeBytes := make([]byte, 16)
 	if _, err := rand.Read(codeBytes); err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to generate reset code: %w", err)
 	}
-	code := base64.URLEncoding.EncodeToString(codeBytes)[:8]
+	code := base64.URLEncoding.EncodeToString(codeBytes)
 
 	// Hash the code for storage (so we don't store it in plaintext)
 	hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
