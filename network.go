@@ -515,6 +515,33 @@ type NetworkManager struct {
 	dataPath    string
 	startTime   time.Time
 	stopRefresh chan struct{}
+	// snap is a one-time snapshot of the package-level singletons (fed, node,
+	// routeTable, cfg) captured on the CALLING goroutine in activateNetwork
+	// before any background goroutine is spawned (v4.5.57). The refresh loop,
+	// registerSelf and cullInactivePeers read ONLY this snapshot, never the
+	// globals directly: tests/admin paths reassign those globals, and an
+	// unsynchronized read from a long-lived goroutine is a data race (the
+	// -race gate was red since the v4.5.56 cull loop was introduced).
+	snap *cullSources
+}
+
+// cullSources is an immutable snapshot of the singletons the background
+// network loop needs. Capturing it synchronously on the caller goroutine
+// (activateNetwork / startRefreshLoop) establishes happens-before, so the
+// spawned goroutines never touch the unsynchronized globals.
+type cullSources struct {
+	fed        *FederationManager
+	node       *NodeIdentity
+	routeTable *RouteTable
+	cfg        *Config
+}
+
+// snapshotCullSources captures the current singletons for use by the refresh
+// loop. Must be called on a goroutine that has exclusive/causal access to the
+// globals (startup or the network-activation call path), never from a
+// background goroutine.
+func snapshotCullSources() *cullSources {
+	return &cullSources{fed: fed, node: node, routeTable: routeTable, cfg: cfg}
 }
 
 func initNetworkManager(dataDir string) {
@@ -720,35 +747,53 @@ func (nm *NetworkManager) registerSelf() {
 	if nodeID == "" {
 		return
 	}
-	addresses := nm.collectAddresses()
+	// Read the config singleton via the activation snapshot (v4.5.57 -race:
+	// registerSelf runs on the refresh loop goroutine; the global cfg pointer
+	// may be reassigned by tests/admin paths concurrently).
+	var cfgRef *Config
+	if nm.snap != nil {
+		cfgRef = nm.snap.cfg
+	}
+	addresses := nm.collectAddresses(cfgRef)
 
 	nm.mu.Lock()
 	nm.config.Addresses = addresses
 	nm.config.LastAddressUpdate = time.Now().Format(time.RFC3339)
 	nm.mu.Unlock()
 
-	routeTable.Put(nodeID, nodeName, addresses)
-	slog.Info("registered self in route table", "node_id", nodeID, "addresses", addresses)
+	if nm.snap != nil && nm.snap.routeTable != nil {
+		nm.snap.routeTable.Put(nodeID, nodeName, addresses)
+		slog.Info("registered self in route table", "node_id", nodeID, "addresses", addresses)
+	}
 }
 
 // collectAddresses gathers all reachable URLs for this node.
 // Includes Cloudflare tunnel URL, custom domain, public IP (HTTPS), and localhost (HTTPS).
-func (nm *NetworkManager) collectAddresses() []string {
+func (nm *NetworkManager) collectAddresses(cfgRef *Config) []string {
 	var addrs []string
+	// Local helper: read a config key from the snapshot, falling back to the
+	// default when the snapshot is absent. Never reads the global cfg pointer
+	// from a background goroutine.
+	getCfg := func(key, def string) string {
+		if cfgRef == nil {
+			return def
+		}
+		return cfgRef.Get(key, def)
+	}
 
 	// 1. Cloudflare tunnel URL (already HTTPS)
-	if u := cfg.Get("tunnel_url", ""); u != "" {
+	if u := getCfg("tunnel_url", ""); u != "" {
 		addrs = append(addrs, u)
 	}
 
 	// 2. Custom domain (HTTPS)
-	if d := cfg.Get("tunnel_domain", ""); d != "" {
+	if d := getCfg("tunnel_domain", ""); d != "" {
 		addrs = append(addrs, "https://"+d)
 	}
 
 	// 3. Public IP detection (HTTPS with self-signed cert)
 	if pubIP := detectPublicIP(); pubIP != "" {
-		port := cfg.Get("service_port", "8000")
+		port := getCfg("service_port", "8000")
 		pubAddr := fmt.Sprintf("https://%s:%s", pubIP, port)
 		// Avoid duplicate if already present
 		found := false
@@ -764,7 +809,7 @@ func (nm *NetworkManager) collectAddresses() []string {
 	}
 
 	// 4. Localhost (HTTPS)
-	port := cfg.Get("service_port", "8000")
+	port := getCfg("service_port", "8000")
 	addrs = append(addrs, fmt.Sprintf("https://localhost:%s", port))
 
 	return addrs
@@ -774,21 +819,29 @@ func (nm *NetworkManager) collectAddresses() []string {
 func (nm *NetworkManager) startRefreshLoop() {
 	stopCh := make(chan struct{})
 	nm.stopRefresh = stopCh
+	// Snapshot the singletons on the calling goroutine so the background loop
+	// never does an unsynchronized read of the globals (v4.5.57 -race fix).
+	if nm.snap == nil {
+		nm.snap = snapshotCullSources()
+	}
+	src := nm.snap
 	go func() {
 		// One-shot cleanup on startup so a stale connected-node list is not
 		// rendered for the first refresh interval.
-		cullInactivePeers(nm)
+		cullInactivePeers(nm, src)
 		ticker := time.NewTicker(refreshInterval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
 				nm.registerSelf()
-				purged := routeTable.PurgeExpired()
-				if purged > 0 {
-					slog.Debug("purged expired route entries", "count", purged)
+				if src.routeTable != nil {
+					purged := src.routeTable.PurgeExpired()
+					if purged > 0 {
+						slog.Debug("purged expired route entries", "count", purged)
+					}
 				}
-				cullInactivePeers(nm)
+				cullInactivePeers(nm, src)
 			case <-stopCh:
 				return
 			}
@@ -801,10 +854,18 @@ func (nm *NetworkManager) startRefreshLoop() {
 // Config key "network_cull_days" (env NETWORK_CULL_DAYS), default 7;
 // 0 or negative disables the sweep.
 func peerCullDays() int {
-	if cfg == nil {
+	return peerCullDaysFor(cfg)
+}
+
+// peerCullDaysFor is peerCullDays with an explicit config source. The refresh
+// loop passes its snapshot, so the background goroutine never reads the global
+// cfg pointer (v4.5.57: -race clean). A nil config disables the sweep rather
+// than guessing a cutoff.
+func peerCullDaysFor(c *Config) int {
+	if c == nil {
 		return 0
 	}
-	if s := cfg.Get("network_cull_days", ""); s != "" {
+	if s := c.Get("network_cull_days", ""); s != "" {
 		if n, err := strconv.Atoi(s); err == nil {
 			return n
 		}
@@ -821,11 +882,16 @@ func peerCullDays() int {
 // there is no evidence of when they were last active, and an operator may have
 // provisioned them deliberately. A returning node re-registers itself via the
 // normal discovery/heartbeat path, so eviction is not permanent.
-func cullInactivePeers(nm *NetworkManager) {
+//
+// src is a snapshot of the singletons captured on the calling goroutine
+// (v4.5.57): never read the package globals here — this runs on the refresh
+// loop's background goroutine, and an unsynchronized read of fed/routeTable/
+// cfg concurrent with a test or admin reassignment is a data race.
+func cullInactivePeers(nm *NetworkManager, src *cullSources) {
 	if nm == nil || !nm.IsSharedMode() {
 		return
 	}
-	cullDays := peerCullDays()
+	cullDays := peerCullDaysFor(src.cfg)
 	if cullDays <= 0 {
 		return
 	}
@@ -834,16 +900,16 @@ func cullInactivePeers(nm *NetworkManager) {
 
 	// 1. Federation trust pool + gossip-learned peers (fed.RemoveNode covers
 	//    both the pool and localPeers).
-	if fed != nil {
-		pool := fed.GetTrustPool()
+	if src.fed != nil {
+		pool := src.fed.GetTrustPool()
 		for _, n := range pool.Nodes {
-			if node != nil && n.NodeID == node.NodeID() {
+			if src.node != nil && n.NodeID == src.node.NodeID() {
 				continue
 			}
 			if lastSeenBefore(n.LastSeen, cutoff) {
-				fed.RemoveNode(n.NodeID)
-				if routeTable != nil {
-					routeTable.Remove(n.NodeID)
+				src.fed.RemoveNode(n.NodeID)
+				if src.routeTable != nil {
+					src.routeTable.Remove(n.NodeID)
 				}
 				removed++
 			}
@@ -852,13 +918,13 @@ func cullInactivePeers(nm *NetworkManager) {
 
 	// 2. Manual peers (config.Peers) — same inactivity window.
 	for _, p := range nm.GetPeers() {
-		if node != nil && p.NodeID == node.NodeID() {
+		if src.node != nil && p.NodeID == src.node.NodeID() {
 			continue
 		}
 		if lastSeenBefore(p.LastSeen, cutoff) {
 			if err := nm.RemovePeer(p.NodeID); err == nil {
-				if routeTable != nil {
-					routeTable.Remove(p.NodeID)
+				if src.routeTable != nil {
+					src.routeTable.Remove(p.NodeID)
 				}
 				removed++
 			}
@@ -1449,6 +1515,13 @@ func (nm *NetworkManager) activateNetwork() {
 	nm.assertNodeIDInvariant()
 
 	nm.startTime = time.Now()
+	// Snapshot the singletons on THIS goroutine (the caller of SetNetworkEnabled
+	// etc.) before any background goroutine starts, so registerSelf / the
+	// refresh loop / cullInactivePeers never read the unsynchronized globals
+	// (v4.5.57 — data race under -race otherwise).
+	if nm.snap == nil {
+		nm.snap = snapshotCullSources()
+	}
 	go nm.registerSelf()
 	// Start the refresh loop only if it is not already running.
 	if nm.stopRefresh == nil {

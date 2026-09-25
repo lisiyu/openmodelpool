@@ -9,7 +9,7 @@ import (
 // clock (now) and an explicit seen map so nothing has to sleep or touch the
 // network. They lock down the three behaviours the real loop exists for:
 // filling gaps, never pruning on an untrustworthy (empty) view, and pruning
-// only genuinely departed nodes — never this node itself.
+// only genuinely departed nodes 鈥?never this node itself.
 
 func TestReconcileFillsGapFromPoolReport(t *testing.T) {
 	rm := NewRegionManager()
@@ -20,7 +20,7 @@ func TestReconcileFillsGapFromPoolReport(t *testing.T) {
 	}
 	now := time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)
 
-	filled, pruned := reconcileRegionsOnce(rm, known, regionSeenAt{}, now)
+	filled, pruned := reconcileRegionsOnce(rm, known, regionSeenAt{}, now, "")
 	if filled != 1 || pruned != 0 {
 		t.Fatalf("expected fill=1 prune=0, got fill=%d prune=%d", filled, pruned)
 	}
@@ -45,7 +45,7 @@ func TestReconcileFillsGapFromIPDetect(t *testing.T) {
 	}
 	now := time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)
 
-	filled, pruned := reconcileRegionsOnce(rm, known, regionSeenAt{}, now)
+	filled, pruned := reconcileRegionsOnce(rm, known, regionSeenAt{}, now, "")
 	if filled != 1 || pruned != 0 {
 		t.Fatalf("expected fill=1 prune=0, got fill=%d prune=%d", filled, pruned)
 	}
@@ -76,7 +76,7 @@ func TestReconcileEmptyKnownMapDisablesPruning(t *testing.T) {
 	now := time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)
 	seen := regionSeenAt{"ghost": now.Add(-time.Hour)} // aged out
 
-	filled, pruned := reconcileRegionsOnce(rm, map[string]knownNode{}, seen, now)
+	filled, pruned := reconcileRegionsOnce(rm, map[string]knownNode{}, seen, now, "")
 	if filled != 0 || pruned != 0 {
 		t.Fatalf("empty view must prune nothing: got fill=%d prune=%d", filled, pruned)
 	}
@@ -104,7 +104,7 @@ func TestReconcilePrunesStaleUnknownNode(t *testing.T) {
 	// A non-empty view (the reconciler still knows about real peers) enables
 	// pruning; it simply does not include the departed node.
 	known := map[string]knownNode{"peer-alive": {Region: "eu"}}
-	filled, pruned := reconcileRegionsOnce(rm, known, seen, now)
+	filled, pruned := reconcileRegionsOnce(rm, known, seen, now, "")
 	if filled != 0 {
 		t.Fatalf("expected fill=0 (peer pre-registered), got %d", filled)
 	}
@@ -141,14 +141,14 @@ func TestReconcileKeepsSelfEvenWhenStale(t *testing.T) {
 		"departed": now.Add(-time.Hour), // stale other
 	}
 
-	// `known` does not include either — only the empty view would matter, but
+	// `known` does not include either 鈥?only the empty view would matter, but
 	// here the view is non-empty (the reconciler knows about real peers), so
 	// pruning is enabled. Self must survive regardless.
 	known := map[string]knownNode{"peer-alive": {Region: "eu"}}
-	filled, pruned := reconcileRegionsOnce(rm, known, seen, now)
+	filled, pruned := reconcileRegionsOnce(rm, known, seen, now, selfID)
 
 	if rm.GetNodeRegion(selfID) == nil {
-		t.Error("self node was pruned — must never happen")
+		t.Error("self node was pruned 鈥?must never happen")
 	}
 	if rm.GetNodeRegion("departed") != nil {
 		t.Error("departed node should have been pruned")
@@ -175,7 +175,7 @@ func TestReconcileKeepsKnownNodes(t *testing.T) {
 	seen := regionSeenAt{"alive": now.Add(-time.Hour)}
 
 	known := map[string]knownNode{"alive": {Region: "us"}}
-	filled, pruned := reconcileRegionsOnce(rm, known, seen, now)
+	filled, pruned := reconcileRegionsOnce(rm, known, seen, now, "")
 	if filled != 0 || pruned != 0 {
 		t.Fatalf("known node must be kept: got fill=%d prune=%d", filled, pruned)
 	}

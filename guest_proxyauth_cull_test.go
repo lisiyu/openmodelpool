@@ -180,7 +180,7 @@ func TestCullInactivePeers(t *testing.T) {
 	}}
 	defer func() { netMgr = origNetMgr; fed = origFed; routeTable = origRouteTable }()
 
-	cullInactivePeers(netMgr)
+	cullInactivePeers(netMgr, snapshotCullSources())
 
 	// 1. Trust pool: stale node gone, fresh node kept.
 	pool := fed.GetTrustPool()
@@ -234,7 +234,7 @@ func TestCullInactivePeers_NoOpInPersonalMode(t *testing.T) {
 	}
 	defer func() { netMgr = origNetMgr; fed = origFed }()
 
-	cullInactivePeers(netMgr)
+	cullInactivePeers(netMgr, snapshotCullSources())
 
 	pool := fed.GetTrustPool()
 	if len(pool.Nodes) != 1 || pool.Nodes[0].NodeID != "mmx-pool-dead" {

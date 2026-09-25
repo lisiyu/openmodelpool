@@ -46,9 +46,34 @@ var regionEntryTTL = 24 * time.Hour
 // re-stamped on the next pass, while a silent one keeps ageing.
 type regionSeenAt map[string]time.Time
 
+// regionSyncSources is a one-time snapshot of the singletons the reconciler
+// reads. The ticker body must never read the reassignable globals directly:
+// tests and admin paths swap those pointers, and an unsynchronized read from
+// this long-lived goroutine is a data race (v4.5.57 -race gate). In production
+// all four are set during init before startBackgroundTasks → startRegionSyncLoop
+// (init.go), so the snapshot is semantically identical to per-tick global reads.
+type regionSyncSources struct {
+	manager    *RegionManager
+	globalPool *GlobalPool
+	netMgr     *NetworkManager
+	node       *NodeIdentity
+}
+
 // startRegionSyncLoop runs reconcileRegionsOnce on a fixed cadence until the
 // process stops.
 func startRegionSyncLoop() {
+	// Capture the singletons on the CALLING goroutine (boot, or a test's setup
+	// path), establishing happens-before for the spawned ticker goroutine.
+	src := regionSyncSources{
+		manager:    regionManager,
+		globalPool: globalPool,
+		netMgr:     netMgr,
+		node:       node,
+	}
+	selfID := ""
+	if src.node != nil {
+		selfID = src.node.NodeID()
+	}
 	seen := regionSeenAt{}
 	go func() {
 		ticker := time.NewTicker(regionSyncInterval)
@@ -56,10 +81,10 @@ func startRegionSyncLoop() {
 		for {
 			select {
 			case <-ticker.C:
-				if regionManager == nil {
+				if src.manager == nil {
 					continue
 				}
-				filled, pruned := reconcileRegionsOnce(regionManager, collectKnownNodes(), seen, time.Now())
+				filled, pruned := reconcileRegionsOnce(src.manager, collectKnownNodes(&src), seen, time.Now(), selfID)
 				if filled > 0 || pruned > 0 {
 					slog.Debug("region table reconciled", "filled", filled, "pruned", pruned)
 				}
@@ -73,13 +98,16 @@ func startRegionSyncLoop() {
 // reconcileRegionsOnce performs a single reconciliation pass and returns how
 // many entries it filled in and how many it pruned.
 //
-//	known — nodeID -> what this node knows about that peer, for every peer it
-//	        currently knows about. An EMPTY map disables pruning: a transient
-//	        empty view (managers not initialized yet, network momentarily down)
-//	        must never wipe the region table.
-//	seen  — reconciler-owned last-observed stamps, mutated in place.
-//	now   — injected clock, so tests do not have to sleep.
-func reconcileRegionsOnce(rm *RegionManager, known map[string]knownNode, seen regionSeenAt, now time.Time) (filled, pruned int) {
+//	known    — nodeID -> what this node knows about that peer, for every peer
+//	           it currently knows about. An EMPTY map disables pruning: a
+//	           transient empty view (managers not initialized yet, network
+//	           momentarily down) must never wipe the region table.
+//	seen     — reconciler-owned last-observed stamps, mutated in place.
+//	now      — injected clock, so tests do not have to sleep.
+//	selfID   — this node's own ID, from the loop's snapshot; the self entry is
+//	           never pruned. Passed in (not read from the node global) so the
+//	           reconciler stays race-free when run on a background goroutine.
+func reconcileRegionsOnce(rm *RegionManager, known map[string]knownNode, seen regionSeenAt, now time.Time, selfID string) (filled, pruned int) {
 	if rm == nil {
 		return 0, 0
 	}
@@ -122,10 +150,6 @@ func reconcileRegionsOnce(rm *RegionManager, known map[string]knownNode, seen re
 
 	// 2. Re-stamp everything currently known (including this node), so only
 	//    nodes that have dropped out of every peer view start ageing.
-	selfID := ""
-	if node != nil {
-		selfID = node.NodeID()
-	}
 	for nodeID := range known {
 		seen[nodeID] = now
 	}
@@ -178,19 +202,20 @@ type knownNode struct {
 // collectKnownNodes returns nodeID -> knownNode for every peer this process
 // currently knows about, merging the global pool with the network manager's
 // peer list. Returning an empty map is meaningful: it tells the reconciler its
-// view is untrustworthy, which suppresses pruning.
-func collectKnownNodes() map[string]knownNode {
+// view is untrustworthy, which suppresses pruning. Reads live managers through
+// the caller's snapshot, never the reassignable globals (v4.5.57 -race).
+func collectKnownNodes(src *regionSyncSources) map[string]knownNode {
 	out := make(map[string]knownNode)
-	if globalPool != nil {
-		for _, n := range globalPool.GetNodes() {
+	if src != nil && src.globalPool != nil {
+		for _, n := range src.globalPool.GetNodes() {
 			if n.NodeID == "" {
 				continue
 			}
 			out[n.NodeID] = knownNode{Region: n.Region}
 		}
 	}
-	if netMgr != nil {
-		for _, p := range netMgr.GetPeers() {
+	if src != nil && src.netMgr != nil {
+		for _, p := range src.netMgr.GetPeers() {
 			if p.NodeID == "" {
 				continue
 			}

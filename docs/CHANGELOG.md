@@ -1,5 +1,33 @@
 # Changelog
 
+## v4.5.58 (2026-09-25)
+
+CI / Smoke Test 全红复绿：修复自 v4.5.56 起 `go test -race` 数据竞争（`gcc` 缺失阻塞本地复现，装 WinLibs 后在本地完整还原 CI 失败）。
+
+- **根因（PRE-EXISTING）**：两个常驻后台循环——v4.5.56 引入的网络 cull 循环
+  （`startRefreshLoop`）与既有区域同步循环（`startRegionSyncLoop`）——裸读
+  可重赋值的包级全局（`fed` / `node` / `routeTable` / `cfg` 与
+  `netMgr` / `globalPool` / `regionManager` / `node`），而测试与部分管理路径会换指针；
+  无保护 goroutine 与赋值并发 → `-race` 确定性报错（`TestHB7_NetworkManager_*` x2、
+  `TestHB7_HandleNetworkToggle_EnableNetwork`、`TestQACapabilityNegotiationUnsupported`），
+  CI/Smoke 的 "Test (race detector)" 步骤自 `2b1ee5e` 起必红。
+- **修复：一次性快照（happens-before）**：后台 goroutine 所需单例改为在调用方
+  goroutine（启动 / 网络激活 / 测试 setup）同步捕获为不可变快照，循环只读快照、永不再读全局——
+  `network.go` 新增 `cullSources` + `NetworkManager.snap`（`activateNetwork`/`startRefreshLoop`
+  捕获；`cullInactivePeers(nm, src)`、`registerSelf`、`collectAddresses(cfgRef)`、
+  `peerCullDaysFor(c *Config)` 全部走快照）；`region_sync.go` 新增 `regionSyncSources`
+  快照（`startRegionSyncLoop` 捕获；`collectKnownNodes(src)`、
+  `reconcileRegionsOnce(..., selfID)` 参数化）。生产启动顺序保证快照与逐次读全局语义等价。
+- 直接调用点测试同步更新（`guest_proxyauth_cull_test.go` x2、`region_sync_test.go` x6）。
+- 验证：`go test -race -count=1 -timeout 25m ./...` EXIT=0（129.3s，零 RACE），
+  普通全量 EXIT=0（48.6s）；此前必红 4 项测试全部转绿。
+
+**已知问题（留待 v4.5.59）**：仅 `/v1/chat/completions`（及 `/v1/completions`）执行
+per-key 额度——anthropic / azure / gemini / embeddings / responses / images / audio
+等直连端点暂不扣 Guest Key 额度；额度 tracker 为纯内存实现，进程重启后每日用量清零。
+
+- AppVersion bumped to v4.5.58.
+
 ## v4.5.57 (2026-09-25)
 
 分享中心 Guest Key 额度全面审计与修复（审计发现 5 个问题，本轮修复 3 个）：
@@ -23,7 +51,7 @@
   窗口滚动、共享模式 guest 429 回归、成功请求真实扣量与后续请求放行、签发负值 400；
   全量测试 48s 通过，无回归。
 
-**已知问题（留待 v4.5.58）**：仅 `/v1/chat/completions`（及 `/v1/completions`）执行
+**已知问题（留待 v4.5.59）**：仅 `/v1/chat/completions`（及 `/v1/completions`）执行
 per-key 额度——anthropic / azure / gemini / embeddings / responses / images / audio
 等直连端点暂不扣 Guest Key 额度；额度 tracker 为纯内存实现，进程重启后每日用量清零。
 
