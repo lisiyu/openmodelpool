@@ -785,14 +785,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			allowed, remaining := guestKeyUsage.CheckAndReserveFull(
 				gkKey, record.Quota, record.QuotaHourly, record.QuotaPerRequest, record.RPM, estimated)
 			if !allowed {
-				denyReason := "该 Guest Key 的本地额度已用尽"
-				if record.QuotaPerRequest > 0 && estimated > record.QuotaPerRequest {
-					denyReason = "该 Guest Key 单次请求超出上限"
-				} else if record.RPM > 0 && remaining <= 0 {
-					denyReason = "该 Guest Key 每分钟请求数已达上限"
-				} else if record.QuotaHourly > 0 {
-					denyReason = "该 Guest Key 的每小时额度已用尽"
-				}
+				denyReason := guestQuotaDenyReason(record.QuotaPerRequest, record.Quota, record.QuotaHourly, record.RPM, estimated, remaining)
 				slog.Warn("guest key quota denied", "key_prefix", gkKey[:min(len(gkKey), 12)]+"...", "reason", denyReason)
 				writeError(w, 429, denyReason)
 				return

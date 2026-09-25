@@ -1,5 +1,34 @@
 # Changelog
 
+## v4.5.59 (2026-09-25)
+
+Guest Key 额度覆盖扩到全部直连端点（v4.5.57 已知问题之一）：
+`/v1/responses`、`/v1/images/generations`、`/v1/audio/speech` 此前经 raw
+passthrough 直发上游、从不经过 `handleChatCompletions`，Guest Key 的每日/每小时/
+单次/RPM 额度在这些端点上形同虚设——改用这些端点的请求可无限刷。
+
+- **raw passthrough 端点接入 D-4 逐 Key 额度（HIGH）**：`handleRawPassthrough`
+  在上游调用前对**已验证的 Guest Key**（直连 `withProxyAuth` context 或中继 context）
+  执行与 chat 路径相同的四维原子校验 `CheckAndReserveFull`；超限 429 并给出细分原因。
+  raw 转发不回传结构化 usage，因此按 B8-1b「未知用量保留预估值」计费：额度取自请求
+  自身载荷（正文文本 chars/4 + 客户端显式 `max_tokens`/`max_output_tokens`/`max_tokens_out`
+  输出上限，下限 1、上限 16M），模型无法解析到 provider 时 404、不计费。
+- **审计澄清**：`/v1/messages`（Anthropic）、`/openai/deployments/...`（Azure）、
+  `/v1beta/models/{model}`（Gemini）写回 `/v1/chat/completions` 再走网关，本就经
+  `handleChatCompletions` 的 D-4 分支扣费（Bearer 回退），非缺口；`/v1/embeddings`
+  本节点当前本地 fallback 即 501（不服务任何上行），无额度可扣，留待 embeddings 真正落地。
+- 共享原因消息：新增 `guestQuotaDenyReason`（network_keys.go）供 chat 与 passthrough
+  共用同一套 429 文案（单次超限/每分钟/每小时/每日），chat 路径内联块一并重构复用。
+- 新增 4 组测试（`guest_quota_raw_audit_test.go`）：估算函数表驱动（文本/输出上限/数组
+  input/空体/非 JSON）、images 额度超限 429 且不消耗、audio 放行且预估值入账（est×2）、
+  RPM 维度限流。全量 `-race`（174s，零 RACE）与普通全量（50s）均 EXIT=0。
+
+**已知问题（留待 v4.5.60）**：额度 tracker（`guestKeyUsageTracker`）为纯内存实现，
+进程重启后每日/每小时/RPM 用量清零（额度计数重置，key 配置本身持久化于
+`guest_keys.json`）。
+
+- AppVersion bumped to v4.5.59.
+
 ## v4.5.58 (2026-09-25)
 
 CI / Smoke Test 全红复绿：修复自 v4.5.56 起 `go test -race` 数据竞争（`gcc` 缺失阻塞本地复现，装 WinLibs 后在本地完整还原 CI 失败）。

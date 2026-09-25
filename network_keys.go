@@ -609,6 +609,24 @@ func (t *guestKeyUsageTracker) Adjust(key string, reserved, actual int64) {
 	}
 }
 
+// guestQuotaDenyReason returns the user-facing 429 message for a denied guest
+// quota check, with the same per-limit priority as the chat path: per-request
+// cap first, then RPM saturation, then the hourly window, then the daily/local
+// window. Shared by handleChatCompletions and the raw passthrough endpoints
+// so all guest-key surfaces report identically.
+func guestQuotaDenyReason(quotaPerRequest, quotaDaily, quotaHourly int64, rpm int, estimated, remaining int64) string {
+	switch {
+	case quotaPerRequest > 0 && estimated > quotaPerRequest:
+		return "该 Guest Key 单次请求超出上限"
+	case rpm > 0 && remaining <= 0:
+		return "该 Guest Key 每分钟请求数已达上限"
+	case quotaHourly > 0:
+		return "该 Guest Key 的每小时额度已用尽"
+	default:
+		return "该 Guest Key 的本地额度已用尽"
+	}
+}
+
 // GetUsage returns the current usage for a key.
 func (t *guestKeyUsageTracker) GetUsage(key string) int64 {
 	t.mu.Lock()

@@ -91,6 +91,35 @@ func handleRawPassthrough(w http.ResponseWriter, r *http.Request, bodyBytes []by
 		accessType = "guest"
 	}
 
+	// D-4 (v4.5.59): the raw passthrough endpoints (/v1/responses,
+	// /v1/images/generations, /v1/audio/speech) never reach
+	// handleChatCompletions, so guest per-key quota was bypassed here while the
+	// issuing node served them. Enforce the same four-dimensional
+	// CheckAndReserveFull as the chat path, keyed on the VERIFIED guest key from
+	// the direct withProxyAuth path or the relay context. A raw forward reports
+	// no token usage back, so the reservation itself is the consumption
+	// (B8-1b: unknown usage keeps the estimate). Requests whose model resolves
+	// to no provider never reach this block and are not charged.
+	if guestKeyUsage != nil && guestKeyStore != nil {
+		gkKey := relayGuestKey(r)
+		if gkKey == "" {
+			if k := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); ClassifyKey(k) == KeyTypeGuest {
+				gkKey = k
+			}
+		}
+		if gkKey != "" {
+			if record := guestKeyStore.GetGuestKeyRecord(gkKey); record != nil {
+				estimated := estimateRawGuestTokens(r.URL.Path, bodyBytes)
+				if allowed, remaining := guestKeyUsage.CheckAndReserveFull(gkKey, record.Quota, record.QuotaHourly, record.QuotaPerRequest, record.RPM, estimated); !allowed {
+					denyReason := guestQuotaDenyReason(record.QuotaPerRequest, record.Quota, record.QuotaHourly, record.RPM, estimated, remaining)
+					slog.Warn("guest key quota denied", "key_prefix", gkKey[:min(len(gkKey), 12)]+"...", "reason", denyReason, "path", r.URL.Path)
+					writeError(w, 429, denyReason)
+					return true
+				}
+			}
+		}
+	}
+
 	var lastErr error
 	for idx, c := range candidates {
 		p := c.Provider
@@ -163,4 +192,68 @@ func handleRawPassthrough(w http.ResponseWriter, r *http.Request, bodyBytes []by
 	slog.Warn("passthrough exhausted providers", "model", model, "error", lastErr)
 	writeError(w, 502, "upstream passthrough failed")
 	return true
+}
+
+// estimateRawGuestTokens derives the per-request token cost charged to a guest
+// key on the raw passthrough endpoints. A raw forward returns no structured
+// usage, so the charge comes from what the request itself carries: the text it
+// contains (chars/4 ≈ tokens) plus any explicit output-token bound the client
+// set (responses uses max_output_tokens). It is deliberately conservative
+// (text + output bound, floored at 1) so an empty-parse body is still a
+// countable request rather than a free pass, and capped to avoid integer rage.
+func estimateRawGuestTokens(path string, bodyBytes []byte) int64 {
+	_ = path
+	var v any
+	if err := json.Unmarshal(bodyBytes, &v); err != nil || v == nil {
+		return 1
+	}
+	textLen := 0
+	collectBodyText(v, &textLen)
+	est := int64(textLen/4 + 1)
+	if out, ok := firstPositiveNumber(bodyBytes, "max_tokens", "max_output_tokens", "max_tokens_out"); ok {
+		est += out
+	}
+	if est < 1 {
+		est = 1
+	}
+	if est > 1<<24 {
+		est = 1 << 24
+	}
+	return est
+}
+
+// collectBodyText accumulates the total character length of every string in a
+// decoded JSON body (recursively through arrays and objects). Numbers, booleans
+// and nulls are not token-bearing for the purposes of a per-key estimate.
+func collectBodyText(v any, acc *int) {
+	switch tv := v.(type) {
+	case string:
+		*acc += len(tv)
+	case []any:
+		for _, e := range tv {
+			collectBodyText(e, acc)
+		}
+	case map[string]any:
+		for _, e := range tv {
+			collectBodyText(e, acc)
+		}
+	}
+}
+
+// firstPositiveNumber returns the first positive integer among the given JSON
+// keys in the body, in key order.
+func firstPositiveNumber(bodyBytes []byte, keys ...string) (int64, bool) {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &m); err != nil {
+		return 0, false
+	}
+	for _, k := range keys {
+		if raw, ok := m[k]; ok {
+			var n int64
+			if json.Unmarshal(raw, &n) == nil && n > 0 {
+				return n, true
+			}
+		}
+	}
+	return 0, false
 }
