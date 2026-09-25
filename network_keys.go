@@ -428,10 +428,19 @@ func (gks *GuestKeyStore) UpdateGuestKeyQuotaMulti(key string, quota *int64, quo
 // ============================================================
 
 // guestKeyUsageTracker tracks per-key usage for local quota enforcement.
+// Three independent windows are kept in memory (per UTC calendar buckets):
+//   - daily:   quota (每日额度上限)
+//   - hourly:  quota_hourly (每小时额度上限)
+//   - rpm:     quota_per_request is checked per request (not accumulated), rpm
+//     is a per-minute request count (每分钟请求数限制)
 type guestKeyUsageTracker struct {
-	mu    sync.Mutex
-	usage map[string]int64 // key -> tokens used (current daily window)
-	day   string           // UTC date of the current window ("2006-01-02")
+	mu     sync.Mutex
+	usage  map[string]int64 // key -> tokens used (current daily window)
+	day    string           // window key of usage ("2006-01-02" UTC)
+	hourly map[string]int64 // key -> tokens used (current hourly window)
+	hour   string           // window key of hourly ("2006-01-02T15" UTC)
+	rpm    map[string]int   // key -> requests counted (current minute window)
+	minute string           // window key of rpm ("2006-01-02T15:04" UTC)
 }
 
 // todayUTC returns the UTC date key for quota windows.
@@ -439,28 +448,77 @@ func todayUTC() string {
 	return time.Now().UTC().Format("2006-01-02")
 }
 
+// hourUTC returns the UTC hour key ("2006-01-02T15").
+func hourUTC() string {
+	return time.Now().UTC().Format("2006-01-02T15")
+}
+
+// minuteUTC returns the UTC minute key ("2006-01-02T15:04").
+func minuteUTC() string {
+	return time.Now().UTC().Format("2006-01-02T15:04")
+}
+
 func initGuestKeyUsageTracker() {
 	guestKeyUsage = &guestKeyUsageTracker{
-		usage: make(map[string]int64),
+		usage:  make(map[string]int64),
+		hourly: make(map[string]int64),
+		rpm:    make(map[string]int),
 	}
 }
 
-// CheckAndReserve checks if the key has remaining local quota and reserves estimated tokens.
-// Returns (allowed, remaining).
+// ensureJournals rolls the tracker window(s) to the current UTC bucket and
+// lazily allocates the maps (tests construct trackers with bare literals).
+func (t *guestKeyUsageTracker) ensureJournals() {
+	now := time.Now().UTC()
+	today := now.Format("2006-01-02")
+	hour := now.Format("2006-01-02T15")
+	minute := now.Format("2006-01-02T15:04")
+
+	// A missing window stamp means "freshly built" (startup or a test literal);
+	// its maps are the current window content, so keep them. Only a STALE stamp
+	// (previous window) rolls the journal and discards old data. Without this
+	// distinction a bare literal like &guestKeyUsageTracker{usage: {...}} would
+	// have its preloaded usage wiped on the first call.
+	initDay, initHour, initMin := t.day == "", t.hour == "", t.minute == ""
+
+	if t.day != today {
+		t.day = today
+		if !initDay {
+			t.usage = make(map[string]int64)
+		}
+	}
+	if t.hour != hour {
+		t.hour = hour
+		if !initHour {
+			t.hourly = make(map[string]int64)
+		}
+	}
+	if t.minute != minute {
+		t.minute = minute
+		if !initMin {
+			t.rpm = make(map[string]int)
+		}
+	}
+	if t.usage == nil {
+		t.usage = make(map[string]int64)
+	}
+	if t.hourly == nil {
+		t.hourly = make(map[string]int64)
+	}
+	if t.rpm == nil {
+		t.rpm = make(map[string]int)
+	}
+}
+
+// CheckAndReserve checks if the key has remaining local daily quota and
+// reserves estimated tokens. Returns (allowed, remaining).
 func (t *guestKeyUsageTracker) CheckAndReserve(key string, quota int64, estimated int64) (bool, int64) {
 	if quota <= 0 {
 		return true, 0 // no local quota limit
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	// B8-1a: Quota is a DAILY cap — reset the window when the UTC date rolls
-	// over instead of letting usage accumulate forever (keys would otherwise
-	// be permanently exhausted after enough days of legitimate use).
-	today := todayUTC()
-	if t.day != today {
-		t.usage = make(map[string]int64)
-		t.day = today
-	}
+	t.ensureJournals()
 	used := t.usage[key]
 	remaining := quota - used
 	if remaining <= 0 {
@@ -478,17 +536,76 @@ func (t *guestKeyUsageTracker) CheckAndReserve(key string, quota int64, estimate
 	return false, remaining
 }
 
-// Adjust adjusts the reserved quota after a request completes.
+// CheckAndReserveFull atomically enforces every configured per-key limit for
+// one request: daily quota, hourly quota, per-request token cap, and RPM.
+// Returns (allowed, minuteRemaining). When rejected, the caller surfaces the
+// denial via a 429 (the reason string is also logged).
+func (t *guestKeyUsageTracker) CheckAndReserveFull(key string, quotaDaily, quotaHourly, quotaPerRequest int64, rpm int, estimated int64) (bool, int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ensureJournals()
+
+	// Per-request cap: the estimate for THIS request must fit inside the cap.
+	if quotaPerRequest > 0 && estimated > quotaPerRequest {
+		return false, 0
+	}
+
+	// Daily window.
+	if quotaDaily > 0 {
+		remaining := quotaDaily - t.usage[key]
+		if remaining <= 0 {
+			return false, 0
+		}
+		if estimated > 0 && estimated > remaining {
+			return false, 0
+		}
+	}
+
+	// Hourly window.
+	if quotaHourly > 0 {
+		remaining := quotaHourly - t.hourly[key]
+		if remaining <= 0 {
+			return false, 0
+		}
+		if estimated > 0 && estimated > remaining {
+			return false, 0
+		}
+	}
+
+	// Per-minute request count.
+	if rpm > 0 && t.rpm[key] >= rpm {
+		return false, int64(rpm - t.rpm[key]) // 0 → window is saturated
+	}
+
+	// Reserve across all windows (RPM counts the request, never refunded).
+	if quotaDaily > 0 && estimated > 0 {
+		t.usage[key] += estimated
+	}
+	if quotaHourly > 0 && estimated > 0 {
+		t.hourly[key] += estimated
+	}
+	t.rpm[key]++
+	return true, int64(rpm - t.rpm[key])
+}
+
+// Adjust adjusts the reserved quota after a request completes. Daily and hourly
+// journals share the same reservation, so the actual-count delta is applied to
+// both (each floored at zero).
 func (t *guestKeyUsageTracker) Adjust(key string, reserved, actual int64) {
 	if reserved <= 0 && actual <= 0 {
 		return
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.ensureJournals()
 	diff := actual - reserved
 	t.usage[key] += diff
 	if t.usage[key] < 0 {
 		t.usage[key] = 0
+	}
+	t.hourly[key] += diff
+	if t.hourly[key] < 0 {
+		t.hourly[key] = 0
 	}
 }
 
@@ -496,6 +613,7 @@ func (t *guestKeyUsageTracker) Adjust(key string, reserved, actual int64) {
 func (t *guestKeyUsageTracker) GetUsage(key string) int64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.ensureJournals()
 	return t.usage[key]
 }
 
@@ -541,6 +659,29 @@ func handleGuestKeyIssue(w http.ResponseWriter, r *http.Request) {
 			opts.RPM = body.RPM
 			opts.ExpDays = body.ExpDays
 			opts.Note = body.Note
+		}
+		// Mirror the quota-update endpoint: negative values are rejected.
+		// A negative quota would otherwise parse as "unlimited" (0) in the
+		// enforcement path while the UI/update API promise >= 0 semantics.
+		if opts.Quota < 0 {
+			writeError(w, 400, "quota must be >= 0")
+			return
+		}
+		if opts.QuotaHourly < 0 {
+			writeError(w, 400, "quota_hourly must be >= 0")
+			return
+		}
+		if opts.QuotaPerRequest < 0 {
+			writeError(w, 400, "quota_per_request must be >= 0")
+			return
+		}
+		if opts.RPM < 0 {
+			writeError(w, 400, "rpm must be >= 0")
+			return
+		}
+		if opts.ExpDays < 0 {
+			writeError(w, 400, "exp_days must be >= 0")
+			return
 		}
 	}
 

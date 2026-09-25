@@ -1,5 +1,34 @@
 # Changelog
 
+## v4.5.57 (2026-09-25)
+
+分享中心 Guest Key 额度全面审计与修复（审计发现 5 个问题，本轮修复 3 个）：
+
+- **共享模式 Guest Key 每日额度失效已修复（HIGH）**：guest key 所在节点加入共享网络后，
+  其请求解析为 `public` 角色（可访问公共池），旧额度块以 `keyType=="guest"` 为触发条件，
+  恰好在该类部署（正是分享中心的目标场景）被跳过——每日额度形同虚设。现在额度触发改为
+  *已验证的 Guest Key*（由 `withProxyAuth` 直连 `/v1` 和 /network 中继路径写入 context 的
+  key），公共角色但确系 guest key 的请求同样按 key 结算。
+- **每小时/单次/RPM 额度开始真正生效（HIGH）**：`quota_hourly`、`quota_per_request`、
+  `rpm` 此前仅能在 UI 设置、从不强制。tracker 重写为四维原子校验
+  `CheckAndReserveFull`：每日、每小时、单次请求 token 上限、每分钟请求数 (RPM)，
+  任一超限即返回 429 并给出细分原因（单次超限/每分钟/每小时/每日）。
+  - 每日/每小时窗口按 UTC 自动滚动；RPM 窗口按分钟滚动。
+  - 结算语义修正：成功请求按真实 token 数（usage）扣减，流式/未知用量按预估计，
+    上游完全失败全额退回预留——旧实现对每一次请求都全退，额度实际从不消耗。
+- **签发接口负值校验**：`POST /api/network/guest-keys` 现拒绝负数
+  `quota / quota_hourly / quota_per_request / rpm / exp_days`（返回 400），
+  与更新接口一致，避免「负值被当作不限」的语义漏洞。
+- 新增 7 个测试（`guest_quota_audit_test.go`）：四维窗口、预留/结算/退款、
+  窗口滚动、共享模式 guest 429 回归、成功请求真实扣量与后续请求放行、签发负值 400；
+  全量测试 48s 通过，无回归。
+
+**已知问题（留待 v4.5.58）**：仅 `/v1/chat/completions`（及 `/v1/completions`）执行
+per-key 额度——anthropic / azure / gemini / embeddings / responses / images / audio
+等直连端点暂不扣 Guest Key 额度；额度 tracker 为纯内存实现，进程重启后每日用量清零。
+
+- AppVersion bumped to v4.5.57.
+
 ## v4.5.56 (2026-09-25)
 
 - **Guest Key 直连 `/v1` 返回 401 已修复**：分享中心发给使用者的 API 地址是

@@ -749,31 +749,52 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// D-4: Per-Key local quota check for Guest Keys
 	// B8-1b: settlement variables live at function scope so the provider loop
 	// below can report actual usage into the deferred Adjust.
+	//
+	// v4.5.57: enforcement is keyed on the VERIFIED guest key, not on
+	// keyType=="guest". A guest key whose node is in shared mode resolves to
+	// role "public" (public-pool access) and the old guard silently skipped the
+	// per-key daily quota in exactly the deployment type the share centre is
+	// designed for. The verified key travels via context (set by withProxyAuth
+	// for direct /v1 calls and by handleRelayToLocal for the relay path), so a
+	// public-typed shared-mode guest request is still accounted against its
+	// daily/hourly/per-request/RPM limits. Requests without a verified guest
+	// credential (public pool, proxy, consumer) are untouched.
+	//
+	// D-4 v2: hourly (quota_hourly), per-request (quota_per_request) and RPM
+	// limits are now enforced here too — they were settable from the share
+	// centre UI but never enforced anywhere ("装饰性额度").
 	var (
 		gkSettled  = false // a reservation was made and must be settled
 		gkKey      string  // the guest key that was reserved
 		gkReserved int64   // tokens reserved up-front (the estimate)
 		gkActual   int64   // actual consumption; 0 refunds, gkReserved keeps it
 	)
-	if keyType == "guest" && guestKeyUsage != nil && guestKeyStore != nil {
-		auth := r.Header.Get("Authorization")
-		guestKey := strings.TrimPrefix(auth, "Bearer ")
-		// P1-5: on a relay-dispatched request handleRelayToLocal stripped the
-		// Authorization header and carries the verified key via context —
-		// otherwise the per-key quota would be silently bypassed over the relay
-		// path. Prefer the context key, fall back to the header for direct calls.
-		if ctxKey := relayGuestKey(r); ctxKey != "" {
-			guestKey = ctxKey
+	if guestKeyUsage != nil && guestKeyStore != nil {
+		// The verified guest key: from context when our auth/relay carried it,
+		// else (keyType "guest" with no context, which the current paths never
+		// produce) fall back to the raw Authorization header.
+		gkKey = relayGuestKey(r)
+		if gkKey == "" && keyType == "guest" {
+			gkKey = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		}
-		record := guestKeyStore.GetGuestKeyRecord(guestKey)
-		if record != nil && record.Quota > 0 {
+		if record := guestKeyStore.GetGuestKeyRecord(gkKey); gkKey != "" && record != nil {
 			estimated := int64(4096)
 			if req.MaxTokens != nil && *req.MaxTokens > 0 {
 				estimated = int64(*req.MaxTokens)
 			}
-			allowed, _ := guestKeyUsage.CheckAndReserve(guestKey, record.Quota, estimated)
+			allowed, remaining := guestKeyUsage.CheckAndReserveFull(
+				gkKey, record.Quota, record.QuotaHourly, record.QuotaPerRequest, record.RPM, estimated)
 			if !allowed {
-				writeError(w, 429, "该 Guest Key 的本地额度已用尽")
+				denyReason := "该 Guest Key 的本地额度已用尽"
+				if record.QuotaPerRequest > 0 && estimated > record.QuotaPerRequest {
+					denyReason = "该 Guest Key 单次请求超出上限"
+				} else if record.RPM > 0 && remaining <= 0 {
+					denyReason = "该 Guest Key 每分钟请求数已达上限"
+				} else if record.QuotaHourly > 0 {
+					denyReason = "该 Guest Key 的每小时额度已用尽"
+				}
+				slog.Warn("guest key quota denied", "key_prefix", gkKey[:min(len(gkKey), 12)]+"...", "reason", denyReason)
+				writeError(w, 429, denyReason)
 				return
 			}
 			// B8-1b: charge the reservation as consumption unless a provider
@@ -782,7 +803,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			// making D-4 quota enforcement a no-op. Streams and failures keep
 			// conservative semantics: unknown usage counts the estimate, total
 			// failure refunds it.
-			gkSettled, gkKey, gkReserved, gkActual = true, guestKey, estimated, 0
+			gkSettled, gkReserved, gkActual = true, estimated, 0
 			defer func() {
 				guestKeyUsage.Adjust(gkKey, gkReserved, gkActual)
 			}()
