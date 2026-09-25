@@ -1,5 +1,30 @@
 # Changelog
 
+## v4.5.56 (2026-09-25)
+
+- **Guest Key 直连 `/v1` 返回 401 已修复**：分享中心发给使用者的 API 地址是
+  `{origin}/v1`（`getShareApiUrl`），但 `/v1/*` 的 `withProxyAuth` 只识别
+  public / proxy / consumer key，`sk-guest-*` 一律落到底部 `401 invalid_api_key`。
+  现 `withProxyAuth` 增加 Guest 分支：在本机 guest 密钥库中校验（未知/已撤销/已过期
+  fail-closed 返回 401），通过后与 `/network/{node_id}` 中继路径保持一致的语义——
+  共享模式下授予 public（可访问公共池），个人模式下仅为本机资源；携带 key 进 context
+  供 D-4 按 key 额度结算。**使用 Guest Key 的用户可直接用 `https://<你的域名>/v1`
+  作为 baseURL。**
+- **网关转发防护**：无公共池权限的 Guest Key 请求禁止被 `handleGatewayRequest`
+  网关转发到远端节点（远端 store 无此 key 只会 401），强制回落到签发节点本地处理，
+  与 `handleNetworkRelay` 的「guest key 仅限签发节点」不变量一致。
+- **已连接节点支持「不活跃自动剔除」**：此前信任池 + 手动节点一旦加入，即使早已离线
+  也永远显示在已连接列表。新增周期清扫 `cullInactivePeers`（接入 5 分钟刷新循环，
+  启动时先跑一次）：超过窗口（默认 **7 天**）未收到心跳/宣告/发现的节点自动从
+  federation 信任池、路由表、on-disk 节点注册表与手动节点列表剔除。
+  - 周期可通过 config `network_cull_days` 或环境变量 `NETWORK_CULL_DAYS` 配置；
+    取 0 或负数则禁用。`LastSeen` 为空（从未被观察过，如手工预配置）的节点不剔除。
+  - 恢复上线的节点会经正常发现/心跳通道重新登记，剔除并非永久。
+- 新增测试：guest key 直连 `/v1` 鉴权（有效/共享模式/未知 key）、网关不转发限定流、
+  节点剔除逻辑与配置周期解析；全量测试 45.5s 通过。
+
+- AppVersion bumped to v4.5.56.
+
 ## v4.5.55 (2026-09-19)
 
 - **v4.5.54 安全修复的回归收尾（review 后补修）**：

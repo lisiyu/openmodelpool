@@ -340,6 +340,39 @@ func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		// Guest API key (sk-guest-*) — validate against the local guest key
+		// store. The share centre hands guests an {origin}/v1 address, so a
+		// guest key must be usable directly on /v1 endpoints of the issuing
+		// node. Previously only the /network/{node_id} relay path accepted
+		// guest keys and every direct /v1 call returned 401. Mirror
+		// handleRelayToLocal: keep the Authorization header for the D-4
+		// per-key quota check, carry the verified key via context (P1-5), and
+		// mark the effective role exactly as the relay path does —
+		// guest-with-public-pool becomes public, a local-only guest stays
+		// guest (RequestKeyType resolves the same either way).
+		if ClassifyKey(key) == KeyTypeGuest {
+			nodeID, accessPublicPool, valid := GetGuestKeyAccessPublicPool(key)
+			if !valid {
+				writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
+					Message: "请求处理失败，请稍后重试",
+					Type:    "authentication_error",
+					Code:    "invalid_api_key",
+				}})
+				return
+			}
+			r = withGuestKey(r, key)
+			r.Header.Set("X-Request-Owner", "")
+			if accessPublicPool {
+				r.Header.Set("X-Request-Role", "public")
+				r.Header.Set("X-MK-GuestPublicPool", "true")
+			} else {
+				r.Header.Set("X-Request-Role", "guest")
+				r.Header.Set("X-MK-Guest-Node", nodeID)
+			}
+			handler(w, r)
+			return
+		}
+
 		// C3-fix: Fallback anonymous admin only from allowlisted addresses (SEC-P1-5).
 		if proxyKey == "" {
 			if !multiUser.HasConsumers() && anonymousAdminAllowed(r) {

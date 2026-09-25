@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,10 @@ const (
 	maxRelayHops    = 3
 	routeTTL        = 10 * time.Minute // 路由条目 TTL
 	refreshInterval = 5 * time.Minute  // 地址刷新间隔
+
+	// defaultPeerCullDays is the default inactivity window (days) after which a
+	// peer that stopped reporting is evicted from the connected-node list.
+	defaultPeerCullDays = 7
 )
 
 // ContribRecord tracks individual contribution events (Phase 2)
@@ -770,6 +775,9 @@ func (nm *NetworkManager) startRefreshLoop() {
 	stopCh := make(chan struct{})
 	nm.stopRefresh = stopCh
 	go func() {
+		// One-shot cleanup on startup so a stale connected-node list is not
+		// rendered for the first refresh interval.
+		cullInactivePeers(nm)
 		ticker := time.NewTicker(refreshInterval)
 		defer ticker.Stop()
 		for {
@@ -780,11 +788,100 @@ func (nm *NetworkManager) startRefreshLoop() {
 				if purged > 0 {
 					slog.Debug("purged expired route entries", "count", purged)
 				}
+				cullInactivePeers(nm)
 			case <-stopCh:
 				return
 			}
 		}
 	}()
+}
+
+// peerCullDays returns the configured inactivity window (days) after which a
+// peer that stopped reporting is evicted from the connected-node list.
+// Config key "network_cull_days" (env NETWORK_CULL_DAYS), default 7;
+// 0 or negative disables the sweep.
+func peerCullDays() int {
+	if cfg == nil {
+		return 0
+	}
+	if s := cfg.Get("network_cull_days", ""); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			return n
+		}
+	}
+	return defaultPeerCullDays
+}
+
+// cullInactivePeers evicts peers that have not been heard from for the
+// configured inactivity window. Without this, nodes that went away long ago
+// stay listed forever in the connected-node list (federation trust pool +
+// gossip-learned peers + manual peers). Each source is swept against the same
+// cutoff and removed from every registry (trust pool, route table, on-disk
+// node registry). Peers whose LastSeen is empty or unparsable are left alone —
+// there is no evidence of when they were last active, and an operator may have
+// provisioned them deliberately. A returning node re-registers itself via the
+// normal discovery/heartbeat path, so eviction is not permanent.
+func cullInactivePeers(nm *NetworkManager) {
+	if nm == nil || !nm.IsSharedMode() {
+		return
+	}
+	cullDays := peerCullDays()
+	if cullDays <= 0 {
+		return
+	}
+	cutoff := time.Now().Add(-time.Duration(cullDays) * 24 * time.Hour)
+	removed := 0
+
+	// 1. Federation trust pool + gossip-learned peers (fed.RemoveNode covers
+	//    both the pool and localPeers).
+	if fed != nil {
+		pool := fed.GetTrustPool()
+		for _, n := range pool.Nodes {
+			if node != nil && n.NodeID == node.NodeID() {
+				continue
+			}
+			if lastSeenBefore(n.LastSeen, cutoff) {
+				fed.RemoveNode(n.NodeID)
+				if routeTable != nil {
+					routeTable.Remove(n.NodeID)
+				}
+				removed++
+			}
+		}
+	}
+
+	// 2. Manual peers (config.Peers) — same inactivity window.
+	for _, p := range nm.GetPeers() {
+		if node != nil && p.NodeID == node.NodeID() {
+			continue
+		}
+		if lastSeenBefore(p.LastSeen, cutoff) {
+			if err := nm.RemovePeer(p.NodeID); err == nil {
+				if routeTable != nil {
+					routeTable.Remove(p.NodeID)
+				}
+				removed++
+			}
+		}
+	}
+
+	if removed > 0 {
+		slog.Info("culled inactive peers", "count", removed, "cull_days", cullDays, "cutoff", cutoff.Format(time.RFC3339))
+	}
+}
+
+// lastSeenBefore reports whether ts is an RFC3339 timestamp strictly before
+// cutoff. Empty or unparsable timestamps return false — a peer with no
+// evidence of liveness cannot be proven stale, so it is never guessed at.
+func lastSeenBefore(ts string, cutoff time.Time) bool {
+	if ts == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return false
+	}
+	return t.Before(cutoff)
 }
 
 func (nm *NetworkManager) stopRefreshLoop() {

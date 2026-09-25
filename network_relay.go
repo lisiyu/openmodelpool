@@ -1056,6 +1056,17 @@ func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
 		bestNode = routeTable.SelectBestNode(model)
 	}
 
+	// Guests without public-pool access may only be served by the issuing
+	// node (the invariant handleNetworkRelay enforces: sk-guest keys are bound
+	// to the node that issued them). Never gateway-forward such a request to a
+	// remote node — the remote does not hold the key in its store and would
+	// 401 instead of this node serving it locally.
+	if bestNode != nil && keyType == KeyTypeGuest {
+		if _, accessPool, _ := GetGuestKeyAccessPublicPool(bearerKey); !accessPool {
+			bestNode = nil
+		}
+	}
+
 	// If no node found or route table is empty, fallback to local handling
 	if bestNode == nil {
 		slog.Debug("gateway: no suitable node found, falling back to local", "model", model)
