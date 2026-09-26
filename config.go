@@ -49,6 +49,12 @@ var envMap = map[string]string{
 }
 
 func initConfig(path string) {
+	// Re-initializing config orphans the previous instance's debounce
+	// writer: it keeps running, reading reassigned globals (enc) and
+	// writing to a stale path. That was a -race failure in CI
+	// (TestRelayForwardAuth_*, orphaned via qaInitMinimal calling
+	// initConfig directly). Stop the previous writer first.
+	stopDebounceWriter(cfg)
 	cfg = &Config{
 		path:    path,
 		data:    make(map[string]any),
@@ -58,6 +64,27 @@ func initConfig(path string) {
 	}
 	cfg.load()
 	go cfg.debounceWriter()
+}
+
+// stopDebounceWriter signals the given Config's debounce writer goroutine
+// to exit and waits for it to finish. It is a no-op for a nil Config or an
+// already-exited writer, so calling it redundantly is safe. It must not be
+// called from the writer goroutine itself.
+func stopDebounceWriter(c *Config) {
+	if c == nil {
+		return
+	}
+	select {
+	case <-c.done:
+		return // writer already exited
+	default:
+	}
+	select {
+	case <-c.stopCh:
+	default:
+		close(c.stopCh)
+	}
+	<-c.done
 }
 
 func (c *Config) debounceWriter() {

@@ -40,6 +40,9 @@ func ensureRouteTable() {
 func qaInitMinimal(t *testing.T) (dir string) {
 	t.Helper()
 	dir = t.TempDir()
+	// Stop any debounce writer orphaned by a previous test's initConfig
+	// before swapping the enc global below (-race failure in CI).
+	stopDebounceWriter(cfg)
 	initEncryptor(filepath.Join(dir, ".key"))
 	initConfig(filepath.Join(dir, "config.json"))
 	ensureRouteTable()

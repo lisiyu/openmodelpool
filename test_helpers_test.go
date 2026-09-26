@@ -23,6 +23,13 @@ func setupTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 	dir := t.TempDir()
 
+	// A previous test may have left a config debounce writer running
+	// (initConfig orphans the previous instance's writer; e.g. qaInitMinimal
+	// calls initConfig directly). That writer reads the reassigned enc
+	// global, so it must be stopped before initEncryptor swaps enc below,
+	// or -race flags it (CI failure in TestRelayForwardAuth_*).
+	stopDebounceWriter(cfg)
+
 	// Save originals
 	origEnc := enc
 	origCfg := cfg
@@ -80,15 +87,14 @@ func setupTestEnv(t *testing.T) *testEnv {
 				close(tkInst.stopCh)
 			}
 		}
-		// Stop config debounce writer goroutine and wait for it to exit
-		if cfgInst != nil {
-			select {
-			case <-cfgInst.stopCh:
-			default:
-				close(cfgInst.stopCh)
-			}
-			<-cfgInst.done // wait for debounceWriter to fully exit
-		}
+		// Stop config debounce writer goroutines and wait for them to exit.
+		// The test may have re-initialized config after setup (e.g.
+		// qaInitMinimal calls initConfig directly), orphaning cfgInst's
+		// successor, or even nil-ed the global (heartbeat_test): stop both
+		// the setup-time instance and whatever is currently installed, or a
+		// live writer races the global restores below (-race failure).
+		stopDebounceWriter(cfgInst)
+		stopDebounceWriter(cfg)
 		// Stop multi-user batch save goroutine to prevent goroutine leaks
 		// across the (hundreds of) test cases that each call setupTestEnv.
 		//
