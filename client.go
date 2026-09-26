@@ -86,7 +86,8 @@ func cachedProxiedTransport(proxy string, build func() (*http.Transport, error))
 	return t
 }
 
-const siderChatURL = "https://sider.ai/api/v3/completion/text"
+// var (not const) so tests can point the Sider adapter at a local server.
+var siderChatURL = "https://sider.ai/api/v3/completion/text"
 
 var siderHeadersBase = map[string]string{
 	"Accept":          "*/*",
@@ -98,7 +99,17 @@ var siderHeadersBase = map[string]string{
 }
 
 // proxyHTTPClient returns an HTTP client configured with the provider's proxy.
+// The SSRF guard is applied to p.BaseURL; use proxyHTTPClientForURL when the
+// request actually targets a different endpoint (e.g. web_session APIEndpoint).
 func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
+	return proxyHTTPClientForURL(p, p.BaseURL, timeout)
+}
+
+// proxyHTTPClientForURL returns an HTTP client configured with the provider's proxy.
+// targetURL is the URL that will actually be requested. SEC-SSRF-1: the SSRF
+// guard must inspect this final URL — not just p.BaseURL — because some
+// adapters (web_session) let a consumer-controlled config override the endpoint.
+func proxyHTTPClientForURL(p Provider, targetURL string, timeout time.Duration) *http.Client {
 	proxy := p.Proxy
 	// For vmess:// / vless:// links, the proxy should be resolved to
 	// socks5://localhost:port by ResolveProxy. If not resolved yet, try now.
@@ -114,18 +125,21 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 
 	if proxy == "" {
 		// B10-P1: cached — this runs on every forwarded request.
-		if !allowLocalProviderForTest && cachedIsPrivateHost(p.BaseURL) {
-			// SEC-SSRF-1: a provider BaseURL that resolves to a private/loopback
+		if !allowLocalProviderForTest && cachedIsPrivateHost(targetURL) {
+			// SEC-SSRF-1: a provider target URL that resolves to a private/loopback
 			// address (or cannot be resolved — fail-closed) must NOT be dialed.
 			// Previously this only logged a warning and returned a *working*
 			// client (fail-open), so the SSRF guard was dead code. Now we return
 			// a client whose dial always fails, closing the hole at every call site.
-			slog.Warn("blocked SSRF attempt: provider BaseURL resolves to private IP", "provider", p.ID, "url", p.BaseURL)
+			// NOTE: the check runs against the final request URL (targetURL),
+			// not just p.BaseURL — web_session providers override the endpoint
+			// via the consumer-controlled APIEndpoint (POST /api/providers).
+			slog.Warn("blocked SSRF attempt: provider target URL resolves to private IP", "provider", p.ID, "url", targetURL)
 			return &http.Client{
 				Timeout: timeout,
 				Transport: &http.Transport{
 					DialContext: func(context.Context, string, string) (net.Conn, error) {
-						return nil, errors.New("ssrf blocked: provider BaseURL resolves to a private/internal address")
+						return nil, errors.New("ssrf blocked: provider target URL resolves to a private/internal address")
 					},
 				},
 			}
@@ -479,7 +493,9 @@ func webSessionNonStream(ctx context.Context, p Provider, model string, messages
 	req, _ := http.NewRequestWithContext(ctx, "POST", cfg.APIEndpoint, bytes.NewReader(body))
 	req.Header = webSessionBuildHeaders(cfg, token)
 
-	client := proxyHTTPClient(p, 300*time.Second)
+	// SEC-SSRF-1: validate the actual request endpoint — APIEndpoint is
+	// consumer-controlled and may differ from p.BaseURL.
+	client := proxyHTTPClientForURL(p, cfg.APIEndpoint, 300*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -559,7 +575,9 @@ func webSessionStream(ctx context.Context, p Provider, model string, messages []
 	req, _ := http.NewRequestWithContext(ctx, "POST", cfg.APIEndpoint, bytes.NewReader(body))
 	req.Header = webSessionBuildHeaders(cfg, token)
 
-	client := proxyHTTPClient(p, 300*time.Second)
+	// SEC-SSRF-1: validate the actual request endpoint — APIEndpoint is
+	// consumer-controlled and may differ from p.BaseURL.
+	client := proxyHTTPClientForURL(p, cfg.APIEndpoint, 300*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -567,13 +585,14 @@ func webSessionStream(ctx context.Context, p Provider, model string, messages []
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		writeSSEError(w, model, fmt.Sprintf("%s token expired (HTTP %d)", p.Name, resp.StatusCode))
-		return nil
+		// P1: upstream auth errors must surface as errors (not nil) so the
+		// handler records a provider failure and falls back instead of
+		// misjudging the stream as successful.
+		return fmt.Errorf("%s token expired (HTTP %d)", p.Name, resp.StatusCode)
 	}
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		writeSSEError(w, model, fmt.Sprintf("%s error (%d): %s", p.Name, resp.StatusCode, truncate(string(b), 200)))
-		return nil
+		return fmt.Errorf("%s error (%d): %s", p.Name, resp.StatusCode, truncate(string(b), 200))
 	}
 
 	textPath := cfg.TextPath
@@ -684,7 +703,8 @@ func testWebSession(p Provider) map[string]any {
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "POST", cfg.APIEndpoint, bytes.NewReader(body))
 	req.Header = webSessionBuildHeaders(cfg, token)
-	client := proxyHTTPClient(p, 30*time.Second)
+	// SEC-SSRF-1: validate the actual request endpoint (see webSessionStream).
+	client := proxyHTTPClientForURL(p, cfg.APIEndpoint, 30*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return map[string]any{"success": false, "error": err.Error()}
@@ -946,13 +966,12 @@ func siderStream(ctx context.Context, p Provider, model string, messages []ChatM
 
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		siderMon.RecordFailure(resp.StatusCode, fmt.Sprintf("Token expired (HTTP %d)", resp.StatusCode))
-		writeSSEError(w, model, fmt.Sprintf("Sider token expired (HTTP %d)", resp.StatusCode))
-		return nil
+		// P1: return the error so the handler can fall back (see webSessionStream).
+		return fmt.Errorf("Sider token expired (HTTP %d)", resp.StatusCode)
 	}
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		writeSSEError(w, model, fmt.Sprintf("Sider error (%d): %s", resp.StatusCode, truncate(string(b), 200)))
-		return nil
+		return fmt.Errorf("Sider error (%d): %s", resp.StatusCode, truncate(string(b), 200))
 	}
 
 	cmplID := fmt.Sprintf("chatcmpl-%s", randomString(24))
@@ -1170,8 +1189,7 @@ func cozeStream(ctx context.Context, p Provider, model string, messages []ChatMe
 		token = cfg.Get("coze_api_token", "")
 	}
 	if token == "" {
-		writeSSEError(w, model, "coze API token not configured (set API Key in provider config)")
-		return nil
+		return fmt.Errorf("coze API token not configured (set API Key in provider config)")
 	}
 	botID := model
 	// Check model_bot_map first (model name -> Coze bot_id)
@@ -1216,8 +1234,9 @@ func cozeStream(ctx context.Context, p Provider, model string, messages []ChatMe
 	client := proxyHTTPClient(p, 300*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
-		writeSSEError(w, model, "upstream request failed")
-		return nil
+		// P1: surface transport errors so the handler can fall back instead of
+		// misjudging the stream as successful.
+		return fmt.Errorf("coze upstream request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -1401,8 +1420,8 @@ func anthropicStream(ctx context.Context, p Provider, model string, messages []C
 
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)
-		writeSSEError(w, model, fmt.Sprintf("anthropic upstream (%d): %s", resp.StatusCode, truncate(string(b), 200)))
-		return nil
+		// P1: return the error so the handler can fall back (see webSessionStream).
+		return fmt.Errorf("anthropic upstream (%d): %s", resp.StatusCode, truncate(string(b), 200))
 	}
 
 	cmplID := fmt.Sprintf("chatcmpl-%s", randomString(24))
@@ -2077,8 +2096,8 @@ func geminiStream(ctx context.Context, p Provider, model string, messages []Chat
 
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)
-		writeSSEError(w, model, fmt.Sprintf("gemini upstream (%d): %s", resp.StatusCode, truncate(string(b), 200)))
-		return nil
+		// P1: return the error so the handler can fall back (see webSessionStream).
+		return fmt.Errorf("gemini upstream (%d): %s", resp.StatusCode, truncate(string(b), 200))
 	}
 
 	cmplID := fmt.Sprintf("chatcmpl-%s", randomString(24))

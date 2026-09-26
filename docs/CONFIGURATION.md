@@ -54,6 +54,26 @@ Key file `data/.enc_key` is auto-generated on first startup (32-byte random key)
 
 ---
 
+## Region Routing (区域路由)
+
+共享网络模式下的区域感知路由：节点按地理区域分组，负载均衡优先选择同区域节点。区域检测分两档：
+
+1. **GeoIP 精准检测**（默认开启）：经 HTTPS 查询 IP 归属国家并映射到 `ap`（亚太）/`eu`（欧洲）/`americas`（美洲），结果按 IP 缓存 24 小时。本节点在启动时检测一次；探测结果为 unknown 的对端节点在后台异步补齐（单 IP 单 flight，不阻塞心跳热路径）。
+2. **离线启发式**（兜底）：首字节 IP 段近似分类；关闭 GeoIP 或查询失败时自动回退。
+
+节点主动上报的区域（`self_report`/`heartbeat`）永远优先于启发式结果，不会被覆盖。
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `region_geo_enabled` | `true` | GeoIP 检测总开关。设 `false` 只用离线启发式（纯离线环境使用） |
+| `region_prefer_local` | `true` | 优先同区域节点（管理后台「区域路由」卡片可改，重启保持） |
+| `region_cross_threshold` | `2.0` | 跨区域阈值（管理后台可改，须 ≥ 0） |
+| `region_weights_json` | `{"unknown":0.5}` | 各区域权重 JSON（管理后台可改；别名如 `asia` 自动归一为 `ap`） |
+
+`GET /api/network/regions` 返回实时区域分布、本节点区域及检测模式；`PUT /api/network/regions/config` 更新路由配置（自动校验 + 持久化）。
+
+---
+
 ## Config Export / Import
 
 ```bash

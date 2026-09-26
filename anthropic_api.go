@@ -121,6 +121,11 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		Body:       io.NopCloser(bytes.NewReader(openaiBytes)),
 		RemoteAddr: r.RemoteAddr,
 	}
+	// Inherit the inbound request's context: the verified guest key travels in
+	// it (see withGuestKey), and handleGatewayRequest's per-key quota check
+	// reads it back via relayGuestKey. A fresh context would drop it and let
+	// guests bypass their daily/hourly/per-request/RPM quotas.
+	modifiedReq = modifiedReq.WithContext(r.Context())
 	modifiedReq.ContentLength = int64(len(openaiBytes))
 	modifiedReq.RemoteAddr = r.RemoteAddr
 

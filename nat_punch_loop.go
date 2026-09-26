@@ -65,6 +65,26 @@ func (s *PunchSession) markEstablished(addr *net.UDPAddr) {
 	s.once.Do(func() { close(s.done) })
 }
 
+// SetPeerOffer replaces the peer offer the session is bound to. The punch
+// initiator starts with a synthetic {NodeID, ReflexiveAddr} placeholder and
+// calls this once the peer's real offer arrives via the exchange response, so
+// Ingest can verify inbound frames against the peer's actual nonce.
+func (s *PunchSession) SetPeerOffer(peer PunchOffer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.PeerOffer = peer
+}
+
+// peerNonce returns the nonce inbound punch frames must carry to be accepted
+// by Ingest. Empty while the peer's real offer is unknown (the initiator's
+// window before the exchange response arrives); NonceEqual rejects empty, so
+// frames in that window are dropped rather than trusted.
+func (s *PunchSession) peerNonce() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.PeerOffer.Nonce
+}
+
 // DirectLinkManager builds UDP direct channels between this node and its peers.
 // It owns the sending goroutines for each punch and, when running in shared
 // mode, receives frames via Ingest (called by NATManager.udpRecvLoop, the
@@ -106,10 +126,39 @@ func NewDirectLinkManager(conn *net.UDPConn, nodeID, localAddr, pubAddr string, 
 	return d
 }
 
+// punchOfferSigner 对 Offer() 产生的出站打洞通告签名。生产默认用本节点
+// ed25519 身份密钥签名；测试可覆盖为 fixture 密钥签名。
+var punchOfferSigner = signPunchOfferWithNode
+
+// signPunchOfferWithNode 用全局节点身份（BIP39/SLIP-0010 派生）对通告签名。
+// Nil-safe：无身份时通告保持无签名，会被加固后的对端拒绝（接收侧 fail
+// closed），打洞仅降级，不会削弱任何校验。
+func signPunchOfferWithNode(o *PunchOffer) {
+	if node == nil {
+		slog.Warn("punch offer: node identity unavailable, sending unsigned")
+		return
+	}
+	sig := node.Sign(o.signingPayload())
+	if sig == "" {
+		slog.Warn("punch offer: signing failed, sending unsigned")
+		return
+	}
+	o.Signature = sig
+}
+
 // Offer builds a punch offer for this node (reflexive = STUN public addr,
-// local = the UDP listen address peers punch against).
+// local = the UDP listen address peers punch against). The offer is signed
+// with this node's identity key when available; hardened peers reject
+// unsigned offers at /network/__punch.
 func (d *DirectLinkManager) Offer() (PunchOffer, error) {
-	return NewPunchOffer(d.nodeID, d.pubAddr, d.localAddr)
+	o, err := NewPunchOffer(d.nodeID, d.pubAddr, d.localAddr)
+	if err != nil {
+		return PunchOffer{}, err
+	}
+	if punchOfferSigner != nil {
+		punchOfferSigner(&o)
+	}
+	return o, nil
 }
 
 // SetPubAddr updates the advertised reflexive address (called after STUN).
@@ -134,6 +183,15 @@ func (d *DirectLinkManager) BeginPunch(peer PunchOffer, interval time.Duration, 
 	s := NewPunchSession(our, peer)
 
 	d.mu.Lock()
+	if existing, ok := d.sessions[peer.NodeID]; ok {
+		// P0: never overwrite an in-flight session. The session's expected
+		// peer nonce is bound at creation; replacing it — especially from an
+		// unauthenticated /network/__punch offer — would let an attacker
+		// rebind the session to a nonce they chose and then satisfy the
+		// Ingest check below with their own forged frames.
+		d.mu.Unlock()
+		return existing
+	}
 	d.sessions[peer.NodeID] = s
 	d.mu.Unlock()
 
@@ -185,16 +243,29 @@ func (d *DirectLinkManager) BeginPunch(peer PunchOffer, interval time.Duration, 
 // marks the matching peer session established (idempotent per session) and
 // records the direct address immediately so HasDirect reflects the channel as
 // soon as it opens (rather than only after the send goroutine exits).
+//
+// P0 (NAT punch identity binding): the frame's nonce MUST equal the nonce of
+// the peer offer this session is bound to (constant-time NonceEqual). Without
+// this, anyone can forge an OMP1 frame with an arbitrary NodeID and
+// permanently hijack links[offer.NodeID]; relay traffic to that peer carried
+// over the direct link (RelayOverUDP) — including request bodies — would then
+// go to the attacker (full MITM). A mismatch is rejected WITHOUT touching
+// links.
 func (d *DirectLinkManager) Ingest(offer PunchOffer, addr *net.UDPAddr) {
 	d.mu.RLock()
 	s, ok := d.sessions[offer.NodeID]
 	d.mu.RUnlock()
-	if ok {
-		s.markEstablished(addr)
-		d.mu.Lock()
-		d.links[offer.NodeID] = addr
-		d.mu.Unlock()
+	if !ok {
+		return
 	}
+	if !NonceEqual(offer.Nonce, s.peerNonce()) {
+		slog.Warn("punch Ingest: rejecting frame with wrong nonce", "peer", offer.NodeID)
+		return
+	}
+	s.markEstablished(addr)
+	d.mu.Lock()
+	d.links[offer.NodeID] = addr
+	d.mu.Unlock()
 }
 
 // recvLoop is the manager-owned receiver (ownRecv mode, e.g. tests).

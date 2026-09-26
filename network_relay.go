@@ -467,15 +467,39 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 		})
 		if directLinkMgr != nil && entry.ReflexiveUDP != "" {
 			goSafe("nat-punch-offer", func() {
-				offer, err := directLinkMgr.Offer()
-				if err != nil {
+				// Start punching toward the peer's reflexive address first so
+				// both NAT mappings open concurrently. The sender emits
+				// s.OurOffer, so the exchange below MUST hand the peer that
+				// exact offer: the peer binds our inbound frames by that
+				// offer's nonce in Ingest, and a different offer here would
+				// be rejected as forged (P0).
+				s := directLinkMgr.BeginPunch(PunchOffer{NodeID: entry.NodeID, ReflexiveAddr: entry.ReflexiveUDP}, time.Second, 20)
+				if s == nil {
 					return
 				}
-				// Hand our offer to the peer (over its HTTPS endpoint) and start
-				// punching toward its reflexive address. The peer does the same,
-				// so both NAT mappings open concurrently.
-				ExchangePunchWithPeer(targetAddr, offer)
-				directLinkMgr.BeginPunch(PunchOffer{NodeID: entry.NodeID, ReflexiveAddr: entry.ReflexiveUDP}, time.Second, 20)
+				// The peer's exchange response carries its real offer; bind
+				// the session to it so our Ingest can reject forged frames
+				// for this peer. Until it arrives, inbound frames are
+				// dropped rather than trusted (fail closed).
+				peerOffer, err := ExchangePunchWithPeer(targetAddr, s.OurOffer)
+				if err != nil {
+					slog.Debug("punch exchange failed", "peer", entry.NodeID, "error", err)
+					return
+				}
+				// The response offer is what the session gets bound to via
+				// SetPeerOffer: verify it is really from the expected peer
+				// (signature over the trust-pool key + freshness) before
+				// trusting it, otherwise a MITM on the exchange could rebind
+				// the session to an attacker offer.
+				if peerOffer.NodeID != entry.NodeID || !verifyPunchOffer(&peerOffer) {
+					slog.Debug("punch exchange: peer offer failed verification", "peer", entry.NodeID)
+					return
+				}
+				if len(peerOffer.Nonce) == 16 {
+					s.SetPeerOffer(peerOffer)
+				} else {
+					slog.Debug("punch exchange: peer offer missing nonce", "peer", entry.NodeID)
+				}
 			})
 		}
 	}
@@ -605,13 +629,26 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 // /network/__punch) and starts a hole-punch back toward that peer. The actual
 // punch frames are delivered to DirectLinkManager.Ingest by the NATManager's
 // single UDP reader (udpRecvLoop), which marks the channel established.
+//
+// P0: the response echoes OUR real frame offer (s.OurOffer) so the initiator
+// can bind its session to our nonce via SetPeerOffer — without it the
+// initiator cannot distinguish our frames from forgeries in Ingest.
+//
+// P0 (signature hardening): the incoming offer must carry a valid ed25519
+// signature from the claimed node, verified against the federation trust
+// pool BEFORE any session state is created. Fail closed: missing/invalid
+// signature, unknown node, or a SenderTS outside the freshness window is
+// rejected and no session is created. This closes the "first-come impersonate
+// a NodeID" hole on the otherwise unauthenticated /network/__punch endpoint.
 func handlePunchExchange(w http.ResponseWriter, r *http.Request) {
 	if directLinkMgr == nil {
 		writeError(w, 503, "punch not available")
 		return
 	}
 	var offer PunchOffer
-	if err := json.NewDecoder(r.Body).Decode(&offer); err != nil {
+	// Bound the body: a signed offer is <1KB; the exchange must not be a
+	// memory-exhaustion vector.
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&offer); err != nil {
 		writeError(w, 400, "invalid punch offer")
 		return
 	}
@@ -619,33 +656,66 @@ func handlePunchExchange(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "punch offer missing node_id or reflexive_addr")
 		return
 	}
-	directLinkMgr.BeginPunch(offer, time.Second, 20)
-	writeJSON(w, 200, map[string]any{"accepted": true, "peer": offer.NodeID})
+	// The peer's frames are bound to this nonce in Ingest; a missing or
+	// malformed nonce can never validate, so reject it here (fail closed).
+	if len(offer.Nonce) != 16 {
+		writeError(w, 400, "punch offer nonce must be 16 bytes")
+		return
+	}
+	if !verifyPunchOffer(&offer) {
+		writeError(w, 403, "punch offer signature verification failed")
+		return
+	}
+	s := directLinkMgr.BeginPunch(offer, time.Second, 20)
+	if s == nil {
+		writeError(w, 500, "punch failed")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"accepted": true, "peer": offer.NodeID, "offer": s.OurOffer})
 }
 
 // ExchangePunchWithPeer sends our PunchOffer to a peer's /network/__punch
-// endpoint so it can start punching back. A short timeout keeps a slow or
-// unreachable peer from blocking the (best-effort, async) punch attempt.
-func ExchangePunchWithPeer(peerBase string, offer PunchOffer) {
+// endpoint so it can start punching back, and returns the peer's real offer
+// from the response. The caller MUST exchange the exact offer its sender
+// emits (PunchSession.OurOffer): the peer binds our inbound frames by that
+// offer's nonce in Ingest, so exchanging a different offer would be rejected
+// as forged. A short timeout keeps a slow or unreachable peer from blocking
+// the (best-effort, async) punch attempt.
+func ExchangePunchWithPeer(peerBase string, offer PunchOffer) (PunchOffer, error) {
 	body, err := json.Marshal(offer)
 	if err != nil {
-		return
+		return PunchOffer{}, err
 	}
 	url := strings.TrimRight(peerBase, "/") + "/network/__punch"
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		slog.Debug("punch exchange: build request failed", "peer", peerBase, "error", err)
-		return
+		return PunchOffer{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := GetSharedHTTPClientWithTimeout(5 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		slog.Debug("punch exchange: POST failed", "peer", peerBase, "error", err)
-		return
+		return PunchOffer{}, err
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body)
+		return PunchOffer{}, fmt.Errorf("punch exchange: peer returned status %d", resp.StatusCode)
+	}
+	var out struct {
+		Accepted bool       `json:"accepted"`
+		Peer     string     `json:"peer"`
+		Offer    PunchOffer `json:"offer"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out); err != nil {
+		return PunchOffer{}, fmt.Errorf("punch exchange: decode response: %w", err)
+	}
+	if !out.Accepted {
+		return PunchOffer{}, fmt.Errorf("punch exchange: not accepted by peer")
+	}
+	return out.Offer, nil
 }
 
 // pickBestAddress selects the best address from a list (prefer HTTPS public URLs)
@@ -917,7 +987,12 @@ func verifyRelayForwardAuth(r *http.Request, body []byte) (int, string) {
 
 // handleGatewayRequest handles /v1/chat/completions, /v1/completions, /v1/embeddings
 // in gateway mode. It selects the best node and forwards the request.
-func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
+//
+// Declared as a package-level variable (rather than a plain func) so tests can
+// stub the gateway hop and assert what the compat layers forward to it — e.g.
+// that the verified guest key carried in the request context survives the
+// Anthropic/Gemini/Azure request rebuild.
+var handleGatewayRequest = func(w http.ResponseWriter, r *http.Request) {
 	// P2-3(ii): drop any client-supplied internal quota marker before it can be
 	// trusted. Only this handler is allowed to set it (after it has actually
 	// accounted for the request).

@@ -365,7 +365,7 @@ curl http://localhost:8000/openai/deployments/deepseek-chat/chat/completions \
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET/POST/PUT/DELETE` | `/network/{id}/` | Relay requests to target node |
-| `POST` | `/network/__punch` | Punch-offer exchange (NAT hole punching; dispatched from the relay path, no standalone auth — see review backlog) |
+| `POST` | `/network/__punch` | Punch-offer exchange (NAT hole punching). The offer must carry a valid ed25519 `sig` over the canonical payload (domain `OMP-PUNCH-v1`, covering node_id/reflexive_addr/local_addr/nonce/ts), signed by the node's identity key and verifiable against the federation trust pool; `ts` must be within 5 min (1 min future skew). Missing/invalid/expired signatures are rejected 403 and no session is created (fail closed). |
 
 > **Response header `X-OMP-Quota-Source`**: on public-key gateway requests, the node sets `contributor` or `community` to indicate which free-quota channel was charged (`ledger_quota_consume.go`).
 

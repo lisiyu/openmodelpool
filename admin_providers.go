@@ -35,6 +35,50 @@ func validateProviderBaseURL(baseURL string) error {
 	return nil
 }
 
+// isMaskedKeyValue reports whether s looks like a Provider.Safe() mask
+// placeholder rather than a real upstream key: the long form "abcd...wxyz"
+// (first 4 chars + "..." + last 4) or the short-key placeholder "***". A real
+// key is never exactly "***" and never contains "...", so treating these as
+// masks is safe. Used by the create/update paths so that a PUT echoing a
+// Safe()-masked GET response does not permanently overwrite stored keys.
+func isMaskedKeyValue(s string) bool {
+	return s == "***" || strings.Contains(s, "...")
+}
+
+// restoreMaskedAPIKeys returns updated with every Safe()-masked Key value
+// replaced by the real key from existing (matched by entry ID, falling back
+// to slice index). Entries carrying non-masked keys are returned unchanged,
+// so genuine key rotations still apply. Callers must pass the stored (raw)
+// existing provider — never a Safe() copy.
+func restoreMaskedAPIKeys(existing, updated []APIKeyConfig) []APIKeyConfig {
+	if len(existing) == 0 || len(updated) == 0 {
+		return updated
+	}
+	byID := make(map[string]string, len(existing))
+	for _, k := range existing {
+		if k.ID != "" {
+			byID[k.ID] = k.Key
+		}
+	}
+	out := make([]APIKeyConfig, len(updated))
+	for i, k := range updated {
+		out[i] = k
+		if !isMaskedKeyValue(k.Key) {
+			continue
+		}
+		if k.ID != "" {
+			if real, ok := byID[k.ID]; ok {
+				out[i].Key = real
+				continue
+			}
+		}
+		if i < len(existing) {
+			out[i].Key = existing[i].Key
+		}
+	}
+	return out
+}
+
 func handleListProviders(w http.ResponseWriter, r *http.Request) {
 	owner := getRequestOwner(r)
 	providers := pm.GetVisible(owner)
@@ -175,6 +219,11 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(p.APIKeys) == 0 {
 			p.APIKeys = existing.APIKeys
+		} else {
+			// P1-fix: same mask handling as the update path — entries echoed
+			// from a Safe()-masked GET keep the stored real key; only
+			// non-masked entries are updated.
+			p.APIKeys = restoreMaskedAPIKeys(existing.APIKeys, p.APIKeys)
 		}
 	}
 
@@ -412,6 +461,14 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 				Enabled:       true,
 			},
 		}
+	}
+
+	// P1-fix: api_keys entries echoed back from a Safe()-masked GET response
+	// carry mask placeholders instead of real keys — restore the stored key
+	// for each masked entry so pm.Add cannot permanently overwrite it. Only
+	// non-masked entries update the stored key.
+	if len(merged.APIKeys) > 0 {
+		merged.APIKeys = restoreMaskedAPIKeys(existing.APIKeys, merged.APIKeys)
 	}
 
 	result := pm.Add(merged)

@@ -376,10 +376,22 @@ func handleNetworkRegions(w http.ResponseWriter, r *http.Request) {
 		nodeCounts[string(rg)] = c
 	}
 
+	// self describes this node's own detected region (additive; the UI's
+	// region card shows it alongside the detection mode).
+	self := map[string]any{"region": "", "source": ""}
+	if node != nil {
+		if nr := regionManager.GetNodeRegion(node.NodeID()); nr != nil {
+			self["region"] = string(nr.Region)
+			self["source"] = nr.Source
+		}
+	}
+
 	writeJSON(w, 200, map[string]any{
 		"regions":     regions,
 		"node_counts": nodeCounts,
 		"config":      regionManager.GetConfig(),
+		"geo_enabled": regionGeoEnabled(),
+		"self":        self,
 	})
 }
 
@@ -406,7 +418,8 @@ func handleNetworkRegionNodes(w http.ResponseWriter, r *http.Request) {
 // handleNetworkRegionConfigUpdate implements PUT /api/network/regions/config.
 // It parses a RegionConfig from the request body (the Region type's
 // UnmarshalJSON lets callers use aliases like "ap"/"eu" for RegionWeights keys),
-// applies it via UpdateConfig, and echoes the resulting configuration.
+// validates it, applies it via UpdateConfig, persists it so it survives
+// restarts, and echoes the resulting configuration.
 func handleNetworkRegionConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if regionManager == nil {
 		writeError(w, http.StatusInternalServerError, "region manager not initialized")
@@ -417,7 +430,12 @@ func handleNetworkRegionConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if err := validateRegionConfig(&cfg); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	regionManager.UpdateConfig(cfg)
+	persistRegionConfig(cfg)
 	writeJSON(w, 200, map[string]any{
 		"status": "updated",
 		"config": regionManager.GetConfig(),

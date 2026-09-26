@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -157,6 +158,27 @@ func (gp *GlobalPool) doSave() {
 		ParticipantNodes:  gp.ParticipantNodes,
 		LastUpdated:       gp.LastUpdated,
 	}
+	gp.writeStore(store)
+}
+
+// snapshotStore copies the persistable state. The caller must hold gp.mu
+// (read or write); the maps and slice are cloned so the snapshot stays
+// consistent even if the pool is mutated after the lock is released.
+func (gp *GlobalPool) snapshotStore() globalPoolStore {
+	return globalPoolStore{
+		TotalContributed:  gp.TotalContributed,
+		TotalConsumed:     gp.TotalConsumed,
+		AvailableQuota:    gp.AvailableQuota,
+		NodeContributions: maps.Clone(gp.NodeContributions),
+		NodeConsumptions:  maps.Clone(gp.NodeConsumptions),
+		ParticipantNodes:  append([]GlobalPoolNode(nil), gp.ParticipantNodes...),
+		LastUpdated:       gp.LastUpdated,
+	}
+}
+
+// writeStore marshals and atomically writes a previously taken snapshot.
+// It performs disk I/O and must be called without holding gp.mu (B9-8).
+func (gp *GlobalPool) writeStore(store globalPoolStore) {
 	b, _ := json.MarshalIndent(store, "", "  ")
 	if err := os.MkdirAll(filepath.Dir(gp.dataPath), 0700); err != nil {
 		slog.Error("failed to create data directory", "error", err)
@@ -283,6 +305,39 @@ func (gp *GlobalPool) RecordConsumption(nodeID string, amount int64) {
 	gp.mu.Unlock()
 
 	gp.doSave()
+}
+
+// TryConsume atomically checks and records token consumption against a node's
+// share of the global pool, returning false without mutating anything when the
+// node's remaining share (contributions minus consumptions, floored at 0) is
+// smaller than amount.
+//
+// This replaces the snapshot-then-RecordConsumption sequence for callers that
+// need an atomic check-and-deduct (e.g. the G6 quota-priority resolver): the
+// snapshot pattern admits a TOCTOU race where concurrent callers each see a
+// sufficient balance and over-issue the pool before their RecordConsumption
+// calls land.
+func (gp *GlobalPool) TryConsume(nodeID string, amount int64) bool {
+	gp.mu.Lock()
+	remain := gp.NodeContributions[nodeID] - gp.NodeConsumptions[nodeID]
+	if remain < 0 {
+		remain = 0
+	}
+	if remain < amount {
+		gp.mu.Unlock()
+		return false
+	}
+	gp.NodeConsumptions[nodeID] += amount
+	gp.TotalConsumed += amount
+	gp.recalculateLocked()
+	// Snapshot under the lock, then persist after releasing it: doSave
+	// performs disk I/O (B9-8), and an unlocked snapshot would race with
+	// concurrent mutations.
+	store := gp.snapshotStore()
+	gp.mu.Unlock()
+
+	gp.writeStore(store)
+	return true
 }
 
 // recalculateLocked recomputes aggregate values. Caller must hold gp.mu.

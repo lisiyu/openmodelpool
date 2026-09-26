@@ -174,6 +174,22 @@ type quotaPriorityManager struct {
 	privateLimit int64
 	sharedLimit  int64
 	remoteLimit  int64
+
+	// Long-lived, mutex-guarded pool instances. Resolve deducts from these
+	// same instances on every call instead of rebuilding them from the
+	// config limits per request, so consumption persists across requests
+	// and a finite quota actually depletes. QuotaPool serializes concurrent
+	// deductions with its own mutex.
+	//
+	// sharedPool / remotePool are only the fallback for single-node
+	// deployments where the global pool ledger is unavailable. When the
+	// ledger is available it is the source of truth: shared deductions go
+	// through GlobalPool.TryConsume (atomic check-and-record) and the
+	// remote pool is read as a fresh snapshot per request (remote
+	// enforcement is the target node's job).
+	privatePool *QuotaPool
+	sharedPool  *QuotaPool
+	remotePool  *QuotaPool
 }
 
 // initQuotaPriority initializes the cross-pool priority manager from config.
@@ -193,6 +209,13 @@ func initQuotaPriority() {
 		m.sharedLimit = parseInt64Config(cfg.Get("quota_shared_pool_limit", ""))
 		m.remoteLimit = parseInt64Config(cfg.Get("quota_remote_pool_limit", ""))
 	}
+	// Create the long-lived pool instances once, seeded from the configured
+	// limits. Every Resolve deducts from these same instances so consumption
+	// persists across requests (previously each Resolve rebuilt the pools
+	// from the limits, so the private pool always looked full).
+	m.privatePool = &QuotaPool{Kind: PoolPrivate, Balance: m.privateLimit}
+	m.sharedPool = &QuotaPool{Kind: PoolShared, Balance: m.sharedLimit}
+	m.remotePool = &QuotaPool{Kind: PoolRemoteShared, Balance: m.remoteLimit}
 	quotaPriorityMgr = m
 	slog.Info("quota priority manager initialized",
 		"enabled", m.enabled,
@@ -223,21 +246,95 @@ func selfNodeID() string {
 	return ""
 }
 
+// lazyPool returns the manager's long-lived pool instance for kind, creating
+// it from the configured limit on first use. initQuotaPriority creates the
+// instances eagerly; managers built directly (struct literal, e.g. in tests)
+// get them here, so every Resolve still shares one instance per pool and
+// deductions persist across calls.
+func (m *quotaPriorityManager) lazyPool(kind PoolKind) *QuotaPool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var slot **QuotaPool
+	var limit int64
+	switch kind {
+	case PoolPrivate:
+		slot, limit = &m.privatePool, m.privateLimit
+	case PoolShared:
+		slot, limit = &m.sharedPool, m.sharedLimit
+	case PoolRemoteShared:
+		slot, limit = &m.remotePool, m.remoteLimit
+	default:
+		return nil
+	}
+	if *slot == nil {
+		*slot = &QuotaPool{Kind: kind, Balance: limit}
+	}
+	return *slot
+}
+
+// tryConsumeShared atomically deducts amount from this node's shared-pool
+// share. When the global pool ledger is available (and the node ID is known)
+// it is the source of truth and the deduction is a single atomic
+// check-and-record via GlobalPool.TryConsume, which also persists the ledger
+// to disk — the project's existing quota-state persistence pattern (mutate
+// under lock, then save). Otherwise (single-node deployment, or unknown node
+// ID which must not pollute the ledger) the manager's persistent fallback
+// pool carries the configured shared limit.
+func (m *quotaPriorityManager) tryConsumeShared(nodeID string, amount int64) bool {
+	if globalPool != nil && nodeID != "" {
+		return globalPool.TryConsume(nodeID, amount)
+	}
+	return m.lazyPool(PoolShared).TryDeduct(amount)
+}
+
+// remotePoolView returns the current view of the remote-shared pool. When the
+// global pool ledger is available the view is a throwaway per-request
+// snapshot of its available quota: remote deductions are enforced by the
+// target node, so this node keeps no persistent local balance for them.
+// Otherwise the manager's persistent pool carries the configured remote
+// limit, so a finite limit still depletes across requests.
+func (m *quotaPriorityManager) remotePoolView() *QuotaPool {
+	if globalPool == nil {
+		return m.lazyPool(PoolRemoteShared)
+	}
+	globalPool.mu.RLock()
+	balance := globalPool.AvailableQuota
+	globalPool.mu.RUnlock()
+	if balance < 0 {
+		balance = 0
+	}
+	return &QuotaPool{Kind: PoolRemoteShared, Balance: balance}
+}
+
+// charged builds the success result for a deduction, keeping the debug log in
+// one place.
+func (m *quotaPriorityManager) charged(kind PoolKind, nodeID string, amount int64) ConsumeResult {
+	slog.Debug("quota priority: deducted from pool",
+		"pool", kind.String(), "node", nodeID, "amount", amount)
+	return ConsumeResult{OK: true, Kind: kind, NodeID: nodeID, Amount: amount}
+}
+
 // Resolve performs the cross-pool priority consumption for a request of the
 // given key type, attempting to deduct amount tokens.
 //
 // When enforcement is disabled (default) it is a no-op passthrough that reports
 // the private pool as charged, preserving existing single-pool behavior exactly.
 // When enabled, it deducts from the first pool (private -> shared -> remote)
-// that can satisfy the request. Shared-pool deductions are mirrored into the
-// existing global pool ledger (globalPool) so its counters stay consistent;
-// remote-pool deductions are left to the target node and are not double-counted.
+// that can satisfy the request, per PriorityOrder(keyType). A pool is only
+// used once the previous one cannot satisfy the request, and exactly one pool
+// is charged per call.
+//
+// Deduction targets are persistent, so quotas actually deplete: the private
+// pool is a long-lived mutex-guarded instance on the manager (previously it
+// was rebuilt from the config limit on every call, so it always looked full).
+// Shared-pool deductions go through GlobalPool.TryConsume — a single atomic
+// check-and-record on the ledger — so concurrent requests cannot over-issue
+// the shared pool. The remote pool is a per-request snapshot of the ledger's
+// available quota; remote deductions are enforced by the target node and are
+// intentionally not recorded here.
 func (m *quotaPriorityManager) Resolve(keyType KeyType, amount int64) ConsumeResult {
 	m.mu.RLock()
 	enabled := m.enabled
-	privateLimit := m.privateLimit
-	sharedLimit := m.sharedLimit
-	remoteLimit := m.remoteLimit
 	m.mu.RUnlock()
 
 	if !enabled {
@@ -245,40 +342,26 @@ func (m *quotaPriorityManager) Resolve(keyType KeyType, amount int64) ConsumeRes
 	}
 
 	nodeID := selfNodeID()
-	pools := map[PoolKind]*QuotaPool{
-		PoolPrivate: {Kind: PoolPrivate, NodeID: nodeID, Balance: privateLimit},
-	}
-
-	// Prefer the existing global pool ledger for shared/remote balances when
-	// available; fall back to the explicit config limits otherwise.
-	if globalPool != nil {
-		globalPool.mu.RLock()
-		contrib := globalPool.NodeContributions[nodeID]
-		consumed := globalPool.NodeConsumptions[nodeID]
-		sharedRemain := contrib - consumed
-		if sharedRemain < 0 {
-			sharedRemain = 0
+	for _, kind := range PriorityOrder(keyType) {
+		switch kind {
+		case PoolPrivate:
+			if m.lazyPool(PoolPrivate).TryDeduct(amount) {
+				return m.charged(PoolPrivate, nodeID, amount)
+			}
+		case PoolShared:
+			if m.tryConsumeShared(nodeID, amount) {
+				return m.charged(PoolShared, nodeID, amount)
+			}
+		case PoolRemoteShared:
+			if pool := m.remotePoolView(); pool.TryDeduct(amount) {
+				return m.charged(PoolRemoteShared, pool.NodeID, amount)
+			}
 		}
-		remoteRemain := globalPool.AvailableQuota
-		if remoteRemain < 0 {
-			remoteRemain = 0
-		}
-		globalPool.mu.RUnlock()
-		pools[PoolShared] = &QuotaPool{Kind: PoolShared, NodeID: nodeID, Balance: sharedRemain}
-		pools[PoolRemoteShared] = &QuotaPool{Kind: PoolRemoteShared, NodeID: "", Balance: remoteRemain}
-	} else {
-		pools[PoolShared] = &QuotaPool{Kind: PoolShared, NodeID: nodeID, Balance: sharedLimit}
-		pools[PoolRemoteShared] = &QuotaPool{Kind: PoolRemoteShared, NodeID: "", Balance: remoteLimit}
 	}
-
-	res := ConsumeWithPriority(keyType, amount, pools)
-	if res.OK && res.Kind == PoolShared && globalPool != nil && res.NodeID != "" {
-		// Mirror the deduction into the existing global pool ledger so its
-		// counters reflect the consumption. Remote-pool deductions happen on
-		// the target node and are intentionally not recorded here.
-		globalPool.RecordConsumption(res.NodeID, amount)
+	return ConsumeResult{
+		OK:     false,
+		Reason: "quota exhausted across private/shared/remote pools",
 	}
-	return res
 }
 
 // keyTypeFromString maps the handler-side key-type string (returned by

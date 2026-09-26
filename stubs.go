@@ -31,6 +31,10 @@ func initEncryptor(keyPath string) {}
 // instead of the previous "not yet wired" stubs.
 func initRegionManager() {
 	regionManager = NewRegionManager()
+	// Apply persisted region routing settings (region_prefer_local,
+	// region_cross_threshold, region_weights_json) so admin changes survive
+	// restarts.
+	loadRegionConfigFromSettings(regionManager)
 }
 
 // startHeartbeatLoop launches the periodic node-to-node heartbeat sender.
@@ -280,28 +284,36 @@ func registerWithBootstraps() {
 	wg.Wait()
 }
 
-// GetDHTStats returns DHT routing-table statistics. DHT (Kademlia) is not yet
-// implemented, so this reports a clear "not implemented" status.
+// GetDHTStats returns DHT routing-table statistics. It covers both the
+// federation Kademlia table (fed.dht) and the production UDP DHT node
+// (dhtNode, started by startDHTNode when the shared network is enabled).
 func GetDHTStats() map[string]any {
-	if fed == nil || fed.dht == nil {
-		return map[string]any{
-			"enabled":     false,
-			"total_nodes": 0,
-			"buckets":     0,
-			"records":     0,
+	out := map[string]any{
+		"enabled":     false,
+		"total_nodes": 0,
+		"buckets":     0,
+		"records":     0,
+	}
+	if fed != nil && fed.dht != nil {
+		stats := fed.dht.BucketStats()
+		records := 0
+		fed.dht.mu.RLock()
+		records = len(fed.dht.records)
+		fed.dht.mu.RUnlock()
+		out["enabled"] = true
+		out["self_id"] = fed.dht.SelfID()
+		out["total_nodes"] = fed.dht.TotalNodes()
+		out["buckets_used"] = len(stats)
+		out["bucket_stats"] = stats
+		out["records"] = records
+	}
+	if dhtNode != nil {
+		out["enabled"] = true
+		out["udp_node"] = map[string]any{
+			"node_id":     dhtNode.ID(),
+			"addr":        dhtNode.Addr(),
+			"table_nodes": dhtNode.TableSize(),
 		}
 	}
-	stats := fed.dht.BucketStats()
-	records := 0
-	fed.dht.mu.RLock()
-	records = len(fed.dht.records)
-	fed.dht.mu.RUnlock()
-	return map[string]any{
-		"enabled":      true,
-		"self_id":      fed.dht.SelfID(),
-		"total_nodes":  fed.dht.TotalNodes(),
-		"buckets_used": len(stats),
-		"bucket_stats": stats,
-		"records":      records,
-	}
+	return out
 }

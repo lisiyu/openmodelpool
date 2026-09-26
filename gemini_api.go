@@ -158,6 +158,10 @@ func handleGeminiGenerateContent(w http.ResponseWriter, r *http.Request) {
 		RemoteAddr: r.RemoteAddr,
 		Host:       r.Host,
 	}
+	// Inherit the inbound request's context so the verified guest key it
+	// carries (withGuestKey) still reaches handleGatewayRequest's per-key
+	// quota check via relayGuestKey.
+	modifiedReq = modifiedReq.WithContext(r.Context())
 	modifiedReq.ContentLength = int64(len(oaBytes))
 
 	interceptor := &geminiResponseWriter{

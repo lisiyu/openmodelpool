@@ -209,6 +209,7 @@ let _shareFilter = 'all';
         }
         loadNetworkPeers();
         loadNetworkDashboard();
+        loadRegionInfo();
         loadInvites();
         loadCapabilityClaims();
         loadContributionLedger();
@@ -298,6 +299,85 @@ let _shareFilter = 'all';
         setText('poolSharePercent', sharePercent);
       } catch(e) {
         console.warn('pool quota load failed', e);
+      }
+    }
+
+    // ============================================================
+    // Region routing panel: region distribution + routing config.
+    // ============================================================
+    const regionDisplayNames = {ap: '亚太', eu: '欧洲', americas: '美洲', unknown: '未知', '': '未知', any: '不限'};
+
+    function regionDisplayName(key) {
+      key = String(key || '');
+      return (regionDisplayNames[key] || key) + ' (' + (key || 'unknown') + ')';
+    }
+
+    async function loadRegionInfo() {
+      const bodyEl = document.getElementById('regionPanelBody');
+      try {
+        const r = await authFetch('/api/network/regions');
+        const d = await r.json();
+        const counts = d.node_counts || {};
+        const regions = d.regions || [];
+        const cfg = d.config || {};
+        const self = d.self || {};
+        let rows = regions.map(rg => {
+          const key = String(rg);
+          return '<tr><td>' + regionDisplayName(key) + '</td>' +
+            '<td style="text-align:right">' + (counts[key] || 0) + '</td></tr>';
+        }).join('');
+        if (!rows) rows = '<tr><td colspan="2" style="color:var(--text-muted)">暂无区域数据</td></tr>';
+        const selfName = regionDisplayName(self.region);
+        const geoMode = d.geo_enabled ? 'GeoIP 精准检测' : '离线启发式检测';
+        const threshold = (cfg.CrossRegionThreshold !== undefined && cfg.CrossRegionThreshold !== null)
+          ? cfg.CrossRegionThreshold : 2;
+        if (bodyEl) {
+          bodyEl.innerHTML =
+            '<table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:10px">' +
+            '<thead><tr style="color:var(--text-muted);text-align:left">' +
+            '<th style="padding:4px 0">区域</th><th style="padding:4px 0;text-align:right">节点数</th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table>' +
+            '<div style="margin-bottom:10px">本节点：' + selfName +
+            '（来源：' + (self.source || '-') + '）· 检测模式：' + geoMode + '</div>' +
+            '<div style="display:flex;flex-direction:column;gap:8px">' +
+            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
+            '<input type="checkbox" id="regionPreferLocal"' + (cfg.PreferLocal ? ' checked' : '') + '> 优先同区域节点' +
+            '</label>' +
+            '<label style="display:flex;align-items:center;gap:8px">跨区域阈值 ' +
+            '<input id="regionCrossThreshold" class="form-input" style="width:90px" value="' + threshold + '">' +
+            '</label>' +
+            '<div><button class="btn btn-primary btn-sm" onclick="saveRegionConfig()">保存区域配置</button> ' +
+            '<span id="regionConfigMsg" style="color:var(--text-muted)"></span></div>' +
+            '</div>';
+        }
+      } catch(e) {
+        console.warn('region info load failed', e);
+        if (bodyEl) bodyEl.innerHTML = '<span style="color:var(--text-muted)">区域信息加载失败</span>';
+      }
+    }
+
+    async function saveRegionConfig() {
+      const msgEl = document.getElementById('regionConfigMsg');
+      const preferLocal = document.getElementById('regionPreferLocal').checked;
+      let threshold = parseFloat(document.getElementById('regionCrossThreshold').value);
+      if (isNaN(threshold) || threshold < 0) {
+        if (msgEl) msgEl.textContent = '阈值必须为非负数';
+        return;
+      }
+      try {
+        const r = await authFetch('/api/network/regions/config', {
+          method: 'PUT',
+          body: JSON.stringify({PreferLocal: preferLocal, CrossRegionThreshold: threshold})
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) {
+          toast('区域路由配置已保存', 'success');
+          await loadRegionInfo();
+        } else {
+          toast('保存失败: ' + (extractError(d) || '未知错误'), 'error');
+        }
+      } catch(e) {
+        toast('保存失败: ' + e.message, 'error');
       }
     }
 

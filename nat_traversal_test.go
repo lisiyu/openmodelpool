@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"net"
+	"testing"
+)
 
 // makeSTUNBindingResponse builds a minimal RFC 5389 Binding Response carrying a
 // single XOR-MAPPED-ADDRESS attribute whose XORed IPv4/IPv4-port are xorIP/xorPort.
@@ -106,5 +109,83 @@ func TestPreferRelay(t *testing.T) {
 		if got := n.PreferRelay(); got != c.want {
 			t.Fatalf("natType=%s: PreferRelay=%v want %v", c.natType, got, c.want)
 		}
+	}
+}
+
+// TestParseSTUNResponse_MalformedNoPanic (P0): truncated/malformed STUN packets
+// must return an error, never panic. The XOR-MAPPED-ADDRESS bounds check used
+// to be i+8 > len(buf) while the parser reads buf[i+11], so a 28..31-byte
+// crafted datagram panicked with index out of range. A panic in any case below
+// fails the test.
+func TestParseSTUNResponse_MalformedNoPanic(t *testing.T) {
+	full := makeSTUNBindingResponse([]byte{0x20, 0x10, 0xA7, 0x46}, []byte{0x37, 0x3C})
+	mustErr := map[string][]byte{
+		"empty":              {},
+		"short header":       full[:21],
+		"attr header only":   full[:24],
+		"attr value 4 bytes": full[:28], // old code panicked: i+8=28 <= 28, read buf[28..31]
+		"attr value 7 bytes": full[:31], // old code panicked: read buf[31] out of range
+	}
+	for name, buf := range mustErr {
+		if _, _, err := parseSTUNResponse(buf); err == nil {
+			t.Errorf("%s: expected error, got success", name)
+		}
+	}
+
+	// A declared attribute length larger than the buffer must not panic either
+	// (the parser only trusts bytes actually present).
+	oversized := append([]byte(nil), full...)
+	oversized[22], oversized[23] = 0xFF, 0xFF
+	_, _, _ = parseSTUNResponse(oversized) // must not panic; result irrelevant
+
+	// Unknown attribute types are skipped without reading their values.
+	unknown := append([]byte(nil), full...)
+	unknown[20], unknown[21] = 0x80, 0x22 // SOFTWARE, not XOR-MAPPED-ADDRESS
+	if _, _, err := parseSTUNResponse(unknown); err == nil {
+		t.Error("expected error when XOR-MAPPED-ADDRESS is absent")
+	}
+}
+
+// TestHandleDatagram_MalformedNoPanic (P0): malformed datagrams must never
+// crash datagram processing — each datagram is isolated by the recover in
+// handleDatagram, so after garbage a valid STUN response is still processed
+// (this is what keeps udpRecvLoop alive in production).
+func TestHandleDatagram_MalformedNoPanic(t *testing.T) {
+	n := &NATManager{stunCh: make(chan stunResponse, 4)}
+	from := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1234}
+
+	garbage := [][]byte{
+		nil,
+		{},
+		{0x01},
+		make([]byte, 28), // all-zero 28-byte "response"
+		makeSTUNBindingResponse([]byte{1, 2, 3, 4}, []byte{0, 80})[:28],
+		makeSTUNBindingResponse([]byte{1, 2, 3, 4}, []byte{0, 80})[:31],
+		{0x4f, 0x4d, 0x50, 0x31, 0x7b, 0x7d}, // OMP1 + invalid JSON punch frame
+	}
+	for i, g := range garbage {
+		n.handleDatagram(g, from) // must not panic
+		select {
+		case r := <-n.stunCh:
+			t.Fatalf("garbage case %d surfaced STUN response: %+v", i, r)
+		default:
+		}
+	}
+
+	// Processing continues after garbage: a valid STUN response is surfaced.
+	wantTxid := [stunTxidLen]byte{9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2}
+	valid := makeSTUNBindingResponse([]byte{0x20, 0x10, 0xA7, 0x46}, []byte{0x37, 0x3C})
+	copy(valid[8:20], wantTxid[:])
+	n.handleDatagram(valid, from)
+	select {
+	case resp := <-n.stunCh:
+		if resp.txid != wantTxid {
+			t.Fatalf("txid mismatch: got %v want %v", resp.txid, wantTxid)
+		}
+		if resp.addr != "1.2.3.4:5678" {
+			t.Fatalf("addr = %q, want 1.2.3.4:5678", resp.addr)
+		}
+	default:
+		t.Fatal("valid STUN response not surfaced after malformed datagrams")
 	}
 }

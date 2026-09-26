@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"math"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -75,13 +77,17 @@ type RegionManager struct {
 	mu     sync.RWMutex
 	nodes  map[string]*NodeRegion
 	config RegionConfig
+	// geoInflight tracks IPs with an in-flight async GeoIP enrichment
+	// (see maybeEnrichRegionAsync in region_geo.go) — singleflight per IP.
+	geoInflight map[string]struct{}
 }
 
 // NewRegionManager creates an empty RegionManager with default config.
 func NewRegionManager() *RegionManager {
 	return &RegionManager{
-		nodes:  make(map[string]*NodeRegion),
-		config: DefaultRegionConfig(),
+		nodes:       make(map[string]*NodeRegion),
+		config:      DefaultRegionConfig(),
+		geoInflight: make(map[string]struct{}),
 	}
 }
 
@@ -107,16 +113,23 @@ func (rm *RegionManager) AutoDetectSelfRegion() {
 		return
 	}
 
-	region := rm.DetectRegion(selfID, publicIP)
+	// Prefer the accurate GeoIP path; fall back to the offline first-octet
+	// heuristic when geo detection is disabled or the lookup fails.
+	region := rm.GeoDetectRegion(publicIP)
+	source := "geo_ip"
+	if region == RegionUnknown {
+		region = rm.DetectRegion(selfID, publicIP)
+		source = "auto_detect"
+	}
 	if region == RegionUnknown {
 		slog.Debug("region auto-detect: could not determine region from IP", "ip", publicIP)
 		return
 	}
 
 	rm.mu.Lock()
-	rm.nodes[selfID] = &NodeRegion{Region: region, Source: "auto_detect"}
+	rm.nodes[selfID] = &NodeRegion{Region: region, Source: source}
 	rm.mu.Unlock()
-	slog.Info("region auto-detected for local node", "node_id", selfID, "region", region, "ip", publicIP)
+	slog.Info("region auto-detected for local node", "node_id", selfID, "region", region, "source", source, "ip", publicIP)
 }
 
 // DetectRegion returns the region for the given node IP.
@@ -186,11 +199,18 @@ func (rm *RegionManager) DetectRegion(nodeID, ip string) Region {
 }
 
 // RegisterNode registers a node and detects its region from its address.
+// The synchronous first-octet heuristic runs inline (hot-path safe); when it
+// yields unknown, an async GeoIP enrichment is kicked off to upgrade the
+// entry without blocking the caller.
 func (rm *RegionManager) RegisterNode(nodeID, addr, method string) {
 	rm.mu.Lock()
-	defer rm.mu.Unlock()
 	region := rm.DetectRegion(nodeID, addr)
 	rm.nodes[nodeID] = &NodeRegion{Region: region, Source: method}
+	needEnrich := region == RegionUnknown || region == RegionEmpty
+	rm.mu.Unlock()
+	if needEnrich {
+		rm.maybeEnrichRegionAsync(nodeID, addr)
+	}
 }
 
 // RegisterNodeSelfReport registers a node using self-reported region info.
@@ -207,10 +227,16 @@ func (rm *RegionManager) RegisterNodeSelfReport(nodeID, region, zone string, lat
 }
 
 // GetNodeRegion returns the recorded region for a node, or nil.
+// It returns a copy: callers cannot mutate (or race with) the manager's
+// internal state through the result.
 func (rm *RegionManager) GetNodeRegion(nodeID string) *NodeRegion {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
-	return rm.nodes[nodeID]
+	if nr, ok := rm.nodes[nodeID]; ok {
+		c := *nr
+		return &c
+	}
+	return nil
 }
 
 // GetAllRegions returns the distinct regions currently recorded.
@@ -256,18 +282,35 @@ func (rm *RegionManager) GetNodesByRegion(region Region) []string {
 	return out
 }
 
-// UpdateConfig replaces the manager configuration.
+// UpdateConfig replaces the manager configuration. The weights map is
+// deep-copied so the caller cannot mutate the stored config outside the lock.
 func (rm *RegionManager) UpdateConfig(cfg RegionConfig) {
+	cfg.RegionWeights = cloneRegionWeights(cfg.RegionWeights)
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 	rm.config = cfg
 }
 
-// GetConfig returns the current manager configuration.
+// GetConfig returns the current manager configuration with a deep copy of
+// the weights map.
 func (rm *RegionManager) GetConfig() RegionConfig {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
-	return rm.config
+	out := rm.config
+	out.RegionWeights = cloneRegionWeights(out.RegionWeights)
+	return out
+}
+
+// cloneRegionWeights copies a region weights map (nil stays nil).
+func cloneRegionWeights(in map[Region]float64) map[Region]float64 {
+	if in == nil {
+		return nil
+	}
+	out := make(map[Region]float64, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // SelectNodeForRegion returns candidates ordered with same-region first.
@@ -303,9 +346,10 @@ func (rm *RegionManager) GetOptimalRoute(candidates []string, region Region, lbS
 }
 
 // ProcessHeartbeatRegion updates a node's region from heartbeat info or IP.
+// Self-reported info wins; otherwise the synchronous heuristic applies and an
+// async GeoIP enrichment upgrades unknown entries off the hot path.
 func (rm *RegionManager) ProcessHeartbeatRegion(nodeID string, info *HeartbeatRegionInfo, ip string) {
 	rm.mu.Lock()
-	defer rm.mu.Unlock()
 	if info != nil {
 		rm.nodes[nodeID] = &NodeRegion{
 			Region:    regionCanonical(info.Region),
@@ -314,13 +358,37 @@ func (rm *RegionManager) ProcessHeartbeatRegion(nodeID string, info *HeartbeatRe
 			Latitude:  info.Latitude,
 			Longitude: info.Longitude,
 		}
+		rm.mu.Unlock()
 		return
 	}
+	needEnrich := false
 	if ip != "" {
-		rm.nodes[nodeID] = &NodeRegion{Region: rm.DetectRegion(nodeID, ip), Source: "ip_detect"}
-		return
+		region := rm.DetectRegion(nodeID, ip)
+		replace := true
+		if e, ok := rm.nodes[nodeID]; ok && e.Region != RegionUnknown && e.Region != RegionEmpty {
+			// Keep a known region unless the new signal is at least as good:
+			// never clobber a known region with an unknown guess, and never
+			// let a heuristic override a self-reported region or a GeoIP
+			// result (consistent with the reconcile loop's fill-gaps-only
+			// rule). Same-rank heuristic updates still apply so a peer whose
+			// IP legitimately moved regions is not frozen stale.
+			if region == RegionUnknown || region == RegionEmpty ||
+				regionSourceRank(e.Source) > regionSourceRank("ip_detect") {
+				replace = false
+			}
+		}
+		if replace {
+			rm.nodes[nodeID] = &NodeRegion{Region: region, Source: "ip_detect"}
+		}
+		if cur := rm.nodes[nodeID]; cur == nil || cur.Region == RegionUnknown || cur.Region == RegionEmpty {
+			needEnrich = true
+		}
 	}
+	rm.mu.Unlock()
 	// Empty info and empty IP: do not register.
+	if needEnrich {
+		rm.maybeEnrichRegionAsync(nodeID, ip)
+	}
 }
 
 // haversineDistance returns the great-circle distance in kilometers.
@@ -416,4 +484,119 @@ func (r *Region) UnmarshalJSON(data []byte) error {
 		*r = Region(s)
 	}
 	return nil
+}
+
+// ---- Region config persistence ----
+
+// regionCfgGet is a nil-safe read of the global config (unit tests may run
+// without initConfig).
+func regionCfgGet(key, def string) string {
+	if cfg == nil {
+		return def
+	}
+	return cfg.Get(key, def)
+}
+
+// loadRegionConfigFromSettings applies persisted region routing settings:
+// region_prefer_local (bool), region_cross_threshold (float >= 0) and
+// region_weights_json (JSON object of region -> weight). Invalid stored values
+// are ignored so a corrupt config file can never break routing; the PUT
+// endpoint validates before persisting.
+func loadRegionConfigFromSettings(rm *RegionManager) {
+	if rm == nil {
+		return
+	}
+	rc := DefaultRegionConfig()
+	if regionCfgGet("region_prefer_local", "true") == "false" {
+		rc.PreferLocal = false
+	}
+	if v := strings.TrimSpace(regionCfgGet("region_cross_threshold", "")); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
+			rc.CrossRegionThreshold = f
+		} else {
+			slog.Warn("ignoring invalid persisted region_cross_threshold", "value", v)
+		}
+	}
+	if v := regionCfgGet("region_weights_json", ""); v != "" {
+		var w map[string]float64
+		if err := json.Unmarshal([]byte(v), &w); err == nil {
+			rc.RegionWeights = canonicalRegionWeights(w)
+		} else {
+			slog.Warn("ignoring invalid persisted region_weights_json", "error", err)
+		}
+	}
+	rm.UpdateConfig(rc)
+}
+
+// persistRegionConfig stores the region routing config so it survives
+// restarts. It uses cfg.Set (debounced async write) like other admin settings.
+func persistRegionConfig(rc RegionConfig) {
+	if cfg == nil {
+		return
+	}
+	wj, err := json.Marshal(canonicalRegionWeightsJSON(rc.RegionWeights))
+	if err != nil {
+		slog.Warn("region config weights not persistable", "error", err)
+		return
+	}
+	cfg.Set("region_prefer_local", strconv.FormatBool(rc.PreferLocal))
+	cfg.Set("region_cross_threshold", strconv.FormatFloat(rc.CrossRegionThreshold, 'f', -1, 64))
+	cfg.Set("region_weights_json", string(wj))
+}
+
+// canonicalRegionWeightsJSON converts map[Region]float64 to a JSON-safe
+// map[string]float64 with canonical region keys.
+func canonicalRegionWeightsJSON(w map[Region]float64) map[string]float64 {
+	out := make(map[string]float64, len(w))
+	for r, v := range w {
+		out[string(regionCanonical(string(r)))] = v
+	}
+	return out
+}
+
+// canonicalRegionWeights parses a raw string-keyed weights map (from JSON),
+// canonicalizing region aliases ("asia" -> "ap"), dropping negative weights
+// and dropping unrecognized region keys. Later keys win on canonical collisions.
+func canonicalRegionWeights(w map[string]float64) map[Region]float64 {
+	out := make(map[Region]float64, len(w))
+	for k, v := range w {
+		if v < 0 {
+			continue
+		}
+		r := regionCanonical(k)
+		if r == RegionUnknown && !strings.EqualFold(strings.TrimSpace(k), "unknown") {
+			continue
+		}
+		out[r] = v
+	}
+	return out
+}
+
+// validateRegionConfig validates API-submitted config: it rejects a negative
+// cross-region threshold and negative weights, then canonicalizes the weights
+// map (aliases like "asia" -> "ap"). Disk-load uses canonicalRegionWeights
+// directly so old persisted values stay lenient.
+func validateRegionConfig(rc *RegionConfig) error {
+	if rc.CrossRegionThreshold < 0 {
+		return fmt.Errorf("cross_region_threshold must be >= 0")
+	}
+	raw := jsonRoundTripWeights(rc.RegionWeights)
+	for k, v := range raw {
+		if v < 0 {
+			return fmt.Errorf("region weight %q must be >= 0", k)
+		}
+	}
+	rc.RegionWeights = canonicalRegionWeights(raw)
+	return nil
+}
+
+// jsonRoundTripWeights converts map[Region]float64 to map[string]float64 so
+// canonicalRegionWeights can normalize keys that arrived via Go structs
+// rather than JSON text.
+func jsonRoundTripWeights(w map[Region]float64) map[string]float64 {
+	out := make(map[string]float64, len(w))
+	for r, v := range w {
+		out[string(r)] = v
+	}
+	return out
 }

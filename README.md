@@ -72,11 +72,11 @@ This is not a commercial product. This is the continuation of internet spirit: *
 
 | Area | Current State |
 |------|---------------|
-| BIP39 mnemonic node identity | ⚠️ `handleNodePubKey` returns empty pubkey; UI not yet exposed |
-| DHT | ⚠️ Former empty shell removed; `GetDHTStats` returns `{"enabled":false}`. P2P discovery relies on registry/gossip, not DHT |
-| Contribution ledger | ⚠️ Local content-hash store (`sha256:` prefix) — verifiable but **no IPFS / distributed persistence**; credits stored locally only |
-| Algorithm governance DAO voting | ⚠️ `propose`/`vote` accept locally and return status; on-chain / decentralized voting **not implemented** |
-| Regional routing | ⚠️ Compiles (minimal stub), but real geo-based routing is not wired (`handleNetworkRegions` returns empty) |
+| Regional routing | ✅ Real geo-based routing wired: GeoIP country detection (cached, HTTPS-only, `region_geo_enabled` default on) with offline first-octet heuristic fallback; async GeoIP enrichment for peers; self-reported regions never clobbered by heuristics; region-aware scoring in the load balancer; `GET /api/network/regions` (+ per-region nodes) serves live data; `PUT /api/network/regions/config` persists routing config; admin network page has a region card |
+| BIP39 mnemonic node identity | ✅ Fully implemented: BIP39 mnemonic + SLIP-0010 derivation (`node.go`, `go-bip39`), encrypted on-disk key store, `GET /api/node/pubkey` returns the live public key, admin UI has a full join/backup/restore wizard |
+| DHT | ✅ Real Kademlia routing table wired into federation (`fed.dht`: AddNode/FindClosest/Put/Get) + real UDP transport with production DHT node and seed bootstrap (`startDHTNode`); `GetDHTStats` reports live stats. P2P discovery still primarily uses registry/gossip; DHT is supplementary infrastructure |
+| Contribution ledger | ✅ By design: local content-hash store (`sha256:` prefix, verifiable) + N-replica federation replication with manifest diffing and background reconciliation (P1-3) — no IPFS, deliberately (see P0-3) |
+| Algorithm governance DAO voting | ✅ By design: local append-only hash-chained governance ledger with contributor supermajority (2/3) voting, spam throttles, and execution hooks (P2-1) — on-chain voting was never the design |
 
 > **Not a gap — by design: "5-dimension routing" exposes only 4 sliders.**
 > Network-mode scoring genuinely is a 5-dimension weighted model (trust / reputation / latency / availability / contribution — see `ScoreNode` and `LBConfig` in `network_loadbalancer.go`). The 5th "dimension" is the **routing algorithm itself** — weighted composition, regional adjustment and `SelectNode` selection logic — which is fixed backend behaviour and deliberately not user-tunable. The 4 admin sliders (priority / cost / latency / quota) already cover **every** adjustable weight. This is intentional, not unfinished work; a 5th slider will not be added.
@@ -94,7 +94,7 @@ Full detail, examples and endpoint tables: **[docs/FEATURES.md](docs/FEATURES.md
 - 🩺 **Provider Auto Health Check** (5-min probe) · 🛡️ **WAF 4-Layer Protection** (real, default-on) · 🔐 **AES-256-GCM + bcrypt + JWT** · 📝 Request Logging · 📊 Usage Archiving · 📧 SMTP · 🌐 VMess Proxy · 🖥️ Web Admin Panel
 
 **Network Mode (opt-in — P2P capability sharing):**
-- 🔑 Identity (BIP39 ⚠️) · 🌍 P2P Discovery (triple-layer ⚠️) · 🔗 Federation config · 🏆 Reputation (S/A/B/C/D) · 💎 公益额度记账（非货币 · 1:1） · 🔑 Key System · 🔄 Quota Allocation · ⚖️ Health-Aware Load Balancer · 🌐 Public Access (Cloudflare Tunnel) · 📡 Network API
+- 🔑 Identity (BIP39 助记词) · 🌍 P2P Discovery (registry/gossip + DHT) · 🔗 Federation config · 🏆 Reputation (S/A/B/C/D) · 💎 公益额度记账（非货币 · 1:1） · 🔑 Key System · 🔄 Quota Allocation · ⚖️ Health-Aware Load Balancer · 🗺️ Region-Aware Routing · 🌐 Public Access (Cloudflare Tunnel) · 📡 Network API
 
 > **⚠️ Network Mode is disabled by default.** Personal Mode does all local proxying without any network activity.
 

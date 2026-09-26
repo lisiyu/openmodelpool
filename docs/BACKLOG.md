@@ -102,3 +102,9 @@
 ## Promotion（稳定后）
 
 - [x] 准备推广物料包（2026-08-09）：`docs/LAUNCH-KIT.md` —— 中英一句话定位 + 仓库 About 文案、README 润色清单（副标题改为直述公益、新增"无商业模式/无代币/无积分/无抽成"段与徽章、版本徽章 v4.1.6→v4.3.24 修漂移、公益额度·贡献记账（非货币） 经济学措辞改写为"记账非货币"、新增 four-line pledge、Earn/Spend 明确 1:1 且额度耗尽不拒绝）、约 330 字中文发布稿（附裁到 300 字的删法）、Show HN 英文稿、15 个 GitHub topics（并说明为何**不**加 web3/dao/decentralized-ai）、发布前检查清单、以及"一律不用"的措辞黑名单。**代理不发布**，待雷工审核
+
+## 2026-09-26 区域路由三件套
+
+- [x] **P6-1 GeoIP 精准区域检测**：首字节启发式误判整段 /8（如 1.0.0.0/8 APNIC 被判美洲）。新增 `region_geo.go`：HTTPS（ip-api.com `/line/{ip}?fields=countryCode`，与 update.go 同源）国家码→ap/eu/americas 映射；命中缓存 24h、失败缓存 5min；私网/回环/链路本地不查询；`region_geo_enabled=false` 可关闭。本节点启动同步检测（失败回落启发式）；对端保持热路径启发式 + unknown 条目异步单 flight 补齐（`geoInflight`，惰性初始化兼容旧测试构造）。`maybeEnrichRegionAsync` 写回采用 copy-on-write 替换条目，`GetNodeRegion` 返回防御性拷贝——修复 race 检测器抓到的读写竞态。`region_geo_test.go` 9 用例。
+- [x] **P6-2 心跳来源优先级**：`ProcessHeartbeatRegion` 曾无条件用 IP 启发式覆盖已知条目（含 self_report）。新增 `regionSourceRank`（self_report/heartbeat 3 > geo_ip 2 > ip_detect/auto_detect 1）：未知猜测永不覆盖已知区域；启发式永不覆盖上报/GeoIP 结果；同级已知更新仍可应用（对端 IP 换区不冻结）。与 `region_sync.go` 对账循环 fill-gaps-only 语义一致。
+- [x] **P6-3 区域配置校验/持久化/UI**：`PUT /api/network/regions/config` 曾无校验且只写内存。`validateRegionConfig` 拒绝负阈值/负权重（400）、归一化别名（asia→ap）、丢弃未知键；`persistRegionConfig`/`loadRegionConfigFromSettings` 经 `cfg.Set` 持久化（`region_prefer_local`/`region_cross_threshold`/`region_weights_json`），磁盘旧值保持宽容加载。`UpdateConfig`/`GetConfig` 深拷贝 weights map。管理后台新增「🗺️ 区域路由」卡片（区域分布、本节点区域/来源/检测模式、Prefer Local + 阈值编辑）。`GetDHTStats` 顺手修正：此前注释写"not implemented"只读 `fed.dht`，现同时上报生产 UDP DHT 节点（`dhtNode`）状态。README Implementation Status 表同步为 ✅（BIP39/DHT/账本复制/治理/区域路由五项此前陈述过期），`docs/CONFIGURATION.md` 新增区域路由小节。`go build/vet` 全绿；`go test ./...` 仅剩 10 个预存环境失败（UDP/DHT/NAT/DNS 沙箱限制，pristine 树同 fail）。

@@ -150,7 +150,11 @@ func parseSTUNResponse(buf []byte) (string, [stunTxidLen]byte, error) {
 		attrType := uint16(buf[i])<<8 | uint16(buf[i+1])
 		attrLen := uint16(buf[i+2])<<8 | uint16(buf[i+3])
 		if attrType == 0x0020 { // XOR-MAPPED-ADDRESS
-			if int(attrLen) < 8 || i+8 > len(buf) {
+			// P0: the bounds check must cover every byte this branch reads
+			// (buf[i+5] through buf[i+11]). The old i+8 check left a 4-byte
+			// over-read: a truncated 28..31-byte datagram panicked with
+			// index out of range on attacker-controlled UDP input.
+			if int(attrLen) < 8 || i+12 > len(buf) {
 				break
 			}
 			family := buf[i+5]
@@ -419,25 +423,41 @@ func (n *NATManager) udpRecvLoop() {
 			}
 			return
 		}
-		if offer, derr := DecodePunchOffer(buf[:nn]); derr == nil {
-			if directLinkMgr != nil {
-				directLinkMgr.Ingest(offer, addr)
-			}
-			continue
+		n.handleDatagram(buf[:nn], addr)
+	}
+}
+
+// handleDatagram multiplexes a single inbound datagram: hole-punch frames go
+// to the DirectLinkManager, STUN responses are surfaced on stunCh, and data
+// frames (distinct "OMP2" magic) go to the UDP data bearer.
+//
+// P0: every datagram here is attacker-controlled. The parsers are
+// bounds-checked, but defense in depth: a panic while handling one datagram
+// is recovered per-datagram so it can never kill the recv loop (and with it
+// all STUN/punch processing for the process).
+func (n *NATManager) handleDatagram(b []byte, addr *net.UDPAddr) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Warn("udpRecvLoop: recovered from malformed datagram", "panic", r, "from", addr)
 		}
-		if addr, txid, perr := parseSTUNResponse(buf[:nn]); perr == nil {
-			select {
-			case n.stunCh <- stunResponse{txid: txid, addr: addr}:
-			default:
-			}
+	}()
+	if offer, derr := DecodePunchOffer(b); derr == nil {
+		if directLinkMgr != nil {
+			directLinkMgr.Ingest(offer, addr)
 		}
-		// P1-2b-2(iv): data frames (distinct "OMP2" magic) are handed to the UDP
-		// data bearer, which reassembles relay requests/responses carried over
-		// the verified direct link. The copy is required because buf is reused.
-		if udpDataBearer != nil && isDataFrame(buf[:nn]) {
-			udpDataBearer.HandleInbound(append([]byte(nil), buf[:nn]...), addr)
-			continue
+		return
+	}
+	if respAddr, txid, perr := parseSTUNResponse(b); perr == nil {
+		select {
+		case n.stunCh <- stunResponse{txid: txid, addr: respAddr}:
+		default:
 		}
+	}
+	// P1-2b-2(iv): data frames (distinct "OMP2" magic) are handed to the UDP
+	// data bearer, which reassembles relay requests/responses carried over
+	// the verified direct link. The copy is required because buf is reused.
+	if udpDataBearer != nil && isDataFrame(b) {
+		udpDataBearer.HandleInbound(append([]byte(nil), b...), addr)
 	}
 }
 

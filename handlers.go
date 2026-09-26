@@ -1044,7 +1044,12 @@ func handleCozeRequest(w http.ResponseWriter, r *http.Request, model string, mes
 		w.Header().Set("X-Accel-Buffering", "no")
 		flusher, _ := w.(http.Flusher)
 		sw := &streamWriter{w: w, flusher: flusher}
-		cozeStream(r.Context(), p, model, messages, sw)
+		// cozeStream now returns transport errors instead of swallowing them;
+		// surface one as an SSE error only if nothing was streamed yet, so the
+		// legacy coze- route never yields a silent empty stream.
+		if err := cozeStream(r.Context(), p, model, messages, sw); err != nil && sw.bytesWritten == 0 {
+			writeSSEError(sw, model, "coze upstream error: "+err.Error())
+		}
 		return
 	}
 

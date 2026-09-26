@@ -115,3 +115,31 @@ func TestDHT_FindValueMissingReturnsNotFound(t *testing.T) {
 		t.Fatalf("expected not-found for absent key, got found")
 	}
 }
+
+func TestGetDHTStatsReportsProductionNode(t *testing.T) {
+	// With no federation table and no UDP node, stats report disabled.
+	oldDHTNode := dhtNode
+	dhtNode = nil
+	defer func() { dhtNode = oldDHTNode }()
+	stats := GetDHTStats()
+	if stats == nil {
+		t.Fatal("GetDHTStats must not return nil")
+	}
+	// Attach a production-style UDP node and verify it is reported.
+	n := NewDHTNode("test-node-id", "127.0.0.1:19001", nil)
+	dhtNode = n
+	stats = GetDHTStats()
+	if stats["enabled"] != true {
+		t.Error("enabled should be true when a UDP DHT node is running")
+	}
+	udp, ok := stats["udp_node"].(map[string]any)
+	if !ok {
+		t.Fatal("udp_node section missing from stats")
+	}
+	if udp["addr"] != "127.0.0.1:19001" {
+		t.Errorf("udp_node addr = %v, want 127.0.0.1:19001", udp["addr"])
+	}
+	if udp["table_nodes"] != 0 {
+		t.Errorf("udp_node table_nodes = %v, want 0", udp["table_nodes"])
+	}
+}
