@@ -63,6 +63,11 @@ func initContributionLedger(dataDir string) {
 	go capabilityVerifier.ProbeSchedulerLoop()
 	slog.Info("capability verifier initialized")
 
+	// Phase 2 (PRD-phase1.md §Q5): trust-pool capability-claim probe
+	// verification with false-claim defense. The loop self-gates on network
+	// mode + config every tick, so it stays dormant in personal mode.
+	startPeerCapabilityProber()
+
 	initTicketStore()
 	go notarizeLoop()
 }
@@ -151,9 +156,13 @@ func realProbeFn(peerID, modelID string) (bool, int64, error) {
 		return false, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if node != nil {
-		req.Header.Set("X-OMP-NodeID", node.NodeID())
-	}
+	// B8-4 precedent: the bare X-OMP-NodeID header is not recognized by
+	// withProxyAuth's federation path, so probes to real nodes always got
+	// 401 and contribution claims could never verify. Use the canonical
+	// relay-auth signing (X-Node-ID + X-Node-Auth + ed25519 signature +
+	// timestamp), the same mechanism as the peer capability prober.
+	// Signed fresh per call, so the relay replay cache is not tripped.
+	signProbeRequestDefault(req, http.MethodPost, "/v1/chat/completions", body)
 
 	start := time.Now()
 	resp, err := GetSharedHTTPClient().Do(req)
