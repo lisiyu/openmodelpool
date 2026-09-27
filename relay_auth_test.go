@@ -26,6 +26,10 @@ import (
 func relayTestEnv(t *testing.T) {
 	t.Helper()
 	setupDiscoveryTestEnv(t)
+	// Each test starts with a clean replay cache: signRelayForward is
+	// deterministic per second, so same-second signatures could otherwise
+	// leak across tests and trip the replay detector.
+	resetRelayReplayCache()
 	// Allow relay to localhost for test servers
 	allowLocalRelayForTest = true
 	t.Cleanup(func() { allowLocalRelayForTest = false })
@@ -295,5 +299,51 @@ func TestRelayForwardAuth_PathTamper_Rejected(t *testing.T) {
 
 	if status, _ := verifyRelayForwardAuth(req, body); status != 403 {
 		t.Fatalf("path-tampered relay forward should be 403, got %d", status)
+	}
+}
+
+// ⑤ Within-window replay is rejected: the same signed bytes verified twice
+// (as two distinct requests, i.e. a network replay) must fail the second
+// time, otherwise the forward would be served and quota-charged twice.
+func TestRelayForwardAuth_ReplayRejected(t *testing.T) {
+	relayTestEnv(t)
+	body := []byte(`{"model":"gpt-4"}`)
+
+	sig, ts := signRelayForward(node.NodeID(), http.MethodPost, "/v1/chat/completions", body)
+	if sig == "" {
+		t.Fatalf("signRelayForward returned empty signature (node initialized?)")
+	}
+	buildReq := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("X-Node-ID", node.NodeID())
+		req.Header.Set("X-Node-Auth", node.NodeID())
+		req.Header.Set(headerRelaySig, sig)
+		req.Header.Set(headerRelayTs, ts)
+		return req
+	}
+
+	// First delivery passes.
+	if status, msg := verifyRelayForwardAuth(buildReq(), body); status != 0 {
+		t.Fatalf("first delivery should pass, got %d (%s)", status, msg)
+	}
+	// Byte-identical replay inside the window is rejected.
+	if status, msg := verifyRelayForwardAuth(buildReq(), body); status != 403 {
+		t.Fatalf("replayed forward should be 403, got %d (%s)", status, msg)
+	}
+}
+
+// ⑥ The middleware verifies a signed forward and then the inner gateway
+// handler re-verifies the SAME *http.Request: the second pass must not be
+// treated as a replay, or all legitimate relayed traffic would break.
+func TestRelayForwardAuth_DoubleVerifySameRequest_Passes(t *testing.T) {
+	relayTestEnv(t)
+	body := []byte(`{"model":"gpt-4"}`)
+
+	req := newSignedRelayRequest(t, http.MethodPost, "/v1/chat/completions", body)
+	if status, msg := verifyRelayForwardAuth(req, body); status != 0 {
+		t.Fatalf("first verification should pass, got %d (%s)", status, msg)
+	}
+	if status, msg := verifyRelayForwardAuth(req, body); status != 0 {
+		t.Fatalf("re-verification of the same request should pass, got %d (%s)", status, msg)
 	}
 }

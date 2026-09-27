@@ -182,6 +182,63 @@ const (
 	relayStreamTimeout = 5 * time.Minute
 )
 
+// relayReplayCache remembers recently accepted relay-forward signatures so a
+// byte-identical forward replayed inside the 5-minute window is rejected
+// instead of being served (and quota-charged) a second time. Keyed by the
+// signature itself: a valid signature is bound to the exact envelope
+// (node, method, path, body hash, timestamp), so an identical signature
+// means an identical request.
+var relayReplayCache = struct {
+	sync.Mutex
+	seen map[string]int64 // signature -> unix-nano of first acceptance
+}{seen: make(map[string]int64)}
+
+const relayReplayCacheMaxEntries = 65536
+
+// relayVerifiedCtxKey marks an *http.Request whose relay signature already
+// passed the replay check. The proxy middleware verifies a signed forward
+// and then the inner gateway handler re-verifies the SAME request object;
+// the second pass must not count as a replay.
+type relayVerifiedCtxKey struct{}
+
+// noteRelayReplay records sig as accepted. It returns true when the same
+// signature was already accepted inside the replay window, i.e. this is a
+// replay and must be rejected.
+func noteRelayReplay(sig string) (replay bool) {
+	now := time.Now().UnixNano()
+	cutoff := now - int64(relaySigMaxAge)
+	relayReplayCache.Lock()
+	defer relayReplayCache.Unlock()
+	if first, ok := relayReplayCache.seen[sig]; ok && first > cutoff {
+		return true
+	}
+	// Amortized expiry: only sweep when the map is big enough for the
+	// scan to be worthwhile.
+	if len(relayReplayCache.seen) >= 1024 {
+		for s, t := range relayReplayCache.seen {
+			if t <= cutoff {
+				delete(relayReplayCache.seen, s)
+			}
+		}
+	}
+	if len(relayReplayCache.seen) >= relayReplayCacheMaxEntries {
+		// Memory-pressure fail-open: reset rather than grow unbounded.
+		// The normal path stays fail-closed; only extreme load resets.
+		relayReplayCache.seen = make(map[string]int64, 1024)
+	}
+	relayReplayCache.seen[sig] = now
+	return false
+}
+
+// resetRelayReplayCache clears the replay cache. Test-only; each relay auth
+// test starts with a clean cache so same-second deterministic signatures
+// cannot leak across tests.
+func resetRelayReplayCache() {
+	relayReplayCache.Lock()
+	defer relayReplayCache.Unlock()
+	relayReplayCache.seen = make(map[string]int64)
+}
+
 // handleNetworkRelay handles relay requests: /network/{node_id}/{rest...}
 func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 	// Only serve in shared mode
@@ -914,6 +971,14 @@ func attachRelayAuth(req *http.Request, nodeID string, sig string, ts string) {
 //
 // Returns (httpStatus, message); httpStatus == 0 means the request is allowed.
 func verifyRelayForwardAuth(r *http.Request, body []byte) (int, string) {
+	// Already verified this request object (middleware verified, inner
+	// handler re-verifies the same *http.Request): skip straight through.
+	// Without this, the replay check below would reject the legitimate
+	// second verification of every relayed request.
+	if r.Context().Value(relayVerifiedCtxKey{}) != nil {
+		return 0, ""
+	}
+
 	nodeID := sanitizeNodeID(r.Header.Get("X-Node-ID"))
 	if nodeID == "" {
 		nodeID = sanitizeNodeID(r.Header.Get("X-Node-Auth"))
@@ -964,6 +1029,17 @@ func verifyRelayForwardAuth(r *http.Request, body []byte) (int, string) {
 		slog.Warn("relay forward signature verification failed", "from", nodeID, "path", r.URL.Path)
 		return 403, "relay signature verification failed"
 	}
+
+	// 4. Within-window replay protection: a byte-identical forward replayed
+	// inside relaySigMaxAge would otherwise verify again and be served
+	// (and quota-charged) twice. Reject duplicates; mark this request so
+	// the inner handler's re-verification of the same object is not treated
+	// as a replay.
+	if noteRelayReplay(sig) {
+		slog.Warn("relay forward replay detected", "from", nodeID, "path", r.URL.Path)
+		return 403, "relay forward replay detected"
+	}
+	*r = *r.WithContext(context.WithValue(r.Context(), relayVerifiedCtxKey{}, true))
 
 	return 0, ""
 }

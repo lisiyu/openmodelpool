@@ -125,7 +125,7 @@ OpenModelPool 共有 **3 种 Key 类型**，其中 Guest Key 有 2 种分享模�
 3. **Guest Key 发放为管理员专属**：仅 Admin Key 可以发放、撤销和管理 Guest Key，Collaborator 无此权限。
 4. **网络管理为管理员专属**：共享网络配置、节点管理等操作仅 Admin Key 可执行。
 5. **Consumer 与 Collaborator 唯一区别**：Collaborator 拥有管理面板的 Provider 查看/编辑权限，Consumer 没有。资源访问权限完全一致。
-6. **额度消耗有优先级（待实现）**：Guest Key / Admin Key（Proxy Key）优先消耗本节点私有额度，再消耗本节点共享额度，最后才使用其他节点共享池；Public Key 只能消耗共享池额度。
+6. **额度消耗有优先级**：Guest Key / Admin Key（Proxy Key）优先消耗本节点私有额度，再消耗本节点共享额度，最后才使用其他节点共享池；Public Key 只能消耗共享池额度。
 7. **跨节点自动路由**：所有 Key 类型在请求的模型本节点不存在时，系统自动路由到拥有该模型的其他节点，消耗目标节点的共享额度池。
 
 ---

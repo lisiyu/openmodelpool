@@ -132,12 +132,12 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 
 ### 🌍 P2P Node Discovery (Triple-Layer) ⚠️
 
-> **⚠️ DHT layer currently disabled.** The former Kademlia DHT shell was removed; `GetDHTStats` returns `{"enabled":false}`. In the current build, P2P discovery actually relies on the **registry + gossip** path, **not** DHT. The DHT row below represents the design target.
+> **✅ DHT layer is live.** A real Kademlia routing table is wired into federation (`fed.dht`: AddNode/FindClosest/Put/Get) with a real UDP transport (`startDHTNode`, started in `init.go`) and seed bootstrap; `GetDHTStats` reports live stats. P2P discovery still primarily uses the **registry + gossip** path; DHT serves as supplementary routing infrastructure.
 
 | Mechanism | Purpose | Protocol |
 |-----------|---------|----------|
 | **Peer Seed** (:8001) | Initial bootstrapping; every online node can serve as seed | HTTPS + dynamic seed list |
-| **Kademlia DHT** | Global node routing, capability registration (256-bit hash space, k=20 buckets) — **design target only, not wired into production** (in-process `InMemoryDHTNetwork` used by tests; transport bridge is a BACKLOG item) | SHA-256 XOR distance metric |
+| **Kademlia DHT** | Global node routing, capability registration (256-bit hash space, k=20 buckets) — **live**: real routing table + UDP transport with seed bootstrap, wired into federation (`startDHTNode`); supplementary to registry/gossip discovery | SHA-256 XOR distance metric |
 | **Gossip Protocol** | Real-time state propagation (node online/offline, capability changes) | internal implementation (custom variant; **not** Plumtree / Scuttlebutt) |
 | **LAN Discovery** | Local network node auto-discovery — **not implemented** (no mDNS) | — |
 

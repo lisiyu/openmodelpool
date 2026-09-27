@@ -808,7 +808,7 @@ Functional closure release: decentralization (P1), contribution transparency & g
 ### Deferred to Future Iterations
 - **P3**: Split `admin.go` (2,553 lines) into domain-specific modules — requires dedicated refactoring sprint
 - **P3**: Split monolithic main package (~84 package-level vars, ~59 goroutine launches) — requires architectural planning
-- **P2**: Ed25519 release signing in CI/CD (signing infrastructure not yet in place)
+- **P2**: Ed25519 release signing in CI/CD — ✅ **implemented** (release workflow signs every platform binary; shipped since v4.5.59, `.sig` files attached to each release)
 - **P2**: WAF deep content inspection (body parsing beyond pattern matching)
 
 ## [4.2.3] - 2026-08-02
