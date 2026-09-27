@@ -1,11 +1,16 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestDNSCodecRoundTrip encodes a full mDNS-style response (PTR/SRV/TXT/A)
@@ -132,7 +137,7 @@ func TestLANAnnouncementRoundTrip(t *testing.T) {
 		Share:  true,
 		IP:     net.ParseIP("192.168.9.9"),
 	}
-	pkt, err := buildLANAnnouncement(self)
+	pkt, err := buildLANAnnouncement(self, lanCaptureSigner(self.NodeID))
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -143,7 +148,7 @@ func TestLANAnnouncementRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	peers := parseLANAnnouncement(m, net.ParseIP("10.0.0.5"))
+	peers := parseLANAnnouncement(m, net.ParseIP("10.0.0.5"), lanTrustPubKey)
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 peer, got %d", len(peers))
 	}
@@ -175,7 +180,7 @@ func TestLANAnnouncementRoundTrip(t *testing.T) {
 // UDP source address when the announcement carries no A record.
 func TestLANAnnouncementNoARecordFallsBackToSrc(t *testing.T) {
 	self := &lanSelfInfo{NodeID: "mmx-deadbeef", Port: 8000}
-	pkt, err := buildLANAnnouncement(self)
+	pkt, err := buildLANAnnouncement(self, lanCaptureSigner(self.NodeID))
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -183,7 +188,7 @@ func TestLANAnnouncementNoARecordFallsBackToSrc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	peers := parseLANAnnouncement(m, net.ParseIP("192.168.2.3"))
+	peers := parseLANAnnouncement(m, net.ParseIP("192.168.2.3"), lanTrustPubKey)
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 peer, got %d", len(peers))
 	}
@@ -200,7 +205,7 @@ func TestLANLongModelsChunked(t *testing.T) {
 		models = append(models, "some-very-long-model-name-number-"+strings.Repeat("x", 10)+"-"+string(rune('a'+i%26)))
 	}
 	self := &lanSelfInfo{NodeID: "mmx-chunk", Port: 8000, Models: models}
-	pkt, err := buildLANAnnouncement(self)
+	pkt, err := buildLANAnnouncement(self, lanCaptureSigner(self.NodeID))
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -208,7 +213,7 @@ func TestLANLongModelsChunked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	peers := parseLANAnnouncement(m, net.ParseIP("192.168.1.1"))
+	peers := parseLANAnnouncement(m, net.ParseIP("192.168.1.1"), lanTrustPubKey)
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 peer, got %d", len(peers))
 	}
@@ -375,4 +380,301 @@ func mustEncodeName(t *testing.T, name string) []byte {
 		t.Fatalf("encode name: %v", err)
 	}
 	return b
+}
+
+// ---------------------------------------------------------------------------
+// TXT announcement authentication (ed25519 signatures)
+// ---------------------------------------------------------------------------
+
+// testLANSigKey generates a fresh ed25519 identity for signature tests.
+func testLANSigKey(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pub, priv
+}
+
+// testLANSignedStrings builds a canonical TXT string set and signs it with
+// priv, returning the full wire strings including ts and sig.
+func testLANSignedStrings(t *testing.T, priv ed25519.PrivateKey, ts time.Time) []string {
+	t.Helper()
+	strs := []string{
+		"v=1",
+		"id=mmx-testnode",
+		"region=cn-east",
+		"share=1",
+		"models=gpt-4o,claude-3-5-sonnet",
+		"ts=" + strconv.FormatInt(ts.Unix(), 10),
+	}
+	sig := base64.StdEncoding.EncodeToString(ed25519.Sign(priv, lanTXTSignPayload(strs)))
+	return append(strs, "sig="+sig)
+}
+
+// stubLANTrust installs a fake trust-pool key lookup for one node ID.
+func stubLANTrust(t *testing.T, nodeID string, pub ed25519.PublicKey) {
+	t.Helper()
+	old := lanTrustPubKey
+	lanTrustPubKey = func(id string) (ed25519.PublicKey, bool) {
+		if id == nodeID {
+			return pub, true
+		}
+		return nil, false
+	}
+	t.Cleanup(func() { lanTrustPubKey = old })
+}
+
+// testLANNodeIdentity installs a real NodeIdentity (backed by the test
+// encryptor) as the global node, so lanBuildTXT signs announcements.
+func testLANNodeIdentity(t *testing.T, nodeID string) ed25519.PublicKey {
+	t.Helper()
+	setupTestEnv(t)
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encPriv := encryptField(base64.StdEncoding.EncodeToString(priv))
+	if !strings.HasPrefix(encPriv, encPrefix) {
+		t.Fatalf("test encryptor did not encrypt the private key")
+	}
+	old := node
+	node = &NodeIdentity{nodeID: nodeID, encPrivKey: encPriv, pubKey: pub}
+	t.Cleanup(func() { node = old })
+	return pub
+}
+
+// TestLANSigPayloadCanonical verifies the signed payload is deterministic,
+// order-independent, and excludes the sig string itself.
+func TestLANSigPayloadCanonical(t *testing.T) {
+	a := []string{"v=1", "id=x", "models=b,a", "ts=123", "sig=should-be-excluded"}
+	b := []string{"ts=123", "sig=should-be-excluded", "id=x", "v=1", "models=b,a"}
+	if string(lanTXTSignPayload(a)) != string(lanTXTSignPayload(b)) {
+		t.Fatal("payload not order-independent")
+	}
+	p := string(lanTXTSignPayload(a))
+	if !strings.HasPrefix(p, lanSigDomain+"\n") {
+		t.Fatalf("missing domain separation: %q", p[:40])
+	}
+	if strings.Contains(p, "should-be-excluded") {
+		t.Fatal("sig string leaked into signed payload")
+	}
+}
+
+// TestLANVerifyAnnouncement is a table-driven policy check for the TXT
+// signature verifier.
+func TestLANVerifyAnnouncement(t *testing.T) {
+	pub, priv := testLANSigKey(t)
+	stubLANTrust(t, "mmx-testnode", pub)
+	now := time.Now()
+
+	mk := func(mut func([]string) []string) []string {
+		s := testLANSignedStrings(t, priv, now)
+		if mut != nil {
+			s = mut(s)
+		}
+		return s
+	}
+	replace := func(old, new string) func([]string) []string {
+		return func(s []string) []string {
+			out := append([]string(nil), s...)
+			for i, v := range out {
+				if v == old {
+					out[i] = new
+				}
+			}
+			return out
+		}
+	}
+	drop := func(prefix string) func([]string) []string {
+		return func(s []string) []string {
+			var out []string
+			for _, v := range s {
+				if !strings.HasPrefix(v, prefix) {
+					out = append(out, v)
+				}
+			}
+			return out
+		}
+	}
+
+	// badSigStrs returns signed strings with the signature replaced by s.
+	badSigStrs := func(s string) []string {
+		strs := testLANSignedStrings(t, priv, now)
+		strs[len(strs)-1] = s
+		return strs
+	}
+
+	cases := []struct {
+		name string
+		strs []string
+		node string
+		want lanTXTAuthn
+	}{
+		{"valid", mk(nil), "mmx-testnode", lanTXTVerified},
+		{"tampered region", mk(replace("region=cn-east", "region=cn-west")), "mmx-testnode", lanTXTRejected},
+		{"tampered models", mk(replace("models=gpt-4o,claude-3-5-sonnet", "models=gpt-4o,evil-model")), "mmx-testnode", lanTXTRejected},
+		{"tampered sig", badSigStrs("sig=" + strings.Repeat("A", 88)), "mmx-testnode", lanTXTRejected},
+		{"unsigned legacy", drop("sig=")(mk(nil)), "mmx-testnode", lanTXTUnsigned},
+		{"unsigned legacy, no ts", drop("sig=")(drop("ts=")(mk(nil))), "mmx-testnode", lanTXTUnsigned},
+		{"unknown signer accepted provisionally", mk(nil), "mmx-stranger", lanTXTUnverifiable},
+		{"stale ts", testLANSignedStrings(t, priv, now.Add(-time.Hour)), "mmx-testnode", lanTXTRejected},
+		{"future ts beyond skew", testLANSignedStrings(t, priv, now.Add(10*time.Minute)), "mmx-testnode", lanTXTRejected},
+		{"missing ts", drop("ts=")(mk(nil)), "mmx-testnode", lanTXTRejected},
+		{"bad base64 sig", badSigStrs("sig=!!!not-base64!!!"), "mmx-testnode", lanTXTRejected},
+		{"duplicate sig", append(mk(nil), mk(nil)[len(mk(nil))-1]), "mmx-testnode", lanTXTRejected},
+		{"wrong key", testLANSignedStrings(t, mustLANSigKey(t), now), "mmx-testnode", lanTXTRejected},
+	}
+	for _, c := range cases {
+		if got := lanVerifyAnnouncement(c.node, c.strs, lanTrustPubKey); got != c.want {
+			t.Errorf("%s: got %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+// mustLANSigKey returns a fresh private key, failing the test on error.
+func mustLANSigKey(t *testing.T) ed25519.PrivateKey {
+	t.Helper()
+	_, priv := testLANSigKey(t)
+	return priv
+}
+
+// TestLANAnnouncementSignedEndToEnd builds a real announcement with the node
+// identity, parses it back, and expects a verified peer.
+func TestLANAnnouncementSignedEndToEnd(t *testing.T) {
+	const nodeID = "mmx-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	pub := testLANNodeIdentity(t, nodeID)
+	stubLANTrust(t, nodeID, pub)
+
+	self := &lanSelfInfo{
+		NodeID: nodeID, Name: "signed-node", Port: 8000,
+		Region: "cn-east", Models: []string{"gpt-4o"}, Share: true,
+		IP: net.ParseIP("192.168.9.9"),
+	}
+	pkt, err := buildLANAnnouncement(self, lanCaptureSigner(self.NodeID))
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	m, err := decodeDNSMessage(pkt)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	peers := parseLANAnnouncement(m, net.ParseIP("10.0.0.5"), lanTrustPubKey)
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(peers))
+	}
+	if !peers[0].Verified {
+		t.Error("expected verified peer for a correctly signed announcement")
+	}
+}
+
+// TestLANAnnouncementTamperedEndToEnd flips one signed field on the wire and
+// expects the announcement to be dropped when the signer's key is known.
+func TestLANAnnouncementTamperedEndToEnd(t *testing.T) {
+	const nodeID = "mmx-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	pub := testLANNodeIdentity(t, nodeID)
+	stubLANTrust(t, nodeID, pub)
+
+	self := &lanSelfInfo{
+		NodeID: nodeID, Port: 8000, Region: "cn-east",
+		Models: []string{"gpt-4o"}, IP: net.ParseIP("192.168.9.9"),
+	}
+	pkt, err := buildLANAnnouncement(self, lanCaptureSigner(self.NodeID))
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	m, err := decodeDNSMessage(pkt)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	tampered := false
+	for i, rr := range m.answers {
+		if rr.rtype != dnsTypeTXT {
+			continue
+		}
+		strs, err := dnsDecodeTXT(rr.rdata)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for j, s := range strs {
+			if s == "region=cn-east" { // same length as "region=cn-west"
+				strs[j] = "region=cn-west"
+				tampered = true
+			}
+		}
+		var out []byte
+		for _, s := range strs {
+			if len(s) > 255 {
+				t.Fatalf("tampered string too long: %d", len(s))
+			}
+			out = append(out, byte(len(s)))
+			out = append(out, s...)
+		}
+		m.answers[i].rdata = out
+	}
+	if !tampered {
+		t.Fatal("no region string found to tamper")
+	}
+	pkt2, err := encodeDNSMessage(m)
+	if err != nil {
+		t.Fatalf("re-encode: %v", err)
+	}
+	m2, err := decodeDNSMessage(pkt2)
+	if err != nil {
+		t.Fatalf("re-decode: %v", err)
+	}
+	if peers := parseLANAnnouncement(m2, net.ParseIP("10.0.0.5"), lanTrustPubKey); len(peers) != 0 {
+		t.Fatalf("tampered announcement must be dropped, got %d peers", len(peers))
+	}
+}
+
+// TestLANAnnouncementUnsignedBackwardCompat verifies that announcements
+// without a signature (legacy nodes, or no local identity) are still
+// accepted and marked unverified.
+func TestLANAnnouncementUnsignedBackwardCompat(t *testing.T) {
+	old := node
+	node = nil // no identity -> unsigned announcement
+	t.Cleanup(func() { node = old })
+
+	self := &lanSelfInfo{
+		NodeID: "mmx-legacy-node", Port: 8000,
+		Region: "cn-east", Models: []string{"gpt-4o"},
+		IP: net.ParseIP("192.168.9.10"),
+	}
+	pkt, err := buildLANAnnouncement(self, lanCaptureSigner(self.NodeID))
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	m, err := decodeDNSMessage(pkt)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	peers := parseLANAnnouncement(m, net.ParseIP("10.0.0.5"), lanTrustPubKey)
+	if len(peers) != 1 {
+		t.Fatalf("unsigned announcement must be accepted, got %d peers", len(peers))
+	}
+	if peers[0].Verified {
+		t.Error("unsigned announcement must not be marked verified")
+	}
+}
+
+// TestLANSigNeverSignsForeignID ensures we never capture a signer for a node
+// ID that is not our own identity.
+func TestLANSigNeverSignsForeignID(t *testing.T) {
+	testLANNodeIdentity(t, "mmx-real-id")
+	if lanCaptureSigner("mmx-someone-else") != nil {
+		t.Fatal("captured a signer for a foreign node ID")
+	}
+	if lanCaptureSigner("") != nil {
+		t.Fatal("captured a signer with empty node ID")
+	}
+	if lanCaptureSigner("mmx-real-id") == nil {
+		t.Fatal("expected a signer for our own node ID")
+	}
+	old := node
+	node = nil
+	t.Cleanup(func() { node = old })
+	if lanCaptureSigner("mmx-real-id") != nil {
+		t.Fatal("captured a signer with no identity")
+	}
 }

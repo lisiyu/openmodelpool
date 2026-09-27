@@ -533,11 +533,18 @@ func (n *NodeIdentity) PubKeyB64() string {
 // Sign signs a message and returns base64-encoded signature.
 // SA-13: Decrypts the private key on-demand, signs, then zeros the key material.
 func (n *NodeIdentity) Sign(message []byte) string {
+	return n.signWith(enc, message)
+}
+
+// signWith is Sign with an explicit encryptor. Background loops capture their
+// signer (node + encryptor) once at startup via lanCaptureSigner, so they
+// never re-read the node/enc globals that test fixtures reassign.
+func (n *NodeIdentity) signWith(e *Encryptor, message []byte) string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
 	// Decrypt private key from encrypted in-memory storage
-	decrypted := decryptField(n.encPrivKey)
+	decrypted := decryptFieldWith(e, n.encPrivKey)
 	if decrypted == "" {
 		return ""
 	}

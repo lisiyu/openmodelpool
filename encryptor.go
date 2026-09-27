@@ -167,13 +167,20 @@ func encryptField(s string) string {
 // (provider/config/node persistence) cannot overwrite the stored ciphertext with a
 // garbage value. Use decryptFieldDisplay instead when the result is shown to humans.
 func decryptField(s string) string {
-	if enc == nil || s == "" {
+	return decryptFieldWith(enc, s)
+}
+
+// decryptFieldWith is decryptField with an explicit encryptor, for callers
+// that captured theirs at startup. Background loops must use this form:
+// re-reading the enc global races test fixtures that reassign it.
+func decryptFieldWith(e *Encryptor, s string) string {
+	if e == nil || s == "" {
 		return s
 	}
 	if !IsEncrypted(s) {
 		return s // not encrypted, return as-is (e.g. legacy plaintext, or DECRYPT_FAILED markers never reach here)
 	}
-	d, err := enc.Decrypt(s)
+	d, err := e.Decrypt(s)
 	if err != nil {
 		slog.Error("decrypt failed — field may be corrupted or key mismatch", "err", err, "hint", "original ciphertext kept to avoid clobbering on save")
 		return s // keep ciphertext; save paths skip it because IsEncrypted(s) is true
