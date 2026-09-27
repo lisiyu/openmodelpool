@@ -139,7 +139,7 @@ When you opt in, your node joins the **AI Capability Sharing Network** — a dec
 | **Peer Seed** (:8001) | Initial bootstrapping; every online node can serve as seed | HTTPS + dynamic seed list |
 | **Kademlia DHT** | Global node routing, capability registration (256-bit hash space, k=20 buckets) — **live**: real routing table + UDP transport with seed bootstrap, wired into federation (`startDHTNode`); supplementary to registry/gossip discovery | SHA-256 XOR distance metric |
 | **Gossip Protocol** | Real-time state propagation (node online/offline, capability changes) | internal implementation (custom variant; **not** Plumtree / Scuttlebutt) |
-| **LAN Discovery** | Local network node auto-discovery — **not implemented** (no mDNS) | — |
+| **LAN Discovery** | Local network node auto-discovery — **implemented**: stdlib-only mDNS (`lan_discovery.go`), service type `_omp._tcp.local`, announces node ID / API port / models / region via PTR+SRV+TXT on 224.0.0.251:5353; discovered peers enter the existing chain via `netMgr.AddPeer` (route table → node registry → federation trust pool). Starts only when `network_enabled=true` (stays dormant in personal mode; `lan_discovery=false` opts out) | UDP multicast |
 
 ### 🔗 联邦组网配置（v4.1.6 新增）
 

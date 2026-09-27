@@ -1242,6 +1242,16 @@ func (nm *NetworkManager) IsSharedMode() bool {
 	return nm.config.Mode == NetworkModeShared
 }
 
+// IsNetworkEnabled reports whether this node participates in the shared
+// network (network_enabled=true), independent of share_to_pool. This is the
+// "network mode" gate used by subsystems (e.g. the capability prober) that
+// must stay dormant in personal mode.
+func (nm *NetworkManager) IsNetworkEnabled() bool {
+	nm.mu.RLock()
+	defer nm.mu.RUnlock()
+	return nm.config.NetworkEnabled
+}
+
 func (nm *NetworkManager) GetNodeID() string {
 	nm.mu.RLock()
 	defer nm.mu.RUnlock()
@@ -1529,12 +1539,18 @@ func (nm *NetworkManager) activateNetwork() {
 	}
 	// Reconcile federation (and, via fed.IsEnabled(), gossip) with network_enabled.
 	nm.syncFederationToNetwork()
+	// Phase 2 (PRD): LAN auto-discovery via mDNS. startLANDiscovery is a no-op
+	// unless network_enabled (and lan_discovery, default true) — personal mode
+	// therefore performs zero network activity here.
+	startLANDiscovery()
 }
 
 // deactivateNetwork tears down network subsystems. It is the single deactivation
 // path shared by DisableSharedNetwork and SetNetworkEnabled(false).
 func (nm *NetworkManager) deactivateNetwork() {
 	nm.stopRefreshLoop()
+	// Stop LAN discovery (idempotent no-op if never started).
+	stopLANDiscovery()
 	// Reconcile federation to disabled state (stops its refresh loop).
 	nm.syncFederationToNetwork()
 }
