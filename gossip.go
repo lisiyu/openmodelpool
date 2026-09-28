@@ -88,6 +88,8 @@ func (g *GossipManager) doGossipRound() {
 	// P1-1: attach PEX endpoint hints so receivers learn peer addresses even
 	// when trust-pool endpoints are missing. Must be set BEFORE signing.
 	msg.KnownPeers = buildKnownPeers()
+	// Seedless DHT: advertise our DHT UDP listen address (BEFORE signing).
+	msg.DHTAddr = localDHTAdvertiseAddr()
 
 	if contributionLedger != nil {
 		ledgerPayload := struct {
@@ -201,7 +203,13 @@ func buildKnownPeers() []PeerHint {
 			return // never advertise ourselves
 		}
 		seen[nodeID] = true
-		hints = append(hints, PeerHint{NodeID: nodeID, Addresses: addrs})
+		hint := PeerHint{NodeID: nodeID, Addresses: addrs}
+		// Forward the learned DHT address so PEX also carries DHT bootstrap
+		// info (seedless P2P). Our own DHT addr goes on GossipMessage.DHTAddr.
+		if fed != nil {
+			hint.DHTAddr = fed.DHTHint(nodeID)
+		}
+		hints = append(hints, hint)
 	}
 	if fed != nil {
 		for _, n := range fed.GetActiveNodes() {
@@ -367,6 +375,10 @@ func (g *GossipManager) processGossipResponse(msg *GossipMessage, peer NodeInfo)
 	// trust-pool endpoint is missing (address-reachability fallback).
 	if len(msg.KnownPeers) > 0 && fed != nil {
 		fed.MergePeerHints(msg.KnownPeers)
+	}
+	// Seedless DHT: learn the sender's DHT UDP listen address.
+	if msg.DHTAddr != "" && fed != nil {
+		fed.NoteDHTHint(msg.FromNode, msg.DHTAddr)
 	}
 
 	if len(msg.Payload) > 0 && contributionLedger != nil {
@@ -565,6 +577,15 @@ func handleFederationGossip(w http.ResponseWriter, r *http.Request) {
 		sender.LastSeen = time.Now().UTC().Format(time.RFC3339)
 		fed.UpdateNodeInfo(*sender)
 
+		// Seedless DHT: learn the sender's advertised DHT UDP listen address.
+		if msg.DHTAddr != "" {
+			fed.NoteDHTHint(msg.FromNode, msg.DHTAddr)
+		}
+		// Merge PEX hints carried by the inbound sync as well.
+		if len(msg.KnownPeers) > 0 {
+			fed.MergePeerHints(msg.KnownPeers)
+		}
+
 		// If sender has a newer pool version, note it for the response
 		ourPool := fed.GetTrustPool()
 		if msg.TrustPoolVersion > ourPool.Version {
@@ -603,6 +624,8 @@ func handleFederationGossip(w http.ResponseWriter, r *http.Request) {
 	}
 	// P1-1: echo our PEX endpoint hints (set before signing).
 	resp.KnownPeers = buildKnownPeers()
+	// Seedless DHT: advertise our DHT UDP listen address (set before signing).
+	resp.DHTAddr = localDHTAdvertiseAddr()
 	resp.Signature = node.SignJSON(resp)
 
 	writeJSON(w, http.StatusOK, resp)

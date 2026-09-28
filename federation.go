@@ -147,6 +147,7 @@ type FederationManager struct {
 	trustPool      TrustPool
 	localPeers     map[string]*NodeInfo
 	discoveryHints map[string][]string
+	dhtHints       map[string]string // nodeID -> DHT UDP "host:port" learned via gossip PEX
 	dht            *DHT
 	enabled        bool
 	relayEnabled   bool
@@ -164,6 +165,7 @@ func initFederation(dataDir string) {
 	f := &FederationManager{
 		localPeers:     make(map[string]*NodeInfo),
 		discoveryHints: make(map[string][]string),
+		dhtHints:       make(map[string]string),
 		dataDir:        dataDir,
 		stopCh:         make(chan struct{}),
 	}
@@ -363,18 +365,50 @@ func (f *FederationManager) RemoveNode(nodeID string) {
 // gossip-reachable trust pool so the discovery loop can propagate them. It is a
 // no-op when federation is disabled (personal mode).
 func (f *FederationManager) AddKnownNode(node NodeInfo) {
+	f.AddKnownNodes([]NodeInfo{node})
+}
+
+// AddKnownNodes merges multiple nodes into the trust pool with a single
+// version bump and a single persist. Used at startup to re-bridge persisted
+// route-table peers so gossip has someone to talk to even when the GitHub
+// registry and seed nodes are unreachable (P2P rejoin: any single live node
+// is enough for a restarted node to re-enter the mesh). Peers that stay
+// unreachable keep a stale LastSeen and are removed by cullInactivePeers.
+func (f *FederationManager) AddKnownNodes(nodes []NodeInfo) {
 	if !f.IsEnabled() {
 		return
 	}
+	f.mu.Lock()
+	applied := 0
+	for _, n := range nodes {
+		if n.NodeID == "" {
+			continue
+		}
+		f.upsertKnownNodeLocked(n)
+		applied++
+	}
+	if applied == 0 {
+		f.mu.Unlock()
+		return
+	}
+	f.trustPool.Version++
+	f.trustPool.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	snapshot, err := f.snapshotLocked()
+	f.mu.Unlock()
+	if err != nil {
+		slog.Error("failed to persist trust pool after batch node addition", "error", err)
+		return
+	}
+	f.persistSnapshot(snapshot)
+}
+
+// upsertKnownNodeLocked merges one node into the trust pool, preserving rich
+// fields the new info didn't carry. Caller must hold f.mu.
+func (f *FederationManager) upsertKnownNodeLocked(node NodeInfo) {
 	node.Status = "active"
 	if node.LastSeen == "" {
 		node.LastSeen = time.Now().UTC().Format(time.RFC3339)
 	}
-
-	f.mu.Lock()
-
-	var snapshot []byte
-	var err error
 	for i := range f.trustPool.Nodes {
 		if f.trustPool.Nodes[i].NodeID == node.NodeID {
 			// Preserve existing rich fields if the new info didn't carry them,
@@ -396,29 +430,10 @@ func (f *FederationManager) AddKnownNode(node NodeInfo) {
 				node.Addresses = existing.Addresses
 			}
 			f.trustPool.Nodes[i] = node
-			f.trustPool.Version++
-			f.trustPool.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-			snapshot, err = f.snapshotLocked()
-			f.mu.Unlock()
-			if err != nil {
-				slog.Error("failed to persist trust pool after node update", "error", err)
-				return
-			}
-			f.persistSnapshot(snapshot)
 			return
 		}
 	}
-
 	f.trustPool.Nodes = append(f.trustPool.Nodes, node)
-	f.trustPool.Version++
-	f.trustPool.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	snapshot, err = f.snapshotLocked()
-	f.mu.Unlock()
-	if err != nil {
-		slog.Error("failed to persist trust pool after node addition", "error", err)
-		return
-	}
-	f.persistSnapshot(snapshot)
 }
 
 // MergePeerHints records peer address hints learned via gossip PEX (P1-1). These
@@ -439,7 +454,51 @@ func (f *FederationManager) MergePeerHints(hints []PeerHint) {
 			continue
 		}
 		f.discoveryHints[h.NodeID] = h.Addresses
+		// Seedless DHT: remember the sender's DHT UDP address alongside the
+		// HTTP hints so startDHTNode can bootstrap without configured seeds.
+		if h.DHTAddr != "" {
+			if _, ok := f.dhtHints[h.NodeID]; !ok {
+				f.dhtHints[h.NodeID] = h.DHTAddr
+			}
+		}
 	}
+}
+
+// NoteDHTHint records one node's DHT UDP listen address learned from a gossip
+// sync message (first-known wins). No-op on empty input.
+func (f *FederationManager) NoteDHTHint(nodeID, dhtAddr string) {
+	if nodeID == "" || dhtAddr == "" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.dhtHints[nodeID]; !ok {
+		f.dhtHints[nodeID] = dhtAddr
+	}
+}
+
+// DHTHint returns the learned DHT UDP address for one node, or "".
+func (f *FederationManager) DHTHint(nodeID string) string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.dhtHints[nodeID]
+}
+
+// DHTBootstrapAddrs returns all learned DHT UDP addresses (deduped, non-empty),
+// excluding the given selfID. Used for seedless DHT bootstrap.
+func (f *FederationManager) DHTBootstrapAddrs(selfID string) []string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	seen := make(map[string]bool)
+	var out []string
+	for id, addr := range f.dhtHints {
+		if id == "" || id == selfID || addr == "" || seen[addr] {
+			continue
+		}
+		seen[addr] = true
+		out = append(out, addr)
+	}
+	return out
 }
 
 // HintAddresses returns the PEX-learned address hints for a node (P1-1).

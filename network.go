@@ -184,6 +184,12 @@ func initRouteTable() *RouteTable {
 	return &RouteTable{entries: make(map[string]*RouteEntry)}
 }
 
+// restoredRouteEntries holds the raw entries loaded from the on-disk node
+// registry at startup. Unlike routeTable.GetAll() they are NOT TTL-filtered:
+// they are "last known" peers used by bridgeRestoredPeersToFederation for P2P
+// rejoin. Gossip verifies liveness; dead ones are culled by cullInactivePeers.
+var restoredRouteEntries []*RouteEntry
+
 // initNodeRegistry initializes the package-level on-disk node registry and
 // restores any previously persisted peers into the in-memory route table. This
 // gives a cold start known nodes before gossip or GitHub bootstrap completes,
@@ -198,10 +204,46 @@ func initNodeRegistry(dataDir string) {
 	if len(loaded) == 0 {
 		return
 	}
+	restoredRouteEntries = loaded
 	for _, e := range loaded {
 		routeTable.UpsertEntry(e)
 	}
 	slog.Info("restored known nodes from local registry", "count", len(loaded))
+}
+
+// bridgeRestoredPeersToFederation re-announces the startup-restored route-table
+// peers into the federation trust pool. Gossip peer selection and the trust-pool
+// P2P refresh only see fed active nodes — without this bridge, restored peers
+// would sit in the route table uncontacted and a restarted node would stay
+// isolated whenever the GitHub registry and seed nodes are unreachable.
+// Self is excluded. No-op in personal mode (fed disabled).
+func (nm *NetworkManager) bridgeRestoredPeersToFederation() {
+	if fed == nil || !fed.IsEnabled() || len(restoredRouteEntries) == 0 {
+		return
+	}
+	var selfID string
+	if node != nil {
+		selfID = node.NodeID()
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	nodes := make([]NodeInfo, 0, len(restoredRouteEntries))
+	for _, e := range restoredRouteEntries {
+		if e == nil || e.NodeID == "" || e.NodeID == selfID || len(e.Addresses) == 0 {
+			continue
+		}
+		nodes = append(nodes, NodeInfo{
+			NodeID:    e.NodeID,
+			Endpoint:  e.Addresses[0],
+			Addresses: append([]string(nil), e.Addresses...),
+			LastSeen:  now,
+			JoinedAt:  now,
+		})
+	}
+	if len(nodes) == 0 {
+		return
+	}
+	fed.AddKnownNodes(nodes)
+	slog.Info("bridged restored peers into federation for P2P rejoin", "count", len(nodes))
 }
 
 // Put adds or updates a route entry
@@ -1539,6 +1581,10 @@ func (nm *NetworkManager) activateNetwork() {
 	}
 	// Reconcile federation (and, via fed.IsEnabled(), gossip) with network_enabled.
 	nm.syncFederationToNetwork()
+	// P2P rejoin: bridge startup-restored route-table peers into the federation
+	// trust pool so gossip has someone to talk to even when the GitHub registry
+	// and seed nodes are unreachable. Any single live node is enough to rejoin.
+	nm.bridgeRestoredPeersToFederation()
 	// Phase 2 (PRD): LAN auto-discovery via mDNS. startLANDiscovery is a no-op
 	// unless network_enabled (and lan_discovery, default true) — personal mode
 	// therefore performs zero network activity here.

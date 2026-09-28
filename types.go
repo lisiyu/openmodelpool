@@ -593,6 +593,9 @@ type TrustPool struct {
 type PeerHint struct {
 	NodeID    string   `json:"node_id"`
 	Addresses []string `json:"addresses"`
+	// DHTAddr is the node's DHT UDP listen address ("host:port"), learned via
+	// gossip. It enables seedless DHT bootstrap: any live node is enough.
+	DHTAddr string `json:"dht_addr,omitempty"`
 }
 
 // GossipMessage is exchanged between nodes during gossip rounds.
@@ -607,6 +610,10 @@ type GossipMessage struct {
 	// KnownPeers carries PEX endpoint hints (P1-1) so peers learn addresses of
 	// nodes in the mesh without relying on a complete trust-pool endpoint.
 	KnownPeers []PeerHint `json:"known_peers,omitempty"`
+	// DHTAddr advertises this node's DHT UDP listen address ("host:port") so
+	// receivers can bootstrap their Kademlia routing table without any
+	// configured dht_seeds (seedless P2P).
+	DHTAddr string `json:"dht_addr,omitempty"`
 }
 
 // PeerScore is a rating one node gives to another.

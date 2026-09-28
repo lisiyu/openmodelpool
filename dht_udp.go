@@ -253,11 +253,88 @@ func startDHTNode() {
 			slog.Info("dht: bootstrapped from seed", "seed", s)
 		}
 	}
+	// Seedless P2P: when the routing table is still empty (no seeds configured
+	// or all seeds failed), keep retrying bootstrap in the background using
+	// DHT addresses learned via gossip PEX. Any single live node is enough to
+	// join the Kademlia mesh.
+	dhtSeedlessStopCh = make(chan struct{})
+	if n.TableSize() == 0 {
+		go n.retrySeedlessBootstrap(dhtSeedlessStopCh)
+	}
 	slog.Info("dht: node listening for discovery", "id", n.idHex()[:16], "addr", conn.LocalAddr().String(), "seeds", len(seeds))
+}
+
+// localDHTAdvertiseAddr returns the "host:port" UDP address peers should use to
+// DHT-bootstrap from us, or "" when it cannot be determined. The host is our
+// LAN outbound IP and the port comes from dht_listen_addr. It is advertised on
+// gossip sync messages for seedless P2P discovery.
+func localDHTAdvertiseAddr() string {
+	raw := cfg.Get("dht_listen_addr", ":19001")
+	_, port, err := net.SplitHostPort(raw)
+	if err != nil || port == "" {
+		return ""
+	}
+	if ip := lanOutboundIP(); ip != nil {
+		return net.JoinHostPort(ip.String(), port)
+	}
+	return ""
+}
+
+// dhtSeedlessStopCh is closed by stopDHTNode to terminate the seedless retry loop.
+var dhtSeedlessStopCh chan struct{}
+
+// retrySeedlessBootstrap periodically attempts DHT bootstrap using
+// gossip-learned peer DHT addresses until the routing table is non-empty.
+// Stops on success or when stopCh is closed.
+func (n *DHTNode) retrySeedlessBootstrap(stopCh <-chan struct{}) {
+	// One immediate attempt: gossip may already have learned hints.
+	n.trySeedlessBootstrapOnce()
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			if n.TableSize() > 0 {
+				return
+			}
+			n.trySeedlessBootstrapOnce()
+		}
+	}
+}
+
+// trySeedlessBootstrapOnce tries each gossip-learned DHT address once.
+func (n *DHTNode) trySeedlessBootstrapOnce() {
+	if fed == nil {
+		return
+	}
+	var selfID string
+	if node != nil {
+		selfID = node.NodeID()
+	}
+	addrs := fed.DHTBootstrapAddrs(selfID)
+	if len(addrs) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	for _, a := range addrs {
+		if err := n.Bootstrap(ctx, a); err != nil {
+			slog.Debug("dht: seedless bootstrap attempt failed", "addr", a, "error", err)
+			continue
+		}
+		slog.Info("dht: seedless bootstrap succeeded", "addr", a)
+		return
+	}
 }
 
 // stopDHTNode shuts down the production DHT node (nil-safe).
 func stopDHTNode() {
+	if dhtSeedlessStopCh != nil {
+		close(dhtSeedlessStopCh)
+		dhtSeedlessStopCh = nil
+	}
 	if dhtTransport != nil {
 		dhtTransport.Stop()
 	}
