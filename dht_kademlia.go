@@ -227,6 +227,42 @@ func (d *DHT) ExpireRecords() int {
 	return expired
 }
 
+// StaleEntries returns entries that have not been seen for longer than maxAge,
+// oldest-first. P2P-G2: bucket 周期 refresh 用它挑出需要 ping 的条目。
+// 返回的是内部指针（与 FindClosest 一致），调用方不得长期持有。
+func (d *DHT) StaleEntries(maxAge time.Duration) []*DHTEntry {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	cutoff := time.Now().Add(-maxAge)
+	var out []*DHTEntry
+	for _, bucket := range d.buckets {
+		for _, e := range bucket.entries {
+			if e.LastSeen.Before(cutoff) {
+				out = append(out, e)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].LastSeen.Before(out[j].LastSeen) })
+	return out
+}
+
+// RemoveNode drops a node from its k-bucket. Returns true if it was present.
+// P2P-G2: refresh 时 ping 不通的死条目用它淘汰。
+func (d *DHT) RemoveNode(id DHTNodeID) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	dist := XORDistance(d.self, id)
+	idx := bucketIndex(dist)
+	bucket := d.buckets[idx]
+	for i, e := range bucket.entries {
+		if e.NodeID == id {
+			bucket.entries = append(bucket.entries[:i], bucket.entries[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 // StringToDHTID converts a hex string to a DHTNodeID.
 func StringToDHTID(s string) (DHTNodeID, error) {
 	var id DHTNodeID

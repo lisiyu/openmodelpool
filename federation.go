@@ -295,6 +295,8 @@ func cloneNodeInfo(n *NodeInfo) *NodeInfo {
 
 // UpdateTrustPool merges the incoming pool into the local cache.
 // It only applies the update if the incoming version is strictly newer.
+// P2P-G3: 分区愈合时按节点合并——替换前先把本地独有节点并入 incoming 池，
+// 而不是整池丢弃，避免分区期间本地学到的节点在愈合时丢失。
 func (f *FederationManager) UpdateTrustPool(pool TrustPool) {
 	f.mu.Lock()
 	if pool.Version <= f.trustPool.Version {
@@ -302,11 +304,12 @@ func (f *FederationManager) UpdateTrustPool(pool TrustPool) {
 		return
 	}
 
-	f.trustPool = pool
-	slog.Info("trust pool updated", "version", pool.Version, "nodes", len(pool.Nodes))
+	merged := mergeTrustPools(f.trustPool, pool)
+	f.trustPool = merged
+	slog.Info("trust pool updated", "version", merged.Version, "nodes", len(merged.Nodes))
 
-	for i := range pool.Nodes {
-		f.dhtAddNodeLocked(&pool.Nodes[i])
+	for i := range merged.Nodes {
+		f.dhtAddNodeLocked(&merged.Nodes[i])
 	}
 
 	snapshot, err := f.snapshotLocked()
@@ -316,6 +319,57 @@ func (f *FederationManager) UpdateTrustPool(pool TrustPool) {
 		return
 	}
 	f.persistSnapshot(snapshot)
+}
+
+// mergeTrustPools 按节点合并两个信任池（P2P-G3 分区愈合）。
+//   - incoming 独有节点：保留。
+//   - 本地独有节点：仅 Status == "active" 的并入；suspended/inactive 的不复活，
+//     避免把注册表已下架的节点重新带回来。
+//   - 双方都有的节点：LastSeen 更新者胜；时间解析失败时保留 incoming 的。
+//
+// 返回池的版本号取 incoming 的版本——调用方已保证 incoming 版本严格更大，
+// 版本单调语义不被破坏。
+func mergeTrustPools(local, incoming TrustPool) TrustPool {
+	merged := TrustPool{
+		Version:   incoming.Version,
+		UpdatedAt: incoming.UpdatedAt,
+		Registry:  incoming.Registry,
+		Nodes:     make([]NodeInfo, 0, len(incoming.Nodes)+len(local.Nodes)),
+	}
+	incomingIdx := make(map[string]int, len(incoming.Nodes))
+	for _, n := range incoming.Nodes {
+		incomingIdx[n.NodeID] = len(merged.Nodes)
+		merged.Nodes = append(merged.Nodes, n)
+	}
+	for _, ln := range local.Nodes {
+		if ln.NodeID == "" {
+			continue
+		}
+		if idx, ok := incomingIdx[ln.NodeID]; ok {
+			if nodeInfoFresher(ln.LastSeen, merged.Nodes[idx].LastSeen) {
+				merged.Nodes[idx] = ln
+			}
+			continue
+		}
+		if ln.Status != "active" {
+			slog.Debug("trust pool merge: skipping non-active local-only node",
+				"node_id", ln.NodeID, "status", ln.Status)
+			continue
+		}
+		merged.Nodes = append(merged.Nodes, ln)
+	}
+	return merged
+}
+
+// nodeInfoFresher 比较 RFC3339 格式的 LastSeen；a 更新返回 true。
+// 任一解析失败时返回 false（调用方保留 incoming 的数据）。
+func nodeInfoFresher(a, b string) bool {
+	ta, errA := time.Parse(time.RFC3339, a)
+	tb, errB := time.Parse(time.RFC3339, b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return ta.After(tb)
 }
 
 // UpdateNodeInfo upserts a single node entry from a gossip message.
@@ -482,6 +536,23 @@ func (f *FederationManager) DHTHint(nodeID string) string {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.dhtHints[nodeID]
+}
+
+// DHTNodeIDForAddr returns the node ID that advertised the given DHT UDP
+// address, or "" if unknown. P2P-G2: seedless bootstrap 成功后用它找到地址
+// 归属节点，把验证过的地址持久化。
+func (f *FederationManager) DHTNodeIDForAddr(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	for id, a := range f.dhtHints {
+		if a == addr {
+			return id
+		}
+	}
+	return ""
 }
 
 // DHTBootstrapAddrs returns all learned DHT UDP addresses (deduped, non-empty),

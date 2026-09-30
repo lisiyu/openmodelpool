@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +36,16 @@ const (
 	// defaultPeerCullDays is the default inactivity window (days) after which a
 	// peer that stopped reporting is evicted from the connected-node list.
 	defaultPeerCullDays = 7
+
+	// P2P-G1 网关转发 failover 参数：
+	// gatewayFailoverMaxFails：节点连续失败达到该次数即被移出转发候选
+	// （与 RecordFail 标记 unreachable 的阈值一致）。
+	// gatewayFailoverMaxCandidates：单次请求最多依次尝试的候选节点数。
+	// gatewayFailoverScorePenalty：FailCount 每次失败在打分上的惩罚权重
+	// （分数越低越优先）。
+	gatewayFailoverMaxFails      = 3
+	gatewayFailoverMaxCandidates = 3
+	gatewayFailoverScorePenalty  = 2000.0
 )
 
 // ContribRecord tracks individual contribution events (Phase 2)
@@ -171,6 +182,10 @@ type RouteEntry struct {
 	// the federation so peers can aim their hole-punch at the right port.
 	ReflexiveUDP string `json:"reflexive_udp,omitempty"`
 	NATType      string `json:"nat_type,omitempty"`
+
+	// P2P-G2: 该节点被验证为活的 DHT UDP 监听地址（seedless bootstrap 成功时
+	// 经 .nodes 持久化），重启后用于 DHT 预热。
+	DHTAddr string `json:"dht_addr,omitempty"`
 }
 
 // RouteTable is a simplified DHT routing table (Phase 1)
@@ -244,6 +259,15 @@ func (nm *NetworkManager) bridgeRestoredPeersToFederation() {
 	}
 	fed.AddKnownNodes(nodes)
 	slog.Info("bridged restored peers into federation for P2P rejoin", "count", len(nodes))
+
+	// P2P-G2: 把 .nodes 里持久化的已验证 DHT 地址喂回 fed 的 dhtHints，
+	// 重启后 seedless bootstrap 可直接预热，不再完全依赖 gossip 重新学到。
+	for _, e := range restoredRouteEntries {
+		if e == nil || e.NodeID == "" || e.DHTAddr == "" {
+			continue
+		}
+		fed.NoteDHTHint(e.NodeID, e.DHTAddr)
+	}
 }
 
 // Put adds or updates a route entry
@@ -436,6 +460,51 @@ func (rt *RouteTable) SelectBestNode(model string) *RouteEntry {
 	}
 
 	return scored_list[bestIdx].entry
+}
+
+// SelectRankedNodes 按评分返回排序后的候选节点（分数越低越优先），最多
+// limit 个（limit<=0 表示全部）。P2P-G1 网关转发 failover 用：
+//   - FailCount >= gatewayFailoverMaxFails 的节点直接排除（连续失败的尸体节点
+//     不再中选，避免请求反复打到刚死的节点上直到 TTL 过期）；
+//   - 其余节点在原有打分基础上按 FailCount 加权惩罚，失败过的节点降权。
+//
+// 返回的是 RouteEntry 拷贝切片，调用方可安全持有。
+func (rt *RouteTable) SelectRankedNodes(model string, limit int) []RouteEntry {
+	candidates := rt.GetByModel(model)
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	type scored struct {
+		entry RouteEntry
+		score float64
+	}
+	ranked := make([]scored, 0, len(candidates))
+	for _, e := range candidates {
+		if e.FailCount >= gatewayFailoverMaxFails {
+			continue
+		}
+		// Contribution ratio: use TrustScore as proxy, default 0.5 if not set
+		contribRatio := 0.5
+		if contribRatio <= 0 {
+			contribRatio = 0.1
+		}
+		// Score: lower is better（与 SelectBestNode 同公式，另加失败惩罚）
+		score := e.LatencyMS*0.4 + e.LoadScore*1000*0.3 + (1.0/contribRatio)*500*0.3 +
+			float64(e.FailCount)*gatewayFailoverScorePenalty
+		ranked = append(ranked, scored{entry: e, score: score})
+	}
+
+	sort.Slice(ranked, func(i, j int) bool { return ranked[i].score < ranked[j].score })
+
+	if limit > 0 && len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+	out := make([]RouteEntry, len(ranked))
+	for i := range ranked {
+		out[i] = ranked[i].entry
+	}
+	return out
 }
 
 // RecordSuccess marks a successful interaction with a node, resetting FailCount

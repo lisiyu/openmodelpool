@@ -39,18 +39,21 @@ var safeNodeIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // mappable fields from RouteEntry / PeerInfo plus a persistence timestamp so the
 // cold-start loader can reconstruct a usable RouteEntry.
 type persistedNode struct {
-	NodeID          string   `json:"node_id"`
-	NodeName        string   `json:"node_name"`
-	Addresses       []string `json:"addresses"`
-	IsGateway       bool     `json:"is_gateway"`
-	IsSeed          bool     `json:"is_seed"`
-	Models          []string `json:"models"`
-	Status          string   `json:"status"`
-	LastSeenUnix    int64    `json:"last_seen_unix"`
-	LatencyMS       float64  `json:"latency_ms"`
-	FailCount       int      `json:"fail_count"`
-	UptimeScore     float64  `json:"uptime_score"`
-	PersistedAtUnix int64    `json:"persisted_at_unix"`
+	NodeID       string   `json:"node_id"`
+	NodeName     string   `json:"node_name"`
+	Addresses    []string `json:"addresses"`
+	IsGateway    bool     `json:"is_gateway"`
+	IsSeed       bool     `json:"is_seed"`
+	Models       []string `json:"models"`
+	Status       string   `json:"status"`
+	LastSeenUnix int64    `json:"last_seen_unix"`
+	LatencyMS    float64  `json:"latency_ms"`
+	FailCount    int      `json:"fail_count"`
+	UptimeScore  float64  `json:"uptime_score"`
+	// P2P-G2: 该节点被验证为活的 DHT UDP 监听地址（seedless bootstrap 成功时
+	// 写入），重启后可直接预热 DHT，不再完全依赖 gossip 重新学到。
+	DHTAddr         string `json:"dht_addr,omitempty"`
+	PersistedAtUnix int64  `json:"persisted_at_unix"`
 }
 
 // NodeRegistry manages per-node JSON files under a directory (.nodes/ by default).
@@ -97,6 +100,12 @@ func (r *NodeRegistry) SaveNode(entry *RouteEntry) {
 	if r == nil || entry == nil {
 		return
 	}
+	// P2P-G2: entry 通常不带 DHTAddr（gossip/peer 路径不知道它）；若磁盘上已有
+	// seedless bootstrap 验证过的地址，保留它，避免整体覆写时丢失。
+	dhtAddr := entry.DHTAddr
+	if dhtAddr == "" {
+		dhtAddr = r.readDHTAddr(entry.NodeID)
+	}
 	pn := persistedNode{
 		NodeID:          entry.NodeID,
 		NodeName:        entry.NodeName,
@@ -109,12 +118,53 @@ func (r *NodeRegistry) SaveNode(entry *RouteEntry) {
 		UptimeScore:     entry.UptimeScore,
 		IsGateway:       entry.IsGateway,
 		IsSeed:          entry.IsSeed,
+		DHTAddr:         dhtAddr,
 		PersistedAtUnix: time.Now().Unix(),
 	}
 	r.writeLocked(pn)
 }
 
-// SavePeer persists a single peer (richer than a bare route entry) to disk. When
+// readDHTAddr 从磁盘读取某节点已持久化的 DHT 地址（缺文件/解析失败返回 ""）。
+func (r *NodeRegistry) readDHTAddr(nodeID string) string {
+	if r == nil || nodeID == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(r.dir, registryFileName(nodeID)))
+	if err != nil {
+		return ""
+	}
+	var pn persistedNode
+	if err := json.Unmarshal(data, &pn); err != nil {
+		return ""
+	}
+	return pn.DHTAddr
+}
+
+// SaveDHTAddr records a verified DHT UDP listen address for a node without
+// disturbing the other persisted fields. It is a no-op for a nil receiver or
+// empty input. P2P-G2: seedless bootstrap 成功（地址被验证为活的）时调用。
+func (r *NodeRegistry) SaveDHTAddr(nodeID, dhtAddr string) {
+	if r == nil || nodeID == "" || dhtAddr == "" {
+		return
+	}
+	path := filepath.Join(r.dir, registryFileName(nodeID))
+	var pn persistedNode
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &pn); err != nil {
+			slog.Warn("failed to parse node file for dht_addr update, starting fresh",
+				"node_id", nodeID, "error", err)
+			pn = persistedNode{}
+		}
+	}
+	if pn.DHTAddr == dhtAddr {
+		return // 无变化：避免不必要的磁盘写入
+	}
+	pn.NodeID = nodeID
+	pn.DHTAddr = dhtAddr
+	pn.PersistedAtUnix = time.Now().Unix()
+	r.writeLocked(pn)
+}
+
 // both SaveNode and SavePeer are called for the same node, the later write wins;
 // callers typically invoke SavePeer after routeTable.Put so model/status metadata
 // from PeerInfo is preserved on disk.
@@ -202,6 +252,7 @@ func (r *NodeRegistry) LoadAll() ([]*RouteEntry, error) {
 			UptimeScore: pn.UptimeScore,
 			IsGateway:   pn.IsGateway,
 			IsSeed:      pn.IsSeed,
+			DHTAddr:     pn.DHTAddr,
 			UpdatedAt:   time.Now(),
 		})
 	}

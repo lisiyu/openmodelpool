@@ -253,14 +253,15 @@ func startDHTNode() {
 			slog.Info("dht: bootstrapped from seed", "seed", s)
 		}
 	}
-	// Seedless P2P: when the routing table is still empty (no seeds configured
-	// or all seeds failed), keep retrying bootstrap in the background using
-	// DHT addresses learned via gossip PEX. Any single live node is enough to
+	// Seedless P2P: keep retrying bootstrap in the background using DHT
+	// addresses learned via gossip PEX. Any single live node is enough to
 	// join the Kademlia mesh.
+	// P2P-G2: loop 常驻（表被掏空后自动重新激活），不再只在启动时表空才启动；
+	// 另起 bucket refresh loop 周期淘汰死条目。
 	dhtSeedlessStopCh = make(chan struct{})
-	if n.TableSize() == 0 {
-		go n.retrySeedlessBootstrap(dhtSeedlessStopCh)
-	}
+	go n.retrySeedlessBootstrap(dhtSeedlessStopCh)
+	dhtRefreshStopCh = make(chan struct{})
+	go n.refreshLoop(dhtRefreshStopCh)
 	slog.Info("dht: node listening for discovery", "id", n.idHex()[:16], "addr", conn.LocalAddr().String(), "seeds", len(seeds))
 }
 
@@ -281,33 +282,49 @@ func localDHTAdvertiseAddr() string {
 }
 
 // dhtSeedlessStopCh is closed by stopDHTNode to terminate the seedless retry loop.
+// dhtRefreshStopCh 则是 bucket refresh loop 的停止通道。
 var dhtSeedlessStopCh chan struct{}
+var dhtRefreshStopCh chan struct{}
 
-// retrySeedlessBootstrap periodically attempts DHT bootstrap using
-// gossip-learned peer DHT addresses until the routing table is non-empty.
-// Stops on success or when stopCh is closed.
+// dhtSeedlessRetryInterval 是 seedless retry loop 的检查节奏（测试可调小）。
+var dhtSeedlessRetryInterval = 60 * time.Second
+
+// retrySeedlessBootstrap 周期性地用 gossip 学到的 peer DHT 地址尝试 bootstrap。
+// P2P-G2: loop 常驻——表在启动后被掏空（peer 陆续死亡）时自动重新激活，而不是
+// 成功一次就永久退出。连续失败时退避（每 3 轮试一次），避免对着死地址 hammer。
 func (n *DHTNode) retrySeedlessBootstrap(stopCh <-chan struct{}) {
 	// One immediate attempt: gossip may already have learned hints.
 	n.trySeedlessBootstrapOnce()
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(dhtSeedlessRetryInterval)
 	defer ticker.Stop()
+	var fails int
 	for {
 		select {
 		case <-stopCh:
 			return
 		case <-ticker.C:
 			if n.TableSize() > 0 {
-				return
+				fails = 0
+				continue // 表非空：本轮跳过，但 loop 常驻以便表被掏空后自动恢复
 			}
-			n.trySeedlessBootstrapOnce()
+			if fails >= 3 && fails%3 != 0 {
+				fails++
+				continue // 退避中
+			}
+			if n.trySeedlessBootstrapOnce() {
+				fails = 0
+			} else {
+				fails++
+			}
 		}
 	}
 }
 
 // trySeedlessBootstrapOnce tries each gossip-learned DHT address once.
-func (n *DHTNode) trySeedlessBootstrapOnce() {
+// 返回 true 表示至少一次 bootstrap 成功（地址被验证为活的）。
+func (n *DHTNode) trySeedlessBootstrapOnce() bool {
 	if fed == nil {
-		return
+		return false
 	}
 	var selfID string
 	if node != nil {
@@ -315,7 +332,7 @@ func (n *DHTNode) trySeedlessBootstrapOnce() {
 	}
 	addrs := fed.DHTBootstrapAddrs(selfID)
 	if len(addrs) == 0 {
-		return
+		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -325,8 +342,14 @@ func (n *DHTNode) trySeedlessBootstrapOnce() {
 			continue
 		}
 		slog.Info("dht: seedless bootstrap succeeded", "addr", a)
-		return
+		// P2P-G2: 被验证为活的 DHT 地址随 .nodes 持久化，重启可直接预热，
+		// 不再完全依赖 gossip 重新学到。
+		if nodeRegistry != nil {
+			nodeRegistry.SaveDHTAddr(fed.DHTNodeIDForAddr(a), a)
+		}
+		return true
 	}
+	return false
 }
 
 // stopDHTNode shuts down the production DHT node (nil-safe).
@@ -334,6 +357,10 @@ func stopDHTNode() {
 	if dhtSeedlessStopCh != nil {
 		close(dhtSeedlessStopCh)
 		dhtSeedlessStopCh = nil
+	}
+	if dhtRefreshStopCh != nil {
+		close(dhtRefreshStopCh)
+		dhtRefreshStopCh = nil
 	}
 	if dhtTransport != nil {
 		dhtTransport.Stop()

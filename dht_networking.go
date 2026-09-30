@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 // ============================================================================
@@ -104,6 +105,62 @@ func (n *DHTNode) SetTransport(t DHTTransport) { n.net = t }
 
 // TableSize returns the number of nodes currently in the routing table.
 func (n *DHTNode) TableSize() int { return n.dht.TotalNodes() }
+
+// RefreshBuckets pings every bucket entry that has not been seen for dhtRefresh
+// and evicts the ones that fail to respond. P2P-G2: 让 dhtRefresh 真正生效，
+// peer 陆续死亡后路由表能收敛回活节点，而不是留着死条目。
+// 返回 (ping 数, 淘汰数)。transport 为 nil 时直接返回 0,0。
+func (n *DHTNode) RefreshBuckets(ctx context.Context) (pinged, evicted int) {
+	if n.net == nil {
+		return 0, 0
+	}
+	for _, e := range n.dht.StaleEntries(dhtRefresh) {
+		if len(e.Addresses) == 0 || e.NodeID == n.id {
+			continue
+		}
+		pinged++
+		pctx, cancel := context.WithTimeout(ctx, dhtTimeout)
+		_, err := n.net.Send(pctx, e.Addresses[0], DHTMessage{
+			From:     n.id,
+			FromAddr: n.addr,
+			Type:     DHTMsgPing,
+		})
+		cancel()
+		if err != nil {
+			slog.Debug("dht: bucket refresh evicting dead entry",
+				"addr", e.Addresses[0], "error", err)
+			n.dht.RemoveNode(e.NodeID)
+			n.mu.Lock()
+			delete(n.addrBook, e.NodeID)
+			n.mu.Unlock()
+			evicted++
+			continue
+		}
+		// 还活着：刷新 LastSeen（AddNode 对已存在条目只更新时间戳）。
+		n.dht.AddNode(e)
+	}
+	return pinged, evicted
+}
+
+// refreshLoop 周期性执行 bucket refresh，直到 stopCh 关闭。
+func (n *DHTNode) refreshLoop(stopCh <-chan struct{}) {
+	ticker := time.NewTicker(dhtRefresh)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			pinged, evicted := n.RefreshBuckets(ctx)
+			cancel()
+			if pinged > 0 || evicted > 0 {
+				slog.Info("dht: bucket refresh done",
+					"pinged", pinged, "evicted", evicted, "table_size", n.TableSize())
+			}
+		}
+	}
+}
 
 // learn records a peer's address and inserts it into the routing table.
 // Self and entries without an address are ignored.

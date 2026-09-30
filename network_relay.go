@@ -1201,10 +1201,11 @@ var handleGatewayRequest = func(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Try to find the best node for this model
-	var bestNode *RouteEntry
+	// P2P-G1: 按评分取 Top-N 候选依次尝试（failover），而非只取单个 best-node。
+	// 单候选时行为与原来一致：失败即本地兜底。
+	var candidates []RouteEntry
 	if routeTable != nil && model != "" {
-		bestNode = routeTable.SelectBestNode(model)
+		candidates = routeTable.SelectRankedNodes(model, gatewayFailoverMaxCandidates)
 	}
 
 	// Guests without public-pool access may only be served by the issuing
@@ -1212,14 +1213,14 @@ var handleGatewayRequest = func(w http.ResponseWriter, r *http.Request) {
 	// to the node that issued them). Never gateway-forward such a request to a
 	// remote node — the remote does not hold the key in its store and would
 	// 401 instead of this node serving it locally.
-	if bestNode != nil && keyType == KeyTypeGuest {
+	if len(candidates) > 0 && keyType == KeyTypeGuest {
 		if _, accessPool, _ := GetGuestKeyAccessPublicPool(bearerKey); !accessPool {
-			bestNode = nil
+			candidates = nil
 		}
 	}
 
 	// If no node found or route table is empty, fallback to local handling
-	if bestNode == nil {
+	if len(candidates) == 0 {
 		slog.Debug("gateway: no suitable node found, falling back to local", "model", model)
 		// B10-V1: settlement now flows through the pqHandoff — the deferred
 		// AdjustQuota above reads the outcome reported by the local handler.
@@ -1232,18 +1233,38 @@ var handleGatewayRequest = func(w http.ResponseWriter, r *http.Request) {
 	if netMgr != nil {
 		selfID = netMgr.GetNodeID()
 	}
-	if bestNode.NodeID == selfID {
+	if candidates[0].NodeID == selfID {
 		slog.Debug("gateway: best node is self, handling locally", "model", model, "node_id", selfID)
 		handleGatewayFallback(w, r, bodyBytes, model, stream)
 		return
 	}
 
-	// Forward to the selected remote node
-	slog.Info("gateway: routing request", "model", model, "target_node", bestNode.NodeID, "stream", stream, "hop", hopCount+1)
-
 	// B10-V1: the remote node does its own usage accounting; locally we only
 	// know the estimate, so keep it (was an arbitrary half-charge).
-	gatewayForwardToRemote(w, r, bestNode, bodyBytes, hopCount, stream, model)
+	// P2P-G1: 依次尝试候选节点直到成功；全部失败则本地兜底。
+	if !gatewayForwardFailover(w, r, candidates, bodyBytes, hopCount, stream, model, selfID) {
+		slog.Warn("gateway: all remote candidates failed, falling back to local", "model", model)
+		handleGatewayFallback(w, r, bodyBytes, model, stream)
+	}
+}
+
+// gatewayForwardFailover 按顺序依次尝试候选节点做转发，直到某个节点成功
+// 服务。返回 true 表示已向 w 写出最终响应；返回 false 表示所有候选都失败，
+// 调用方应走本地兜底。selfID 对应的条目会被跳过。
+func gatewayForwardFailover(w http.ResponseWriter, r *http.Request, candidates []RouteEntry, bodyBytes []byte, hopCount int, stream bool, model, selfID string) bool {
+	for i := range candidates {
+		entry := &candidates[i]
+		if entry.NodeID == selfID {
+			continue
+		}
+		slog.Info("gateway: routing request", "model", model, "target_node", entry.NodeID,
+			"stream", stream, "hop", hopCount+1, "attempt", i+1)
+		if gatewayForwardToRemote(w, r, entry, bodyBytes, hopCount, stream, model) {
+			return true
+		}
+		slog.Warn("gateway: candidate failed, trying next", "model", model, "failed_node", entry.NodeID)
+	}
+	return false
 }
 
 // handleGatewayFallback handles the request locally when no remote node is suitable.
@@ -1280,32 +1301,33 @@ func handleGatewayFallback(w http.ResponseWriter, r *http.Request, bodyBytes []b
 
 // gatewayForwardToRemote forwards the gateway request to a remote node.
 // Supports both streaming (SSE) and non-streaming responses.
-func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, bodyBytes []byte, hopCount int, stream bool, model string) {
+func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, bodyBytes []byte, hopCount int, stream bool, model string) bool {
+	// P2P-G1: 返回 true 表示已向 w 写出最终响应（成功或不可重试的错误），
+	// 调用方停止；返回 false 表示该候选节点不可用（连接失败、502/503/504、
+	// 地址不可用），调用方可尝试下一个候选，此时未向 w 写入任何内容。
 	// Pick the best address
 	targetAddr := pickBestAddress(entry.Addresses)
 	if targetAddr == "" {
-		writeError(w, 502, "no reachable address for node")
-		return
+		slog.Debug("gateway: no reachable address for node, trying next candidate", "node_id", entry.NodeID)
+		return false
 	}
 
 	// Enforce HTTPS for relay
 	if !strings.HasPrefix(targetAddr, "https://") {
 		slog.Warn("gateway: relay target uses insecure protocol, rejecting", "node_id", entry.NodeID, "addr", targetAddr)
-		writeError(w, 502, "relay target must use HTTPS for security")
-		return
+		return false
 	}
 
 	target, err := url.Parse(targetAddr)
 	if err != nil {
-		writeError(w, 502, "invalid target address")
-		return
+		slog.Debug("gateway: invalid target address, trying next candidate", "node_id", entry.NodeID)
+		return false
 	}
 
 	// B119: Block relay to private/internal IPs to prevent SSRF
 	if !allowLocalRelayForTest && isLocalOrPrivateIP(target.Hostname()) {
 		slog.Warn("relay target is private IP, rejecting", "host", target.Hostname())
-		writeError(w, 502, "relay target must be a public address")
-		return
+		return false
 	}
 
 	relayFrom := ""
@@ -1319,7 +1341,7 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	outReq, err := http.NewRequestWithContext(r.Context(), r.Method, target.String()+r.URL.Path, bytes.NewReader(bodyBytes))
 	if err != nil {
 		writeError(w, 500, "failed to create relay request")
-		return
+		return true
 	}
 
 	// Copy query parameters
@@ -1367,10 +1389,33 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 		if lbInstance != nil {
 			lbInstance.RecordRequest(entry.NodeID, time.Since(relayStart), false)
 		}
-		writeError(w, 502, "relay to remote node failed")
-		return
+		// P2P-G1：累计该节点的连续失败计数，达到阈值后移出转发候选，
+		// 避免之后请求反复打到刚死的节点上。
+		if routeTable != nil {
+			routeTable.RecordFail(entry.NodeID)
+		}
+		return false
 	}
 	defer resp.Body.Close()
+
+	// P2P-G1：远端明确表示无法服务（502/503/504）时视为可重试，换下一个
+	// 候选节点；其他状态码（含 4xx 与成功）直接回传给客户端。
+	if resp.StatusCode == http.StatusBadGateway ||
+		resp.StatusCode == http.StatusServiceUnavailable ||
+		resp.StatusCode == http.StatusGatewayTimeout {
+		slog.Warn("gateway: remote cannot serve, trying next candidate",
+			"node_id", entry.NodeID, "status", resp.StatusCode)
+		if netMgr != nil {
+			netMgr.RecordRelayResult(false)
+		}
+		if lbInstance != nil {
+			lbInstance.RecordRequest(entry.NodeID, time.Since(relayStart), false)
+		}
+		if routeTable != nil {
+			routeTable.RecordFail(entry.NodeID)
+		}
+		return false
+	}
 
 	// Record relay result
 	success := resp.StatusCode < 400
@@ -1416,7 +1461,7 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 			_, writeErr := w.Write(buf[:n])
 			if writeErr != nil {
 				slog.Debug("gateway: client disconnected during relay", "error", writeErr)
-				return
+				return true
 			}
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
@@ -1426,7 +1471,7 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 			if readErr != io.EOF {
 				slog.Debug("gateway: relay body read error", "error", readErr)
 			}
-			return
+			return true
 		}
 	}
 }
