@@ -46,6 +46,9 @@ var envMap = map[string]string{
 	"coze_api_token": "COZE_API_TOKEN",
 	"coze_bot_id":    "COZE_BOT_ID",
 	"service_port":   "PORT",
+	// G5: secret_backend 开关的环境变量（沿用 OPENMODELPOOL_* 前缀惯例，
+	// 优先级高于 config 文件；见 secret_backend.go）。
+	"secret_backend": "OPENMODELPOOL_SECRET_BACKEND",
 }
 
 func initConfig(path string) {

@@ -42,10 +42,24 @@ func (e *Encryptor) IsReady() bool {
 	return e.ready
 }
 
+// encKeyFile 是主密钥文件的路径。包级变量（而非常量）以便测试指向 TempDir。
+// 其 ".bak" 后缀版本是 G5 keyring 迁移后保留的回滚副本。
+var encKeyFile = "data/.enc_key"
+
+// encKeyBakFile 返回主密钥文件的 .bak 回滚副本路径。
+func encKeyBakFile() string { return encKeyFile + ".bak" }
+
 // NewEncryptor resolves the 32-byte AES key with the following precedence:
 //  1. OPENMODELPOOL_ENC_KEY env var (raw 32 bytes or base64-encoded)
-//  2. data/.enc_key on disk (auto-generated and persisted on first run)
-//  3. a freshly generated in-memory key (no persistence; survives one process)
+//  2. OS keyring (G5; only when secret_backend=keyring):
+//     hit → use; miss → migrate from the key file (rename to .enc_key.bak)
+//     or dual-write a freshly generated key; keyring unavailable → warn log
+//     + silent fallback to the file chain (never fail-closed)
+//  3. data/.enc_key on disk (auto-generated and persisted on first run)
+//  4. a freshly generated in-memory key (no persistence; survives one process)
+//
+// G5 安全不变式：keyring 只换"钥匙放哪"，不换"锁"——上层 omp:e:/GCM 格式、
+// node.key、provider token 等所有密文格式完全不变。
 func NewEncryptor() (*Encryptor, error) {
 	if k := os.Getenv("OPENMODELPOOL_ENC_KEY"); k != "" {
 		raw, err := base64.StdEncoding.DecodeString(k)
@@ -58,9 +72,60 @@ func NewEncryptor() (*Encryptor, error) {
 		return &Encryptor{key: raw}, nil
 	}
 
-	const keyFile = "data/.enc_key"
-	if b, err := os.ReadFile(keyFile); err == nil && len(b) == 32 {
+	// G5: keyring 后端（仅当 secret_backend=keyring）。
+	if secretBackend() == secretBackendKeyring {
+		if key, ok := loadKeyringKey(); ok {
+			removeStaleKeyFile()
+			return &Encryptor{key: key}, nil
+		}
+		// keyring 未命中/不可用：走文件链；文件命中则迁移进 keyring。
+		if b, err := os.ReadFile(encKeyFile); err == nil && len(b) == 32 {
+			if storeKeyringKey(b) {
+				if err := os.Rename(encKeyFile, encKeyBakFile()); err != nil {
+					slog.Warn("keyring migration: could not rename key file to .bak; leaving it in place",
+						"err", err, "path", encKeyFile)
+				} else {
+					slog.Info("G5: master key migrated to OS keyring",
+						"service", keyringService, "account", keyringAccount,
+						"rollback", "mv "+encKeyBakFile()+" "+encKeyFile+" 并把 secret_backend 设回 file")
+				}
+			}
+			return &Encryptor{key: b}, nil
+		}
+		// 全新安装：生成新钥匙并双写——文件作为 keyring 不可用时的 fallback 种子。
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return nil, err
+		}
+		storeKeyringKey(key) // 失败已在内部记 warn
+		if err := os.MkdirAll("data", 0o700); err == nil {
+			if werr := atomicWriteFile(encKeyFile, key, 0o600); werr != nil {
+				slog.Warn("could not persist encryption key; using in-memory key", "err", werr)
+			}
+		}
+		return &Encryptor{key: key}, nil
+	}
+
+	if b, err := os.ReadFile(encKeyFile); err == nil && len(b) == 32 {
 		return &Encryptor{key: b}, nil
+	}
+
+	// G5: .bak 存在但 .enc_key 缺失 —— 说明曾经迁移到 keyring，钥匙只在
+	// keyring（/.bak）里。此时生成新钥匙是灾难（旧数据全部无法解密），
+	// 所以直接从 keyring 找回来；找不回就 fail-closed，操作员按下面的
+	// 指引恢复 .bak 或修好 keyring 后再启动。
+	// 回滚风险（文档）：若用户删了 .bak 又关闭 keyring 且 env 未设，
+	// 这里会触发 init() 的 os.Exit(1)，服务起不来——这是故意的，
+	// 静默用错钥匙比起不来更危险。
+	if _, err := os.Stat(encKeyBakFile()); err == nil {
+		if key, ok := loadKeyringKey(); ok {
+			slog.Warn("secret_backend=file but master key was previously migrated to keyring; recovered from OS keyring",
+				"hint", "mv "+encKeyBakFile()+" "+encKeyFile+" to silence this warning")
+			return &Encryptor{key: key}, nil
+		}
+		return nil, errors.New("master key file " + encKeyFile + " is missing but " + encKeyBakFile() +
+			" exists: restore it (mv " + encKeyBakFile() + " " + encKeyFile +
+			") or make the OS keyring reachable, then restart")
 	}
 
 	key := make([]byte, 32)
@@ -68,11 +133,49 @@ func NewEncryptor() (*Encryptor, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll("data", 0o700); err == nil {
-		if werr := atomicWriteFile(keyFile, key, 0o600); werr != nil {
+		if werr := atomicWriteFile(encKeyFile, key, 0o600); werr != nil {
 			slog.Warn("could not persist encryption key; using ephemeral key", "err", werr)
 		}
 	}
 	return &Encryptor{key: key}, nil
+}
+
+// removeStaleKeyFile 删除迁移后 init() 阶段误生成的陈旧 .enc_key。
+// 调用场景：无 env 时 init() 先以 file 后端生成了一个新钥匙文件，随后
+// refreshEncryptorForSecretBackend() 从 keyring 拿到真钥匙——此时的 .enc_key
+// 是诱饵（内容与真钥匙无关），而 .bak 的存在证明迁移已完成，直接删除。
+// 有日志，无静默操作。
+func removeStaleKeyFile() {
+	if _, err := os.Stat(encKeyBakFile()); err != nil {
+		return
+	}
+	if _, err := os.Stat(encKeyFile); err != nil {
+		return
+	}
+	if err := os.Remove(encKeyFile); err != nil {
+		slog.Warn("could not remove stale regenerated key file", "path", encKeyFile, "err", err)
+		return
+	}
+	slog.Info("removed stale regenerated key file after keyring recovery", "path", encKeyFile)
+}
+
+// refreshEncryptorForSecretBackend 在 initConfig 之后重新解析主密钥。
+// init() 执行时 cfg 尚未加载，只能看到环境变量；config 文件里的
+// secret_backend=keyring 在这里生效（首次触发 keyring 迁移）。
+// 幂等：keyring 命中路径除清理陈旧 .enc_key 外无副作用。
+// 调用时机是单线程启动期（initCore），早于所有后台 goroutine。
+func refreshEncryptorForSecretBackend() {
+	if secretBackend() != secretBackendKeyring {
+		return
+	}
+	e, err := NewEncryptor()
+	if err != nil {
+		slog.Error("keyring encryptor refresh failed; keeping startup key", "err", err)
+		return
+	}
+	enc = e
+	enc.ready = true
+	slog.Info("encryptor refreshed from secret_backend=keyring")
 }
 
 // Encrypt encrypts plaintext and returns "omp:e:" + base64(nonce||ciphertext).

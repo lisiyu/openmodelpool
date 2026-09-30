@@ -43,6 +43,9 @@ func initCore() {
 	// Core infrastructure
 	initEncryptor("data/.key")
 	initConfig("data/config.json")
+	// G5: config 文件里 secret_backend=keyring 时，用 keyring 重新解析主密钥
+	//（init() 执行时 cfg 尚未加载，只能看到环境变量；首次触发 keyring 迁移）。
+	refreshEncryptorForSecretBackend()
 	initLogger("data")
 	initProviderManager("data/providers.json")
 	initTracker("data/usage.json")
