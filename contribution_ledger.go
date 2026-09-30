@@ -9,10 +9,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 type ContributionRecord struct {
@@ -106,6 +110,34 @@ type GossipLedger struct {
 	seq          uint64
 	pub          ed25519.PublicKey
 	priv         ed25519.PrivateKey
+	// G4: bbolt 脏 key 集合（guarded by mu）。mutation 方法标记，
+	// saveBbolt 批量 Put 后换出清空。
+	dirty map[string]struct{}
+	// G4: bbolt 后端句柄，nil 则走 JSON。归实例所有，避免包级全局在测试间泄漏。
+	bbolt *bboltHandle
+}
+
+// G4: ledger bucket 的 key 前缀。
+const (
+	bboltLedgerContribPrefix = "contrib/"
+	bboltLedgerTrustPrefix   = "trust/"
+	bboltLedgerClaimPrefix   = "claim/"
+	bboltLedgerPenaltyPrefix = "penalty/"
+	bboltLedgerTxPrefix      = "tx/"
+	// meta/identity 存节点身份（peer_id/seq/pub/priv，含 ed25519 私钥）。
+	bboltLedgerIdentityKey = "meta/identity"
+)
+
+// G4: 句柄归实例所有（g.bbolt），避免包级全局在测试间泄漏。
+
+// markDirtyLocked 标记 key 待持久化。调用方必须持有 g.mu。
+func (g *GossipLedger) markDirtyLocked(keys ...string) {
+	if g.dirty == nil {
+		g.dirty = make(map[string]struct{})
+	}
+	for _, k := range keys {
+		g.dirty[k] = struct{}{}
+	}
 }
 
 func NewGossipLedger(peerID string) (*GossipLedger, error) {
@@ -125,6 +157,7 @@ func NewGossipLedger(peerID string) (*GossipLedger, error) {
 		dailyContrib: make(map[string]int64),
 		pub:          pub,
 		priv:         priv,
+		dirty:        make(map[string]struct{}),
 	}, nil
 }
 
@@ -142,6 +175,7 @@ func (g *GossipLedger) Sign(data []byte) []byte {
 // RecordClaim/RecordPenalty/AppendTransaction).
 func (g *GossipLedger) nextID(prefix string) string {
 	g.seq++
+	g.markDirtyLocked(bboltLedgerIdentityKey) // G4: seq 持久化
 	return fmt.Sprintf("%s-%s-%d", prefix, g.peerID, g.seq)
 }
 
@@ -164,6 +198,7 @@ func (g *GossipLedger) RecordContribution(record *ContributionRecord) (string, e
 	}
 	cp := *record
 	g.recs[record.ID] = &cp
+	g.markDirtyLocked(bboltLedgerContribPrefix + record.ID) // G4
 	g.mu.Unlock()
 
 	if cid, err := g.hashStore.StoreJSON(record); err == nil {
@@ -171,6 +206,7 @@ func (g *GossipLedger) RecordContribution(record *ContributionRecord) (string, e
 		cp.Proof.StorageLocation = "local-hash"
 		g.mu.Lock()
 		g.recs[record.ID] = &cp
+		g.markDirtyLocked(bboltLedgerContribPrefix + record.ID) // G4
 		g.mu.Unlock()
 	}
 	// P1-3(ii): asynchronously mirror the contribution to federation peers so
@@ -235,6 +271,7 @@ func (g *GossipLedger) RecordTrust(rec *TrustRecord) (string, error) {
 	}
 	cp := *rec
 	g.trusts[rec.ID] = &cp
+	g.markDirtyLocked(bboltLedgerTrustPrefix + rec.ID) // G4
 	g.mu.Unlock()
 	return rec.ID, nil
 }
@@ -255,6 +292,7 @@ func (g *GossipLedger) RecordClaim(claim *CapabilityClaim) string {
 	}
 	cp := *claim
 	g.claims[claim.ID] = &cp
+	g.markDirtyLocked(bboltLedgerClaimPrefix + claim.ID) // G4
 	g.mu.Unlock()
 	return claim.ID
 }
@@ -278,6 +316,7 @@ func (g *GossipLedger) RecordPenalty(rec *PenaltyRecord) (string, error) {
 	}
 	cp := *rec
 	g.penalties[rec.ID] = &cp
+	g.markDirtyLocked(bboltLedgerPenaltyPrefix + rec.ID) // G4
 	g.mu.Unlock()
 	return rec.ID, nil
 }
@@ -293,6 +332,7 @@ func (g *GossipLedger) GossipSync(contributions []*ContributionRecord, trusts []
 		if _, ok := g.recs[r.ID]; !ok {
 			cp := *r
 			g.recs[r.ID] = &cp
+			g.markDirtyLocked(bboltLedgerContribPrefix + r.ID) // G4
 			added++
 		}
 	}
@@ -303,6 +343,7 @@ func (g *GossipLedger) GossipSync(contributions []*ContributionRecord, trusts []
 		if _, ok := g.trusts[t.ID]; !ok {
 			cp := *t
 			g.trusts[t.ID] = &cp
+			g.markDirtyLocked(bboltLedgerTrustPrefix + t.ID) // G4
 			added++
 		}
 	}
@@ -313,6 +354,7 @@ func (g *GossipLedger) GossipSync(contributions []*ContributionRecord, trusts []
 		if _, ok := g.claims[c.ID]; !ok {
 			cp := *c
 			g.claims[c.ID] = &cp
+			g.markDirtyLocked(bboltLedgerClaimPrefix + c.ID) // G4
 			added++
 		}
 	}
@@ -323,6 +365,7 @@ func (g *GossipLedger) GossipSync(contributions []*ContributionRecord, trusts []
 		if _, ok := g.penalties[p.ID]; !ok {
 			cp := *p
 			g.penalties[p.ID] = &cp
+			g.markDirtyLocked(bboltLedgerPenaltyPrefix + p.ID) // G4
 			added++
 		}
 	}
@@ -360,6 +403,8 @@ func (g *GossipLedger) AppendTransaction(txType, nodeID string, amount int64, mo
 
 	g.txs = append(g.txs, tx)
 	g.txIndex[tx.ID] = tx
+	// G4: tx 单 key + seq（identity）脏标记
+	g.markDirtyLocked(bboltLedgerTxPrefix+tx.ID, bboltLedgerIdentityKey)
 	// PERF-P0-2: maintain the incremental daily contribution counter so
 	// CheckShareBoundary does not rescan the full transaction slice per
 	// request. Only "contribution" transactions accrue the cap.
@@ -772,6 +817,7 @@ func LoadGossipLedger(path string) (*GossipLedger, error) {
 		seq:          data.Seq,
 		pub:          ed25519.PublicKey(data.PubKey),
 		priv:         ed25519.PrivateKey(data.PrivKey),
+		dirty:        make(map[string]struct{}),
 	}, nil
 }
 
@@ -1057,4 +1103,277 @@ func (c *ContentHashStore) Cleanup(maxEntries int) {
 			break
 		}
 	}
+}
+
+// ============================================================
+// G4: bbolt backend for the contribution ledger
+// ============================================================
+
+// ledgerIdentity 是 meta/identity 的值：节点身份 + seq（含 ed25519 私钥）。
+// 字段名与 gossipLedgerData 的 peer_id/seq/pub_key/priv_key 对齐。
+type ledgerIdentity struct {
+	PeerID  string             `json:"peer_id"`
+	Seq     uint64             `json:"seq"`
+	PubKey  ed25519.PublicKey  `json:"pub_key"`
+	PrivKey ed25519.PrivateKey `json:"priv_key"`
+}
+
+type bboltKV struct {
+	k string
+	v []byte
+}
+
+// marshalLedgerKeyLocked 从内存序列化单个 key。调用方必须持有 g.mu（读即可）。
+func (g *GossipLedger) marshalLedgerKeyLocked(key string) ([]byte, error) {
+	switch {
+	case key == bboltLedgerIdentityKey:
+		return json.Marshal(ledgerIdentity{
+			PeerID:  g.peerID,
+			Seq:     g.seq,
+			PubKey:  g.pub,
+			PrivKey: g.priv,
+		})
+	case strings.HasPrefix(key, bboltLedgerContribPrefix):
+		if r := g.recs[strings.TrimPrefix(key, bboltLedgerContribPrefix)]; r != nil {
+			return json.Marshal(r)
+		}
+	case strings.HasPrefix(key, bboltLedgerTrustPrefix):
+		if r := g.trusts[strings.TrimPrefix(key, bboltLedgerTrustPrefix)]; r != nil {
+			return json.Marshal(r)
+		}
+	case strings.HasPrefix(key, bboltLedgerClaimPrefix):
+		if r := g.claims[strings.TrimPrefix(key, bboltLedgerClaimPrefix)]; r != nil {
+			return json.Marshal(r)
+		}
+	case strings.HasPrefix(key, bboltLedgerPenaltyPrefix):
+		if r := g.penalties[strings.TrimPrefix(key, bboltLedgerPenaltyPrefix)]; r != nil {
+			return json.Marshal(r)
+		}
+	case strings.HasPrefix(key, bboltLedgerTxPrefix):
+		if t := g.txIndex[strings.TrimPrefix(key, bboltLedgerTxPrefix)]; t != nil {
+			return json.Marshal(t)
+		}
+	}
+	return nil, fmt.Errorf("ledger bbolt: dirty key not found in memory: %s", key)
+}
+
+// serializeKeysLocked 批量序列化。调用方必须持有 g.mu（读即可）。
+func (g *GossipLedger) serializeKeysLocked(keys []string) ([]bboltKV, error) {
+	puts := make([]bboltKV, 0, len(keys))
+	for _, k := range keys {
+		v, err := g.marshalLedgerKeyLocked(k)
+		if err != nil {
+			return nil, err
+		}
+		puts = append(puts, bboltKV{k: k, v: v})
+	}
+	return puts, nil
+}
+
+// putKVsBbolt 在单个写事务内批量 Put。
+func putKVsBbolt(h *bboltHandle, puts []bboltKV) error {
+	return h.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bboltBucketLedger))
+		for _, p := range puts {
+			if err := b.Put([]byte(p.k), p.v); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// saveBbolt 将脏 key 以单事务批量写入。换出（swap）语义：序列化前把 dirty
+// 集合换成空 map，期间新标记的 key 留在新集合里由下次 flush 写入；
+// 事务失败则把换出的 key 合并回去重试。
+func (g *GossipLedger) saveBbolt(h *bboltHandle) error {
+	g.mu.Lock()
+	if len(g.dirty) == 0 {
+		g.mu.Unlock()
+		return nil
+	}
+	keys := make([]string, 0, len(g.dirty))
+	for k := range g.dirty {
+		keys = append(keys, k)
+	}
+	pending := g.dirty
+	g.dirty = make(map[string]struct{})
+	puts, err := g.serializeKeysLocked(keys)
+	g.mu.Unlock()
+	if err != nil {
+		g.mu.Lock()
+		for k := range pending {
+			g.dirty[k] = struct{}{}
+		}
+		g.mu.Unlock()
+		return err
+	}
+	if err := putKVsBbolt(h, puts); err != nil {
+		g.mu.Lock()
+		for k := range pending {
+			g.dirty[k] = struct{}{}
+		}
+		g.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+// writeAllBbolt 全量写入（迁移用）：单事务。
+func (g *GossipLedger) writeAllBbolt(h *bboltHandle) error {
+	g.mu.RLock()
+	keys := make([]string, 0, len(g.recs)+len(g.trusts)+len(g.claims)+len(g.penalties)+len(g.txs)+1)
+	keys = append(keys, bboltLedgerIdentityKey)
+	for id := range g.recs {
+		keys = append(keys, bboltLedgerContribPrefix+id)
+	}
+	for id := range g.trusts {
+		keys = append(keys, bboltLedgerTrustPrefix+id)
+	}
+	for id := range g.claims {
+		keys = append(keys, bboltLedgerClaimPrefix+id)
+	}
+	for id := range g.penalties {
+		keys = append(keys, bboltLedgerPenaltyPrefix+id)
+	}
+	for _, tx := range g.txs {
+		keys = append(keys, bboltLedgerTxPrefix+tx.ID)
+	}
+	puts, err := g.serializeKeysLocked(keys)
+	g.mu.RUnlock()
+	if err != nil {
+		return err
+	}
+	return putKVsBbolt(h, puts)
+}
+
+// loadLedgerBbolt 从 bbolt 重建账本。dailyContrib 与 JSON 路径一致，由 txs 重建。
+func loadLedgerBbolt(h *bboltHandle) (*GossipLedger, error) {
+	g := &GossipLedger{
+		hashStore:    NewContentHashStore(),
+		recs:         make(map[string]*ContributionRecord),
+		trusts:       make(map[string]*TrustRecord),
+		claims:       make(map[string]*CapabilityClaim),
+		penalties:    make(map[string]*PenaltyRecord),
+		txIndex:      make(map[string]*SignedTransaction),
+		dailyContrib: make(map[string]int64),
+		dirty:        make(map[string]struct{}),
+	}
+	var ident *ledgerIdentity
+	err := h.db.View(func(tx *bolt.Tx) error {
+		c := tx.Bucket([]byte(bboltBucketLedger)).Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			key := string(k)
+			switch {
+			case key == bboltLedgerIdentityKey:
+				var id ledgerIdentity
+				if err := json.Unmarshal(v, &id); err != nil {
+					return fmt.Errorf("unmarshal ledger identity: %w", err)
+				}
+				ident = &id
+			case strings.HasPrefix(key, bboltLedgerContribPrefix):
+				var r ContributionRecord
+				if err := json.Unmarshal(v, &r); err != nil {
+					slog.Warn("skip corrupt contrib record", "key", key)
+					continue
+				}
+				g.recs[r.ID] = &r
+			case strings.HasPrefix(key, bboltLedgerTrustPrefix):
+				var r TrustRecord
+				if err := json.Unmarshal(v, &r); err != nil {
+					slog.Warn("skip corrupt trust record", "key", key)
+					continue
+				}
+				g.trusts[r.ID] = &r
+			case strings.HasPrefix(key, bboltLedgerClaimPrefix):
+				var r CapabilityClaim
+				if err := json.Unmarshal(v, &r); err != nil {
+					slog.Warn("skip corrupt claim record", "key", key)
+					continue
+				}
+				g.claims[r.ID] = &r
+			case strings.HasPrefix(key, bboltLedgerPenaltyPrefix):
+				var r PenaltyRecord
+				if err := json.Unmarshal(v, &r); err != nil {
+					slog.Warn("skip corrupt penalty record", "key", key)
+					continue
+				}
+				g.penalties[r.ID] = &r
+			case strings.HasPrefix(key, bboltLedgerTxPrefix):
+				var t SignedTransaction
+				if err := json.Unmarshal(v, &t); err != nil {
+					slog.Warn("skip corrupt tx record", "key", key)
+					continue
+				}
+				tc := t
+				g.txs = append(g.txs, &tc)
+				g.txIndex[tc.ID] = &tc
+				if tc.Type == "contribution" {
+					g.dailyContrib[dailyKey(tc.NodeID, tc.Timestamp)] += tc.Amount
+				}
+			default:
+				slog.Warn("unknown ledger bbolt key", "key", key)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if ident == nil {
+		return nil, fmt.Errorf("ledger bbolt: identity key missing")
+	}
+	g.peerID = ident.PeerID
+	g.seq = ident.Seq
+	g.pub = ident.PubKey
+	g.priv = ident.PrivKey
+	return g, nil
+}
+
+// importLedgerToBbolt 执行 JSON→bbolt 一次性迁移：复用 LoadGossipLedger，
+// 单事务全量写入，打标记，原文件 rename 为 .bak。幂等。
+func importLedgerToBbolt(h *bboltHandle, selfID, dataDir string) (*GossipLedger, error) {
+	const domain = "ledger"
+	jsonPath := filepath.Join(dataDir, "ledger.json")
+	if h.isMigrated(domain) {
+		if err := bakJSON(jsonPath); err != nil {
+			return nil, err
+		}
+		g, err := loadLedgerBbolt(h)
+		if err != nil {
+			return nil, err
+		}
+		g.bbolt = h
+		return g, nil
+	}
+	var g *GossipLedger
+	if _, err := os.Stat(jsonPath); err == nil {
+		gl, loadErr := LoadGossipLedger(jsonPath)
+		if loadErr != nil {
+			// 损坏的 JSON：建新账本（与旧逻辑"损坏则重建"一致），坏文件 bak 留证。
+			slog.Warn("ledger json corrupt, creating new ledger in bbolt", "error", loadErr)
+			gl, err = NewGossipLedger(selfID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		g = gl
+	} else {
+		gl, err := NewGossipLedger(selfID)
+		if err != nil {
+			return nil, err
+		}
+		g = gl
+	}
+	if err := g.writeAllBbolt(h); err != nil {
+		return nil, err
+	}
+	if err := h.markMigrated(domain); err != nil {
+		return nil, err
+	}
+	if err := bakJSON(jsonPath); err != nil {
+		return nil, err
+	}
+	g.bbolt = h
+	return g, nil
 }

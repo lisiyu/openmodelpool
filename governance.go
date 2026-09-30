@@ -8,9 +8,26 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
+
+// G4: 句柄归实例所有（g.bbolt），避免包级全局在测试间泄漏。
+
+// bboltGovKey 是 governance bucket 内快照的 key（小而冷，整体存取）。
+const bboltGovKey = "snapshot"
+
+// govLedgerSnapshot 是 governance.json / bbolt 值的统一形状。
+type govLedgerSnapshot struct {
+	Proposals     []*GovernanceProposal    `json:"proposals"`
+	Ratifications []GovernanceRatification `json:"ratifications"`
+	LastPHash     string                   `json:"last_proposal_hash"`
+	LastRHash     string                   `json:"last_ratification_hash"`
+	Seq           int64                    `json:"seq"`
+}
 
 // ============================================================
 // Community co-governance (P2-1) — lightweight, trust-through-audit, with
@@ -85,6 +102,7 @@ type GovernanceLedger struct {
 	lastPHash     string
 	lastRHash     string
 	dataPath      string
+	bbolt         *bboltHandle // G4: bbolt 后端句柄，nil 则走 JSON
 
 	// Effective curation rosters (P2-1(iv), option C). Populated ONLY from
 	// RATIFIED proposals of type admit_node / allow_model. These are additive
@@ -109,7 +127,22 @@ func NewGovernanceLedger(selfID string, voters VoterSource, dataPath string) *Go
 		openByProp:    make(map[string]int),
 		dataPath:      dataPath,
 	}
-	g.load()
+	// G4: bbolt 后端。open/import 失败则降级走 JSON。
+	if storageUseBbolt() && dataPath != "" {
+		if h, err := openBbolt(filepath.Dir(dataPath)); err == nil {
+			if err := g.importToBbolt(h); err != nil {
+				slog.Warn("governance bbolt import failed, falling back to JSON", "error", err)
+				g.load()
+			} else {
+				g.loadBbolt(h)
+			}
+		} else {
+			slog.Warn("bbolt open failed, governance using JSON backend", "error", err)
+			g.load()
+		}
+	} else {
+		g.load()
+	}
 	return g
 }
 
@@ -453,19 +486,26 @@ func (g *GovernanceLedger) saveLocked() {
 	if g.dataPath == "" {
 		return
 	}
-	snap := struct {
-		Proposals     []*GovernanceProposal    `json:"proposals"`
-		Ratifications []byte                   `json:"-"`
-		Rats          []GovernanceRatification `json:"ratifications"`
-		LastPHash     string                   `json:"last_proposal_hash"`
-		LastRHash     string                   `json:"last_ratification_hash"`
-		Seq           int64                    `json:"seq"`
-	}{
-		Proposals: g.proposalList,
-		Rats:      g.ratifications,
-		LastPHash: g.lastPHash,
-		LastRHash: g.lastRHash,
-		Seq:       g.proposalSeq,
+	snap := govLedgerSnapshot{
+		Proposals:     g.proposalList,
+		Ratifications: g.ratifications,
+		LastPHash:     g.lastPHash,
+		LastRHash:     g.lastRHash,
+		Seq:           g.proposalSeq,
+	}
+	// G4: bbolt 后端走单 key Put（调用方已持有 g.mu）。
+	if h := g.bbolt; h != nil {
+		b, err := json.Marshal(snap)
+		if err != nil {
+			slog.Error("governance ledger marshal failed", "path", g.dataPath, "error", err)
+			return
+		}
+		if err := h.db.Update(func(tx *bolt.Tx) error {
+			return tx.Bucket([]byte(bboltBucketGovernance)).Put([]byte(bboltGovKey), b)
+		}); err != nil {
+			slog.Error("governance ledger bbolt save failed", "error", err)
+		}
+		return
 	}
 	b, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
@@ -489,16 +529,16 @@ func (g *GovernanceLedger) load() {
 	if err != nil {
 		return
 	}
-	var snap struct {
-		Proposals     []*GovernanceProposal    `json:"proposals"`
-		Ratifications []GovernanceRatification `json:"ratifications"`
-		LastPHash     string                   `json:"last_proposal_hash"`
-		LastRHash     string                   `json:"last_ratification_hash"`
-		Seq           int64                    `json:"seq"`
-	}
+	var snap govLedgerSnapshot
 	if err := json.Unmarshal(b, &snap); err != nil {
 		return
 	}
+	g.applySnapshot(snap)
+}
+
+// applySnapshot 将快照载入内存并重建索引。调用方须保证单线程
+// （init/load 路径）或已持有 g.mu。
+func (g *GovernanceLedger) applySnapshot(snap govLedgerSnapshot) {
 	g.proposalList = snap.Proposals
 	g.ratifications = snap.Ratifications
 	g.lastPHash = snap.LastPHash
@@ -608,4 +648,64 @@ func handleGovernanceProposals(w http.ResponseWriter, r *http.Request) {
 		"admitted_nodes": governanceLedger.AdmittedNodes(),
 		"allowed_models": governanceLedger.AllowedModels(),
 	})
+}
+
+// ============================================================
+// G4: bbolt backend for governance
+// ============================================================
+
+// loadBbolt 从 bbolt 恢复快照并重建索引。
+func (g *GovernanceLedger) loadBbolt(h *bboltHandle) {
+	var raw []byte
+	_ = h.db.View(func(tx *bolt.Tx) error {
+		v := bboltGet(tx.Bucket([]byte(bboltBucketGovernance)), bboltGovKey)
+		if v != nil {
+			raw = append([]byte(nil), v...)
+		}
+		return nil
+	})
+	if raw == nil {
+		return // 全新节点，保持空状态
+	}
+	var snap govLedgerSnapshot
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		slog.Error("failed to unmarshal governance from bbolt", "error", err)
+		return
+	}
+	g.applySnapshot(snap)
+}
+
+// importToBbolt 执行 JSON→bbolt 一次性迁移：复用 load()，快照整体写入，
+// 打标记，原文件 rename 为 .bak。幂等。
+func (g *GovernanceLedger) importToBbolt(h *bboltHandle) error {
+	const domain = "governance"
+	if h.isMigrated(domain) {
+		if err := bakJSON(g.dataPath); err != nil {
+			return err
+		}
+		g.bbolt = h
+		return nil
+	}
+	g.load() // 复用现有解析；损坏/不存在则保持空状态（与旧行为一致）
+	snap := govLedgerSnapshot{
+		Proposals:     g.proposalList,
+		Ratifications: g.ratifications,
+		LastPHash:     g.lastPHash,
+		LastRHash:     g.lastRHash,
+		Seq:           g.proposalSeq,
+	}
+	data, err := json.Marshal(snap)
+	if err != nil {
+		return err
+	}
+	if err := h.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket([]byte(bboltBucketGovernance)).Put([]byte(bboltGovKey), data)
+	}); err != nil {
+		return err
+	}
+	if err := h.markMigrated(domain); err != nil {
+		return err
+	}
+	g.bbolt = h
+	return bakJSON(g.dataPath)
 }

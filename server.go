@@ -177,6 +177,7 @@ func gracefulShutdown(server *http.Server) {
 			}
 			saveContributionLedger()
 			flushContributionLedger() // PERF-P1-4: final synchronous ledger flush before exit
+			closeAllBbolt()           // G4: close bbolt DB handles before exit
 			// PERF-P1-5: stop the ledger reconcile loop + replication workers.
 			if ledgerReconcileStop != nil {
 				select {

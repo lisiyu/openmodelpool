@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 // ============================================================
@@ -42,6 +44,7 @@ type AllocationManager struct {
 	dataDir    string
 	usedGuest  int64 // tokens used via Guest Keys this period
 	usedPublic int64 // tokens used via Public Keys this period
+	bbolt      *bboltHandle
 }
 
 func initAllocationManager(dataDir string) {
@@ -49,7 +52,22 @@ func initAllocationManager(dataDir string) {
 		config:  DefaultQuotaAllocation(),
 		dataDir: dataDir,
 	}
-	allocMgr.load()
+	if storageUseBbolt() {
+		// G4: bbolt 后端。open 失败则降级走 JSON，保证启动不中断。
+		if h, err := openBbolt(dataDir); err == nil {
+			if err := allocMgr.importToBbolt(h); err != nil {
+				slog.Warn("quota allocation bbolt import failed, falling back to JSON", "error", err)
+				allocMgr.load()
+			} else {
+				allocMgr.loadBbolt(h)
+			}
+		} else {
+			slog.Warn("bbolt open failed, quota allocation using JSON backend", "error", err)
+			allocMgr.load()
+		}
+	} else {
+		allocMgr.load()
+	}
 	slog.Info("allocation manager initialized",
 		"guest_key_percent", allocMgr.config.GuestKeyPercent,
 		"public_key_percent", allocMgr.config.PublicKeyPercent)
@@ -104,6 +122,13 @@ func (am *AllocationManager) GetUsageStats() map[string]any {
 // ============================================================
 
 func (am *AllocationManager) save() {
+	// G4: bbolt 后端走单 key Put。
+	if am.bbolt != nil {
+		if err := am.saveBbolt(am.bbolt); err != nil {
+			slog.Error("failed to write quota allocation to bbolt", "error", err)
+		}
+		return
+	}
 	path := filepath.Join(am.dataDir, "quota_allocation.json")
 	am.mu.RLock()
 	data, err := json.MarshalIndent(am.config, "", "  ")
@@ -168,4 +193,75 @@ func (am *AllocationManager) load() {
 	}
 	config.PublicKeyPercent = 100 - config.GuestKeyPercent
 	am.config = config
+}
+
+// ============================================================
+// G4: bbolt backend for quota_allocation
+// ============================================================
+
+// bboltQuotaAllocKey 是 quota bucket 内配额分配的 key（整体小 JSON）。
+const bboltQuotaAllocKey = "allocation"
+
+// saveBbolt 将当前 config 以单 key 写入 bbolt（调用方已持有业务锁语义：
+// save() 内 RLock 快照，与 JSON 路径一致）。
+func (am *AllocationManager) saveBbolt(h *bboltHandle) error {
+	am.mu.RLock()
+	data, err := json.Marshal(am.config)
+	am.mu.RUnlock()
+	if err != nil {
+		return err
+	}
+	return h.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket([]byte(bboltBucketQuota)).Put([]byte(bboltQuotaAllocKey), data)
+	})
+}
+
+// loadBbolt 从 bbolt 恢复 config；key 缺失或损坏时保留 Default（与 load 一致）。
+func (am *AllocationManager) loadBbolt(h *bboltHandle) {
+	var raw []byte
+	_ = h.db.View(func(tx *bolt.Tx) error {
+		v := bboltGet(tx.Bucket([]byte(bboltBucketQuota)), bboltQuotaAllocKey)
+		if v != nil {
+			raw = append([]byte(nil), v...)
+		}
+		return nil
+	})
+	if raw == nil {
+		return
+	}
+	var config QuotaAllocation
+	if err := json.Unmarshal(raw, &config); err != nil {
+		slog.Error("failed to unmarshal quota allocation from bbolt", "error", err)
+		return
+	}
+	if config.GuestKeyPercent < 0 || config.GuestKeyPercent > 100 {
+		config = DefaultQuotaAllocation()
+	}
+	config.PublicKeyPercent = 100 - config.GuestKeyPercent
+	am.config = config
+}
+
+// importToBbolt 执行 JSON→bbolt 一次性迁移：复用 load()（含 v3 兼容），
+// 写 bbolt，打标记，原文件 rename 为 .bak。幂等。
+func (am *AllocationManager) importToBbolt(h *bboltHandle) error {
+	const domain = "quota_alloc"
+	jsonPath := filepath.Join(am.dataDir, "quota_allocation.json")
+	if h.isMigrated(domain) {
+		if err := bakJSON(jsonPath); err != nil {
+			return err
+		}
+		am.bbolt = h
+		return nil
+	}
+	if _, err := os.Stat(jsonPath); err == nil {
+		am.load() // 复用现有解析逻辑
+	}
+	if err := am.saveBbolt(h); err != nil {
+		return err
+	}
+	if err := h.markMigrated(domain); err != nil {
+		return err
+	}
+	am.bbolt = h
+	return bakJSON(jsonPath)
 }

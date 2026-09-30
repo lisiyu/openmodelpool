@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -16,12 +17,61 @@ import (
 var contributionLedger *GossipLedger
 var capabilityVerifier *CapabilityVerifier
 
+// ledgerDataDir 是账本 JSON 路径的 dataDir（修掉原来硬编码 "data/ledger.json"）。
+var ledgerDataDir = "data"
+
 func initContributionLedger(dataDir string) {
 	selfID := "unknown"
 	if node != nil {
 		selfID = node.NodeID()
 	}
+	ledgerDataDir = dataDir
 
+	// G4: bbolt 后端。open/import 失败则降级走 JSON，保证启动不中断。
+	if storageUseBbolt() {
+		if h, err := openBbolt(dataDir); err == nil {
+			if gl, err := importLedgerToBbolt(h, selfID, dataDir); err == nil {
+				contributionLedger = gl
+				slog.Info("contribution ledger loaded from bbolt",
+					"peer_id", gl.PeerID(), "records", gl.Count())
+			} else {
+				slog.Warn("ledger bbolt import failed, falling back to JSON", "error", err)
+				closeBbolt(dataDir)
+				initContributionLedgerJSON(dataDir, selfID)
+			}
+		} else {
+			slog.Warn("bbolt open failed, ledger using JSON backend", "error", err)
+			initContributionLedgerJSON(dataDir, selfID)
+		}
+	} else {
+		initContributionLedgerJSON(dataDir, selfID)
+	}
+
+	// P1-3(ii): wire the cross-node ledger replicator (nil-safe elsewhere).
+	ledgerReplicator = NewLedgerReplicator(contributionLedger, selfID)
+	// P1-3(iii): background loop that keeps federation ledgers consistent.
+	startLedgerReconcileLoop()
+	// P2-1: co-governance ledger — contributors govern; lightweight, no
+	// penalties. Voters = nodes that have contributed compute to the commons.
+	governanceLedger = NewGovernanceLedger(selfID, contributorsVoterSource, dataDir+"/governance.json")
+	// P2-3(i): accrue each donor's public-welfare free-quota entitlement.
+	contribQuotaTracker = initContributionQuotaTracker(dataDir)
+
+	capabilityVerifier = NewCapabilityVerifier(realProbeFn, 3)
+	go capabilityVerifier.ProbeSchedulerLoop()
+	slog.Info("capability verifier initialized")
+
+	// Phase 2 (PRD-phase1.md §Q5): trust-pool capability-claim probe
+	// verification with false-claim defense. The loop self-gates on network
+	// mode + config every tick, so it stays dormant in personal mode.
+	startPeerCapabilityProber()
+
+	initTicketStore()
+	go notarizeLoop()
+}
+
+// initContributionLedgerJSON 是 JSON 后端（及 bbolt 降级）的账本初始化。
+func initContributionLedgerJSON(dataDir, selfID string) {
 	ledgerPath := dataDir + "/ledger.json"
 	loaded := false
 	if _, err := os.Stat(ledgerPath); err == nil {
@@ -48,28 +98,6 @@ func initContributionLedger(dataDir string) {
 		}
 		slog.Info("contribution ledger initialized", "peer_id", selfID)
 	}
-
-	// P1-3(ii): wire the cross-node ledger replicator (nil-safe elsewhere).
-	ledgerReplicator = NewLedgerReplicator(contributionLedger, selfID)
-	// P1-3(iii): background loop that keeps federation ledgers consistent.
-	startLedgerReconcileLoop()
-	// P2-1: co-governance ledger — contributors govern; lightweight, no
-	// penalties. Voters = nodes that have contributed compute to the commons.
-	governanceLedger = NewGovernanceLedger(selfID, contributorsVoterSource, dataDir+"/governance.json")
-	// P2-3(i): accrue each donor's public-welfare free-quota entitlement.
-	contribQuotaTracker = initContributionQuotaTracker(dataDir)
-
-	capabilityVerifier = NewCapabilityVerifier(realProbeFn, 3)
-	go capabilityVerifier.ProbeSchedulerLoop()
-	slog.Info("capability verifier initialized")
-
-	// Phase 2 (PRD-phase1.md §Q5): trust-pool capability-claim probe
-	// verification with false-claim defense. The loop self-gates on network
-	// mode + config every tick, so it stays dormant in personal mode.
-	startPeerCapabilityProber()
-
-	initTicketStore()
-	go notarizeLoop()
 }
 
 // saveContributionLedgerDebounce is the coalescing window for ledger writes
@@ -95,14 +123,27 @@ func saveContributionLedger() {
 			ledgerSaveMu.Lock()
 			ledgerSaveTimer = nil
 			ledgerSaveMu.Unlock()
-			if contributionLedger != nil {
-				if err := contributionLedger.Save("data/ledger.json"); err != nil {
-					slog.Warn("failed to save contribution ledger", "error", err)
-				}
-			}
+			persistContributionLedger()
 		})
 	}
 	ledgerSaveMu.Unlock()
+}
+
+// persistContributionLedger 同步落盘一次：bbolt 模式走脏 key 批量 Put，
+// JSON 模式走全量原子写（路径用 ledgerDataDir，不再硬编码）。
+func persistContributionLedger() {
+	if contributionLedger == nil {
+		return
+	}
+	if h := contributionLedger.bbolt; h != nil {
+		if err := contributionLedger.saveBbolt(h); err != nil {
+			slog.Warn("failed to save contribution ledger to bbolt", "error", err)
+		}
+		return
+	}
+	if err := contributionLedger.Save(filepath.Join(ledgerDataDir, "ledger.json")); err != nil {
+		slog.Warn("failed to save contribution ledger", "error", err)
+	}
 }
 
 // flushContributionLedger synchronously persists any pending ledger changes
@@ -117,9 +158,7 @@ func flushContributionLedger() {
 		ledgerSaveTimer = nil
 	}
 	ledgerSaveMu.Unlock()
-	if err := contributionLedger.Save("data/ledger.json"); err != nil {
-		slog.Warn("failed to save contribution ledger", "error", err)
-	}
+	persistContributionLedger()
 }
 
 // realProbeFn sends a 1-token test request to a remote node to verify

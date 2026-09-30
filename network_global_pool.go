@@ -13,7 +13,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
+
+// G4: 句柄归实例所有（gp.bbolt），避免包级全局在测试间泄漏。
+
+// bboltGPoolKey 是 quota bucket 内全局池快照的 key（整体存取）。
+const bboltGPoolKey = "gpool"
 
 // ============================================================
 // Phase 4: Global Computing Pool
@@ -62,6 +69,8 @@ type GlobalPool struct {
 	// Metadata
 	LastUpdated time.Time `json:"last_updated"`
 	dataPath    string
+	// G4: bbolt 后端句柄，nil 则走 JSON。归实例所有，避免包级全局在测试间泄漏。
+	bbolt *bboltHandle
 }
 
 // ============================================================
@@ -93,7 +102,22 @@ func initGlobalPool(dataDir string) {
 		ParticipantNodes:  make([]GlobalPoolNode, 0),
 		dataPath:          filepath.Join(dataDir, "global_pool.json"),
 	}
-	globalPool.load()
+	// G4: bbolt 后端。open/import 失败则降级走 JSON。
+	if storageUseBbolt() {
+		if h, err := openBbolt(dataDir); err == nil {
+			if err := globalPool.importToBbolt(h); err != nil {
+				slog.Warn("global pool bbolt import failed, falling back to JSON", "error", err)
+				globalPool.load()
+			} else {
+				globalPool.loadBbolt(h)
+			}
+		} else {
+			slog.Warn("bbolt open failed, global pool using JSON backend", "error", err)
+			globalPool.load()
+		}
+	} else {
+		globalPool.load()
+	}
 	go globalPool.refreshLoop()
 	slog.Info("global pool initialized",
 		"participants", len(globalPool.ParticipantNodes),
@@ -127,6 +151,11 @@ func (gp *GlobalPool) load() {
 	}
 	gp.mu.Lock()
 	defer gp.mu.Unlock()
+	gp.applyStore(store)
+}
+
+// applyStore 将快照载入内存。调用方必须持有 gp.mu 写锁。
+func (gp *GlobalPool) applyStore(store globalPoolStore) {
 	gp.TotalContributed = store.TotalContributed
 	gp.TotalConsumed = store.TotalConsumed
 	gp.AvailableQuota = store.AvailableQuota
@@ -178,8 +207,17 @@ func (gp *GlobalPool) snapshotStore() globalPoolStore {
 
 // writeStore marshals and atomically writes a previously taken snapshot.
 // It performs disk I/O and must be called without holding gp.mu (B9-8).
+// G4: bbolt 模式走单 key Put。
 func (gp *GlobalPool) writeStore(store globalPoolStore) {
 	b, _ := json.MarshalIndent(store, "", "  ")
+	if h := gp.bbolt; h != nil {
+		if err := h.db.Update(func(tx *bolt.Tx) error {
+			return tx.Bucket([]byte(bboltBucketQuota)).Put([]byte(bboltGPoolKey), b)
+		}); err != nil {
+			slog.Error("failed to write global pool to bbolt", "error", err)
+		}
+		return
+	}
 	if err := os.MkdirAll(filepath.Dir(gp.dataPath), 0700); err != nil {
 		slog.Error("failed to create data directory", "error", err)
 	}
@@ -1253,4 +1291,62 @@ func handlePublicKeyQuotaStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, publicQuota.GetQuotaStatus())
+}
+
+// ============================================================
+// G4: bbolt backend for global_pool
+// ============================================================
+
+// loadBbolt 从 bbolt 恢复全局池快照。
+func (gp *GlobalPool) loadBbolt(h *bboltHandle) {
+	var raw []byte
+	_ = h.db.View(func(tx *bolt.Tx) error {
+		v := bboltGet(tx.Bucket([]byte(bboltBucketQuota)), bboltGPoolKey)
+		if v != nil {
+			raw = append([]byte(nil), v...)
+		}
+		return nil
+	})
+	if raw == nil {
+		return // 全新节点，保持空状态
+	}
+	var store globalPoolStore
+	if err := json.Unmarshal(raw, &store); err != nil {
+		slog.Warn("global pool bbolt load failed", "error", err)
+		return
+	}
+	gp.mu.Lock()
+	defer gp.mu.Unlock()
+	gp.applyStore(store)
+}
+
+// importToBbolt 执行 JSON→bbolt 一次性迁移：复用 load()，快照整体写入，
+// 打标记，原文件 rename 为 .bak。幂等。
+func (gp *GlobalPool) importToBbolt(h *bboltHandle) error {
+	const domain = "global_pool"
+	if h.isMigrated(domain) {
+		if err := bakJSON(gp.dataPath); err != nil {
+			return err
+		}
+		gp.bbolt = h
+		return nil
+	}
+	gp.load() // 复用现有解析；损坏/不存在则保持空状态（与旧行为一致）
+	gp.mu.RLock()
+	store := gp.snapshotStore()
+	gp.mu.RUnlock()
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := h.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket([]byte(bboltBucketQuota)).Put([]byte(bboltGPoolKey), data)
+	}); err != nil {
+		return err
+	}
+	if err := h.markMigrated(domain); err != nil {
+		return err
+	}
+	gp.bbolt = h
+	return bakJSON(gp.dataPath)
 }

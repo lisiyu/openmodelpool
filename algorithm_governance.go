@@ -2,13 +2,22 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"path/filepath"
 	"sort"
 	"sync"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
+
+// G4 决策 4：bbolt 内不保留逐值 HMAC 信封，存裸 JSON，完整性由 DB 自身
+// 校验 + 文件 0600 保证。句柄归实例所有（g.bbolt），避免包级全局在测试间泄漏。
+
+// bboltAlgoGovKey 是 algo_gov bucket 内快照的 key（小而冷，整体存取）。
+const bboltAlgoGovKey = "snapshot"
 
 // ===========================================================================
 // G3: Algorithm governance / voting (node-local, real persistence)
@@ -133,6 +142,7 @@ type AlgorithmGovernor struct {
 	proposals map[string]*AlgorithmProposal
 	history   []GovernanceEvent
 	dataDir   string
+	bbolt     *bboltHandle
 }
 
 const algorithmGovernanceFile = "algorithm_proposals.json"
@@ -147,7 +157,22 @@ func initAlgorithmGovernance(dataDir string) {
 		dataDir:   dataDir,
 	}
 	governor = g
-	g.Load()
+	// G4: bbolt 后端。open/import 失败则降级走 JSON。
+	if storageUseBbolt() {
+		if h, err := openBbolt(dataDir); err == nil {
+			if err := g.importToBbolt(h); err != nil {
+				slog.Warn("algorithm governance bbolt import failed, falling back to JSON", "error", err)
+				g.Load()
+			} else {
+				g.loadBbolt(h)
+			}
+		} else {
+			slog.Warn("bbolt open failed, algorithm governance using JSON backend", "error", err)
+			g.Load()
+		}
+	} else {
+		g.Load()
+	}
 	slog.Info("algorithm governance initialized (node-local)", "data_dir", dataDir, "scope", GovernanceScope)
 }
 
@@ -177,6 +202,20 @@ func (g *AlgorithmGovernor) persistLocked() {
 	}
 	for _, p := range g.proposals {
 		snap.Proposals = append(snap.Proposals, *p)
+	}
+	// G4: bbolt 模式存裸 JSON（决策 4：无 HMAC 信封），完整性由 DB + 0600 保证。
+	if h := g.bbolt; h != nil {
+		data, err := json.Marshal(snap)
+		if err != nil {
+			slog.Error("failed to marshal algorithm governance", "error", err)
+			return
+		}
+		if err := h.db.Update(func(tx *bolt.Tx) error {
+			return tx.Bucket([]byte(bboltBucketAlgoGov)).Put([]byte(bboltAlgoGovKey), data)
+		}); err != nil {
+			slog.Error("failed to persist algorithm governance to bbolt", "error", err)
+		}
+		return
 	}
 	path := filepath.Join(g.dataDir, algorithmGovernanceFile)
 	if err := saveWithIntegrity(path, snap); err != nil {
@@ -442,4 +481,75 @@ func trimSpace(s string) string {
 		end--
 	}
 	return s[start:end]
+}
+
+// ============================================================
+// G4: bbolt backend for algorithm_proposals
+// ============================================================
+
+// loadBbolt 从 bbolt 恢复 proposals + history。G4 决策 4：bbolt 内为裸 JSON
+// （无 HMAC 信封），完整性由 DB 自身校验 + 文件 0600 保证。
+func (g *AlgorithmGovernor) loadBbolt(h *bboltHandle) {
+	var raw []byte
+	_ = h.db.View(func(tx *bolt.Tx) error {
+		v := bboltGet(tx.Bucket([]byte(bboltBucketAlgoGov)), bboltAlgoGovKey)
+		if v != nil {
+			raw = append([]byte(nil), v...)
+		}
+		return nil
+	})
+	if raw == nil {
+		return // 全新节点，保持空状态
+	}
+	var snap governanceSnapshot
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		slog.Error("failed to unmarshal algorithm governance from bbolt", "error", err)
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.proposals = make(map[string]*AlgorithmProposal, len(snap.Proposals))
+	for i := range snap.Proposals {
+		p := snap.Proposals[i]
+		g.proposals[p.ID] = &p
+	}
+	g.history = snap.History
+}
+
+// importToBbolt 执行 JSON→bbolt 一次性迁移：复用 Load()（含 HMAC 校验），
+// 快照整体写入，打标记，原文件 rename 为 .bak。幂等。
+func (g *AlgorithmGovernor) importToBbolt(h *bboltHandle) error {
+	const domain = "algo_gov"
+	jsonPath := filepath.Join(g.dataDir, algorithmGovernanceFile)
+	if h.isMigrated(domain) {
+		if err := bakJSON(jsonPath); err != nil {
+			return err
+		}
+		g.bbolt = h
+		return nil
+	}
+	g.Load() // 复用现有 HMAC 校验加载；损坏/不存在则保持空状态（与旧行为一致）
+	g.mu.RLock()
+	snap := governanceSnapshot{
+		Proposals: make([]AlgorithmProposal, 0, len(g.proposals)),
+		History:   g.history,
+	}
+	for _, p := range g.proposals {
+		snap.Proposals = append(snap.Proposals, *p)
+	}
+	g.mu.RUnlock()
+	data, err := json.Marshal(snap)
+	if err != nil {
+		return err
+	}
+	if err := h.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket([]byte(bboltBucketAlgoGov)).Put([]byte(bboltAlgoGovKey), data)
+	}); err != nil {
+		return err
+	}
+	if err := h.markMigrated(domain); err != nil {
+		return err
+	}
+	g.bbolt = h
+	return bakJSON(jsonPath)
 }

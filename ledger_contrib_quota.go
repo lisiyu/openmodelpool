@@ -9,6 +9,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 // ============================================================
@@ -55,6 +57,7 @@ type ContributionQuotaTracker struct {
 	mu      sync.RWMutex
 	dataDir string
 	entries map[string]*ContributionQuota
+	bbolt   *bboltHandle // G4: 句柄归实例所有，避免包级全局在测试间泄漏
 }
 
 // contribQuotaTracker is the process-wide instance (nil until init).
@@ -66,7 +69,22 @@ func initContributionQuotaTracker(dataDir string) *ContributionQuotaTracker {
 		dataDir: dataDir,
 		entries: make(map[string]*ContributionQuota),
 	}
-	t.load()
+	// G4: bbolt 后端。open/import 失败则降级走 JSON。
+	if storageUseBbolt() {
+		if h, err := openBbolt(dataDir); err == nil {
+			if err := t.importToBbolt(h); err != nil {
+				slog.Warn("contribution quota bbolt import failed, falling back to JSON", "error", err)
+				t.load()
+			} else {
+				t.loadBbolt(h)
+			}
+		} else {
+			slog.Warn("bbolt open failed, contribution quota using JSON backend", "error", err)
+			t.load()
+		}
+	} else {
+		t.load()
+	}
 	slog.Info("contribution-quota tracker initialized", "entries", len(t.entries))
 	return t
 }
@@ -88,7 +106,7 @@ func (t *ContributionQuotaTracker) Accrue(peerID string, tokens int64) {
 	e.RemainingQuota = e.remainingLocked()
 	e.LastUpdated = time.Now().Unix()
 	t.mu.Unlock()
-	t.save()
+	t.saveEntry(peerID)
 }
 
 // Consume draws `tokens` against a contributor's earned entitlement.
@@ -119,7 +137,7 @@ func (t *ContributionQuotaTracker) Consume(peerID string, tokens int64) (bool, i
 	e.LastUpdated = time.Now().Unix()
 	remaining = e.RemainingQuota
 	t.mu.Unlock()
-	t.save()
+	t.saveEntry(peerID)
 	return true, remaining
 }
 
@@ -143,7 +161,7 @@ func (t *ContributionQuotaTracker) Refund(peerID string, tokens int64) {
 	e.RemainingQuota = e.remainingLocked()
 	e.LastUpdated = time.Now().Unix()
 	t.mu.Unlock()
-	t.save()
+	t.saveEntry(peerID)
 }
 
 // Remaining reports the still-drawable entitlement for a peer (0 if unknown).
@@ -281,4 +299,111 @@ func handleAdminLedgerContributionQuota(w http.ResponseWriter, r *http.Request) 
 		"total_remaining_tokens":   total - consumed,
 		"contributors":             contribQuotaTracker.Snapshot(),
 	})
+}
+
+// ============================================================
+// G4: bbolt backend for contribution_quota
+// ============================================================
+
+// bboltCQuotaPrefix 是 quota bucket 内单条配额记录的 key 前缀。
+const bboltCQuotaPrefix = "cquota/"
+
+// saveEntry 持久化单条记录：bbolt 模式走单 key Put（高频热路径），
+// JSON 模式走旧的全量文件写（回滚路径）。
+func (t *ContributionQuotaTracker) saveEntry(peerID string) {
+	if h := t.bbolt; h != nil {
+		t.mu.RLock()
+		e := t.entries[peerID]
+		var data []byte
+		if e != nil {
+			data, _ = json.Marshal(e)
+		}
+		t.mu.RUnlock()
+		if data == nil {
+			return
+		}
+		if err := h.db.Update(func(tx *bolt.Tx) error {
+			return tx.Bucket([]byte(bboltBucketQuota)).Put([]byte(bboltCQuotaPrefix+peerID), data)
+		}); err != nil {
+			slog.Error("failed to write contribution quota to bbolt", "peer", peerID, "error", err)
+		}
+		return
+	}
+	t.save()
+}
+
+// loadBbolt 从 bbolt 恢复全部条目；损坏条目跳过（与 load 的容错一致）。
+func (t *ContributionQuotaTracker) loadBbolt(h *bboltHandle) {
+	loaded := make(map[string]*ContributionQuota)
+	_ = h.db.View(func(tx *bolt.Tx) error {
+		c := tx.Bucket([]byte(bboltBucketQuota)).Cursor()
+		prefix := []byte(bboltCQuotaPrefix)
+		for k, v := c.Seek(prefix); k != nil && len(k) >= len(prefix) && string(k[:len(prefix)]) == bboltCQuotaPrefix; k, v = c.Next() {
+			var e ContributionQuota
+			if err := json.Unmarshal(v, &e); err != nil {
+				slog.Error("failed to unmarshal contribution quota from bbolt", "key", string(k), "error", err)
+				continue
+			}
+			loaded[string(k[len(prefix):])] = &e
+		}
+		return nil
+	})
+	// 与 load() 相同的 re-normalize，保证 1:1 规则。
+	for _, e := range loaded {
+		if e.EarnedFreeQuota != e.ContributedTokens {
+			e.EarnedFreeQuota = e.ContributedTokens
+		}
+		if e.ConsumedQuota < 0 {
+			e.ConsumedQuota = 0
+		}
+		if e.ConsumedQuota > e.EarnedFreeQuota {
+			e.ConsumedQuota = e.EarnedFreeQuota
+		}
+		e.RemainingQuota = e.remainingLocked()
+	}
+	t.entries = loaded
+}
+
+// importToBbolt 执行 JSON→bbolt 一次性迁移：复用 load()（含 re-normalize），
+// 逐条写入，打标记，原文件 rename 为 .bak。幂等。
+func (t *ContributionQuotaTracker) importToBbolt(h *bboltHandle) error {
+	const domain = "contrib_quota"
+	jsonPath := filepath.Join(t.dataDir, "contribution_quota.json")
+	if h.isMigrated(domain) {
+		if err := bakJSON(jsonPath); err != nil {
+			return err
+		}
+		t.bbolt = h
+		return nil
+	}
+	if _, err := os.Stat(jsonPath); err == nil {
+		t.load() // 复用现有解析 + 修复逻辑
+	}
+	t.mu.RLock()
+	snapshot := make(map[string]*ContributionQuota, len(t.entries))
+	for k, v := range t.entries {
+		snapshot[k] = v
+	}
+	t.mu.RUnlock()
+	err := h.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bboltBucketQuota))
+		for peerID, e := range snapshot {
+			data, err := json.Marshal(e)
+			if err != nil {
+				return err
+			}
+			if err := b.Put([]byte(bboltCQuotaPrefix+peerID), data); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if err := h.markMigrated(domain); err != nil {
+		return err
+	}
+	t.bbolt = h
+	return bakJSON(jsonPath)
 }

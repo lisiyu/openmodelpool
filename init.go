@@ -61,6 +61,14 @@ func initCore() {
 		"data/sider_token_status.json",
 		"data/guest_keys.json",
 		"data/invite_store.json",
+		// G4: 账本六域 JSON（含 ledger.json 内 ed25519 私钥）。bbolt 为默认后端后
+		// 这些文件只剩 .bak，但旧版本/手动放的遗留文件仍需收紧到 0600。
+		"data/ledger.json",
+		"data/governance.json",
+		"data/algorithm_proposals.json",
+		"data/contribution_quota.json",
+		"data/quota_allocation.json",
+		"data/global_pool.json",
 	})
 
 	// Guest key store (v2.0)
