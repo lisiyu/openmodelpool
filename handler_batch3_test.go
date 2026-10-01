@@ -884,6 +884,7 @@ func TestHB3_HandleGlobalPoolJoin_InvalidBody(t *testing.T) {
 	setupTestEnv(t)
 	dir := t.TempDir()
 	initGlobalPool(dir)
+	rememberToCloseBbolt(t, dir)
 	req := httptest.NewRequest("POST", "/api/network/global-pool/join", strings.NewReader("bad"))
 	w := httptest.NewRecorder()
 	handleGlobalPoolJoin(w, req)
@@ -908,6 +909,7 @@ func TestHB3_HandleGlobalPoolContribute_InvalidBody(t *testing.T) {
 	setupTestEnv(t)
 	dir := t.TempDir()
 	initGlobalPool(dir)
+	rememberToCloseBbolt(t, dir)
 	req := httptest.NewRequest("POST", "/api/network/global-pool/contribute", strings.NewReader("bad"))
 	w := httptest.NewRecorder()
 	handleGlobalPoolContribute(w, req)
@@ -1716,6 +1718,7 @@ func TestHB3_VoteChoice_IsValid(t *testing.T) {
 func TestHB3_AlgorithmGovernor_CreateProposal_EmptyTitle(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	_, err := governor.CreateProposal("", "desc", "admin", "", nil)
 	if err == nil {
 		t.Error("expected error for empty title")
@@ -1725,6 +1728,7 @@ func TestHB3_AlgorithmGovernor_CreateProposal_EmptyTitle(t *testing.T) {
 func TestHB3_AlgorithmGovernor_CreateProposal_Success(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	p, err := governor.CreateProposal("Test Proposal", "description", "admin", "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -1740,6 +1744,7 @@ func TestHB3_AlgorithmGovernor_CreateProposal_Success(t *testing.T) {
 func TestHB3_AlgorithmGovernor_CastVote_InvalidChoice(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	p, _ := governor.CreateProposal("Test", "desc", "admin", "", nil)
 	_, err := governor.CastVote(p.ID, "voter1", "", "maybe", "")
 	if err == nil {
@@ -1750,6 +1755,7 @@ func TestHB3_AlgorithmGovernor_CastVote_InvalidChoice(t *testing.T) {
 func TestHB3_AlgorithmGovernor_CastVote_NotFound(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	_, err := governor.CastVote("nonexistent", "voter1", "", "yes", "")
 	if err == nil {
 		t.Error("expected error for nonexistent proposal")
@@ -1759,6 +1765,7 @@ func TestHB3_AlgorithmGovernor_CastVote_NotFound(t *testing.T) {
 func TestHB3_AlgorithmGovernor_CastVote_Success(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	p, _ := governor.CreateProposal("Test", "desc", "admin", "", nil)
 	updated, err := governor.CastVote(p.ID, "voter1", "Voter One", "yes", "looks good")
 	if err != nil {
@@ -1772,6 +1779,7 @@ func TestHB3_AlgorithmGovernor_CastVote_Success(t *testing.T) {
 func TestHB3_AlgorithmGovernor_CastVote_Deduplicate(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	p, _ := governor.CreateProposal("Test", "desc", "admin", "", nil)
 	governor.CastVote(p.ID, "voter1", "", "yes", "")
 	updated, _ := governor.CastVote(p.ID, "voter1", "", "no", "changed mind")
@@ -1786,6 +1794,7 @@ func TestHB3_AlgorithmGovernor_CastVote_Deduplicate(t *testing.T) {
 func TestHB3_AlgorithmGovernor_ResolveProposal_NotFound(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	_, err := governor.ResolveProposal("nonexistent", "admin", "", ProposalStatusPassed)
 	if err == nil {
 		t.Error("expected error for nonexistent proposal")
@@ -1795,6 +1804,7 @@ func TestHB3_AlgorithmGovernor_ResolveProposal_NotFound(t *testing.T) {
 func TestHB3_AlgorithmGovernor_ResolveProposal_InvalidStatus(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	p, _ := governor.CreateProposal("Test", "desc", "admin", "", nil)
 	_, err := governor.ResolveProposal(p.ID, "admin", "", ProposalStatusOpen)
 	if err == nil {
@@ -1805,6 +1815,7 @@ func TestHB3_AlgorithmGovernor_ResolveProposal_InvalidStatus(t *testing.T) {
 func TestHB3_AlgorithmGovernor_ResolveProposal_Success(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	p, _ := governor.CreateProposal("Test", "desc", "admin", "", nil)
 	resolved, err := governor.ResolveProposal(p.ID, "admin", "looks good", ProposalStatusPassed)
 	if err != nil {
@@ -1818,6 +1829,7 @@ func TestHB3_AlgorithmGovernor_ResolveProposal_Success(t *testing.T) {
 func TestHB3_AlgorithmGovernor_ResolveProposal_Idempotent(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	p, _ := governor.CreateProposal("Test", "desc", "admin", "", nil)
 	governor.ResolveProposal(p.ID, "admin", "", ProposalStatusPassed)
 	resolved, err := governor.ResolveProposal(p.ID, "admin", "", ProposalStatusRejected)
@@ -1832,6 +1844,7 @@ func TestHB3_AlgorithmGovernor_ResolveProposal_Idempotent(t *testing.T) {
 func TestHB3_AlgorithmGovernor_CastVote_OnClosedProposal(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	p, _ := governor.CreateProposal("Test", "desc", "admin", "", nil)
 	governor.ResolveProposal(p.ID, "admin", "", ProposalStatusClosed)
 	_, err := governor.CastVote(p.ID, "voter1", "", "yes", "")
@@ -1843,6 +1856,7 @@ func TestHB3_AlgorithmGovernor_CastVote_OnClosedProposal(t *testing.T) {
 func TestHB3_AlgorithmGovernor_GetProposal(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	p, _ := governor.CreateProposal("Test", "desc", "admin", "", nil)
 	found, ok := governor.GetProposal(p.ID)
 	if !ok || found == nil {
@@ -1857,6 +1871,7 @@ func TestHB3_AlgorithmGovernor_GetProposal(t *testing.T) {
 func TestHB3_AlgorithmGovernor_ListProposals(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	governor.CreateProposal("P1", "desc", "admin", "", nil)
 	governor.CreateProposal("P2", "desc", "admin", "", nil)
 	all := governor.ListProposals("")
@@ -1872,6 +1887,7 @@ func TestHB3_AlgorithmGovernor_ListProposals(t *testing.T) {
 func TestHB3_AlgorithmGovernor_ListProposals_Filter(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	p, _ := governor.CreateProposal("P1", "desc", "admin", "", nil)
 	governor.ResolveProposal(p.ID, "admin", "", ProposalStatusPassed)
 	passed := governor.ListProposals("passed")
@@ -1887,6 +1903,7 @@ func TestHB3_AlgorithmGovernor_ListProposals_Filter(t *testing.T) {
 func TestHB3_AlgorithmGovernor_GetHistory(t *testing.T) {
 	dir := t.TempDir()
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	governor.CreateProposal("P1", "desc", "admin", "", nil)
 	history := governor.GetHistory()
 	if len(history) == 0 {

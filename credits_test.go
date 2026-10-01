@@ -212,6 +212,7 @@ func TestInitAllocationManager(t *testing.T) {
 
 	dir := t.TempDir()
 	initAllocationManager(dir)
+	rememberToCloseBbolt(t, dir)
 
 	if allocMgr == nil {
 		t.Fatal("initAllocationManager did not set allocMgr")

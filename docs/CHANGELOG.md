@@ -1,33 +1,58 @@
 # Changelog
 
-## v4.5.59 (2026-09-25)
+## v4.6.0 (2026-10-01)
 
-Guest Key 额度覆盖扩到全部直连端点（v4.5.57 已知问题之一）：
-`/v1/responses`、`/v1/images/generations`、`/v1/audio/speech` 此前经 raw
-passthrough 直发上游、从不经过 `handleChatCompletions`，Guest Key 的每日/每小时/
-单次/RPM 额度在这些端点上形同虚设——改用这些端点的请求可无限刷。
+合并上游 11 个提交（G4 / G5 / P2P 韧性与安全加固），并修复其中两个 Windows 与并发层面的问题；
+Guest Key 额度同时补齐到全部直连端点。
 
-- **raw passthrough 端点接入 D-4 逐 Key 额度（HIGH）**：`handleRawPassthrough`
-  在上游调用前对**已验证的 Guest Key**（直连 `withProxyAuth` context 或中继 context）
-  执行与 chat 路径相同的四维原子校验 `CheckAndReserveFull`；超限 429 并给出细分原因。
-  raw 转发不回传结构化 usage，因此按 B8-1b「未知用量保留预估值」计费：额度取自请求
-  自身载荷（正文文本 chars/4 + 客户端显式 `max_tokens`/`max_output_tokens`/`max_tokens_out`
-  输出上限，下限 1、上限 16M），模型无法解析到 provider 时 404、不计费。
-- **审计澄清**：`/v1/messages`（Anthropic）、`/openai/deployments/...`（Azure）、
-  `/v1beta/models/{model}`（Gemini）写回 `/v1/chat/completions` 再走网关，本就经
-  `handleChatCompletions` 的 D-4 分支扣费（Bearer 回退），非缺口；`/v1/embeddings`
-  本节点当前本地 fallback 即 501（不服务任何上行），无额度可扣，留待 embeddings 真正落地。
-- 共享原因消息：新增 `guestQuotaDenyReason`（network_keys.go）供 chat 与 passthrough
-  共用同一套 429 文案（单次超限/每分钟/每小时/每日），chat 路径内联块一并重构复用。
-- 新增 4 组测试（`guest_quota_raw_audit_test.go`）：估算函数表驱动（文本/输出上限/数组
-  input/空体/非 JSON）、images 额度超限 429 且不消耗、audio 放行且预估值入账（est×2）、
-  RPM 维度限流。全量 `-race`（174s，零 RACE）与普通全量（50s）均 EXIT=0。
+**上游合并内容（3f12b54..e3e079a，78 文件 +10090/−332）**
 
-**已知问题（留待 v4.5.60）**：额度 tracker（`guestKeyUsageTracker`）为纯内存实现，
-进程重启后每日/每小时/RPM 用量清零（额度计数重置，key 配置本身持久化于
-`guest_keys.json`）。
+- **G4 存储迁移（b814ef0）**：账本 / 治理 / 算法治理 / 配额分配 / 贡献额度 / 全局池六个 JSON
+  域迁入单一 `data/openmodelpool.bbolt`（bucket：meta/ledger/governance/algo_gov/quota），
+  0600 + 5s 打开超时；迁移幂等（meta/migrated 标记），成功后原 JSON 改名为 `.bak`；
+  open/import 失败自动回退 JSON 路径，保证可启动。账本改为 dirty-set 批量落盘。
+- **G5 系统钥匙串（e3e079a）**：`secret_backend` 可选启用 OS keyring 保存主密钥，
+  优先级 `OPENMODELPOOL_ENC_KEY` > keyring > `data/.enc_key` > 临时密钥（`secret_backend.go`）。
+- **P2P 韧性与安全（0a6c0ee / c4dcffb / dbd3acf / 7170f61 / da3be4b / ebfc3dd / 2a2b5e2 /
+  39ffbb0）**：mDNS LAN 自动发现 + ed25519 签名广播、重启重入网与无种子 DHT 自举、
+  网关 failover 与 DHT 自愈、信任池并集合并、relay 转发窗口内重放防护、
+  联邦能力探针与虚假能力防御、STUN OOB 读取修复、punch offer 签名加固、
+  provider 密钥打码、流式适配器错误处理、region 地理信息（`region_geo.go`）。
 
-- AppVersion bumped to v4.5.59.
+**本轮修复**
+
+- **Guest Key 额度覆盖到 raw passthrough 端点（HIGH）**：`/v1/responses`、
+  `/v1/images/generations`、`/v1/audio/speech` 经 raw passthrough 直发上游、从不经过
+  `handleChatCompletions`，四维额度（每日/每小时/单次/RPM）在这些端点形同虚设。
+  `handleRawPassthrough` 现对**已验证的 Guest Key**（直连或中继 context）在上游调用前执行
+  与 chat 路径相同的 `CheckAndReserveFull` 原子校验，超限 429 并给出细分原因；raw 转发
+  无结构化 usage，按 B8-1b 保留预估值（正文文本 chars/4 + 显式输出上限，下限 1、上限 16M），
+  模型无 provider 时 404 不计费。`/v1/messages`、`/openai/deployments/...`、`/v1beta/models/{m}`
+  审计确认本就写回 chat 路径计费；`/v1/embeddings` 本地即 501（不服务上行），留待其落地。
+  共享 429 文案抽出 `guestQuotaDenyReason`，chat 路径一并复用。新增 4 组测试。
+- **LAN 发现并发重复注册（HIGH，-race 暴露的真实缺陷）**：`notePeer` 原为
+  check-then-act——`register()` 在锁外调用，`pushed` 标记在其后才写入，同一节点的并发
+  重复公告会全部通过"已推送"检查并重复调用 `netMgr.AddPeer`（连带重复落盘 registry）；
+  `TestLANNotePeerConcurrent` 在 `-race` 下确定性失败（registered 9 times, want 1）。
+  改为在持锁期间以 `registering` 认领本次注册，失败时释放认领以允许重试，且仅确认自己的
+  认领（不会被更新的 fingerprint 覆盖）。`-count=30 -race` 稳定通过。
+- **Windows 测试可移植性（MEDIUM）**：G4 迁移后测试不再在本机（Windows）全绿——
+  ① 测试经 `init*` 打开的 bbolt 句柄从不关闭，bbolt 持续映射锁文件，
+  `t.TempDir()` 清理失败（"being used by another process"），污染所有 G4 相关用例；
+  ② `assertFileMode0600` 对 Windows 断言 POSIX 位（Windows 上 O_CREAT|0600 报 0666，
+  权限由 ACL 决定）。修复：`setupTestEnv` 清理关闭本目录 bbolt 句柄，直连临时目录的用例
+  以 `rememberToCloseBbolt` 登记关闭；0600 断言在 Windows 降级为日志。
+
+**验证**：`go build`/`go vet` 干净；普通全量 EXIT=0（52s）；`-race` 全量连跑两次 EXIT=0
+（154s，零 RACE）。
+
+**已知问题（留待 v4.6.1）**：额度 tracker（`guestKeyUsageTracker`）纯内存实现，进程重启后
+每日/每小时/RPM 用量清零；LAN 对等节点因 `routeTTL` 与 `notePeer` 不刷新路由表而在约 10 分钟后
+静默掉出路由表；`Encryptor.ephemeral` 标志从未置位（密钥降级保护为死代码）；relay 重放缓存
+纯内存 + 第二粒度签名时间戳（同秒重复转发会误判 403）；DHT 线协议无认证；GeoIP 默认把未知
+对等节点公网 IP 发往第三方（ip-api.com）。
+
+- AppVersion bumped to v4.6.0.
 
 ## v4.5.58 (2026-09-25)
 

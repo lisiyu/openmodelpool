@@ -92,6 +92,7 @@ func decodeProposalResp(t *testing.T, w *httptest.ResponseRecorder) testProposal
 func TestAlgorithmProposeAppearsInProposals(t *testing.T) {
 	env := setupTestEnv(t)
 	initAlgorithmGovernance(env.dir)
+	rememberToCloseBbolt(t, env.dir)
 
 	w := govPost(t, handleAlgorithmPropose, toJSON(t, map[string]any{
 		"title":       "提高开放密钥比例至 0.4",
@@ -133,6 +134,7 @@ func TestAlgorithmProposeAppearsInProposals(t *testing.T) {
 func TestAlgorithmVoteRecordedAndTallied(t *testing.T) {
 	env := setupTestEnv(t)
 	initAlgorithmGovernance(env.dir)
+	rememberToCloseBbolt(t, env.dir)
 	p := decodeProposalResp(t, govPost(t, handleAlgorithmPropose, toJSON(t, map[string]any{"title": "t"})))
 
 	// Three distinct voters → yes / no / abstain.
@@ -180,6 +182,7 @@ func TestAlgorithmVoteRecordedAndTallied(t *testing.T) {
 func TestAlgorithmHistoryReflectsProposeAndVote(t *testing.T) {
 	env := setupTestEnv(t)
 	initAlgorithmGovernance(env.dir)
+	rememberToCloseBbolt(t, env.dir)
 	p := decodeProposalResp(t, govPost(t, handleAlgorithmPropose, toJSON(t, map[string]any{"title": "t"})))
 	govPost(t, handleAlgorithmVote, toJSON(t, map[string]any{"proposal_id": p.ID, "voter": "v1", "choice": "yes"}))
 
@@ -210,6 +213,7 @@ func TestAlgorithmHistoryReflectsProposeAndVote(t *testing.T) {
 func TestAlgorithmStatusReflectsResolve(t *testing.T) {
 	env := setupTestEnv(t)
 	initAlgorithmGovernance(env.dir)
+	rememberToCloseBbolt(t, env.dir)
 	p := decodeProposalResp(t, govPost(t, handleAlgorithmPropose, toJSON(t, map[string]any{"title": "t"})))
 
 	// Resolve as passed.
@@ -277,12 +281,14 @@ func TestAlgorithmGovernancePersistsAcrossReload(t *testing.T) {
 	env := setupTestEnv(t)
 	dir := env.dir
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 
 	p := decodeProposalResp(t, govPost(t, handleAlgorithmPropose, toJSON(t, map[string]any{"title": "persist-me"})))
 	govPost(t, handleAlgorithmVote, toJSON(t, map[string]any{"proposal_id": p.ID, "voter": "v1", "choice": "yes"}))
 
 	// Simulate a restart: re-initialize the governor on the same data dir.
 	initAlgorithmGovernance(dir)
+	rememberToCloseBbolt(t, dir)
 	if governor == nil {
 		t.Fatal("governor nil after reload")
 	}

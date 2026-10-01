@@ -17,6 +17,15 @@ type testEnv struct {
 	siderInst *SiderMonitor
 }
 
+// rememberToCloseBbolt closes any bbolt handle opened for dir when the test
+// ends. bbolt keeps the DB file mapped (locked) for the handle's lifetime;
+// on Windows t.TempDir() cleanup cannot remove a locked file, so handles must
+// be released before the temp dir is torn down. Idempotent and nil-safe.
+func rememberToCloseBbolt(t *testing.T, dir string) {
+	t.Helper()
+	t.Cleanup(func() { closeBbolt(dir) })
+}
+
 // setupTestEnv initializes all global singletons with isolated temp storage.
 // Returns a testEnv and registers a cleanup that stops goroutines and restores globals.
 func setupTestEnv(t *testing.T) *testEnv {
@@ -109,6 +118,11 @@ func setupTestEnv(t *testing.T) *testEnv {
 		if muInst != nil {
 			muInst.StopBatchSave()
 		}
+		// Release any bbolt handle opened for this test's data dir BEFORE the
+		// framework removes t.TempDir(); on Windows bbolt keeps the DB file
+		// locked and an open handle fails the cleanup ("being used by another
+		// process"), which failed every G4-backed test there.
+		closeBbolt(dir)
 		// Restore globals
 		enc = origEnc
 		cfg = origCfg

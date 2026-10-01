@@ -821,6 +821,12 @@ type lanSeenEntry struct {
 	fingerprint string
 	lastSeen    time.Time
 	pushed      bool
+	// registering is set while a register() call for fingerprint is in
+	// flight. notePeer calls register() outside d.mu, so without this claim
+	// marker every concurrent duplicate announcement would pass the
+	// "already pushed" check and re-register the same peer (netMgr.AddPeer
+	// also rewrites the on-disk registry, so the duplicates are not free).
+	registering bool
 }
 
 // LANDiscovery runs the mDNS announce/listen loops for one node.
@@ -1195,10 +1201,24 @@ func (d *LANDiscovery) notePeer(peer lanPeerInfo) {
 		return
 	}
 	fp := peer.fingerprint()
-	if e, ok := d.seen[peer.NodeID]; ok && e.pushed && e.fingerprint == fp {
+	if e, ok := d.seen[peer.NodeID]; ok {
+		// Any announcement counts as liveness, so refresh lastSeen even when
+		// no registration is due (cleanup() prunes by lastSeen).
 		e.lastSeen = time.Now()
-		d.mu.Unlock()
-		return
+		// Already registered with this fingerprint, or a registration for it
+		// is in flight: concurrent duplicates must not register again.
+		if e.fingerprint == fp && (e.pushed || e.registering) {
+			d.mu.Unlock()
+			return
+		}
+	}
+	// Claim this (re)registration while still holding the lock so that N
+	// concurrent identical announcements produce exactly one register() call.
+	d.seen[peer.NodeID] = &lanSeenEntry{
+		info:        peer,
+		fingerprint: fp,
+		lastSeen:    time.Now(),
+		registering: true,
 	}
 	register := d.register
 	d.mu.Unlock()
@@ -1206,15 +1226,21 @@ func (d *LANDiscovery) notePeer(peer lanPeerInfo) {
 	if err := register(peer); err != nil {
 		slog.Debug("lan discovery: peer registration failed",
 			"node_id", peer.NodeID, "error", err)
+		d.mu.Lock()
+		// Release the claim so the next announcement retries this peer.
+		if e, ok := d.seen[peer.NodeID]; ok && e.fingerprint == fp && e.registering {
+			delete(d.seen, peer.NodeID)
+		}
+		d.mu.Unlock()
 		return
 	}
 
 	d.mu.Lock()
-	d.seen[peer.NodeID] = &lanSeenEntry{
-		info:        peer,
-		fingerprint: fp,
-		lastSeen:    time.Now(),
-		pushed:      true,
+	// Only finalize our own claim: a newer fingerprint may have taken over
+	// the entry while this register() call was in flight.
+	if e, ok := d.seen[peer.NodeID]; ok && e.fingerprint == fp && e.registering {
+		e.registering = false
+		e.pushed = true
 	}
 	d.mu.Unlock()
 	slog.Info("lan discovery: peer found", "node_id", peer.NodeID,
