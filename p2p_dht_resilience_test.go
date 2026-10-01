@@ -65,6 +65,20 @@ func waitForTableSize(t *testing.T, n *DHTNode, want int, timeout time.Duration)
 	t.Fatalf("table size = %d, want %d after %v", n.TableSize(), want, timeout)
 }
 
+// dhtTableHas 报告路由表中是否存在该节点条目。
+func dhtTableHas(n *DHTNode, id DHTNodeID) bool {
+	n.dht.mu.RLock()
+	defer n.dht.mu.RUnlock()
+	for _, b := range n.dht.buckets {
+		for _, e := range b.entries {
+			if e.NodeID == id {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestDHTStaleEntriesAndRemoveNode(t *testing.T) {
 	d := NewDHT("self-stale")
 	oldPeer := NewDHTNode("old-peer", "fake://old", nil)
@@ -180,36 +194,31 @@ func TestRetrySeedlessBootstrap_ReactivatesWhenTableEmptied(t *testing.T) {
 		dhtSeedlessRetryInterval = oldInterval
 	}()
 
-	// 第一轮：表空 → 从 peer A bootstrap 成功。
+	// 第一轮：表空 → 从某个 hint bootstrap 成功。
 	waitForTableSize(t, n, 1, 5*time.Second)
 
-	// 模拟"表被掏空"：A 死亡（后续 bootstrap 对它失败），表清空。
+	// trySeedlessBootstrapOnce returns after the FIRST successful hint, and
+	// DHTBootstrapAddrs iterates a map, so the peer that lands in the table is
+	// A or B depending on map order. Build the "mass death" scenario around
+	// whoever actually made it in instead of assuming A.
+	dead, live := peerA, peerB
+	if !dhtTableHas(n, dead.ID()) {
+		dead, live = peerB, peerA
+	}
 	ft.mu.Lock()
-	ft.dead["fake://a"] = true
+	ft.dead[dead.Addr()] = true
 	ft.mu.Unlock()
-	if !n.dht.RemoveNode(peerA.ID()) {
-		t.Fatal("peer A not in table, test setup broken")
+	if !n.dht.RemoveNode(dead.ID()) {
+		t.Fatal("in-table peer not in table, test setup broken")
 	}
 	if n.TableSize() != 0 {
 		t.Fatalf("table size = %d, want 0 after simulated mass death", n.TableSize())
 	}
 
-	// loop 常驻：下一轮 tick 发现表空 → 跳过已死的 A，从 B 重新 bootstrap。
+	// loop 常驻：下一轮 tick 发现表空 → 跳过已死的那个，从存活 hint 重新 bootstrap。
 	waitForTableSize(t, n, 1, 5*time.Second)
-	n.dht.mu.RLock()
-	_, hasB := func() (DHTNodeID, bool) {
-		for _, b := range n.dht.buckets {
-			for _, e := range b.entries {
-				if e.NodeID == peerB.ID() {
-					return e.NodeID, true
-				}
-			}
-		}
-		return DHTNodeID{}, false
-	}()
-	n.dht.mu.RUnlock()
-	if !hasB {
-		t.Fatal("table reactivated but peer B not in it (failover to live hint failed)")
+	if !dhtTableHas(n, live.ID()) {
+		t.Fatal("table reactivated but the surviving hint peer is not in it (failover to live hint failed)")
 	}
 }
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 未发布（main 分支，v4.6.0 之后）
+
+- **修复 CI 随机红的 seedless bootstrap 用例**：`TestRetrySeedlessBootstrap_ReactivatesWhenTableEmptied`
+  硬编码"首个 hint 一定是 peer A"，而 `DHTBootstrapAddrs` 遍历 `dhtHints` map（顺序随机）、
+  `trySeedlessBootstrapOnce` 首个成功即返回，于是首个 bootstrap 可能落在 peer B 上，
+  测试随后 `RemoveNode(peerA)` 返回 false 而失败——CI 的 Unit tests 与 Smoke 的
+  race detector 步骤因此间歇性变红（`Second run (flaky watch)` 却常常通过）。用例改为按
+  "当前表里实际是哪一个"构造死亡场景（新增 `dhtTableHas` 辅助函数），不再依赖 map 顺序；
+  Linux（WSL）下 `-count=40` 与全量 4 轮 + race 2 轮均 EXIT=0。
+
 ## v4.6.0 (2026-10-01)
 
 合并上游 11 个提交（G4 / G5 / P2P 韧性与安全加固），并修复其中两个 Windows 与并发层面的问题；
