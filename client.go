@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -88,15 +89,18 @@ func cachedProxiedTransport(proxy string, build func() (*http.Transport, error))
 }
 
 // var (not const) so tests can point the Sider adapter at a local server.
-var siderChatURL = "https://sider.ai/api/v3/completion/text"
+var siderChatURL = "https://sider.ai/api/chat/v1/completions"
 
 var siderHeadersBase = map[string]string{
 	"Accept":          "*/*",
 	"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-	"Cache-Control":   "no-cache",
-	"Origin":          "chrome-extension://dhoenijjpgpeimemopealfcbiecgceod",
+	"Origin":          "https://sider.ai",
+	"Referer":         "https://sider.ai/chat",
 	"Content-Type":    "application/json",
-	"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+	"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
+	"X-App-Name":      "ChitChat_Web",
+	"X-App-Version":   "1.0.0",
+	"X-Time-Zone":     "Asia/Shanghai",
 }
 
 // proxyHTTPClient returns an HTTP client configured with the provider's proxy.
@@ -994,41 +998,48 @@ func siderBuildHeaders(token string) http.Header {
 	}
 	h.Set("Authorization", "Bearer "+token)
 	h.Set("Cookie", "token=Bearer%20"+token+"; refresh_token=discard")
+	h.Set("X-Trace-Id", newUUID())
 	return h
 }
 
+// newUUID generates a random UUID v4 string for sider API trace IDs.
+func newUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40 // Version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // Variant 10
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
 func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[string]any {
-	var parts []string
+	// New web API format (sider.ai/api/chat/v1/completions):
+	// uses multi_content array instead of prompt string.
+	var multiContent []any
 	for _, m := range messages {
-		switch m.Role {
-		case "system":
-			parts = append(parts, "[System Instructions]\n"+m.Content+"\n")
-		case "assistant":
-			parts = append(parts, "[Assistant]: "+m.Content)
-		default:
-			parts = append(parts, "[User]: "+m.Content)
+		text := m.Content
+		if m.Role == "system" {
+			text = "[System Instructions]\n" + m.Content + "\n"
+		} else if m.Role == "assistant" {
+			text = "[Assistant]: " + m.Content
 		}
+		multiContent = append(multiContent, map[string]any{
+			"type":            "text",
+			"text":            text,
+			"user_input_text": text,
+		})
 	}
-	prompt := strings.Join(parts, "\n")
+	cid := newUUID()
 	return map[string]any{
-		"prompt":           prompt,
-		"stream":           stream,
-		"app_name":         "ChitChat_Edge_Ext",
-		"app_version":      "4.40.0",
-		"tz_name":          "Asia/Shanghai",
-		"model":            model,
-		"search":           false,
-		"auto_search":      false,
-		"from":             "chat",
-		"group_id":         "default",
-		"chat_models":      []any{},
-		"files":            []any{},
-		"prompt_templates": []any{},
-		"tools":            map[string]any{"auto": []any{}},
-		"extra_info": map[string]any{
-			"origin_url":   "chrome-extension://dhoenijjpgpeimemopealfcbiecgceod/standalone.html",
-			"origin_title": "Sider",
-		},
+		"cid":               cid,
+		"parent_message_id": cid,
+		"model":             model,
+		"from":              "chat",
+		"client_prompt":     map[string]any{},
+		"multi_content":     multiContent,
+		"prompt_templates":  []any{},
+		"tools":             map[string]any{"auto": []any{}},
+		"think_mode":        map[string]any{"enable": false},
+		"stream":            stream,
 	}
 }
 
