@@ -1,13 +1,14 @@
 module github.com/lisiyu/openmodelpool
 
-go 1.26
+go 1.26.0
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.57.0
 )
 
 require (
+	github.com/bogdanfinn/utls v1.6.4
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
 	github.com/tyler-smith/go-bip39 v1.1.0
@@ -17,7 +18,6 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.1.1 // indirect
-	github.com/bogdanfinn/utls v1.6.4 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/cloudflare/circl v1.5.0 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
@@ -28,10 +28,10 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/quic-go/quic-go v0.48.1 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
 
 require (
-	golang.org/x/net v0.57.0
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/net v0.59.0
+	golang.org/x/text v0.42.0 // indirect
 )
