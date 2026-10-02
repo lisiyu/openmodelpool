@@ -1054,25 +1054,37 @@ func siderNonStream(ctx context.Context, p Provider, model string, messages []Ch
 	}
 	siderMon.RecordSuccess()
 
-	// Parse SSE response
+	// Parse response: non-stream returns JSON, stream returns SSE
 	respBody, _ := io.ReadAll(resp.Body)
 	var fullText strings.Builder
-	for _, line := range strings.Split(string(respBody), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		dataStr := strings.TrimSpace(line[5:])
-		if dataStr == "[DONE]" {
-			break
-		}
-		var data map[string]any
-		if json.Unmarshal([]byte(dataStr), &data) != nil {
-			continue
-		}
-		if d, ok := data["data"].(map[string]any); ok {
-			if text, ok := d["text"].(string); ok {
+	// Try JSON first (non-stream mode)
+	var jsonResp map[string]any
+	if json.Unmarshal(respBody, &jsonResp) == nil {
+		if data, ok := jsonResp["data"].(map[string]any); ok {
+			if text, ok := data["text"].(string); ok {
 				fullText.WriteString(text)
+			}
+		}
+	}
+	// Fallback: try SSE format (for stream mode responses)
+	if fullText.Len() == 0 {
+		for _, line := range strings.Split(string(respBody), "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			dataStr := strings.TrimSpace(line[5:])
+			if dataStr == "[DONE]" {
+				break
+			}
+			var data map[string]any
+			if json.Unmarshal([]byte(dataStr), &data) != nil {
+				continue
+			}
+			if d, ok := data["data"].(map[string]any); ok {
+				if text, ok := d["text"].(string); ok {
+					fullText.WriteString(text)
+				}
 			}
 		}
 	}
