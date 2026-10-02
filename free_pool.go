@@ -158,7 +158,12 @@ func seedDefaultProviders() {
 	if pm == nil {
 		return
 	}
+	deleted := "," + cfg.Get("deleted_free_providers", "") + ","
 	for _, dp := range defaultFreeProviders {
+		// Skip if user explicitly deleted this provider
+		if strings.Contains(deleted, ","+dp.id+",") {
+			continue
+		}
 		// Skip if already exists (e.g., from a previous sync)
 		if _, exists := pm.GetRaw(dp.id); exists {
 			continue
@@ -251,10 +256,15 @@ func (f *FreePoolManager) Sync() error {
 	totalModels := 0
 	activeCount := 0
 	var providerInfos []FreePoolProviderInfo
+	deletedFree := "," + cfg.Get("deleted_free_providers", "") + ","
 
 	for _, ap := range data.Providers {
 		providerID, models, anonymous, baseURL, skip := mapAwesomeProvider(ap)
 		if skip || len(models) == 0 {
+			continue
+		}
+		// Skip providers the user explicitly deleted
+		if strings.Contains(deletedFree, ","+providerID+",") {
 			continue
 		}
 
@@ -266,8 +276,13 @@ func (f *FreePoolManager) Sync() error {
 		hasKeys := exists && (existing.APIKey != "" && existing.APIKey != "free-anonymous" || len(existing.APIKeys) > 0)
 
 		// Enabled state: anonymous providers always enabled,
-		// key-based providers enabled only if they have keys
+		// key-based providers enabled only if they have keys.
+		// BUT: preserve user's explicit disable choice if provider already exists.
 		enabled := anonymous || hasKeys
+		if exists && !existing.Enabled {
+			// User explicitly disabled this provider — respect their choice.
+			enabled = false
+		}
 		if enabled {
 			activeCount++
 		}

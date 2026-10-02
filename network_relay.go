@@ -1574,6 +1574,10 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 	// the model names it chose to share, learned via the announce channel.
 	modelSrc := make(map[string]map[string]bool)
 
+	// ?local_only=1: only return locally-enabled models, exclude federation peers.
+	// Default: include federation (mesh behavior).
+	localOnly := r.URL.Query().Get("local_only") == "1"
+
 	// sourceName picks a human-friendly label for a peer node.
 	sourceName := func(n NodeInfo) string {
 		if n.GitHubUser != "" {
@@ -1585,7 +1589,7 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 		return n.NodeID
 	}
 
-	if fed != nil && fed.IsEnabled() {
+	if fed != nil && fed.IsEnabled() && !localOnly {
 		pool := fed.GetTrustPool()
 		selfID := ""
 		if node != nil {

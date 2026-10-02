@@ -977,9 +977,24 @@ func (f *FederationManager) getLocalSharedProviders() ([]string, []SharedProvide
 
 		var modelNames []string
 		for _, m := range p.Models {
-			if m.Enabled {
-				modelNames = append(modelNames, m.ID)
+			if !m.Enabled {
+				continue
 			}
+			// Also respect per-key disables: if EnabledByKeys is set,
+			// only broadcast if at least one key has it enabled.
+			if len(m.EnabledByKeys) > 0 {
+				anyEnabled := false
+				for _, en := range m.EnabledByKeys {
+					if en {
+						anyEnabled = true
+						break
+					}
+				}
+				if !anyEnabled {
+					continue
+				}
+			}
+			modelNames = append(modelNames, m.ID)
 		}
 		models = append(models, modelNames...)
 		providers = append(providers, SharedProvider{

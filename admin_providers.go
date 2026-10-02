@@ -523,6 +523,19 @@ func handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}
+	// If this was a free-pool provider, remember the deletion so seed/sync
+	// don't resurrect it on restart.
+	if strings.HasPrefix(id, "free-") {
+		deleted := cfg.Get("deleted_free_providers", "")
+		if !strings.Contains(","+deleted+",", ","+id+",") {
+			if deleted == "" {
+				deleted = id
+			} else {
+				deleted = deleted + "," + id
+			}
+			cfg.Set("deleted_free_providers", deleted)
+		}
+	}
 	auditRecord(r, "provider.delete", id, "", true)
 	writeJSON(w, 200, map[string]bool{"success": true})
 }
