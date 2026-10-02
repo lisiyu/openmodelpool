@@ -192,6 +192,20 @@ func seedDefaultProviders() {
 			AccessControl: ProviderAccessControl{
 				ShareToPool: true,
 			},
+			// Explicit shared key entry so the admin UI shows "shared"
+			// (not "private") and the public pool can access it.
+			// The key value "free-anonymous" means no real credential.
+			APIKeys: []APIKeyConfig{
+				{
+					ID:            "free-anonymous",
+					Alias:         "Anonymous (no key required)",
+					Key:           "free-anonymous",
+					AccessControl: "shared",
+					Enabled:       true,
+					CreatedAt:     time.Now().Format(time.RFC3339),
+					UpdatedAt:     time.Now().Format(time.RFC3339),
+				},
+			},
 			CreatedAt: time.Now().Format(time.RFC3339),
 			UpdatedAt: time.Now().Format(time.RFC3339),
 		}
@@ -307,6 +321,19 @@ func (f *FreePoolManager) Sync() error {
 
 		if anonymous {
 			provider.APIKey = "free-anonymous"
+			// Explicit shared key entry so the admin UI shows "shared"
+			// (not "private") and the public pool can access it.
+			provider.APIKeys = []APIKeyConfig{
+				{
+					ID:            "free-anonymous",
+					Alias:         "Anonymous (no key required)",
+					Key:           "free-anonymous",
+					AccessControl: "shared",
+					Enabled:       true,
+					CreatedAt:     time.Now().Format(time.RFC3339),
+					UpdatedAt:     time.Now().Format(time.RFC3339),
+				},
+			}
 		} else if hasKeys {
 			// Preserve existing API keys
 			provider.APIKey = existing.APIKey
