@@ -1037,7 +1037,7 @@ func siderNonStream(ctx context.Context, p Provider, model string, messages []Ch
 	req, _ := http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(body))
 	req.Header = siderBuildHeaders(p.APIKey)
 
-	client := proxyHTTPClient(p, 300*time.Second)
+	client := siderHTTPClient(p, 300*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -1095,7 +1095,7 @@ func siderStream(ctx context.Context, p Provider, model string, messages []ChatM
 	req, _ := http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(body))
 	req.Header = siderBuildHeaders(p.APIKey)
 
-	client := proxyHTTPClient(p, 300*time.Second)
+	client := siderHTTPClient(p, 300*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -1768,7 +1768,7 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		defer cancel3()
 		req, _ := http.NewRequestWithContext(ctx3, "POST", siderChatURL, bytes.NewReader(body))
 		req.Header = h
-		client := proxyHTTPClient(testProvider, 30*time.Second)
+		client := siderHTTPClient(testProvider, 30*time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}
