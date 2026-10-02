@@ -1795,7 +1795,6 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 			}
 		}
 		payload := siderBuildPayload(testModel, []ChatMessage{{Role: "user", Content: "hi"}}, false)
-		payload["prompt"] = "ping"
 		body, _ := json.Marshal(payload)
 		ctx3, cancel3 := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel3()
