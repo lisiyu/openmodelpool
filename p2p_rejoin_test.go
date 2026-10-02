@@ -162,10 +162,10 @@ func TestDHTHints_MergeAndBootstrapAddrs(t *testing.T) {
 	fed.NoteDHTHint("mmx-peer-c", "10.0.0.4:19001")
 	fed.NoteDHTHint("", "10.0.0.5:19001")          // ignored
 	fed.NoteDHTHint("mmx-peer-d", "")              // ignored
-	fed.NoteDHTHint("mmx-peer-a", "9.9.9.9:19001") // first-known wins
+	fed.NoteDHTHint("mmx-peer-a", "9.9.9.9:19001") // last-known wins (moved nodes update)
 
-	if got := fed.DHTHint("mmx-peer-a"); got != "10.0.0.2:19001" {
-		t.Fatalf("DHTHint(peer-a) = %q, want 10.0.0.2:19001", got)
+	if got := fed.DHTHint("mmx-peer-a"); got != "9.9.9.9:19001" {
+		t.Fatalf("DHTHint(peer-a) = %q, want 9.9.9.9:19001 (last-known wins)", got)
 	}
 	if got := fed.DHTHint("mmx-peer-b"); got != "" {
 		t.Fatalf("DHTHint(peer-b) = %q, want empty", got)
@@ -175,12 +175,42 @@ func TestDHTHints_MergeAndBootstrapAddrs(t *testing.T) {
 	if len(addrs) != 2 {
 		t.Fatalf("bootstrap addrs = %v, want 2", addrs)
 	}
-	// Self exclusion.
+	// Self exclusion (peer-a's current hint must be excluded when it is self).
 	addrs = fed.DHTBootstrapAddrs("mmx-peer-a")
 	for _, a := range addrs {
-		if a == "10.0.0.2:19001" {
+		if a == "9.9.9.9:19001" {
 			t.Fatal("self DHT addr must be excluded")
 		}
+	}
+}
+
+// P3-4: a verified pin beats later gossip (and MergePeerHints): once an
+// address proved live+authentic, hearsay can no longer displace it.
+func TestDHTHint_VerifiedPinLocks(t *testing.T) {
+	fed := newRejoinTestFed(t)
+
+	fed.NoteDHTHint("mmx-peer-a", "10.0.0.2:19001")
+	fed.PinDHTHint("mmx-peer-a", "10.0.0.2:19001")
+	fed.NoteDHTHint("mmx-peer-a", "9.9.9.9:19001") // attacker speaks later: ignored
+	if got := fed.DHTHint("mmx-peer-a"); got != "10.0.0.2:19001" {
+		t.Fatalf("pinned hint displaced by gossip: %q", got)
+	}
+	fed.MergePeerHints([]PeerHint{
+		{NodeID: "mmx-peer-a", Addresses: []string{"http://x/"}, DHTAddr: "9.9.9.8:19001"},
+	})
+	if got := fed.DHTHint("mmx-peer-a"); got != "10.0.0.2:19001" {
+		t.Fatalf("pinned hint displaced by merge: %q", got)
+	}
+	// Pinning is explicit: re-pinning to a new verified address moves it.
+	fed.PinDHTHint("mmx-peer-a", "10.0.0.3:19001")
+	if got := fed.DHTHint("mmx-peer-a"); got != "10.0.0.3:19001" {
+		t.Fatalf("re-pin must move the hint: %q", got)
+	}
+	// Empty inputs are no-ops, never clobber.
+	fed.PinDHTHint("", "1.2.3.4:19001")
+	fed.PinDHTHint("mmx-peer-a", "")
+	if got := fed.DHTHint("mmx-peer-a"); got != "10.0.0.3:19001" {
+		t.Fatalf("empty pin must not clobber: %q", got)
 	}
 }
 

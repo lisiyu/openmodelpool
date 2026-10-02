@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -679,6 +680,59 @@ func TestLANSigNeverSignsForeignID(t *testing.T) {
 	t.Cleanup(func() { node = old })
 	if lanCaptureSigner("mmx-real-id") != nil {
 		t.Fatal("captured a signer with no identity")
+	}
+}
+
+// TestLANAnnouncementUnsignedKnownNodeWarns verifies P3-6: an unsigned
+// announcement for a node whose key we already hold logs a downgrade warning
+// (possible downgrade attack or outdated peer). Unknown-node unsigned traffic
+// stays quiet, and both still parse as unverified (the bridge gate in
+// lanRegisterPeer is what refuses them).
+func TestLANAnnouncementUnsignedKnownNodeWarns(t *testing.T) {
+	const nodeID = "mmx-known-unsigned"
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stubLANTrust(t, nodeID, pub)
+
+	buildUnsigned := func(id string) *dnsMessage {
+		old := node
+		node = nil // no identity -> unsigned announcement
+		defer func() { node = old }()
+		self := &lanSelfInfo{NodeID: id, Port: 8000, Region: "cn-east",
+			Models: []string{"gpt-4o"}, IP: net.ParseIP("192.168.9.10")}
+		pkt, err := buildLANAnnouncement(self, lanCaptureSigner(self.NodeID))
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		m, err := decodeDNSMessage(pkt)
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return m
+	}
+
+	var buf bytes.Buffer
+	oldLog := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(oldLog) })
+
+	peers := parseLANAnnouncement(buildUnsigned(nodeID), net.ParseIP("10.0.0.5"), lanTrustPubKey)
+	if len(peers) != 1 || peers[0].Verified {
+		t.Fatalf("known-node unsigned announcement must parse unverified, got %+v", peers)
+	}
+	if got := buf.String(); !strings.Contains(got, "unsigned announcement for a known node") {
+		t.Fatalf("expected downgrade warning, got %q", got)
+	}
+
+	buf.Reset()
+	peers = parseLANAnnouncement(buildUnsigned("mmx-unknown-node"), net.ParseIP("10.0.0.5"), lanTrustPubKey)
+	if len(peers) != 1 {
+		t.Fatalf("unknown-node unsigned announcement must still parse, got %d", len(peers))
+	}
+	if got := buf.String(); strings.Contains(got, "unsigned announcement for a known node") {
+		t.Fatalf("unknown nodes must not warn, got %q", got)
 	}
 }
 

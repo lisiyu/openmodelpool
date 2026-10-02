@@ -29,6 +29,31 @@
 
 验证：Windows 全量 + `-race` x2 全绿；Linux（WSL）全量 x2 + `-race` 全绿。
 
+外部评审报告（10 个上游提交）的问题逐个跟进（P2-1 relay nonce 上轮已修）：
+
+- **P1-1 merge 丢富字段**：`mergeTrustPools` 的 LastSeen 胜出分支由整结构体替换改为字段级
+  合并（新增 `fillNodeInfoRich`，`upsertKnownNodeLocked` 一并复用）：时变字段取胜出方，
+  PubKey/GitHubUser/GitHubID/InviteBy/SharedModels 等身份字段取双方非空值；本地记录陈旧
+  但钥匙已确立时，外来新钥匙同样不得替换（钥匙不是时变字段）。此前重启后 bridge 的稀疏
+  本地副本恒最新，会吃掉 registry 的 PubKey 使验签退化。
+- **P2-2 keyring 静默降级**：每次 keyring→文件回退带
+  `security_event=secret_backend_downgrade` 结构化属性；新增 `secret_backend=strict`
+  模式（keyring 缺失/不可用直接 fail-closed 拒绝启动）；补 `secret_backend` 文档。
+- **P2-3 探针明文目标**：`targetsFromTrustPool` 未知 scheme 默认 https；非 loopback 的
+  http 目标 warn 并跳过（loopback 保留给测试/本地开发）。relay 本就要求 https，对齐。
+- **P3-1 死分支**：`SelectRankedNodes`/`SelectBestNode` 删除永不执行的 contribRatio guard
+  （RouteEntry 根本没有 TrustScore 字段，真接入属于路由行为变更，另议）。
+- **P3-2 incoming 去重**：`mergeTrustPools` 先按 NodeID 去重（更新者胜 + 字段合并）。
+- **P3-3 注释乱码**：核查文件为干净 UTF-8，无替换字符，系评审方沙箱编码 artifact，无需改动。
+- **P3-4 hint 抢占**：DHT hint 改 last-wins + 验证后锁定（`PinDHTHint`，verified bootstrap
+  成功时调用并持久化地址；锁定位后 gossip 不可 displacement，可显式重 pin 移动）。
+- **P3-5 损坏账本新身份**：两处重建路径升级为 ERROR 日志（明确"不可逆身份丢失 + 恢复指引"）；
+  JSON 路径先 bak 留证再覆盖（此前直接覆盖销毁证据）；CONFIGURATION 补 `ledger.json`
+  行与警告。
+- **P3-6 已知节点未签名公告**：`parseLANAnnouncement` 对持有其 key 的节点的未签名公告打
+  warn（可能降级攻击/版本过旧）；解析仍接受、桥接仍拒绝。
+- **P3-7 punch nil 检查**：`verifyPunchOffer` 加 `offer == nil` 与 `info == nil` 防御。
+
 - **修复 CI 随机红的 seedless bootstrap 用例**：`TestRetrySeedlessBootstrap_ReactivatesWhenTableEmptied`
   硬编码"首个 hint 一定是 peer A"，而 `DHTBootstrapAddrs` 遍历 `dhtHints` map（顺序随机）、
   `trySeedlessBootstrapOnce` 首个成功即返回，于是首个 bootstrap 可能落在 peer B 上，

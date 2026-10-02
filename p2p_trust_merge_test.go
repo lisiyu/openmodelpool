@@ -102,6 +102,91 @@ func TestMergeTrustPools_UnparseableLastSeenKeepsIncoming(t *testing.T) {
 	}
 }
 
+// P1-1：新鲜但稀疏的本地记录获胜时，必须保留对端的身份富字段（PubKey 等），
+// 否则该节点的后续签名验签全部退化。场景：重启后 bridge 的本地副本只有
+// 5 个字段且 LastSeen=now（恒最新），整结构体替换会吃掉 registry 的 PubKey。
+func TestMergeTrustPools_FresherKeepsRichFields(t *testing.T) {
+	now := time.Now()
+	incoming := TrustPool{Version: 6, Nodes: []NodeInfo{{
+		NodeID: "mmx-rich", Endpoint: "http://10.0.0.1:8080", Status: "active",
+		LastSeen:   now.Add(-time.Hour).UTC().Format(time.RFC3339),
+		PubKey:     "cHVibGljLWtleQ==",
+		GitHubUser: "alice", GitHubID: 42, InviteBy: "mmx-root",
+		SharedModels: []string{"gpt-4o"},
+	}}}
+	local := TrustPool{Version: 5, Nodes: []NodeInfo{{
+		NodeID: "mmx-rich", Endpoint: "http://10.0.0.2:8080", Status: "active",
+		LastSeen: now.UTC().Format(time.RFC3339), // fresher, but sparse
+	}}}
+
+	merged := mergeTrustPools(local, incoming)
+	got, ok := mergeNodeIDs(merged)["mmx-rich"]
+	if !ok {
+		t.Fatal("node lost in merge")
+	}
+	if got.Endpoint != "http://10.0.0.2:8080" {
+		t.Fatalf("time-varying Endpoint must come from the fresher side, got %q", got.Endpoint)
+	}
+	if got.PubKey != "cHVibGljLWtleQ==" {
+		t.Fatalf("PubKey wiped by sparse fresher record: %q", got.PubKey)
+	}
+	if got.GitHubUser != "alice" || got.GitHubID != 42 || got.InviteBy != "mmx-root" {
+		t.Fatalf("identity fields wiped: %+v", got)
+	}
+	if len(got.SharedModels) != 1 || got.SharedModels[0] != "gpt-4o" {
+		t.Fatalf("SharedModels wiped: %+v", got.SharedModels)
+	}
+}
+
+// P1-1 反方向：本地记录陈旧但钥匙已确立时，外来新钥匙不得替换（钥匙不是时变字段）。
+func TestMergeTrustPools_StaleLocalKeepsEstablishedKey(t *testing.T) {
+	now := time.Now()
+	local := TrustPool{Version: 5, Nodes: []NodeInfo{{
+		NodeID: "mmx-anchor", Endpoint: "http://10.0.0.1:8080", Status: "active",
+		LastSeen: now.Add(-2 * time.Hour).UTC().Format(time.RFC3339),
+		PubKey:   "a2V5LWE=",
+	}}}
+	incoming := TrustPool{Version: 6, Nodes: []NodeInfo{{
+		NodeID: "mmx-anchor", Endpoint: "http://10.0.0.9:8080", Status: "active",
+		LastSeen: now.UTC().Format(time.RFC3339),
+		PubKey:   "a2V5LWI=",
+	}}}
+
+	merged := mergeTrustPools(local, incoming)
+	got := mergeNodeIDs(merged)["mmx-anchor"]
+	if got.PubKey != "a2V5LWE=" {
+		t.Fatalf("established key replaced by incoming record: %q", got.PubKey)
+	}
+	if got.Endpoint != "http://10.0.0.9:8080" {
+		t.Fatalf("fresher Endpoint should still win, got %q", got.Endpoint)
+	}
+}
+
+// P3-2：incoming 内重复 NodeID 去重（保留更新者），合并后不出现两条。
+func TestMergeTrustPools_IncomingDuplicatesDeduped(t *testing.T) {
+	now := time.Now()
+	incoming := TrustPool{Version: 6, Nodes: []NodeInfo{
+		mkMergeNode("mmx-dup", "http://10.0.0.1:8080", "active", now.Add(-2*time.Hour)),
+		mkMergeNode("mmx-dup", "http://10.0.0.2:8080", "active", now.Add(-time.Hour)),
+		mkMergeNode("mmx-dup", "http://10.0.0.3:8080", "active", now), // newest wins
+	}}
+	local := TrustPool{Version: 5}
+
+	merged := mergeTrustPools(local, incoming)
+	count := 0
+	for _, n := range merged.Nodes {
+		if n.NodeID == "mmx-dup" {
+			count++
+			if n.Endpoint != "http://10.0.0.3:8080" {
+				t.Fatalf("duplicate resolution kept %q, want newest", n.Endpoint)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("merged pool has %d copies of mmx-dup, want 1", count)
+	}
+}
+
 // 端到端：UpdateTrustPool 旧版本忽略、新版本按节点合并。
 func TestUpdateTrustPool_MergesOnNewerVersion(t *testing.T) {
 	fed := newRejoinTestFed(t)

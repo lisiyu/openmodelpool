@@ -214,3 +214,27 @@ func TestLedger_BboltGossipSyncDirty(t *testing.T) {
 		t.Fatalf("trusts = %d, want 1", len(g2.trusts))
 	}
 }
+
+// P3-5: 损坏的 ledger.json 在 JSON 后端初始化时不得被静默覆盖——坏文件必须
+// bak 留证（唯一的恢复证据），节点以全新身份启动。
+func TestCorruptLedgerJSON_PreservedAsBakAndFreshIdentity(t *testing.T) {
+	dir := t.TempDir()
+	corrupt := []byte("{corrupt ledger json")
+	if err := os.WriteFile(filepath.Join(dir, "ledger.json"), corrupt, 0600); err != nil {
+		t.Fatal(err)
+	}
+	old := contributionLedger
+	t.Cleanup(func() { contributionLedger = old })
+
+	initContributionLedgerJSON(dir, "mmx-fresh-id")
+	if contributionLedger == nil {
+		t.Fatal("fresh ledger must initialize after corrupt json")
+	}
+	bak, err := os.ReadFile(filepath.Join(dir, "ledger.json.bak"))
+	if err != nil {
+		t.Fatalf("corrupt ledger must be preserved as .bak: %v", err)
+	}
+	if string(bak) != string(corrupt) {
+		t.Fatal("bak content must equal the original corrupt file")
+	}
+}

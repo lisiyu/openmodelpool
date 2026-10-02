@@ -433,6 +433,12 @@ func (n *DHTNode) trySeedlessBootstrapOnce() bool {
 		if nodeRegistry != nil {
 			nodeRegistry.SaveDHTAddr(fed.DHTNodeIDForAddr(a), a)
 		}
+		// P3-4: the address just proved live AND authentic (the response
+		// verified under wire auth), so pin it: later gossip hints for the
+		// same node can no longer displace a working address.
+		if id := fed.DHTNodeIDForAddr(a); id != "" {
+			fed.PinDHTHint(id, a)
+		}
 		return true
 	}
 	return false

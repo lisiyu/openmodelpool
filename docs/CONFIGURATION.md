@@ -20,8 +20,17 @@ All data is stored in the `data/` directory as JSON. `data/` is git-ignored and 
 | `data/.enc_key` | AES-256-GCM encryption key (auto-generated, 32 bytes) |
 | `data/sider_token_status.json` | Sider Token status |
 | `data/guest_keys.json` | Guest Key store |
+| `data/guest_usage.json` | Guest Key quota journals (restart-safe) |
+| `data/ledger.json` | Contribution ledger **including the ed25519 node identity** |
 | `data/discovered_platforms.json` | Auto-discovered platforms |
 | `data/access.log` | Request access log |
+
+> ⚠️ **A corrupt `data/ledger.json` means irreversible identity loss.** Startup cannot
+> distinguish corruption from tampering, so it generates a brand-new ledger identity
+> (new ed25519 key) and preserves the corrupt file as `ledger.json.bak`. All history
+> signed by the old identity becomes unverifiable and peers treat the node as a new
+> node. If the corruption was unexpected, stop the node and restore the backup over
+> `ledger.json` (delete `data/openmodelpool.bbolt` first so it re-imports).
 
 ---
 
@@ -52,13 +61,22 @@ Key file `data/.enc_key` is auto-generated on first startup (32-byte random key)
 
 > ⚠️ **Keep `data/.enc_key` safe** — lost means unable to decrypt stored sensitive data.
 
+Master-key backends (`secret_backend` in config, or `OPENMODELPOOL_SECRET_BACKEND` env which wins):
+`file` (default) → `data/.enc_key`; `keyring` → OS keyring if available, with silent file
+fallback when the keyring is unreachable (each fallback logs
+`security_event=secret_backend_downgrade` for alerting); `strict` → OS keyring only,
+fail-closed (refuses to start) when the keyring is missing or unreachable — for servers
+where a silent downgrade is worse than downtime. If persistence fails everywhere, the
+node runs with an ephemeral in-memory key and refuses to encrypt new secrets
+(`/api/health` reports `encryption.ephemeral: true`).
+
 ---
 
 ## Region Routing (区域路由)
 
 共享网络模式下的区域感知路由：节点按地理区域分组，负载均衡优先选择同区域节点。区域检测分两档：
 
-1. **GeoIP 精准检测**（默认开启）：经 HTTPS 查询 IP 归属国家并映射到 `ap`（亚太）/`eu`（欧洲）/`americas`（美洲），结果按 IP 缓存 24 小时。本节点在启动时检测一次；探测结果为 unknown 的对端节点在后台异步补齐（单 IP 单 flight，不阻塞心跳热路径）。
+1. **GeoIP 精准检测**（默认关闭，需手动开启）：经 HTTPS 查询 IP 归属国家并映射到 `ap`（亚太）/`eu`（欧洲）/`americas`（美洲），结果按 IP 缓存 24 小时。本节点在启动时检测一次；探测结果为 unknown 的对端节点在后台异步补齐（单 IP 单 flight，不阻塞心跳热路径）。
 2. **离线启发式**（兜底）：首字节 IP 段近似分类；关闭 GeoIP 或查询失败时自动回退。
 
 节点主动上报的区域（`self_report`/`heartbeat`）永远优先于启发式结果，不会被覆盖。

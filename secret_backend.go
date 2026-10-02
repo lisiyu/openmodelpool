@@ -15,10 +15,13 @@ import (
 // 设计要点（用户已拍板）：
 //   - 默认关闭 opt-in：secret_backend 开关（"keyring"|"file"，默认 "file"），
 //     config 文件 + OPENMODELPOOL_SECRET_BACKEND 环境变量覆盖（环境变量优先）。
+//     "strict" 含义与 keyring 相同，但 keyring 缺失/不可用时 fail-closed
+//     （拒绝启动），供服务器场景选用；file/keyring 行为不变。
 //   - keyring 只存 32 字节主密钥，不逐条存 provider token；上层
 //     encryptField/decryptField 的 omp:e: + AES-256-GCM 格式完全不变。
 //   - keyring 不可用（Linux 容器/无头服务器无 D-Bus 等）时记 warn 日志并静默
-//     回退文件链，绝不 fail-closed。
+//     回退文件链，绝不 fail-closed（strict 模式除外）。每次降级都带
+//     security_event="secret_backend_downgrade" 结构化属性，便于告警采集。
 //   - 库用 zalando/go-keyring：零 CGO（darwin 走 exec /usr/bin/security），
 //     6 平台交叉编译安全。99designs/keyring 因 darwin 需 CGO 会导致交叉编译
 //     静默失效，明确排除。
@@ -32,6 +35,10 @@ const (
 	secretBackendKey     = "secret_backend"
 	secretBackendFile    = "file"
 	secretBackendKeyring = "keyring"
+	// secretBackendStrict 与 keyring 相同，但 keyring 缺失/不可用时直接
+	// fail-closed（拒绝启动），不走文件链。供服务器场景选用：keyring 降级
+	// 在服务器上是静默的安全降级，strict 模式把它变成显式故障。
+	secretBackendStrict = "strict"
 
 	// secretBackendEnv 是覆盖 secret_backend 的环境变量
 	//（沿用 OPENMODELPOOL_* 前缀惯例；优先级高于 config 文件）。
@@ -80,6 +87,8 @@ func secretBackend() string {
 
 func normalizeSecretBackend(v string) string {
 	switch strings.ToLower(strings.TrimSpace(v)) {
+	case secretBackendStrict:
+		return secretBackendStrict
 	case secretBackendKeyring:
 		return secretBackendKeyring
 	case secretBackendFile, "":
@@ -90,9 +99,14 @@ func normalizeSecretBackend(v string) string {
 	}
 }
 
+// securityEventDowngrade is the structured slog attribute marking every
+// keyring→file fallback, so server operators can alert on silent security
+// downgrades (P2-2). Grep-friendly stable key: security_event=secret_backend_downgrade.
+const securityEventDowngrade = "secret_backend_downgrade"
+
 // loadKeyringKey 从 OS keyring 读取主密钥（base64 包装的 32 字节）。
 // ok=false 仅表示"未找到"；keyring 本身不可用或条目损坏时记 warn 日志并
-// 返回 ok=false，调用方静默回退文件链——绝不 fail-closed。
+// 返回 ok=false，调用方静默回退文件链——绝不 fail-closed（strict 模式除外）。
 func loadKeyringKey() (key []byte, ok bool) {
 	s, err := keyringImpl.Get(keyringService, keyringAccount)
 	if err != nil {
@@ -100,6 +114,7 @@ func loadKeyringKey() (key []byte, ok bool) {
 			return nil, false
 		}
 		slog.Warn("OS keyring unavailable; falling back to file key chain",
+			"security_event", securityEventDowngrade,
 			"service", keyringService, "err", err,
 			"hint", "Linux 需要 D-Bus session bus + secret service；容器/无头服务器上这是预期行为")
 		return nil, false
@@ -107,6 +122,7 @@ func loadKeyringKey() (key []byte, ok bool) {
 	raw, err := base64.StdEncoding.DecodeString(s)
 	if err != nil || len(raw) != 32 {
 		slog.Warn("OS keyring entry is corrupt (not 32 bytes); falling back to file key chain",
+			"security_event", securityEventDowngrade,
 			"service", keyringService, "account", keyringAccount)
 		return nil, false
 	}
@@ -116,7 +132,8 @@ func loadKeyringKey() (key []byte, ok bool) {
 // storeKeyringKey 把主密钥写入 OS keyring。失败只记 warn（调用方继续走文件链）。
 func storeKeyringKey(key []byte) bool {
 	if err := keyringImpl.Set(keyringService, keyringAccount, base64.StdEncoding.EncodeToString(key)); err != nil {
-		slog.Warn("failed to store master key in OS keyring; continuing with file chain", "err", err)
+		slog.Warn("failed to store master key in OS keyring; continuing with file chain",
+			"security_event", securityEventDowngrade, "err", err)
 		return false
 	}
 	return true

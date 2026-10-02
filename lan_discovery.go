@@ -791,6 +791,17 @@ func parseLANAnnouncement(m *dnsMessage, srcIP net.IP, lookup func(string) (ed25
 		case lanTXTVerified:
 			verified = true
 		}
+		if !verified {
+			// P3-6: an unsigned (or unverifiable) announcement for a node
+			// whose key we already hold is suspicious — either a downgrade
+			// attack or a peer that stopped signing. Warn so operators
+			// notice; the peer is still parsed with Verified=false and
+			// never bridged (lanRegisterPeer gate).
+			if _, known := lookup(nodeID); known {
+				slog.Warn("lan discovery: unsigned announcement for a known node (possible downgrade or outdated peer)",
+					"node_id", nodeID)
+			}
+		}
 		ip := aRec[s.target]
 		if ip == nil {
 			ip = srcIP

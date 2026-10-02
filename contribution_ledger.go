@@ -1351,7 +1351,12 @@ func importLedgerToBbolt(h *bboltHandle, selfID, dataDir string) (*GossipLedger,
 		gl, loadErr := LoadGossipLedger(jsonPath)
 		if loadErr != nil {
 			// 损坏的 JSON：建新账本（与旧逻辑"损坏则重建"一致），坏文件 bak 留证。
-			slog.Warn("ledger json corrupt, creating new ledger in bbolt", "error", loadErr)
+			// P3-5: 这是一次不可逆的网络身份丢失——新账本生成全新的 ed25519
+			// 身份，旧身份签名的全部历史数据从此无法验证，对等节点会把本节点
+			// 当成一个新节点。ERROR 级别 + 明确恢复指引（不要只记一条 warn）。
+			slog.Error("ledger json corrupt: creating a NEW ledger identity in bbolt; previously signed history becomes unverifiable",
+				"path", jsonPath, "backup", jsonPath+".bak", "error", loadErr,
+				"hint", "if this was unexpected, stop the node and restore the backup over ledger.json (delete openmodelpool.bbolt first so it re-imports)")
 			gl, err = NewGossipLedger(selfID)
 			if err != nil {
 				return nil, err

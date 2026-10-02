@@ -149,13 +149,18 @@ type FederationManager struct {
 	localPeers     map[string]*NodeInfo
 	discoveryHints map[string][]string
 	dhtHints       map[string]string // nodeID -> DHT UDP "host:port" learned via gossip PEX
-	dht            *DHT
-	enabled        bool
-	relayEnabled   bool
-	loopRunning    bool
-	dataDir        string
-	stopCh         chan struct{}
-	lastETag       string
+	// dhtVerified pins nodeID -> DHT addr after a successful (signed, verified)
+	// bootstrap to it. A pinned hint wins over later gossip hints, so an
+	// attacker that speaks first (or later) cannot preempt a working address.
+	// Lazily allocated (many tests build FederationManager literally).
+	dhtVerified  map[string]string
+	dht          *DHT
+	enabled      bool
+	relayEnabled bool
+	loopRunning  bool
+	dataDir      string
+	stopCh       chan struct{}
+	lastETag     string
 }
 
 // initFederation loads federation config from cfg, loads cached trust pool from
@@ -365,7 +370,10 @@ func mergeTrustPools(local, incoming TrustPool) TrustPool {
 		}
 	}
 	incomingIdx := make(map[string]int, len(incoming.Nodes))
-	for _, n := range incoming.Nodes {
+	// P3-2: dedupe incoming records by NodeID first (fresher LastSeen wins;
+	// unparseable times keep the first), so a duplicated entry can never
+	// appear twice in the merged pool.
+	for _, n := range dedupeNodeInfos(incoming.Nodes) {
 		if n.NodeID == "" {
 			continue
 		}
@@ -386,7 +394,17 @@ func mergeTrustPools(local, incoming TrustPool) TrustPool {
 		clearTombstone(ln.NodeID, ln.LastSeen)
 		if idx, ok := incomingIdx[ln.NodeID]; ok {
 			if nodeInfoFresher(ln.LastSeen, merged.Nodes[idx].LastSeen) {
-				merged.Nodes[idx] = ln
+				// P1-1 field-level merge: the fresher record wins
+				// time-varying fields, but a sparse-but-fresh record must
+				// not wipe the other side's identity fields (PubKey et al.),
+				// or signature verification degrades to the unknown-node
+				// path until the next registry sync.
+				merged.Nodes[idx] = fillNodeInfoRich(ln, merged.Nodes[idx])
+			} else if ln.PubKey != "" {
+				// Even when our record is stale, our established key beats
+				// an incoming replacement: keys are not time-varying, so
+				// freshness must never rotate them (trust-anchor rule).
+				merged.Nodes[idx].PubKey = ln.PubKey
 			}
 			continue
 		}
@@ -398,6 +416,63 @@ func mergeTrustPools(local, incoming TrustPool) TrustPool {
 		merged.Nodes = append(merged.Nodes, ln)
 	}
 	return merged
+}
+
+// dedupeNodeInfos collapses duplicate NodeIDs (fresher LastSeen wins, with a
+// field-level merge; unparseable times keep the first record).
+func dedupeNodeInfos(nodes []NodeInfo) []NodeInfo {
+	seen := make(map[string]int, len(nodes))
+	out := make([]NodeInfo, 0, len(nodes))
+	for _, n := range nodes {
+		if n.NodeID == "" {
+			continue
+		}
+		if idx, dup := seen[n.NodeID]; dup {
+			if nodeInfoFresher(n.LastSeen, out[idx].LastSeen) {
+				out[idx] = fillNodeInfoRich(n, out[idx])
+			}
+			continue
+		}
+		seen[n.NodeID] = len(out)
+		out = append(out, n)
+	}
+	return out
+}
+
+// fillNodeInfoRich fills dst's empty identity/rich fields from src without
+// touching time-varying fields (Status, LastSeen, and any non-empty Endpoint/
+// Addresses/Version/Reputation/budgets stay dst's). Shared by
+// upsertKnownNodeLocked and mergeTrustPools so a sparse-but-fresh record can
+// never wipe established identity data (P1-1).
+func fillNodeInfoRich(dst, src NodeInfo) NodeInfo {
+	if dst.PubKey == "" {
+		dst.PubKey = src.PubKey
+	}
+	if dst.GitHubUser == "" {
+		dst.GitHubUser = src.GitHubUser
+	}
+	if dst.GitHubID == 0 {
+		dst.GitHubID = src.GitHubID
+	}
+	if dst.InviteBy == "" {
+		dst.InviteBy = src.InviteBy
+	}
+	if len(dst.SharedModels) == 0 {
+		dst.SharedModels = src.SharedModels
+	}
+	if len(dst.SharedProviders) == 0 {
+		dst.SharedProviders = src.SharedProviders
+	}
+	if dst.Endpoint == "" {
+		dst.Endpoint = src.Endpoint
+	}
+	if len(dst.Addresses) == 0 {
+		dst.Addresses = src.Addresses
+	}
+	if dst.JoinedAt == "" {
+		dst.JoinedAt = src.JoinedAt
+	}
+	return dst
 }
 
 // nodeInfoFresher 比较 RFC3339 格式的 LastSeen；a 更新返回 true。
@@ -662,25 +737,17 @@ func (f *FederationManager) upsertKnownNodeLocked(node NodeInfo) {
 	}
 	for i := range f.trustPool.Nodes {
 		if f.trustPool.Nodes[i].NodeID == node.NodeID {
-			// Preserve existing rich fields if the new info didn't carry them,
-			// but always refresh identity, addresses and status.
-			existing := f.trustPool.Nodes[i]
-			if len(node.SharedModels) == 0 {
-				node.SharedModels = existing.SharedModels
+			// Preserve rich fields the new info didn't carry (P1-1); fresh
+			// time-varying fields (Status forced active above, LastSeen,
+			// Endpoint/Addresses when present) come from the new info.
+			merged := fillNodeInfoRich(node, f.trustPool.Nodes[i])
+			// Trust-anchor rule: an established PubKey is never replaced by
+			// an incoming record (no signed key-rotation protocol exists, so
+			// a "new key" is indistinguishable from impersonation).
+			if f.trustPool.Nodes[i].PubKey != "" {
+				merged.PubKey = f.trustPool.Nodes[i].PubKey
 			}
-			if len(node.SharedProviders) == 0 {
-				node.SharedProviders = existing.SharedProviders
-			}
-			if node.PubKey == "" || existing.PubKey != "" {
-				node.PubKey = existing.PubKey
-			}
-			if node.Endpoint == "" {
-				node.Endpoint = existing.Endpoint
-			}
-			if len(node.Addresses) == 0 {
-				node.Addresses = existing.Addresses
-			}
-			f.trustPool.Nodes[i] = node
+			f.trustPool.Nodes[i] = merged
 			return
 		}
 	}
@@ -707,8 +774,9 @@ func (f *FederationManager) MergePeerHints(hints []PeerHint) {
 		f.discoveryHints[h.NodeID] = h.Addresses
 		// Seedless DHT: remember the sender's DHT UDP address alongside the
 		// HTTP hints so startDHTNode can bootstrap without configured seeds.
+		// Last-wins, but a verified pin (PinDHTHint) is never displaced.
 		if h.DHTAddr != "" {
-			if _, ok := f.dhtHints[h.NodeID]; !ok {
+			if _, pinned := f.dhtVerified[h.NodeID]; !pinned {
 				f.dhtHints[h.NodeID] = h.DHTAddr
 			}
 		}
@@ -716,16 +784,36 @@ func (f *FederationManager) MergePeerHints(hints []PeerHint) {
 }
 
 // NoteDHTHint records one node's DHT UDP listen address learned from a gossip
-// sync message (first-known wins). No-op on empty input.
+// sync message. Last-known wins (a moved node must be able to update its
+// address), except a verified pin (PinDHTHint) which gossip can never
+// displace. No-op on empty input.
 func (f *FederationManager) NoteDHTHint(nodeID, dhtAddr string) {
 	if nodeID == "" || dhtAddr == "" {
 		return
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, ok := f.dhtHints[nodeID]; !ok {
-		f.dhtHints[nodeID] = dhtAddr
+	if _, pinned := f.dhtVerified[nodeID]; pinned {
+		return
 	}
+	f.dhtHints[nodeID] = dhtAddr
+}
+
+// PinDHTHint locks a verified DHT UDP address for a node: it becomes the
+// hint and later gossip hints for the same node are ignored. Called after a
+// successful (signed, verified) bootstrap to the address — i.e. the address
+// proved live and authentic, so it outranks hearsay. No-op on empty input.
+func (f *FederationManager) PinDHTHint(nodeID, dhtAddr string) {
+	if nodeID == "" || dhtAddr == "" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.dhtVerified == nil {
+		f.dhtVerified = make(map[string]string)
+	}
+	f.dhtVerified[nodeID] = dhtAddr
+	f.dhtHints[nodeID] = dhtAddr
 }
 
 // DHTHint returns the learned DHT UDP address for one node, or "".

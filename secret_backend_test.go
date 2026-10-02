@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -245,6 +248,8 @@ func TestNormalizeSecretBackend(t *testing.T) {
 	cases := map[string]string{
 		"keyring": "keyring",
 		"KEYRING": "keyring",
+		"strict":  "strict",
+		"STRICT":  "strict",
 		"file":    "file",
 		"":        "file",
 		"bogus":   "file",
@@ -283,6 +288,52 @@ func TestRefreshEncryptorForSecretBackend_FileBackendNoop(t *testing.T) {
 	refreshEncryptorForSecretBackend()
 	if enc != sentinel {
 		t.Error("file backend must leave the global enc untouched")
+	}
+}
+
+// ============================================================
+// P2-2：keyring 降级可观测性 + strict 模式。
+// ============================================================
+
+// secret_backend=strict 时 keyring 缺失/不可用必须 fail-closed，绝不走文件链。
+func TestSecretBackend_StrictRequiresKeyring(t *testing.T) {
+	fake := setupKeyringTest(t, "strict")
+
+	if _, err := NewEncryptor(); err == nil {
+		t.Fatal("strict mode with an empty keyring must fail closed, got nil error")
+	} else if !strings.Contains(err.Error(), "secret_backend=strict") {
+		t.Fatalf("strict error must name the mode, got %v", err)
+	}
+
+	krKey := rand32(t)
+	fake.data = map[string]string{fake.key(keyringService, keyringAccount): base64.StdEncoding.EncodeToString(krKey)}
+	e, err := NewEncryptor()
+	if err != nil {
+		t.Fatalf("strict mode with a present key must succeed: %v", err)
+	}
+	if string(e.key) != string(krKey) {
+		t.Error("strict mode must use the keyring key")
+	}
+	if e.IsEphemeral() {
+		t.Error("keyring-backed key must not be ephemeral")
+	}
+}
+
+// 每次 keyring→文件降级必须带 security_event 结构化属性，便于告警采集。
+func TestSecretBackend_DowngradeLogsSecurityEvent(t *testing.T) {
+	fake := setupKeyringTest(t, "keyring")
+	fake.getErr = errors.New("no D-Bus session bus")
+
+	var buf bytes.Buffer
+	oldLog := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(oldLog) })
+
+	if _, ok := loadKeyringKey(); ok {
+		t.Fatal("expected a miss on keyring transport error")
+	}
+	if got := buf.String(); !strings.Contains(got, "security_event="+securityEventDowngrade) {
+		t.Fatalf("downgrade must log security_event=%s, got %q", securityEventDowngrade, got)
 	}
 }
 

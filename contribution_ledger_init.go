@@ -82,7 +82,14 @@ func initContributionLedgerJSON(dataDir, selfID string) {
 				"peer_id", gl.PeerID(),
 				"records", gl.Count())
 		} else {
-			slog.Warn("failed to load contribution ledger, creating new", "error", loadErr)
+			// P3-5: 损坏即新身份（不可逆：旧签名历史无法再验证），且必须先把
+			// 坏文件 bak 留证——直接覆盖会销毁唯一的恢复证据。
+			slog.Error("ledger json corrupt: creating a NEW ledger identity; previously signed history becomes unverifiable",
+				"path", ledgerPath, "backup", ledgerPath+".bak", "error", loadErr,
+				"hint", "if this was unexpected, stop the node and restore the backup over ledger.json")
+			if berr := bakJSON(ledgerPath); berr != nil {
+				slog.Warn("could not back up corrupt ledger", "error", berr)
+			}
 		}
 	}
 

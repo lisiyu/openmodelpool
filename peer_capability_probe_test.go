@@ -401,7 +401,7 @@ func TestTargetsFromTrustPool(t *testing.T) {
 		{NodeID: "no-models", Endpoint: "http://x:8080", Status: "active"},
 		{
 			NodeID:       "good-node",
-			Endpoint:     "example.com:8080", // no scheme → fixed up
+			Endpoint:     "example.com:8080", // no scheme → fixed up to https
 			Status:       "active",
 			SharedModels: []string{"m1", "m2", "m1"}, // dup in SharedModels
 			SharedProviders: []SharedProvider{
@@ -420,7 +420,7 @@ func TestTargetsFromTrustPool(t *testing.T) {
 		byID[tg.nodeID] = tg
 	}
 	good := byID["good-node"]
-	if good.endpoint != "http://example.com:8080" {
+	if good.endpoint != "https://example.com:8080" {
 		t.Fatalf("scheme fixup failed, endpoint=%q", good.endpoint)
 	}
 	if len(good.models) != 3 || good.models[0] != "m1" || good.models[1] != "m2" || good.models[2] != "m3" {
@@ -438,7 +438,7 @@ func TestTargetsFromTrustPool_MaxModelsCap(t *testing.T) {
 		models = append(models, "model-"+string(rune('a'+i)))
 	}
 	pool := TrustPool{Nodes: []NodeInfo{
-		{NodeID: "hog", Endpoint: "http://x:8080", Status: "active", SharedModels: models},
+		{NodeID: "hog", Endpoint: "https://x:8080", Status: "active", SharedModels: models},
 	}}
 	targets := targetsFromTrustPool(pool, "self")
 	if len(targets) != 1 {
@@ -446,6 +446,34 @@ func TestTargetsFromTrustPool_MaxModelsCap(t *testing.T) {
 	}
 	if got := len(targets[0].models); got != capabilityProbeMaxModels() {
 		t.Fatalf("expected model cap %d, got %d", capabilityProbeMaxModels(), got)
+	}
+}
+
+// TestTargetsFromTrustPool_SkipsPlaintext verifies P2-3: plaintext http
+// targets are skipped (the probe signature would travel sniffable), except
+// loopback which stays allowed for tests and local development.
+func TestTargetsFromTrustPool_SkipsPlaintext(t *testing.T) {
+	pool := TrustPool{Nodes: []NodeInfo{
+		{NodeID: "plain-lan", Endpoint: "http://192.0.2.1:8080", Status: "active", SharedModels: []string{"m1"}},
+		{NodeID: "plain-dns", Endpoint: "http://peer.example.com", Status: "active", SharedModels: []string{"m1"}},
+		{NodeID: "loop-v4", Endpoint: "http://127.0.0.1:8080", Status: "active", SharedModels: []string{"m1"}},
+		{NodeID: "loop-name", Endpoint: "http://localhost:8080", Status: "active", SharedModels: []string{"m1"}},
+		{NodeID: "tls-node", Endpoint: "https://peer.example.com", Status: "active", SharedModels: []string{"m1"}},
+	}}
+	targets := targetsFromTrustPool(pool, "self")
+	byID := map[string]capabilityProbeTarget{}
+	for _, tg := range targets {
+		byID[tg.nodeID] = tg
+	}
+	for _, id := range []string{"plain-lan", "plain-dns"} {
+		if _, ok := byID[id]; ok {
+			t.Errorf("plaintext non-loopback target %s must be skipped", id)
+		}
+	}
+	for _, id := range []string{"loop-v4", "loop-name", "tls-node"} {
+		if _, ok := byID[id]; !ok {
+			t.Errorf("target %s must be kept (loopback/https)", id)
+		}
 	}
 }
 

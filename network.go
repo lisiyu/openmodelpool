@@ -449,11 +449,12 @@ func (rt *RouteTable) SelectBestNode(model string) *RouteEntry {
 	scored_list := make([]scored, 0, len(candidates))
 	for i := range candidates {
 		e := &candidates[i]
-		// Contribution ratio: use TrustScore as proxy, default 0.5 if not set
-		contribRatio := 0.5
-		if contribRatio <= 0 {
-			contribRatio = 0.1
-		}
+		// NOTE: the contribution-ratio term is currently a neutral constant.
+		// RouteEntry carries no TrustScore (that lives on PeerInfo), so there
+		// is nothing to read here; wiring reputation into gateway scoring is
+		// future work. Do not re-add a "default 0.5 if not set" branch for a
+		// value that is never read — it is dead code.
+		const contribRatio = 0.5
 
 		// Score: lower is better
 		score := e.LatencyMS*0.4 + e.LoadScore*1000*0.3 + (1.0/contribRatio)*500*0.3
@@ -493,11 +494,10 @@ func (rt *RouteTable) SelectRankedNodes(model string, limit int) []RouteEntry {
 		if e.FailCount >= gatewayFailoverMaxFails {
 			continue
 		}
-		// Contribution ratio: use TrustScore as proxy, default 0.5 if not set
-		contribRatio := 0.5
-		if contribRatio <= 0 {
-			contribRatio = 0.1
-		}
+		// NOTE: neutral constant; see SelectBestNode — RouteEntry carries no
+		// TrustScore, so the old "default 0.5 if not set" branch (which could
+		// never fire on a constant) was removed as dead code.
+		const contribRatio = 0.5
 		// Score: lower is better（与 SelectBestNode 同公式，另加失败惩罚）
 		score := e.LatencyMS*0.4 + e.LoadScore*1000*0.3 + (1.0/contribRatio)*500*0.3 +
 			float64(e.FailCount)*gatewayFailoverScorePenalty

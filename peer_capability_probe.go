@@ -58,7 +58,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -319,7 +321,21 @@ func targetsFromTrustPool(pool TrustPool, selfID string) []capabilityProbeTarget
 			continue
 		}
 		if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-			base = "http://" + base
+			// Unknown scheme: default to https. Probing (like relaying)
+			// carries a 5-minute-valid signature, so plaintext must never
+			// be the silent default for an unknown endpoint.
+			base = "https://" + base
+		}
+		if u, err := url.Parse(base); err != nil || u.Hostname() == "" {
+			continue
+		} else if u.Scheme != "https" && !isProbeLoopbackTarget(u.Hostname()) {
+			// Plaintext probes expose the relay signature to LAN sniffing
+			// (replayable within its window). Skip non-loopback http
+			// targets; serve https to be probed. Loopback stays allowed
+			// for tests and local development (not sniffable off-host).
+			slog.Warn("capability probe: skipping plaintext target (serve https to be probed)",
+				"node_id", n.NodeID, "endpoint", base)
+			continue
 		}
 		seen := make(map[string]bool)
 		var models []string
@@ -345,6 +361,19 @@ func targetsFromTrustPool(pool TrustPool, selfID string) []capabilityProbeTarget
 		out = append(out, capabilityProbeTarget{nodeID: n.NodeID, endpoint: base, models: models})
 	}
 	return out
+}
+
+// isProbeLoopbackTarget reports whether host is loopback-only: plaintext
+// probes there are acceptable for tests and local development because the
+// traffic never leaves the host (not sniffable off-host, unlike LAN).
+func isProbeLoopbackTarget(host string) bool {
+	if strings.EqualFold(strings.TrimSpace(host), "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(strings.TrimSpace(host)); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // runDueProbes probes every (node,model) whose per-node interval has elapsed

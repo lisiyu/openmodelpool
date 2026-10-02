@@ -72,6 +72,19 @@ func NewEncryptor() (*Encryptor, error) {
 		return &Encryptor{key: raw}, nil
 	}
 
+	// G5-strict: keyring explicitly required. Any miss/unavailability is a
+	// hard error (fail-closed): the file fallbacks below are exactly the
+	// downgrade path strict mode exists to forbid. Operators recover by
+	// restoring keyring access (or temporarily switching secret_backend=file).
+	if secretBackend() == secretBackendStrict {
+		if key, ok := loadKeyringKey(); ok {
+			return &Encryptor{key: key}, nil
+		}
+		return nil, errors.New("secret_backend=strict requires the master key in the OS keyring (" +
+			keyringService + "/" + keyringAccount + "), but it is missing or unreachable; " +
+			"restore keyring access or set secret_backend=file to allow the file fallback")
+	}
+
 	// G5: keyring 后端（仅当 secret_backend=keyring）。
 	if secretBackend() == secretBackendKeyring {
 		if key, ok := loadKeyringKey(); ok {
@@ -175,15 +188,22 @@ func removeStaleKeyFile() {
 
 // refreshEncryptorForSecretBackend 在 initConfig 之后重新解析主密钥。
 // init() 执行时 cfg 尚未加载，只能看到环境变量；config 文件里的
-// secret_backend=keyring 在这里生效（首次触发 keyring 迁移）。
+// secret_backend=keyring/strict 在这里生效（首次触发 keyring 迁移）。
 // 幂等：keyring 命中路径除清理陈旧 .enc_key 外无副作用。
 // 调用时机是单线程启动期（initCore），早于所有后台 goroutine。
 func refreshEncryptorForSecretBackend() {
-	if secretBackend() != secretBackendKeyring {
+	backend := secretBackend()
+	if backend != secretBackendKeyring && backend != secretBackendStrict {
 		return
 	}
 	e, err := NewEncryptor()
 	if err != nil {
+		if backend == secretBackendStrict {
+			// strict 承诺 fail-closed：带着文件钥匙继续跑正是它要禁止的。
+			slog.Error("secret_backend=strict but the OS keyring is unavailable; refusing to start with a file key",
+				"security_event", securityEventDowngrade, "err", err)
+			os.Exit(1)
+		}
 		slog.Error("keyring encryptor refresh failed; keeping startup key", "err", err)
 		return
 	}

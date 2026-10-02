@@ -155,6 +155,10 @@ func (o PunchOffer) VerifySignature(pub ed25519.PublicKey) bool {
 // 查公钥并验签，同时用 SenderTS 新鲜度窗口防重放。Fail-closed：未知节点、
 // 无公钥、无签名、签名无效、时间戳过期/超前，全部拒绝。
 func verifyPunchOffer(offer *PunchOffer) bool {
+	if offer == nil {
+		slog.Warn("punch offer rejected: nil offer")
+		return false
+	}
 	if offer.Signature == "" {
 		slog.Warn("punch offer rejected: missing signature", "peer", offer.NodeID)
 		return false
@@ -164,7 +168,10 @@ func verifyPunchOffer(offer *PunchOffer) bool {
 		return false
 	}
 	info, ok := fed.GetNode(offer.NodeID)
-	if !ok || info.PubKey == "" {
+	// P3-7: nil-guard the returned pointer like lanTrustPubKey does. GetNode
+	// cannot return (nil, true) today, but a future refactor must not turn
+	// this dereference into a panic on the hot UDP path.
+	if !ok || info == nil || info.PubKey == "" {
 		slog.Warn("punch offer rejected: unknown node or missing pubkey", "peer", offer.NodeID)
 		return false
 	}
