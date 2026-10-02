@@ -173,6 +173,7 @@ type ModelDef struct {
 	Enabled       bool            `json:"enabled"`
 	EnabledByKeys map[string]bool `json:"enabled_by_keys,omitempty"` // per-key enabled state: keyID -> enabled
 	AvailableKeys []string        `json:"available_keys,omitempty"`  // keyIDs that have this model available
+	Source        string          `json:"source,omitempty"`          // custom / user / default / system
 }
 
 // APIKeyConfig represents a single API key with its own quota and access control.
