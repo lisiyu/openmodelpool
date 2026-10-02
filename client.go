@@ -1009,8 +1009,14 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 			parts = append(parts, "[User]: "+m.Content)
 		}
 	}
+	prompt := strings.Join(parts, "\n")
+	// Sider API rejects overly long prompts ("Too many words in the query").
+	// Truncate to ~8000 chars, keeping the tail (most recent messages).
+	if len(prompt) > 8000 {
+		prompt = "...[truncated]...\n" + prompt[len(prompt)-7900:]
+	}
 	return map[string]any{
-		"prompt":           strings.Join(parts, "\n"),
+		"prompt":           prompt,
 		"stream":           stream,
 		"app_name":         "ChitChat_Edge_Ext",
 		"app_version":      "4.40.0",
