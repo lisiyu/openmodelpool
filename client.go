@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -300,6 +301,13 @@ func isPrivateHostFresh(ctx context.Context, host string) bool {
 // ssrfDialer is the underlying dialer for SSRF-guarded transports.
 var ssrfDialer = &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 
+// preferIPv4 reports whether outbound provider connections should force IPv4.
+// Set OPENMODELPOOL_PREFER_IPV4=1 on hosts with broken IPv6 (e.g. Windows PCs
+// where IPv6 dials hang instead of failing fast).
+func preferIPv4() bool {
+	return os.Getenv("OPENMODELPOOL_PREFER_IPV4") == "1"
+}
+
 // ssrfGuardedDialContext validates the ACTUAL dialed address at connection
 // time with a fresh lookup (see isPrivateHostFresh). The construction-time
 // cachedIsPrivateHost check in proxyHTTPClientForURL stays as the cheap first
@@ -313,6 +321,15 @@ func ssrfGuardedDialContext(ctx context.Context, network, addr string) (net.Conn
 		}
 		if isPrivateHostFresh(ctx, host) {
 			return nil, fmt.Errorf("ssrf blocked: dial target %s resolves to a private/internal address", host)
+		}
+	}
+	// Force IPv4 when requested (broken IPv6 stacks hang instead of failing fast).
+	if preferIPv4() {
+		switch network {
+		case "tcp":
+			network = "tcp4"
+		case "udp":
+			network = "udp4"
 		}
 	}
 	return ssrfDialer.DialContext(ctx, network, addr)
@@ -968,6 +985,9 @@ func setOpenAIHeaders(req *http.Request, apiKey string) {
 // ============================================================
 
 func siderBuildHeaders(token string) http.Header {
+	// Strip a user-pasted "Bearer " prefix to avoid "Bearer Bearer ..." (the
+	// admin UI copy-paste often includes it).
+	token = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(token), "Bearer "))
 	h := make(http.Header)
 	for k, v := range siderHeadersBase {
 		h.Set(k, v)
