@@ -498,7 +498,8 @@ function renderModelMatrix(pid) {
   if (customModels.length) {
     tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">自定义模型（' + customModels.length + '）</td></tr>';
     for (var ci = 0; ci < customModels.length; ci++) {
-      tbody += renderModelRow(customModels[ci], ' <span class="v8-model-tag" style="background:rgba(245,158,11,.15);color:#f59e0b;font-size:10px;padding:1px 6px;border-radius:3px">自定义</span>');
+      var cm = customModels[ci];
+      tbody += renderModelRow(cm, ' <span class="v8-model-tag" style="background:rgba(245,158,11,.15);color:#f59e0b;font-size:10px;padding:1px 6px;border-radius:3px">自定义</span> <button onclick="v8DeleteCustomModel(\'' + escapeJS(pid) + '\',\'' + escapeJS(cm.id) + '\')" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);font-size:10px;padding:1px 8px;border-radius:3px;cursor:pointer;margin-left:4px">删除</button>');
     }
   }
   if (!systemModels.length && !syncedModels.length && !customModels.length) {
@@ -637,6 +638,15 @@ function v8AddCustomModel() {
   document.getElementById('v8AddModelInline').remove();
   renderModelMatrix(currentPid);
   toast('✅ 已添加自定义模型: ' + mid + '（记得保存）');
+}
+
+function v8DeleteCustomModel(pid, mid) {
+  var p = allProviders.find(function(x){ return x.id === pid; });
+  if (!p || !p.models) return;
+  if (!confirm('删除自定义模型 ' + mid + '？')) return;
+  p.models = p.models.filter(function(m){ return m.id !== mid; });
+  renderModelMatrix(pid);
+  toast('已删除: ' + mid + '（记得保存）');
 }
 
 function v8MatrixSearch(query) {
