@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -82,6 +84,7 @@ func TestIsPublicRoutableIP(t *testing.T) {
 }
 
 func TestGeoDetectRegionStub(t *testing.T) {
+	stubCfg(t, map[string]any{"region_geo_enabled": "true"})
 	stubGeoLookup(t, func(ip string) (string, error) {
 		if ip == "1.1.1.1" {
 			return "AU", nil // the first-octet heuristic says Americas; geo says AP
@@ -118,6 +121,7 @@ func TestGeoDetectRegionDisabled(t *testing.T) {
 }
 
 func TestGeoDetectRegionLookupError(t *testing.T) {
+	stubCfg(t, map[string]any{"region_geo_enabled": "true"})
 	stubGeoLookup(t, func(ip string) (string, error) {
 		return "", errors.New("boom")
 	})
@@ -141,6 +145,7 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool, msg string) 
 }
 
 func TestMaybeEnrichRegionAsyncUpgradesUnknown(t *testing.T) {
+	stubCfg(t, map[string]any{"region_geo_enabled": "true"})
 	stubGeoLookup(t, func(ip string) (string, error) { return "DE", nil })
 	rm := NewRegionManager()
 	// 25.0.0.0/8: public per Go stdlib, unknown to the first-octet heuristic.
@@ -161,6 +166,7 @@ func TestMaybeEnrichRegionAsyncUpgradesUnknown(t *testing.T) {
 }
 
 func TestMaybeEnrichRegionAsyncNeverOverwritesKnown(t *testing.T) {
+	stubCfg(t, map[string]any{"region_geo_enabled": "true"})
 	stubGeoLookup(t, func(ip string) (string, error) { return "DE", nil })
 	rm := NewRegionManager()
 	rm.RegisterNodeSelfReport("peer-2", "ap", "", 0, 0)
@@ -273,4 +279,99 @@ func TestRegionSourceRank(t *testing.T) {
 	if regionSourceRank("whatever") != 0 {
 		t.Error("unlisted sources should rank 0")
 	}
+}
+
+// ============================================================
+// GeoIP hardening: opt-in default, provider status checks, shared rate limit.
+// ============================================================
+
+// GeoIP is opt-in: with an empty config no lookup may run and no public IP
+// may leave the node.
+func TestGeoDetectRegion_DisabledByDefault(t *testing.T) {
+	stubCfg(t, map[string]any{})
+	called := false
+	stubGeoLookup(t, func(ip string) (string, error) {
+		called = true
+		return "CN", nil
+	})
+	rm := NewRegionManager()
+	if got := rm.GeoDetectRegion("8.8.8.8"); got != RegionUnknown {
+		t.Errorf("GeoDetectRegion with default config = %q, want unknown (opt-in)", got)
+	}
+	if called {
+		t.Error("no provider lookup may run unless region_geo_enabled=true")
+	}
+}
+
+// A non-200 provider response is an error, never a country code.
+func TestGeoLookupCountry_RejectsNon200(t *testing.T) {
+	var hits int
+	srv := newGeoTestServer(t, &hits, http.StatusTooManyRequests, "US")
+	oldBase := geoLookupBaseURL
+	geoLookupBaseURL = srv.URL + "/"
+	t.Cleanup(func() { geoLookupBaseURL = oldBase })
+
+	if _, err := defaultGeoLookupCountry("9.9.9.9"); err == nil {
+		t.Fatal("HTTP 429 must be an error, not a country code")
+	}
+	if hits != 1 {
+		t.Fatalf("expected exactly 1 provider request, got %d", hits)
+	}
+}
+
+// The process-wide budget gates cache misses: once exhausted, lookups fail
+// WITHOUT touching the network.
+func TestGeoLookupCountry_RateLimited(t *testing.T) {
+	var hits int
+	srv := newGeoTestServer(t, &hits, http.StatusOK, "DE")
+	oldBase := geoLookupBaseURL
+	geoLookupBaseURL = srv.URL + "/"
+	t.Cleanup(func() { geoLookupBaseURL = oldBase })
+
+	geoRateMu.Lock()
+	geoRateWindow = time.Now()
+	geoRateCount = geoRateMaxPerMinute
+	geoRateMu.Unlock()
+	t.Cleanup(func() {
+		geoRateMu.Lock()
+		geoRateWindow = time.Time{}
+		geoRateCount = 0
+		geoRateMu.Unlock()
+	})
+
+	if _, err := defaultGeoLookupCountry("10.9.9.9"); !errors.Is(err, errGeoRateLimited) {
+		t.Fatalf("exhausted budget must return errGeoRateLimited, got %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("rate-limited lookup must not hit the network (hits=%d)", hits)
+	}
+}
+
+// A healthy provider response still flows through.
+func TestGeoLookupCountry_OK(t *testing.T) {
+	var hits int
+	srv := newGeoTestServer(t, &hits, http.StatusOK, "jp\n")
+	oldBase := geoLookupBaseURL
+	geoLookupBaseURL = srv.URL + "/"
+	t.Cleanup(func() { geoLookupBaseURL = oldBase })
+
+	cc, err := defaultGeoLookupCountry("10.8.8.8")
+	if err != nil {
+		t.Fatalf("healthy lookup failed: %v", err)
+	}
+	if cc != "JP" {
+		t.Fatalf("country = %q, want JP (uppercased/trimmed)", cc)
+	}
+}
+
+// newGeoTestServer serves a fixed provider response and counts requests.
+func newGeoTestServer(t *testing.T, hits *int, status int, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*hits++
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
 }

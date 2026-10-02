@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -281,5 +283,110 @@ func TestGuestQuota_IssueNegativeRejected(t *testing.T) {
 	rec := guestKeyStore.GetGuestKeyRecord(issued)
 	if rec == nil || rec.Quota != 100 || rec.RPM != 5 {
 		t.Fatalf("issued record does not persist quota: %+v", rec)
+	}
+}
+
+// ============================================================
+// Usage journal persistence: a restart must not reset quota accounting.
+// ============================================================
+
+// TestGuestUsageTracker_PersistsAcrossRestart reserves quota, re-initializes
+// the tracker from the same dir (simulating a process restart), and requires
+// the daily, hourly and RPM journals to survive.
+func TestGuestUsageTracker_PersistsAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	initGuestKeyUsageTrackerWithDir(dir)
+
+	if ok, _ := guestKeyUsage.CheckAndReserveFull("k", 100, 100, 0, 5, 80); !ok {
+		t.Fatal("first 80t reservation should be allowed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "guest_usage.json")); err != nil {
+		t.Fatalf("journal file must exist after a mutation: %v", err)
+	}
+
+	// Simulate a restart: brand-new tracker instance over the same dir.
+	initGuestKeyUsageTrackerWithDir(dir)
+	if got := guestKeyUsage.GetUsage("k"); got != 80 {
+		t.Fatalf("daily usage after restart = %d, want 80", got)
+	}
+	guestKeyUsage.mu.Lock()
+	rpmCount := guestKeyUsage.rpm["k"]
+	hourly := guestKeyUsage.hourly["k"]
+	guestKeyUsage.mu.Unlock()
+	if hourly != 80 {
+		t.Fatalf("hourly usage after restart = %d, want 80", hourly)
+	}
+	if rpmCount != 1 {
+		t.Fatalf("rpm count after restart = %d, want 1", rpmCount)
+	}
+	// Both windows enforced against the restored state: only 20t left daily.
+	if ok, _ := guestKeyUsage.CheckAndReserveFull("k", 100, 100, 0, 5, 30); ok {
+		t.Fatal("30t reservation must be denied with 20t remaining after restart")
+	}
+}
+
+// TestGuestUsageTracker_StaleJournalRolls writes a journal from a previous
+// day/hour/minute and requires the first use after load to reset the expired
+// windows instead of resurrecting dead quota.
+func TestGuestUsageTracker_StaleJournalRolls(t *testing.T) {
+	dir := t.TempDir()
+	stale := guestUsageJournal{
+		Day: "2000-01-01", Usage: map[string]int64{"k": 80},
+		Hour: "2000-01-01T00", Hourly: map[string]int64{"k": 50},
+		Minute: "2000-01-01T00:00", RPM: map[string]int{"k": 3},
+	}
+	data, err := json.Marshal(stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "guest_usage.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	initGuestKeyUsageTrackerWithDir(dir)
+	if got := guestKeyUsage.GetUsage("k"); got != 0 {
+		t.Fatalf("stale daily journal must roll to 0, got %d", got)
+	}
+	guestKeyUsage.mu.Lock()
+	hourly := guestKeyUsage.hourly["k"]
+	rpmCount := guestKeyUsage.rpm["k"]
+	guestKeyUsage.mu.Unlock()
+	if hourly != 0 || rpmCount != 0 {
+		t.Fatalf("stale hourly/rpm journals must roll to 0, got %d/%d", hourly, rpmCount)
+	}
+	// And the fresh windows accept reservations again.
+	if ok, _ := guestKeyUsage.CheckAndReserveFull("k", 100, 100, 0, 5, 80); !ok {
+		t.Fatal("fresh windows after roll must allow reservations")
+	}
+}
+
+// TestGuestUsageTracker_CorruptJournalStartsFresh requires a corrupt journal
+// to degrade to empty accounting, never to a crash or a hard failure.
+func TestGuestUsageTracker_CorruptJournalStartsFresh(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "guest_usage.json"), []byte("{not json"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	initGuestKeyUsageTrackerWithDir(dir)
+	if got := guestKeyUsage.GetUsage("k"); got != 0 {
+		t.Fatalf("corrupt journal must start fresh, got usage %d", got)
+	}
+	if ok, _ := guestKeyUsage.CheckAndReserveFull("k", 100, 0, 0, 0, 10); !ok {
+		t.Fatal("fresh tracker must allow reservations")
+	}
+}
+
+// TestGuestUsageTracker_MemoryOnlySkipsIO pins the in-memory constructor:
+// no journal path, no disk writes, accounting still works.
+func TestGuestUsageTracker_MemoryOnlySkipsIO(t *testing.T) {
+	initGuestKeyUsageTracker()
+	if guestKeyUsage.dataPath != "" {
+		t.Fatalf("in-memory tracker must have no journal path, got %q", guestKeyUsage.dataPath)
+	}
+	if ok, _ := guestKeyUsage.CheckAndReserveFull("k", 100, 0, 0, 0, 10); !ok {
+		t.Fatal("in-memory tracker must enforce normally")
+	}
+	if got := guestKeyUsage.GetUsage("k"); got != 10 {
+		t.Fatalf("usage = %d, want 10", got)
 	}
 }

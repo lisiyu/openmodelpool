@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -52,7 +53,7 @@ func newSignedRelayRequest(t *testing.T, method, path string, body []byte) *http
 	t.Helper()
 	req := httptest.NewRequest(method, path, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	sig, ts := signRelayForward(node.NodeID(), method, path, body)
+	sig, ts, nonce := signRelayForward(node.NodeID(), method, path, body)
 	if sig == "" {
 		t.Fatalf("signRelayForward returned empty signature (node initialized?)")
 	}
@@ -60,6 +61,9 @@ func newSignedRelayRequest(t *testing.T, method, path string, body []byte) *http
 	req.Header.Set("X-Node-Auth", node.NodeID())
 	req.Header.Set(headerRelaySig, sig)
 	req.Header.Set(headerRelayTs, ts)
+	if nonce != "" {
+		req.Header.Set(headerRelayNonce, nonce)
+	}
 	return req
 }
 
@@ -164,13 +168,14 @@ func TestGatewayForwardToRemoteSignsRequest(t *testing.T) {
 	relayTestEnv(t)
 
 	var captured struct {
-		nodeID, sig, ts, method, path string
-		body                          []byte
+		nodeID, sig, ts, nonce, method, path string
+		body                                 []byte
 	}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured.nodeID = r.Header.Get("X-Node-ID")
 		captured.sig = r.Header.Get(headerRelaySig)
 		captured.ts = r.Header.Get(headerRelayTs)
+		captured.nonce = r.Header.Get(headerRelayNonce)
 		captured.method = r.Method
 		captured.path = r.URL.Path
 		captured.body, _ = io.ReadAll(r.Body)
@@ -209,6 +214,7 @@ func TestGatewayForwardToRemoteSignsRequest(t *testing.T) {
 	verifyReq.Header.Set("X-Node-Auth", captured.nodeID)
 	verifyReq.Header.Set(headerRelaySig, captured.sig)
 	verifyReq.Header.Set(headerRelayTs, captured.ts)
+	verifyReq.Header.Set(headerRelayNonce, captured.nonce)
 	if status, msg := verifyRelayForwardAuth(verifyReq, captured.body); status != 0 {
 		t.Fatalf("receiver rejected a legitimately signed gateway forward: status=%d msg=%s", status, msg)
 	}
@@ -221,13 +227,14 @@ func TestRelayToRemoteSignsRequest(t *testing.T) {
 	relayTestEnv(t)
 
 	var captured struct {
-		nodeID, sig, ts, method, path string
-		body                          []byte
+		nodeID, sig, ts, nonce, method, path string
+		body                                 []byte
 	}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured.nodeID = r.Header.Get("X-Node-ID")
 		captured.sig = r.Header.Get(headerRelaySig)
 		captured.ts = r.Header.Get(headerRelayTs)
+		captured.nonce = r.Header.Get(headerRelayNonce)
 		captured.method = r.Method
 		captured.path = r.URL.Path
 		captured.body, _ = io.ReadAll(r.Body)
@@ -268,6 +275,7 @@ func TestRelayToRemoteSignsRequest(t *testing.T) {
 	verifyReq.Header.Set("X-Node-Auth", captured.nodeID)
 	verifyReq.Header.Set(headerRelaySig, captured.sig)
 	verifyReq.Header.Set(headerRelayTs, captured.ts)
+	verifyReq.Header.Set(headerRelayNonce, captured.nonce)
 	if status, msg := verifyRelayForwardAuth(verifyReq, captured.body); status != 0 {
 		t.Fatalf("receiver rejected a legitimately signed relay forward: status=%d msg=%s", status, msg)
 	}
@@ -284,7 +292,7 @@ func TestRelayForwardAuth_PathTamper_Rejected(t *testing.T) {
 	tamperedPath := "/v1/embeddings"
 
 	// Legitimately sign over the original path.
-	sig, ts := signRelayForward(node.NodeID(), http.MethodPost, signedPath, body)
+	sig, ts, _ := signRelayForward(node.NodeID(), http.MethodPost, signedPath, body)
 	if sig == "" {
 		t.Fatalf("signRelayForward returned empty signature (node initialized?)")
 	}
@@ -309,7 +317,7 @@ func TestRelayForwardAuth_ReplayRejected(t *testing.T) {
 	relayTestEnv(t)
 	body := []byte(`{"model":"gpt-4"}`)
 
-	sig, ts := signRelayForward(node.NodeID(), http.MethodPost, "/v1/chat/completions", body)
+	sig, ts, nonce := signRelayForward(node.NodeID(), http.MethodPost, "/v1/chat/completions", body)
 	if sig == "" {
 		t.Fatalf("signRelayForward returned empty signature (node initialized?)")
 	}
@@ -319,6 +327,7 @@ func TestRelayForwardAuth_ReplayRejected(t *testing.T) {
 		req.Header.Set("X-Node-Auth", node.NodeID())
 		req.Header.Set(headerRelaySig, sig)
 		req.Header.Set(headerRelayTs, ts)
+		req.Header.Set(headerRelayNonce, nonce)
 		return req
 	}
 
@@ -345,5 +354,85 @@ func TestRelayForwardAuth_DoubleVerifySameRequest_Passes(t *testing.T) {
 	}
 	if status, msg := verifyRelayForwardAuth(req, body); status != 0 {
 		t.Fatalf("re-verification of the same request should pass, got %d (%s)", status, msg)
+	}
+}
+
+// ⑦ Same-second distinct forwards must NOT collide: the deterministic ed25519
+// signature used to be a pure function of (node, method, path, body, second),
+// so two legitimate identical forwards in the same second shared a signature
+// and the second was wrongly 403'd as a replay (this also broke gateway
+// failover retries to the next candidate). The envelope nonce must make every
+// signature unique.
+func TestRelayForwardAuth_SameSecondDistinctForwardsAccepted(t *testing.T) {
+	relayTestEnv(t)
+	body := []byte(`{"model":"gpt-4"}`)
+	buildReq := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		sig, ts, nonce := signRelayForward(node.NodeID(), http.MethodPost, "/v1/chat/completions", body)
+		if sig == "" {
+			t.Fatalf("signRelayForward returned empty signature (node initialized?)")
+		}
+		req.Header.Set("X-Node-ID", node.NodeID())
+		req.Header.Set("X-Node-Auth", node.NodeID())
+		req.Header.Set(headerRelaySig, sig)
+		req.Header.Set(headerRelayTs, ts)
+		req.Header.Set(headerRelayNonce, nonce)
+		return req
+	}
+	req1, req2 := buildReq(), buildReq()
+	if req1.Header.Get(headerRelaySig) == req2.Header.Get(headerRelaySig) {
+		t.Fatal("two distinct forwards must not share a signature (nonce missing?)")
+	}
+	for i, req := range []*http.Request{req1, req2} {
+		if status, msg := verifyRelayForwardAuth(req, body); status != 0 {
+			t.Fatalf("distinct forward %d rejected: status=%d msg=%s", i+1, status, msg)
+		}
+	}
+}
+
+// ⑧ Byte-identical replay (same sig+ts+nonce, i.e. a captured forward sent
+// twice) is still rejected — the nonce fixes collisions, not replay itself.
+func TestRelayForwardAuth_NoncedReplayRejected(t *testing.T) {
+	relayTestEnv(t)
+	body := []byte(`{"model":"gpt-4"}`)
+	buildReq := func() *http.Request {
+		return newSignedRelayRequest(t, http.MethodPost, "/v1/chat/completions", body)
+	}
+	// Prime the cache with one delivery of these exact bytes.
+	first := buildReq()
+	sig, ts, nonce := first.Header.Get(headerRelaySig), first.Header.Get(headerRelayTs), first.Header.Get(headerRelayNonce)
+	if status, msg := verifyRelayForwardAuth(first, body); status != 0 {
+		t.Fatalf("first delivery should pass, got %d (%s)", status, msg)
+	}
+	// A byte-identical second delivery is a replay.
+	replay := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	replay.Header.Set("X-Node-ID", node.NodeID())
+	replay.Header.Set("X-Node-Auth", node.NodeID())
+	replay.Header.Set(headerRelaySig, sig)
+	replay.Header.Set(headerRelayTs, ts)
+	replay.Header.Set(headerRelayNonce, nonce)
+	if status, msg := verifyRelayForwardAuth(replay, body); status != 403 {
+		t.Fatalf("nonced replay should be 403, got %d (%s)", status, msg)
+	}
+}
+
+// ⑨ Restart barrier: a forward signed within the window but BEFORE this
+// process booted must be rejected — otherwise a restart wipes the in-memory
+// replay cache and reopens the window for captured forwards. The boot time is
+// faked forward so the test is independent of how long the suite took to reach
+// it (a relative "one minute ago" timestamp would be post-boot on slow runs).
+func TestRelayForwardAuth_PreBootTimestampRejected(t *testing.T) {
+	relayTestEnv(t)
+	body := []byte(`{"model":"gpt-4"}`)
+
+	oldBoot := relayProcessBootNano
+	relayProcessBootNano = time.Now().Add(10 * time.Minute).UnixNano()
+	t.Cleanup(func() { relayProcessBootNano = oldBoot })
+
+	req := newSignedRelayRequest(t, http.MethodPost, "/v1/chat/completions", body)
+	if status, msg := verifyRelayForwardAuth(req, body); status != 401 {
+		t.Fatalf("pre-boot timestamp should be 401, got %d (%s)", status, msg)
+	} else if !strings.Contains(msg, "predates") {
+		t.Fatalf("expected restart-barrier message, got %q", msg)
 	}
 }

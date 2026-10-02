@@ -585,6 +585,20 @@ type TrustPool struct {
 	UpdatedAt string     `json:"updated_at"`
 	Registry  string     `json:"registry"`
 	Nodes     []NodeInfo `json:"nodes"`
+	// Tombstones records explicit removals so revocation propagates and
+	// sticks: a merge or gossip upsert must not resurrect a node whose
+	// tombstone is newer than the offered record (see federation.go).
+	Tombstones []NodeTombstone `json:"tombstones,omitempty"`
+}
+
+// NodeTombstone is an explicit removal marker for one node: whoever removed
+// it (operator action via RemoveNode) declares it gone at RemovedAt. A node
+// record with a strictly newer LastSeen is a live rejoin and clears the
+// tombstone; anything older (or undated) stays removed.
+type NodeTombstone struct {
+	NodeID    string `json:"node_id"`
+	RemovedAt string `json:"removed_at"` // RFC3339
+	Reason    string `json:"reason,omitempty"`
 }
 
 // PeerHint is a lightweight endpoint hint exchanged during gossip (P1-1 PEX).

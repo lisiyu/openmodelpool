@@ -93,17 +93,26 @@ func NewEncryptor() (*Encryptor, error) {
 			return &Encryptor{key: b}, nil
 		}
 		// 全新安装：生成新钥匙并双写——文件作为 keyring 不可用时的 fallback 种子。
+		// ephemeral 判定：钥匙必须至少落在一个地方。keyring 与文件双双失败时，
+		// 必须标记 ephemeral，否则 encryptField 的"拒绝用临时钥匙加密新数据"
+		// 守卫永远触发不了，重启后新密文全部无法解密。
 		key := make([]byte, 32)
 		if _, err := rand.Read(key); err != nil {
 			return nil, err
 		}
-		storeKeyringKey(key) // 失败已在内部记 warn
+		ephemeral := !storeKeyringKey(key) // 失败已在内部记 warn
 		if err := os.MkdirAll("data", 0o700); err == nil {
 			if werr := atomicWriteFile(encKeyFile, key, 0o600); werr != nil {
 				slog.Warn("could not persist encryption key; using in-memory key", "err", werr)
+			} else {
+				ephemeral = false
 			}
 		}
-		return &Encryptor{key: key}, nil
+		if ephemeral {
+			slog.Warn("master key persisted NOWHERE (keyring and file both failed); using ephemeral in-memory key",
+				"hint", "encryptField will refuse to encrypt new secrets until the key source is fixed")
+		}
+		return &Encryptor{key: key, ephemeral: ephemeral}, nil
 	}
 
 	if b, err := os.ReadFile(encKeyFile); err == nil && len(b) == 32 {
@@ -132,12 +141,17 @@ func NewEncryptor() (*Encryptor, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, err
 	}
+	// 钥匙落不了盘就是 ephemeral：必须标记，否则 encryptField 的守卫
+	// （拒绝用临时钥匙加密新数据）永远触发不了，重启后新密文全部无法解密。
 	if err := os.MkdirAll("data", 0o700); err == nil {
 		if werr := atomicWriteFile(encKeyFile, key, 0o600); werr != nil {
 			slog.Warn("could not persist encryption key; using ephemeral key", "err", werr)
+			return &Encryptor{key: key, ephemeral: true}, nil
 		}
+		return &Encryptor{key: key}, nil
 	}
-	return &Encryptor{key: key}, nil
+	slog.Warn("could not create data dir; using ephemeral key", "path", "data")
+	return &Encryptor{key: key, ephemeral: true}, nil
 }
 
 // removeStaleKeyFile 删除迁移后 init() 阶段误生成的陈旧 .enc_key。

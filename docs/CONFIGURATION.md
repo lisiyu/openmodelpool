@@ -65,7 +65,7 @@ Key file `data/.enc_key` is auto-generated on first startup (32-byte random key)
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `region_geo_enabled` | `true` | GeoIP 检测总开关。设 `false` 只用离线启发式（纯离线环境使用） |
+| `region_geo_enabled` | `false`（需手动开启） | GeoIP 检测总开关。**隐私说明**：开启后，本节点公网 IP（启动自检）与未知区域对等节点的公网 IP 会发往第三方 GeoIP 服务（ip-api.com，HTTPS，结果缓存 24h，进程级限流 40 次/分钟），以换取比离线启发式更准的区域划分。关闭则只用纯离线首字节启发式，零外部请求。管理后台「区域路由」卡片可改，重启保持 |
 | `region_prefer_local` | `true` | 优先同区域节点（管理后台「区域路由」卡片可改，重启保持） |
 | `region_cross_threshold` | `2.0` | 跨区域阈值（管理后台可改，须 ≥ 0） |
 | `region_weights_json` | `{"unknown":0.5}` | 各区域权重 JSON（管理后台可改；别名如 `asia` 自动归一为 `ap`） |

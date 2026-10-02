@@ -2,6 +2,33 @@
 
 ## 未发布（main 分支，v4.6.0 之后）
 
+上一轮 review 发现的 8 个问题逐个修复（23 文件 +1544/−82）：
+
+- **mDNS 信任劫持（CRITICAL）**：`lanRegisterPeer` 只桥接 `Verified` 公告，未验证的一律拒绝
+  （notePeer 释放认领，后续签名公告仍可注册）；`upsertKnownNodeLocked` 永不覆盖已存在的
+  PubKey（无签名轮换协议）。纯未签名 legacy 节点需经手动/gossip/registry 先行。
+- **`Encryptor.ephemeral` 复活**：钥匙无处可落时真正置位，`encryptField` 拒绝加密守卫、
+  `/api/health` 与 security audit 告警恢复工作。
+- **SSRF 收口**：provider client 全加 `CheckRedirect` 逐跳重验；新增
+  `guardedUpstreamTransport`（连接池不变，每次新建连接 fresh DNS 校验）；relay 侧
+  `relayTargetBlocked` 解析 DNS（`localhost`/内网域名/不可解析全拦）。
+- **Relay 重放加固**：envelope 加 `Nonce`（同秒转发/换候选重试不再 403）；重启屏障
+  （早于本进程启动的签名拒收）；内存压力下 oldest-first 淘汰代替整表清空。
+  注意：新转发带 nonce，老版本节点验证会 403，需同版本升级。
+- **DHT wire 认证**：UDP 收发签名验签（KeyID + `From==sha256(KeyID)` 槽位绑定），信任池优先、
+  可信地址 TOFU pin，未知/未签名一律丢弃；STORE 限 16K，datagram 限 32K，消息 ID 改
+  crypto-rand。in-memory 测试 transport 不受影响。
+- **信任池 tombstone**：`RemoveNode` 留墓碑 + bump 版本 + 持久化（此前删除不持久化）；
+  merge/gossip/upsert 全加"墓碑新则压制、记录新则是 rejoin"规则；`GetTrustPool` 补上
+  Tombstones/Registry（否则 gossip 传不出去）；重启恢复保留持久化 LastSeen（附带修好
+  cull 失效）。
+- **GeoIP 默认 opt-in**：`region_geo_enabled` 默认 `false`；provider 非 200 视为错误；
+  进程级 40/分钟限流；enrich goroutine 上限 32。
+- **额度 tracker 持久化**：`guest_usage.json`（0600）随每次变更落盘，重启不再清零；
+  损坏/过期自动回滚。
+
+验证：Windows 全量 + `-race` x2 全绿；Linux（WSL）全量 x2 + `-race` 全绿。
+
 - **修复 CI 随机红的 seedless bootstrap 用例**：`TestRetrySeedlessBootstrap_ReactivatesWhenTableEmptied`
   硬编码"首个 hint 一定是 peer A"，而 `DHTBootstrapAddrs` 遍历 `dhtHints` map（顺序随机）、
   `trySeedlessBootstrapOnce` 首个成功即返回，于是首个 bootstrap 可能落在 peer B 上，

@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -51,7 +52,19 @@ type UDPDHTTransport struct {
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
 
-	seq uint64
+	// auth enables wire authentication (dht_wire_auth.go). Nil means
+	// legacy/test mode (unsigned traffic accepted); production always sets it
+	// in startDHTNode.
+	auth *dhtWireAuth
+}
+
+// EnableWireAuth turns on signed/verified traffic for this transport.
+// Production calls it unconditionally in startDHTNode; tests opt in with
+// fixture keys when they exercise the auth path.
+func (t *UDPDHTTransport) EnableWireAuth(a *dhtWireAuth) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.auth = a
 }
 
 // NewUDPDHTTransport builds a transport that dispatches inbound requests to the
@@ -95,9 +108,25 @@ func (t *UDPDHTTransport) readLoop() {
 			// Socket closed or other fatal read error: stop serving.
 			return
 		}
+		// Bound decode work before JSON parsing: anything bigger cannot be a
+		// legitimate protocol message.
+		if n > dhtMaxDatagram {
+			slog.Debug("dht: dropping oversized datagram", "from", raddr, "bytes", n)
+			continue
+		}
 		var msg DHTMessage
 		if err := json.Unmarshal(buf[:n], &msg); err != nil {
 			slog.Debug("dht: ignoring unparseable datagram", "from", raddr, "error", err)
+			continue
+		}
+		t.mu.Lock()
+		_, solicited := t.pending[msg.ID]
+		auth := t.auth
+		t.mu.Unlock()
+		if auth != nil && !auth.verifyMessage(&msg, solicited) {
+			// Unauthenticated: never learned, never answered, never delivered
+			// to a waiter (a forged response must not satisfy a pending Send).
+			slog.Debug("dht: dropping unauthenticated datagram", "from", raddr, "type", msg.Type, "key_id", msg.KeyID)
 			continue
 		}
 		// Response to one of our in-flight requests?
@@ -110,6 +139,12 @@ func (t *UDPDHTTransport) readLoop() {
 		}
 		// Otherwise treat it as an inbound request and answer it.
 		resp := t.self.handle(msg)
+		if auth != nil && !auth.signMessage(&resp) {
+			// No signing identity (should not happen in production):
+			// fail closed rather than answer unsigned.
+			slog.Warn("dht: cannot sign response, dropping request", "type", msg.Type)
+			continue
+		}
 		out, err := json.Marshal(resp)
 		if err != nil {
 			slog.Debug("dht: failed to marshal response", "error", err)
@@ -133,10 +168,25 @@ func (t *UDPDHTTransport) takePending(id string) (chan DHTMessage, bool) {
 }
 
 // Send transmits msg to addr and waits for the matching response. The message ID
-// is assigned here if absent so responses can be correlated.
+// is assigned here if absent so responses can be correlated. IDs are
+// unpredictable (crypto-rand suffix, not a counter): with authentication the
+// signature already binds the ID, but unpredictability is cheap defense in
+// depth against response-spoofing on legacy transports.
 func (t *UDPDHTTransport) Send(ctx context.Context, addr string, msg DHTMessage) (DHTMessage, error) {
 	if msg.ID == "" {
-		msg.ID = fmt.Sprintf("%s-%d", t.self.idHex()[:16], atomic.AddUint64(&t.seq, 1))
+		var randSuffix [8]byte
+		if _, err := rand.Read(randSuffix[:]); err != nil {
+			return DHTMessage{}, fmt.Errorf("dht: rand: %w", err)
+		}
+		msg.ID = fmt.Sprintf("%s-%s", t.self.idHex()[:16], hex.EncodeToString(randSuffix[:]))
+	}
+	t.mu.Lock()
+	auth := t.auth
+	t.mu.Unlock()
+	if auth != nil && !auth.signMessage(&msg) {
+		// Auth mode without a signing identity: fail the send rather than
+		// downgrade to an unsigned datagram the peer would drop anyway.
+		return DHTMessage{}, fmt.Errorf("dht: cannot sign outbound %s message (no identity)", msg.Type)
 	}
 	raddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -237,6 +287,42 @@ func startDHTNode() {
 	n := NewDHTNode(node.NodeID(), conn.LocalAddr().String(), nil)
 	tp := NewUDPDHTTransport(n, conn)
 	n.SetTransport(tp)
+	// Wire authentication: every outbound datagram is signed with the node
+	// key, and inbound datagrams must verify against the federation trust
+	// pool (TOFU-pinned first contacts included). Without this, anyone on the
+	// network could spoof responses, plant routing entries, or flood STOREs.
+	tp.EnableWireAuth(newDHTWireAuth(
+		func() (string, string, bool) {
+			if node == nil || node.NodeID() == "" {
+				return "", "", false
+			}
+			pub := node.PubKeyB64()
+			if pub == "" {
+				return "", "", false
+			}
+			return node.NodeID(), pub, true
+		},
+		func(payload []byte) (string, bool) {
+			if node == nil {
+				return "", false
+			}
+			sig := node.Sign(payload)
+			if sig == "" {
+				return "", false
+			}
+			return sig, true
+		},
+		func(nodeID string) (string, bool) {
+			if fed == nil {
+				return "", false
+			}
+			info, ok := fed.GetNode(nodeID)
+			if !ok || info == nil || info.PubKey == "" {
+				return "", false
+			}
+			return info.PubKey, true
+		},
+	))
 	tp.Start()
 	dhtNode = n
 	dhtTransport = tp

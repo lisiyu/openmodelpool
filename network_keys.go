@@ -88,7 +88,7 @@ func initGuestKeyStore(dataDir string) {
 		dataPath: filepath.Join(dataDir, "guest_keys.json"),
 	}
 	guestKeyStore.load()
-	initGuestKeyUsageTracker()
+	initGuestKeyUsageTrackerWithDir(dataDir)
 	slog.Info("guest key store initialized", "keys", len(guestKeyStore.keys))
 }
 
@@ -441,6 +441,22 @@ type guestKeyUsageTracker struct {
 	hour   string           // window key of hourly ("2006-01-02T15" UTC)
 	rpm    map[string]int   // key -> requests counted (current minute window)
 	minute string           // window key of rpm ("2006-01-02T15:04" UTC)
+	// dataPath is the journal file (guest_usage.json next to guest_keys.json).
+	// Empty means memory-only (unit tests). When set, every mutation is
+	// synchronously journaled so a restart never resets quota accounting.
+	dataPath string
+}
+
+// guestUsageJournal is the on-disk form of the tracker: window stamps plus
+// the three journals. Stale windows are rolled (reset) by ensureJournals on
+// the first use after load, so a journal from yesterday restores as zeros.
+type guestUsageJournal struct {
+	Day    string           `json:"day"`
+	Usage  map[string]int64 `json:"usage"`
+	Hour   string           `json:"hour"`
+	Hourly map[string]int64 `json:"hourly"`
+	Minute string           `json:"minute"`
+	RPM    map[string]int   `json:"rpm"`
 }
 
 // todayUTC returns the UTC date key for quota windows.
@@ -463,6 +479,60 @@ func initGuestKeyUsageTracker() {
 		usage:  make(map[string]int64),
 		hourly: make(map[string]int64),
 		rpm:    make(map[string]int),
+	}
+}
+
+// initGuestKeyUsageTrackerWithDir builds the tracker journaled at
+// dataDir/guest_usage.json so quota accounting survives restarts. A missing
+// or corrupt journal starts fresh (warn, never fatal); stale windows in a
+// loaded journal are rolled on first use by ensureJournals.
+func initGuestKeyUsageTrackerWithDir(dataDir string) {
+	t := &guestKeyUsageTracker{
+		usage:    make(map[string]int64),
+		hourly:   make(map[string]int64),
+		rpm:      make(map[string]int),
+		dataPath: filepath.Join(dataDir, "guest_usage.json"),
+	}
+	if data, err := os.ReadFile(t.dataPath); err == nil {
+		var j guestUsageJournal
+		if err := json.Unmarshal(data, &j); err != nil {
+			slog.Warn("failed to parse guest usage journal, starting fresh", "error", err)
+		} else {
+			t.day, t.hour, t.minute = j.Day, j.Hour, j.Minute
+			if j.Usage != nil {
+				t.usage = j.Usage
+			}
+			if j.Hourly != nil {
+				t.hourly = j.Hourly
+			}
+			if j.RPM != nil {
+				t.rpm = j.RPM
+			}
+			slog.Info("guest usage journal loaded", "keys", len(t.usage))
+		}
+	}
+	guestKeyUsage = t
+}
+
+// saveLocked persists the journal. Caller must hold t.mu. Memory-only
+// trackers (tests) skip I/O entirely.
+func (t *guestKeyUsageTracker) saveLocked() {
+	if t.dataPath == "" {
+		return
+	}
+	j := guestUsageJournal{
+		Day: t.day, Usage: t.usage,
+		Hour: t.hour, Hourly: t.hourly,
+		Minute: t.minute, RPM: t.rpm,
+	}
+	data, err := json.Marshal(j)
+	if err != nil {
+		slog.Error("failed to marshal guest usage journal", "error", err)
+		return
+	}
+	os.MkdirAll(filepath.Dir(t.dataPath), 0700)
+	if err := atomicWriteFile(t.dataPath, data, 0600); err != nil {
+		slog.Error("failed to write guest usage journal", "error", err)
 	}
 }
 
@@ -527,6 +597,7 @@ func (t *guestKeyUsageTracker) CheckAndReserve(key string, quota int64, estimate
 	// Reserve (pre-deduct)
 	if estimated > 0 && estimated <= remaining {
 		t.usage[key] = used + estimated
+		t.saveLocked()
 		return true, remaining - estimated
 	} else if estimated <= 0 {
 		// No estimate — just check
@@ -585,6 +656,7 @@ func (t *guestKeyUsageTracker) CheckAndReserveFull(key string, quotaDaily, quota
 		t.hourly[key] += estimated
 	}
 	t.rpm[key]++
+	t.saveLocked()
 	return true, int64(rpm - t.rpm[key])
 }
 
@@ -607,6 +679,7 @@ func (t *guestKeyUsageTracker) Adjust(key string, reserved, actual int64) {
 	if t.hourly[key] < 0 {
 		t.hourly[key] = 0
 	}
+	t.saveLocked()
 }
 
 // guestQuotaDenyReason returns the user-facing 429 message for a denied guest

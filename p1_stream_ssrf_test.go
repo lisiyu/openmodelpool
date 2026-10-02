@@ -18,6 +18,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -162,5 +163,128 @@ func TestWebSessionStream_PrivateAPIEndpointRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ssrf blocked") {
 		t.Fatalf("expected ssrf-blocked error, got: %v", err)
+	}
+}
+
+// ============================================================
+// SSRF follow-ups: redirect re-validation, dial-time validation,
+// relay-side DNS resolution.
+// ============================================================
+
+// ssrfGuardOn pins the fail-closed guard for these assertions (TestMain
+// disables it globally so httptest loopback servers work).
+func ssrfGuardOn(t *testing.T) {
+	t.Helper()
+	oldAllow := allowLocalProviderForTest
+	allowLocalProviderForTest = false
+	t.Cleanup(func() { allowLocalProviderForTest = oldAllow })
+}
+
+func TestSSRFIPBlocked_Classification(t *testing.T) {
+	blocked := []string{
+		"127.0.0.1", "::1",
+		"10.0.0.5", "172.16.9.9", "192.168.1.1",
+		"169.254.169.254", "100.64.0.1", "100.127.255.255",
+		"224.0.0.251", "0.0.0.0", "::",
+		"fc00::1", "fe80::1", "ff02::1",
+	}
+	for _, s := range blocked {
+		if !ssrfIPBlocked(net.ParseIP(s)) {
+			t.Errorf("ssrfIPBlocked(%s) = false, want true", s)
+		}
+	}
+	allowed := []string{"8.8.8.8", "1.1.1.1", "93.184.216.34", "2001:4860:4860::8888"}
+	for _, s := range allowed {
+		if ssrfIPBlocked(net.ParseIP(s)) {
+			t.Errorf("ssrfIPBlocked(%s) = true, want false", s)
+		}
+	}
+	if !ssrfIPBlocked(nil) {
+		t.Error("ssrfIPBlocked(nil) = false, want true")
+	}
+}
+
+func TestSSRFCheckRedirect_BlocksPrivateHop(t *testing.T) {
+	ssrfGuardOn(t)
+
+	mkReq := func(target string) *http.Request {
+		req, err := http.NewRequest("GET", target, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		return req
+	}
+	for _, target := range []string{
+		"http://127.0.0.1/secret",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://localhost:8000/admin",
+		"http://10.0.0.5/",
+	} {
+		if err := ssrfCheckRedirect(mkReq(target), nil); err == nil || !strings.Contains(err.Error(), "ssrf blocked") {
+			t.Errorf("redirect to %s must be blocked, got %v", target, err)
+		}
+	}
+	// Public IP literals need no DNS and must pass (deterministic).
+	if err := ssrfCheckRedirect(mkReq("http://93.184.216.34/next"), nil); err != nil {
+		t.Errorf("redirect to public IP must pass, got %v", err)
+	}
+	// Default redirect cap preserved.
+	vias := make([]*http.Request, 10)
+	if err := ssrfCheckRedirect(mkReq("http://93.184.216.34/next"), vias); err == nil {
+		t.Error("10+ redirects must be stopped")
+	}
+	// Test escape hatch still respected.
+	allowLocalProviderForTest = true
+	if err := ssrfCheckRedirect(mkReq("http://127.0.0.1/secret"), nil); err != nil {
+		t.Errorf("test escape must bypass the redirect check, got %v", err)
+	}
+}
+
+func TestSSRFGuardedDial_BlocksPrivateWithoutDialing(t *testing.T) {
+	ssrfGuardOn(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Port 9 is closed, but the guard must fire before any dial is attempted:
+	// the error text proves the block, not a connection refusal.
+	_, err := ssrfGuardedDialContext(ctx, "tcp", "127.0.0.1:9")
+	if err == nil || !strings.Contains(err.Error(), "ssrf blocked") {
+		t.Fatalf("dial to loopback must be ssrf-blocked, got %v", err)
+	}
+	_, err = ssrfGuardedDialContext(ctx, "tcp", "not a dial address")
+	if err == nil || !strings.Contains(err.Error(), "ssrf blocked") {
+		t.Fatalf("malformed dial address must be ssrf-blocked, got %v", err)
+	}
+	// A hostname that cannot resolve must fail closed without dialing.
+	_, err = ssrfGuardedDialContext(ctx, "tcp", "nonexistent.invalid:80")
+	if err == nil || !strings.Contains(err.Error(), "ssrf blocked") {
+		t.Fatalf("unresolvable host must be ssrf-blocked, got %v", err)
+	}
+	// Test escape hatch: validation skipped (would dial for real, so only
+	// assert that the guard no longer rejects upfront — use a closed port and
+	// expect a dial error instead of an ssrf error).
+	allowLocalProviderForTest = true
+	_, err = ssrfGuardedDialContext(ctx, "tcp", "127.0.0.1:9")
+	if err == nil || strings.Contains(err.Error(), "ssrf blocked") {
+		t.Fatalf("test escape must skip validation, got %v", err)
+	}
+}
+
+func TestRelayTargetBlocked_ResolvesNames(t *testing.T) {
+	blocked := []string{
+		"", "localhost", "LOCALHOST",
+		"127.0.0.1", "::1", "10.0.0.5", "172.16.0.9", "192.168.1.1",
+		"169.254.169.254", "100.64.0.1", "0.0.0.0",
+	}
+	for _, h := range blocked {
+		if !relayTargetBlocked(h) {
+			t.Errorf("relayTargetBlocked(%q) = false, want true", h)
+		}
+	}
+	// Public IP literals need no DNS and must pass (deterministic).
+	for _, h := range []string{"8.8.8.8", "1.1.1.1", "93.184.216.34"} {
+		if relayTargetBlocked(h) {
+			t.Errorf("relayTargetBlocked(%q) = true, want false", h)
+		}
 	}
 }

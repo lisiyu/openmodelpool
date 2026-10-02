@@ -285,3 +285,95 @@ func TestRefreshEncryptorForSecretBackend_FileBackendNoop(t *testing.T) {
 		t.Error("file backend must leave the global enc untouched")
 	}
 }
+
+// ============================================================
+// ephemeral 标记：钥匙没有落到任何地方时必须置位，否则 encryptField 的
+// "拒绝用临时钥匙加密"守卫与 /api/health、security audit 的 ephemeral
+// 告警永远触发不了（此前该标记从未被赋值）。
+// ============================================================
+
+// setupEphemeralFileTest 把主密钥文件指向一个不可写的路径（已存在的目录），
+// 强制走"生成新钥匙但落盘失败"分支。
+func setupEphemeralFileTest(t *testing.T) {
+	t.Helper()
+	oldKeyFile := encKeyFile
+	encKeyFile = t.TempDir() // 目录本身：ReadFile/atomicWriteFile 必失败
+	t.Setenv(secretBackendEnv, "file")
+	t.Setenv("OPENMODELPOOL_ENC_KEY", "")
+	t.Cleanup(func() { encKeyFile = oldKeyFile })
+}
+
+func TestEncryptor_EphemeralWhenFileWriteFails(t *testing.T) {
+	setupEphemeralFileTest(t)
+
+	e, err := NewEncryptor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.IsEphemeral() {
+		t.Fatal("key that could not be persisted must be marked ephemeral")
+	}
+}
+
+func TestEncryptor_NotEphemeralWhenPersisted(t *testing.T) {
+	oldKeyFile := encKeyFile
+	encKeyFile = filepath.Join(t.TempDir(), ".enc_key")
+	t.Setenv(secretBackendEnv, "file")
+	t.Setenv("OPENMODELPOOL_ENC_KEY", "")
+	t.Cleanup(func() { encKeyFile = oldKeyFile })
+
+	e, err := NewEncryptor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.IsEphemeral() {
+		t.Fatal("persisted key must not be marked ephemeral")
+	}
+	if b, err := os.ReadFile(encKeyFile); err != nil || len(b) != 32 {
+		t.Fatalf("key file not persisted: %v", err)
+	}
+}
+
+func TestEncryptor_KeyringFreshBothFailIsEphemeral(t *testing.T) {
+	fake := setupKeyringTest(t, "keyring")
+	fake.setErr = errors.New("keyring unavailable")
+	// 文件链也失败：encKeyFile 指向目录。
+	encKeyFile = t.TempDir()
+
+	e, err := NewEncryptor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.IsEphemeral() {
+		t.Fatal("key persisted nowhere (keyring and file both failed) must be ephemeral")
+	}
+}
+
+func TestEncryptor_KeyringFreshFileFallbackNotEphemeral(t *testing.T) {
+	fake := setupKeyringTest(t, "keyring")
+	fake.setErr = errors.New("keyring unavailable")
+	// encKeyFile 仍是 TempDir 下的可写路径：文件落盘成功即不算 ephemeral。
+
+	e, err := NewEncryptor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.IsEphemeral() {
+		t.Fatal("key persisted to the file fallback must not be ephemeral")
+	}
+}
+
+func TestEncryptField_RefusesEphemeralKey(t *testing.T) {
+	oldEnc := enc
+	defer func() { enc = oldEnc }()
+
+	enc = &Encryptor{key: rand32(t), ephemeral: true}
+	if got := encryptField("s3cr3t"); got != "s3cr3t" {
+		t.Fatalf("ephemeral encryptor must refuse to encrypt, got %q", got)
+	}
+
+	enc = &Encryptor{key: rand32(t)}
+	if got := encryptField("s3cr3t"); !IsEncrypted(got) {
+		t.Fatalf("healthy encryptor must encrypt, got %q", got)
+	}
+}

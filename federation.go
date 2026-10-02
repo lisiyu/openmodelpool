@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -218,11 +219,15 @@ func (f *FederationManager) GetTrustPool() TrustPool {
 
 	nodesCopy := make([]NodeInfo, len(f.trustPool.Nodes))
 	copy(nodesCopy, f.trustPool.Nodes)
+	tombstonesCopy := make([]NodeTombstone, len(f.trustPool.Tombstones))
+	copy(tombstonesCopy, f.trustPool.Tombstones)
 
 	return TrustPool{
-		Version:   f.trustPool.Version,
-		Nodes:     nodesCopy,
-		UpdatedAt: f.trustPool.UpdatedAt,
+		Version:    f.trustPool.Version,
+		Nodes:      nodesCopy,
+		UpdatedAt:  f.trustPool.UpdatedAt,
+		Registry:   f.trustPool.Registry,
+		Tombstones: tombstonesCopy,
 	}
 }
 
@@ -322,10 +327,14 @@ func (f *FederationManager) UpdateTrustPool(pool TrustPool) {
 }
 
 // mergeTrustPools 按节点合并两个信任池（P2P-G3 分区愈合）。
-//   - incoming 独有节点：保留。
+//   - incoming 独有节点：保留（除非被 tombstone 压制，见下）。
 //   - 本地独有节点：仅 Status == "active" 的并入；suspended/inactive 的不复活，
-//     避免把注册表已下架的节点重新带回来。
+//     避免把注册表已下架的节点重新带回来；同样受 tombstone 压制。
 //   - 双方都有的节点：LastSeen 更新者胜；时间解析失败时保留 incoming 的。
+//   - tombstone 合并：按 NodeID 取更新者胜；任何一方的新鲜 tombstone 都能压制
+//     另一方的陈旧节点记录——显式下架（RemoveNode）因此可以在全网传播并保持，
+//     不会被"本地 active 副本"静默撤销。节点 LastSeen 严格新于 tombstone 时
+//     视为活着回来（rejoin），tombstone 清除。
 //
 // 返回池的版本号取 incoming 的版本——调用方已保证 incoming 版本严格更大，
 // 版本单调语义不被破坏。
@@ -336,8 +345,34 @@ func mergeTrustPools(local, incoming TrustPool) TrustPool {
 		Registry:  incoming.Registry,
 		Nodes:     make([]NodeInfo, 0, len(incoming.Nodes)+len(local.Nodes)),
 	}
+	merged.Tombstones = unionTombstones(local.Tombstones, incoming.Tombstones)
+	tombstoned := func(id string) (NodeTombstone, bool) {
+		for _, t := range merged.Tombstones {
+			if t.NodeID == id {
+				return t, true
+			}
+		}
+		return NodeTombstone{}, false
+	}
+	// clearTombstone drops the tombstone when a record proves the node is
+	// back (its LastSeen is strictly newer than the removal).
+	clearTombstone := func(id, lastSeen string) {
+		for i, t := range merged.Tombstones {
+			if t.NodeID == id && !tombstoneSuppresses(lastSeen, t.RemovedAt) {
+				merged.Tombstones = append(merged.Tombstones[:i], merged.Tombstones[i+1:]...)
+				return
+			}
+		}
+	}
 	incomingIdx := make(map[string]int, len(incoming.Nodes))
 	for _, n := range incoming.Nodes {
+		if n.NodeID == "" {
+			continue
+		}
+		if t, ok := tombstoned(n.NodeID); ok && tombstoneSuppresses(n.LastSeen, t.RemovedAt) {
+			continue // removed elsewhere and not rejoined: stay removed
+		}
+		clearTombstone(n.NodeID, n.LastSeen)
 		incomingIdx[n.NodeID] = len(merged.Nodes)
 		merged.Nodes = append(merged.Nodes, n)
 	}
@@ -345,6 +380,10 @@ func mergeTrustPools(local, incoming TrustPool) TrustPool {
 		if ln.NodeID == "" {
 			continue
 		}
+		if t, ok := tombstoned(ln.NodeID); ok && tombstoneSuppresses(ln.LastSeen, t.RemovedAt) {
+			continue // our copy is stale relative to a removal: stay removed
+		}
+		clearTombstone(ln.NodeID, ln.LastSeen)
 		if idx, ok := incomingIdx[ln.NodeID]; ok {
 			if nodeInfoFresher(ln.LastSeen, merged.Nodes[idx].LastSeen) {
 				merged.Nodes[idx] = ln
@@ -372,10 +411,98 @@ func nodeInfoFresher(a, b string) bool {
 	return ta.After(tb)
 }
 
+const (
+	// trustTombstoneMaxEntries bounds removal markers so a churned pool
+	// cannot grow the snapshot without limit; the oldest are dropped first.
+	trustTombstoneMaxEntries = 256
+	// trustTombstoneTTL retires removal markers: a node gone longer than
+	// this may be re-added by live gossip. Explicit removals younger than
+	// the TTL always stick.
+	trustTombstoneTTL = 30 * 24 * time.Hour
+)
+
+// tombstoneSuppresses reports whether a node record loses to a removal
+// marker. Removal wins unless the record is strictly newer than the tombstone
+// (a live rejoin). Unparseable or missing times fail closed toward removal:
+// resurrecting a revoked node is worse than delaying a rejoin by one gossip
+// round (the rejoin re-announces with a fresh timestamp and wins next time).
+func tombstoneSuppresses(lastSeen, removedAt string) bool {
+	if removedAt == "" {
+		return true
+	}
+	if lastSeen == "" {
+		return true
+	}
+	tl, errL := time.Parse(time.RFC3339, lastSeen)
+	tr, errR := time.Parse(time.RFC3339, removedAt)
+	if errL != nil || errR != nil {
+		return true
+	}
+	return !tl.After(tr)
+}
+
+// unionTombstones merges two tombstone sets (newest RemovedAt wins per node),
+// drops expired markers, and caps the set size (oldest first).
+func unionTombstones(a, b []NodeTombstone) []NodeTombstone {
+	byID := make(map[string]NodeTombstone, len(a)+len(b))
+	for _, t := range append(append([]NodeTombstone(nil), a...), b...) {
+		if t.NodeID == "" {
+			continue
+		}
+		cur, ok := byID[t.NodeID]
+		if !ok || tombstoneNewer(t.RemovedAt, cur.RemovedAt) {
+			byID[t.NodeID] = t
+		}
+	}
+	now := time.Now()
+	out := make([]NodeTombstone, 0, len(byID))
+	for _, t := range byID {
+		if rt, err := time.Parse(time.RFC3339, t.RemovedAt); err == nil && now.Sub(rt) > trustTombstoneTTL {
+			continue // expired marker: the node may return via live gossip
+		}
+		out = append(out, t)
+	}
+	if len(out) > trustTombstoneMaxEntries {
+		sort.Slice(out, func(i, j int) bool { return out[i].RemovedAt < out[j].RemovedAt })
+		out = out[len(out)-trustTombstoneMaxEntries:]
+	}
+	return out
+}
+
+// tombstoneNewer reports whether a is a newer removal marker than b.
+// Unparseable times lose to parseable ones (fail closed toward removal).
+func tombstoneNewer(a, b string) bool {
+	ta, errA := time.Parse(time.RFC3339, a)
+	tb, errB := time.Parse(time.RFC3339, b)
+	if errA != nil {
+		return false
+	}
+	if errB != nil {
+		return true
+	}
+	return ta.After(tb)
+}
+
 // UpdateNodeInfo upserts a single node entry from a gossip message.
 func (f *FederationManager) UpdateNodeInfo(info NodeInfo) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	// Tombstone gate (same rule as upsertKnownNodeLocked): stale gossip must
+	// not resurrect an explicitly removed node; a strictly newer record is a
+	// live rejoin and clears the marker.
+	for i := range f.trustPool.Tombstones {
+		if f.trustPool.Tombstones[i].NodeID != info.NodeID {
+			continue
+		}
+		if tombstoneSuppresses(info.LastSeen, f.trustPool.Tombstones[i].RemovedAt) {
+			slog.Debug("trust pool: gossip for removed node suppressed",
+				"node_id", info.NodeID)
+			return
+		}
+		f.trustPool.Tombstones = append(f.trustPool.Tombstones[:i], f.trustPool.Tombstones[i+1:]...)
+		break
+	}
 
 	f.dhtAddNodeLocked(&info)
 
@@ -396,11 +523,23 @@ func (f *FederationManager) UpdateNodeInfo(info NodeInfo) {
 	}
 }
 
-// RemoveNode removes a node from both the trust pool and local peers.
+// RemoveNode removes a node from both the trust pool and local peers, and
+// leaves a tombstone so the removal propagates and sticks: without it, the
+// next gossip merge would resurrect the node from any peer that still lists
+// it as active. The version bump drives the version-gated gossip pull, and
+// the tombstone rides the pool snapshot to every peer.
 func (f *FederationManager) RemoveNode(nodeID string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	f.removeNodeReason(nodeID, "operator removal")
+}
 
+// removeNodeReason is RemoveNode with an explicit reason recorded on the
+// tombstone (e.g. "operator removal", "quarantine: failed capability probes").
+func (f *FederationManager) removeNodeReason(nodeID, reason string) {
+	if nodeID == "" {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	f.mu.Lock()
 	filtered := make([]NodeInfo, 0, len(f.trustPool.Nodes))
 	for _, n := range f.trustPool.Nodes {
 		if n.NodeID != nodeID {
@@ -409,8 +548,44 @@ func (f *FederationManager) RemoveNode(nodeID string) {
 	}
 	f.trustPool.Nodes = filtered
 	delete(f.localPeers, nodeID)
+	if f.dht != nil {
+		f.dht.RemoveNode(DHTNodeID(sha256.Sum256([]byte(nodeID))))
+	}
+	upserted := false
+	for i := range f.trustPool.Tombstones {
+		if f.trustPool.Tombstones[i].NodeID == nodeID {
+			f.trustPool.Tombstones[i].RemovedAt = now
+			if reason != "" {
+				f.trustPool.Tombstones[i].Reason = reason
+			}
+			upserted = true
+			break
+		}
+	}
+	if !upserted {
+		f.trustPool.Tombstones = append(f.trustPool.Tombstones, NodeTombstone{
+			NodeID:    nodeID,
+			RemovedAt: now,
+			Reason:    reason,
+		})
+	}
+	f.trustPool.Tombstones = unionTombstones(f.trustPool.Tombstones, nil)
+	f.trustPool.Version++
+	f.trustPool.UpdatedAt = now
+	snapshot, err := f.snapshotLocked()
+	dataDir := f.dataDir
+	f.mu.Unlock()
+	// Bare test fixtures carry no dataDir: persist only when one is set, so
+	// unit tests never spill a federation_pool.json into the working dir.
+	if dataDir != "" {
+		if err != nil {
+			slog.Error("failed to persist trust pool after node removal", "error", err)
+			return
+		}
+		f.persistSnapshot(snapshot)
+	}
 
-	slog.Info("node removed from federation", "node_id", nodeID)
+	slog.Info("node removed from federation", "node_id", nodeID, "reason", reason)
 }
 
 // AddKnownNode upserts a node into the local trust pool, marking it active and
@@ -458,10 +633,32 @@ func (f *FederationManager) AddKnownNodes(nodes []NodeInfo) {
 
 // upsertKnownNodeLocked merges one node into the trust pool, preserving rich
 // fields the new info didn't carry. Caller must hold f.mu.
+//
+// Trust-anchor rule: an established PubKey is NEVER overwritten by an incoming
+// record. Node keys have no signed rotation protocol, so any "new key for an
+// existing node" claim is indistinguishable from an impersonation attempt
+// (e.g. an unsigned LAN announcement or a gossip merge carrying a forged
+// identity). The existing key is kept; the key is only taken from the incoming
+// record when we have none yet.
 func (f *FederationManager) upsertKnownNodeLocked(node NodeInfo) {
 	node.Status = "active"
 	if node.LastSeen == "" {
 		node.LastSeen = time.Now().UTC().Format(time.RFC3339)
+	}
+	// Tombstone gate: an explicitly removed node must not be resurrected by
+	// a stale record (restored registry, old gossip). A strictly newer
+	// LastSeen is a live rejoin: accept it and clear the marker.
+	for i := range f.trustPool.Tombstones {
+		if f.trustPool.Tombstones[i].NodeID != node.NodeID {
+			continue
+		}
+		if tombstoneSuppresses(node.LastSeen, f.trustPool.Tombstones[i].RemovedAt) {
+			slog.Debug("trust pool: suppressed resurrection of removed node",
+				"node_id", node.NodeID)
+			return
+		}
+		f.trustPool.Tombstones = append(f.trustPool.Tombstones[:i], f.trustPool.Tombstones[i+1:]...)
+		break
 	}
 	for i := range f.trustPool.Nodes {
 		if f.trustPool.Nodes[i].NodeID == node.NodeID {
@@ -474,7 +671,7 @@ func (f *FederationManager) upsertKnownNodeLocked(node NodeInfo) {
 			if len(node.SharedProviders) == 0 {
 				node.SharedProviders = existing.SharedProviders
 			}
-			if node.PubKey == "" {
+			if node.PubKey == "" || existing.PubKey != "" {
 				node.PubKey = existing.PubKey
 			}
 			if node.Endpoint == "" {

@@ -142,9 +142,14 @@ func proxyHTTPClientForURL(p Provider, targetURL string, timeout time.Duration) 
 						return nil, errors.New("ssrf blocked: provider target URL resolves to a private/internal address")
 					},
 				},
+				CheckRedirect: ssrfCheckRedirect,
 			}
 		}
-		return &http.Client{Transport: sharedTransport, Timeout: timeout}
+		// Allowed target: pooled transport with dial-time validation (fresh DNS
+		// per new connection) plus redirect re-validation on every hop, so a
+		// public entry URL cannot 302 into the intranet and rebinding cannot
+		// outlive the construction-time check.
+		return &http.Client{Transport: guardedUpstreamTransport, Timeout: timeout, CheckRedirect: ssrfCheckRedirect}
 	}
 
 	// For socks5:// proxies, use golang.org/x/net/proxy with cached transport
@@ -160,12 +165,13 @@ func proxyHTTPClientForURL(p Provider, targetURL string, timeout time.Duration) 
 			}
 			return &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-					// Validate destination host for SSRF
+					// Validate the actual dial destination with fresh DNS:
+					// the cached construction-time check cannot see rebinding.
 					host, _, err := net.SplitHostPort(addr)
 					if err != nil {
 						host = addr
 					}
-					if !allowLocalProviderForTest && cachedIsPrivateHost(host) {
+					if !allowLocalProviderForTest && isPrivateHostFresh(ctx, host) {
 						return nil, errors.New("ssrf blocked: target address resolves to private/internal address")
 					}
 					return socksDialer.Dial(network, addr)
@@ -178,9 +184,9 @@ func proxyHTTPClientForURL(p Provider, targetURL string, timeout time.Duration) 
 			}, nil
 		})
 		if t != nil {
-			return &http.Client{Timeout: timeout, Transport: t}
+			return &http.Client{Timeout: timeout, Transport: t, CheckRedirect: ssrfCheckRedirect}
 		}
-		return &http.Client{Timeout: timeout}
+		return &http.Client{Timeout: timeout, CheckRedirect: ssrfCheckRedirect}
 	}
 
 	// For http:// and https:// proxies. B7-7: previously a fresh Transport was
@@ -195,7 +201,9 @@ func proxyHTTPClientForURL(p Provider, targetURL string, timeout time.Duration) 
 		return &http.Transport{
 			Proxy: func(req *http.Request) (*url.URL, error) {
 				host := req.Host
-				if !allowLocalProviderForTest && cachedIsPrivateHost(host) {
+				// Fresh per-request validation (covers redirect hops too: Go
+				// consults Proxy for every request in the chain).
+				if !allowLocalProviderForTest && isPrivateHostFresh(req.Context(), host) {
 					return nil, errors.New("ssrf blocked: target address resolves to private/internal address")
 				}
 				return u, nil
@@ -209,9 +217,9 @@ func proxyHTTPClientForURL(p Provider, targetURL string, timeout time.Duration) 
 		}, nil
 	})
 	if t != nil {
-		return &http.Client{Timeout: timeout, Transport: t}
+		return &http.Client{Timeout: timeout, Transport: t, CheckRedirect: ssrfCheckRedirect}
 	}
-	return &http.Client{Timeout: timeout}
+	return &http.Client{Timeout: timeout, CheckRedirect: ssrfCheckRedirect}
 }
 
 func mustParseURL(rawurl string) *url.URL {
@@ -219,19 +227,14 @@ func mustParseURL(rawurl string) *url.URL {
 	return u
 }
 
-// isPrivateHost checks if a hostname resolves to a private/loopback IP.
-// Returns true if the host is private OR unresolvable (fail-closed).
-// SEC-SSRF-1: callers pass either a full URL ("https://api.example.com") or a
-// bare "host:port"; this parses both forms via url.Parse and never trusts a
-// raw string split that would mis-parse the scheme as the host.
-func isPrivateHost(host string) bool {
-	if allowLocalProviderForTest {
-		// Tests spin up loopback servers on purpose; do not block them.
-		return false
-	}
+// splitDialHost normalizes a dial target for SSRF classification: it accepts
+// either a full URL ("https://api.example.com") or a bare "host:port" and
+// returns the bare hostname. Extracted so the cached and the fresh (dial-time)
+// classifiers parse identically.
+func splitDialHost(host string) string {
 	h := strings.TrimSpace(host)
 	if h == "" {
-		return true // fail-closed: no host at all is never routable
+		return ""
 	}
 	// Strip scheme via url.Parse so "https://10.0.0.1" yields host "10.0.0.1".
 	// A bare "host:port" with no scheme is parsed as scheme="host", so detect
@@ -248,7 +251,122 @@ func isPrivateHost(host string) bool {
 			h = h[:i]
 		}
 	}
-	if h == "localhost" || h == "" {
+	return h
+}
+
+// ssrfIPBlocked is the single IP-literal policy for every SSRF guard in this
+// process: loopback, RFC 1918, link-local (v4+v6), multicast, unspecified and
+// CGNAT are all internal. Callers must resolve names BEFORE consulting this.
+func ssrfIPBlocked(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() || isCGNAT(ip)
+}
+
+// isPrivateHostFresh is isPrivateHost with a fresh, context-aware DNS lookup
+// on EVERY call and no result cache. It is the classifier for dial-time and
+// redirect-time checks: the cached variant can go stale for up to dnsCacheTTL,
+// which is exactly the DNS-rebinding window (resolve-public-at-check,
+// resolve-internal-at-dial). These paths run per new connection / per redirect
+// hop — not per request, thanks to keep-alive — so the extra lookup is cheap.
+func isPrivateHostFresh(ctx context.Context, host string) bool {
+	if allowLocalProviderForTest {
+		// Tests spin up loopback servers on purpose; do not block them.
+		return false
+	}
+	h := splitDialHost(host)
+	if h == "" || strings.EqualFold(h, "localhost") {
+		return true // fail-closed: no host at all is never routable
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		return ssrfIPBlocked(ip)
+	}
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", h)
+	if err != nil || len(ips) == 0 {
+		// Fail-closed: if we cannot resolve the host, refuse to dial rather
+		// than allow a DNS-rebinding / internal-hostname attack through.
+		return true
+	}
+	for _, ip := range ips {
+		if ssrfIPBlocked(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// ssrfDialer is the underlying dialer for SSRF-guarded transports.
+var ssrfDialer = &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+
+// ssrfGuardedDialContext validates the ACTUAL dialed address at connection
+// time with a fresh lookup (see isPrivateHostFresh). The construction-time
+// cachedIsPrivateHost check in proxyHTTPClientForURL stays as the cheap first
+// line, but it cannot cover request URLs that differ from targetURL, redirect
+// hops, or DNS that changed since the check — this closes all three.
+func ssrfGuardedDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	if !allowLocalProviderForTest {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, errors.New("ssrf blocked: malformed dial address")
+		}
+		if isPrivateHostFresh(ctx, host) {
+			return nil, fmt.Errorf("ssrf blocked: dial target %s resolves to a private/internal address", host)
+		}
+	}
+	return ssrfDialer.DialContext(ctx, network, addr)
+}
+
+// guardedUpstreamTransport is the pooled transport for provider upstream calls
+// (no-proxy path). Pooling settings mirror sharedTransport so connection reuse
+// is unchanged; only the dial function is guarded. Internal mesh traffic
+// (gossip, pubkey fetch, relay) keeps using sharedTransport/sharedHTTPClient
+// because peers legitimately live on LAN/private addresses.
+var guardedUpstreamTransport = &http.Transport{
+	MaxIdleConns:        512,
+	MaxIdleConnsPerHost: 100,
+	IdleConnTimeout:     90 * time.Second,
+	DisableCompression:  false,
+	TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+	DialContext:         ssrfGuardedDialContext,
+}
+
+// ssrfCheckRedirect re-validates every redirect hop against the SSRF guard.
+// Without it the construction-time check is meaningless: a public URL can
+// answer 302 to http://169.254.169.254/ and the client would follow it with
+// an unguarded dial. Redirect validation uses fresh DNS (no cache).
+func ssrfCheckRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if allowLocalProviderForTest {
+		return nil
+	}
+	if req == nil || req.URL == nil {
+		return errors.New("ssrf blocked: redirect with no URL")
+	}
+	if isPrivateHostFresh(req.Context(), req.URL.String()) {
+		return errors.New("ssrf blocked: redirect target resolves to a private/internal address")
+	}
+	return nil
+}
+
+// isPrivateHost checks if a hostname resolves to a private/loopback IP.
+// Returns true if the host is private OR unresolvable (fail-closed).
+// SEC-SSRF-1: callers pass either a full URL ("https://api.example.com") or a
+// bare "host:port"; parsing is shared with the fresh classifier via
+// splitDialHost so both forms classify identically.
+func isPrivateHost(host string) bool {
+	if allowLocalProviderForTest {
+		// Tests spin up loopback servers on purpose; do not block them.
+		return false
+	}
+	h := splitDialHost(host)
+	if h == "" {
+		return true // fail-closed: no host at all is never routable
+	}
+	if h == "localhost" {
 		return true
 	}
 	if ip := net.ParseIP(h); ip != nil {

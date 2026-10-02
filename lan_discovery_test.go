@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
@@ -676,5 +679,95 @@ func TestLANSigNeverSignsForeignID(t *testing.T) {
 	t.Cleanup(func() { node = old })
 	if lanCaptureSigner("mmx-real-id") != nil {
 		t.Fatal("captured a signer with no identity")
+	}
+}
+
+// TestLANRegisterPeer_RequiresVerified is the regression guard for the LAN
+// trust-anchor poisoning: an unverified (unsigned / unknown-signer)
+// announcement must never enter the route table or the trust pool, even when
+// it claims an existing trusted NodeID, while a verified one still bridges.
+func TestLANRegisterPeer_RequiresVerified(t *testing.T) {
+	setupDiscoveryTestEnv(t)
+
+	// Authoritative pubkey fixture so the verified path has no network gap.
+	peerPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("genkey: %v", err)
+	}
+	pubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/node/pubkey" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"pub_key": base64.StdEncoding.EncodeToString(peerPub)})
+	}))
+	defer pubSrv.Close()
+	_, portStr, err := net.SplitHostPort(strings.TrimPrefix(pubSrv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("split hostport: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("port: %v", err)
+	}
+
+	// 1. Unverified announcement: hard refusal, zero side effects.
+	unverified := lanPeerInfo{NodeID: "mmx-lan-evil", IP: "127.0.0.1", Port: port, Verified: false}
+	if err := lanRegisterPeer(unverified); err == nil || !strings.Contains(err.Error(), "unverified") {
+		t.Fatalf("unverified announcement must be refused, got %v", err)
+	}
+	if netMgr.HasPeer("mmx-lan-evil") {
+		t.Fatal("unverified peer entered the peer list")
+	}
+	if routeTable.Get("mmx-lan-evil") != nil {
+		t.Fatal("unverified peer entered the route table")
+	}
+	if _, ok := fed.GetNode("mmx-lan-evil"); ok {
+		t.Fatal("unverified peer entered the trust pool")
+	}
+
+	// 2. Same-shaped but verified announcement: bridges normally.
+	verified := lanPeerInfo{NodeID: "mmx-lan-good", IP: "127.0.0.1", Port: port, Verified: true}
+	if err := lanRegisterPeer(verified); err != nil {
+		t.Fatalf("verified peer must bridge, got %v", err)
+	}
+	if _, ok := fed.GetNode("mmx-lan-good"); !ok {
+		t.Fatal("verified peer was not bridged into the trust pool")
+	}
+	if routeTable.Get("mmx-lan-good") == nil {
+		t.Fatal("verified peer missing from the route table")
+	}
+}
+
+// TestUpsertKnownNode_PreservesEstablishedPubKey locks the trust-anchor rule:
+// without a signed key-rotation protocol, an incoming record can never
+// replace an established PubKey (indistinguishable from impersonation).
+func TestUpsertKnownNode_PreservesEstablishedPubKey(t *testing.T) {
+	setupDiscoveryTestEnv(t)
+
+	keyA := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xA5}, 32))
+	keyB := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x5A}, 32))
+	fed.AddKnownNode(NodeInfo{NodeID: "mmx-anchor", PubKey: keyA, Addresses: []string{"https://a.example.com"}})
+
+	// A forged "new key" for the same node must not replace the trust anchor.
+	fed.AddKnownNode(NodeInfo{NodeID: "mmx-anchor", PubKey: keyB, Addresses: []string{"https://evil.example.com"}})
+	got, ok := fed.GetNode("mmx-anchor")
+	if !ok {
+		t.Fatal("anchor node missing from trust pool")
+	}
+	if got.PubKey != keyA {
+		t.Fatalf("established pubkey overwritten: got %q want %q", got.PubKey, keyA)
+	}
+
+	// An empty incoming key keeps the existing one (previous behavior preserved).
+	fed.AddKnownNode(NodeInfo{NodeID: "mmx-anchor", Addresses: []string{"https://b.example.com"}})
+	if got, _ = fed.GetNode("mmx-anchor"); got.PubKey != keyA {
+		t.Fatalf("pubkey lost on empty update: %q", got.PubKey)
+	}
+
+	// A brand-new node still records the incoming key.
+	fed.AddKnownNode(NodeInfo{NodeID: "mmx-fresh", PubKey: keyB})
+	if fresh, ok := fed.GetNode("mmx-fresh"); !ok || fresh.PubKey != keyB {
+		t.Fatalf("fresh node key not recorded: %+v", fresh)
 	}
 }

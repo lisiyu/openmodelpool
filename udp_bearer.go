@@ -426,7 +426,7 @@ func (b *UDPDataBearer) RelayOverUDP(w http.ResponseWriter, r *http.Request, pee
 	if netMgr != nil {
 		relayFrom = netMgr.GetNodeID()
 	}
-	sig, ts := signRelayForward(relayFrom, r.Method, restPath, body)
+	sig, ts, nonce := signRelayForward(relayFrom, r.Method, restPath, body)
 	hdrs.Set(headerRelayHop, strconv.Itoa(hopCount+1))
 	if relayFrom != "" {
 		hdrs.Set("X-Node-ID", relayFrom)
@@ -434,6 +434,9 @@ func (b *UDPDataBearer) RelayOverUDP(w http.ResponseWriter, r *http.Request, pee
 		if sig != "" {
 			hdrs.Set(headerRelaySig, sig)
 			hdrs.Set(headerRelayTs, ts)
+			if nonce != "" {
+				hdrs.Set(headerRelayNonce, nonce)
+			}
 		}
 	}
 

@@ -267,7 +267,7 @@ func registerWithBootstraps() {
 			req.Header.Set("Content-Type", "application/json")
 			if node != nil {
 				req.Header.Set("X-OMP-NodeID", nodeID)
-				sig, ts := signRelayForward(nodeID, "POST", "/api/federation/register", body)
+				sig, ts, _ := signRelayForward(nodeID, "POST", "/api/federation/register", body)
 				req.Header.Set("X-OMP-Sig", sig)
 				req.Header.Set("X-OMP-Ts", ts)
 			}

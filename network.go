@@ -246,11 +246,20 @@ func (nm *NetworkManager) bridgeRestoredPeersToFederation() {
 		if e == nil || e.NodeID == "" || e.NodeID == selfID || len(e.Addresses) == 0 {
 			continue
 		}
+		// Preserve the persisted last-seen time instead of stamping now:
+		// a restored-but-removed peer must stay under its tombstone (rather
+		// than beating it with a fresh timestamp and resurrecting), and
+		// genuinely stale peers keep a stale LastSeen so cullInactivePeers
+		// can reap them instead of treating every restore as brand-new.
+		lastSeen := now
+		if !e.LastSeen.IsZero() {
+			lastSeen = e.LastSeen.UTC().Format(time.RFC3339)
+		}
 		nodes = append(nodes, NodeInfo{
 			NodeID:    e.NodeID,
 			Endpoint:  e.Addresses[0],
 			Addresses: append([]string(nil), e.Addresses...),
-			LastSeen:  now,
+			LastSeen:  lastSeen,
 			JoinedAt:  now,
 		})
 	}

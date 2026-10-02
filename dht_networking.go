@@ -45,6 +45,12 @@ const (
 )
 
 // DHTMessage is a single Kademlia RPC message.
+//
+// KeyID/PubKey/Sig carry the wire authentication (dht_wire_auth.go): KeyID is
+// the sender's federation node ID, PubKey its base64 ed25519 key (used only
+// for TOFU pinning; the trust pool is authoritative), Sig the base64 signature
+// over the canonical encoding of every other field. Messages without them are
+// the legacy unsigned shape and are dropped by auth-enabled transports.
 type DHTMessage struct {
 	ID       string      `json:"id"`
 	From     DHTNodeID   `json:"from"`
@@ -55,6 +61,9 @@ type DHTMessage struct {
 	Value    []byte      `json:"value,omitempty"`   // record value (STORE / FIND_VALUE_RESP)
 	Entries  []*DHTEntry `json:"entries,omitempty"` // closest nodes (FIND_*_RESP)
 	Found    bool        `json:"found,omitempty"`   // FIND_VALUE_RESP: value present locally
+	KeyID    string      `json:"key_id,omitempty"`  // signer federation node ID
+	PubKey   string      `json:"pubkey,omitempty"`  // signer base64 pubkey (TOFU only)
+	Sig      string      `json:"sig,omitempty"`     // base64 ed25519 over canonical bytes
 }
 
 // DHTTransport delivers a message to a remote node identified by its address
@@ -213,6 +222,12 @@ func (n *DHTNode) handle(msg DHTMessage) DHTMessage {
 			resp.Entries = append([]*DHTEntry{n.selfEntry()}, closest...)
 		}
 	case DHTMsgStore:
+		// Flood guard: an oversized record is ACKed (protocol-preserving) but
+		// NOT stored, so a malicious peer cannot grow memory unboundedly.
+		if len(msg.Key) > dhtMaxKeyLen || len(msg.Value) > dhtMaxStoreValue {
+			slog.Warn("dht: oversized STORE rejected", "key_len", len(msg.Key), "value_len", len(msg.Value))
+			break
+		}
 		n.dht.Put(msg.Key, msg.Value, msg.From)
 		// STORE_ACK.
 	default:

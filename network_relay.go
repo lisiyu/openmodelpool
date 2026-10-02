@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -170,6 +172,10 @@ const (
 	headerRelaySig = "X-OpenModelPool-Relay-Sig"
 	// headerRelayTs carries the RFC3339 timestamp used for replay protection.
 	headerRelayTs = "X-OpenModelPool-Relay-Ts"
+	// headerRelayNonce carries the per-envelope uniqueness nonce. Older peers
+	// do not send it; verification accepts such envelopes as the legacy shape
+	// (the signature then covers no nonce), but our signer always sends one.
+	headerRelayNonce = "X-OpenModelPool-Relay-Nonce"
 	// relaySigMaxAge is the allowed clock-skew / replay window for a relay
 	// forward signature (consistent with federation gossip/update anti-replay).
 	relaySigMaxAge = 5 * time.Minute
@@ -186,14 +192,23 @@ const (
 // byte-identical forward replayed inside the 5-minute window is rejected
 // instead of being served (and quota-charged) a second time. Keyed by the
 // signature itself: a valid signature is bound to the exact envelope
-// (node, method, path, body hash, timestamp), so an identical signature
-// means an identical request.
+// (node, method, path, body hash, timestamp, nonce), so an identical
+// signature means an identical request.
 var relayReplayCache = struct {
 	sync.Mutex
 	seen map[string]int64 // signature -> unix-nano of first acceptance
 }{seen: make(map[string]int64)}
 
 const relayReplayCacheMaxEntries = 65536
+
+// relayProcessBootNano is the process start time (unix-nano). A restart wipes
+// the in-memory replay cache, which would otherwise reopen the replay window
+// for forwards captured before the restart. Closing that hole without a
+// per-request disk write: any forward whose signature timestamp predates this
+// process is rejected (verifyRelayForwardAuth step 2). Legitimate peers retry
+// with freshly-signed envelopes — and failover attempts always re-sign — so
+// only stale replays are affected.
+var relayProcessBootNano = time.Now().UnixNano()
 
 // relayVerifiedCtxKey marks an *http.Request whose relay signature already
 // passed the replay check. The proxy middleware verifies a signed forward
@@ -222,9 +237,22 @@ func noteRelayReplay(sig string) (replay bool) {
 		}
 	}
 	if len(relayReplayCache.seen) >= relayReplayCacheMaxEntries {
-		// Memory-pressure fail-open: reset rather than grow unbounded.
-		// The normal path stays fail-closed; only extreme load resets.
-		relayReplayCache.seen = make(map[string]int64, 1024)
+		// Memory-pressure eviction (never a wholesale reset: dropping the
+		// whole map would re-open the replay window for every in-flight
+		// signature). Evict the oldest entries down to half capacity —
+		// they are closest to natural expiry anyway.
+		type agedSig struct {
+			sig string
+			at  int64
+		}
+		all := make([]agedSig, 0, len(relayReplayCache.seen))
+		for s, t := range relayReplayCache.seen {
+			all = append(all, agedSig{s, t})
+		}
+		sort.Slice(all, func(i, j int) bool { return all[i].at < all[j].at })
+		for _, e := range all[:len(all)-relayReplayCacheMaxEntries/2] {
+			delete(relayReplayCache.seen, e.sig)
+		}
 	}
 	relayReplayCache.seen[sig] = now
 	return false
@@ -237,6 +265,33 @@ func resetRelayReplayCache() {
 	relayReplayCache.Lock()
 	defer relayReplayCache.Unlock()
 	relayReplayCache.seen = make(map[string]int64)
+}
+
+// relayTargetBlocked reports whether a relay/gateway target must be refused.
+// Relay targets must be public: IP literals in loopback/private/link-local/
+// CGNAT/unspecified/multicast ranges are blocked, as is "localhost", and any
+// DNS name that fails to resolve (fail-closed) or resolves to a blocked
+// address. Unlike isLocalOrPrivateIP — a pure IP predicate used for listener
+// ACLs — this resolves names: a non-IP hostname must never auto-pass, or
+// https://localhost and internal DNS names sail through the B119 check.
+func relayTargetBlocked(host string) bool {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if h == "" || h == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		return ssrfIPBlocked(ip)
+	}
+	ips, err := net.LookupHost(h)
+	if err != nil || len(ips) == 0 {
+		return true
+	}
+	for _, s := range ips {
+		if ip := net.ParseIP(s); ip != nil && ssrfIPBlocked(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // handleNetworkRelay handles relay requests: /network/{node_id}/{rest...}
@@ -574,8 +629,11 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 		return
 	}
 
-	// B119: Block relay to private/internal IPs to prevent SSRF
-	if !allowLocalRelayForTest && isLocalOrPrivateIP(target.Hostname()) {
+	// B119: Block relay to private/internal targets to prevent SSRF.
+	// relayTargetBlocked resolves DNS names (unlike isLocalOrPrivateIP, which
+	// is a pure IP predicate): a bare hostname such as "localhost" or an
+	// internal DNS name is NOT an IP literal and must not auto-pass.
+	if !allowLocalRelayForTest && relayTargetBlocked(target.Hostname()) {
 		slog.Warn("relay target is private IP, rejecting", "host", target.Hostname())
 		writeError(w, 502, "relay target must be a public address")
 		return
@@ -625,7 +683,7 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 
 	// Sign the forward over the *forwarded* path (restPath) so the receiving
 	// node, which sees the stripped path, reconstructs an identical envelope.
-	sig, ts := signRelayForward(relayFrom, r.Method, restPath, bodyBytes)
+	sig, ts, nonce := signRelayForward(relayFrom, r.Method, restPath, bodyBytes)
 
 	relayStart := time.Now()
 
@@ -655,7 +713,7 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 
 			// G1 hardening: attach the ed25519-signed relay auth so the
 			// receiving node can verify this forwarding-node identity.
-			attachRelayAuth(req, relayFrom, sig, ts)
+			attachRelayAuth(req, relayFrom, sig, ts, nonce)
 		},
 		Transport: GetSharedHTTPClient().Transport,
 		ErrorHandler: func(w2 http.ResponseWriter, r2 *http.Request, err error) {
@@ -877,7 +935,14 @@ type RelayAuthEnvelope struct {
 	Path      string `json:"path"`      // forwarded request path (already stripped)
 	BodyHash  string `json:"body_hash"` // hex SHA-256 of the forwarded body
 	Timestamp string `json:"timestamp"` // RFC3339; anti-replay window ±5min
-	Signature string `json:"signature"` // node.SignJSON(env) over the fields above
+	// Nonce makes every envelope unique even for byte-identical forwards
+	// issued within the same second. Without it the deterministic ed25519
+	// signature collides, and the second forward is wrongly rejected as a
+	// replay (this also broke gateway failover retries to the next candidate).
+	// The signature binds the nonce, so stripping it downgrades to an
+	// unverifiable envelope instead of a valid one.
+	Nonce     string `json:"nonce,omitempty"` // unix-nano + crypto-rand hex
+	Signature string `json:"signature"`       // node.SignJSON(env) over the fields above
 }
 
 // sha256Hex returns the hex-encoded SHA-256 of b.
@@ -927,9 +992,13 @@ func sanitizeForwardedHeaders(dst http.Header, r *http.Request) {
 	}
 }
 
-func signRelayForward(nodeID string, method string, path string, body []byte) (sig string, ts string) {
+func signRelayForward(nodeID string, method string, path string, body []byte) (sig string, ts string, nonce string) {
 	if nodeID == "" || node == nil {
-		return "", ""
+		return "", "", ""
+	}
+	var randBytes [8]byte
+	if _, err := rand.Read(randBytes[:]); err != nil {
+		return "", "", ""
 	}
 	env := RelayAuthEnvelope{
 		NodeID:    nodeID,
@@ -937,15 +1006,16 @@ func signRelayForward(nodeID string, method string, path string, body []byte) (s
 		Path:      path,
 		BodyHash:  sha256Hex(body),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Nonce:     strconv.FormatInt(time.Now().UnixNano(), 10) + "-" + hex.EncodeToString(randBytes[:]),
 	}
 	env.Signature = node.SignJSON(env)
-	return env.Signature, env.Timestamp
+	return env.Signature, env.Timestamp, env.Nonce
 }
 
 // attachRelayAuth sets the relay-auth headers on an outbound request: the
 // forwarding node identity (X-Node-ID + X-Node-Auth, federation style) and,
-// when a signature was produced, the signature and timestamp.
-func attachRelayAuth(req *http.Request, nodeID string, sig string, ts string) {
+// when a signature was produced, the signature, timestamp and nonce.
+func attachRelayAuth(req *http.Request, nodeID string, sig string, ts string, nonce string) {
 	if nodeID == "" {
 		return
 	}
@@ -954,6 +1024,9 @@ func attachRelayAuth(req *http.Request, nodeID string, sig string, ts string) {
 	if sig != "" {
 		req.Header.Set(headerRelaySig, sig)
 		req.Header.Set(headerRelayTs, ts)
+		if nonce != "" {
+			req.Header.Set(headerRelayNonce, nonce)
+		}
 	}
 }
 
@@ -1015,14 +1088,28 @@ func verifyRelayForwardAuth(r *http.Request, body []byte) (int, string) {
 	if age := time.Since(parsed); age < 0 || age > relaySigMaxAge {
 		return 401, "relay timestamp outside acceptable window"
 	}
+	// 2b. Restart barrier: the replay cache is in-memory, so a restart would
+	// otherwise reopen the window for forwards captured before it. Any
+	// envelope signed before this process booted is rejected; legitimate
+	// peers retry with freshly-signed envelopes (failover attempts always
+	// re-sign), so only stale replays are affected. The +1s tolerates RFC3339
+	// second-quantization (a timestamp minted in the boot second parses to
+	// the second's start, i.e. nominally "before" boot).
+	if parsed.UnixNano()+int64(time.Second) < relayProcessBootNano {
+		return 401, "relay timestamp predates this process (restart replay barrier)"
+	}
 
-	// 3. Reconstruct the envelope and verify the ed25519 signature.
+	// 3. Reconstruct the envelope and verify the ed25519 signature. The nonce
+	// is optional on the wire (older peers do not send it) but, when present,
+	// is part of the signed payload — stripping it from a captured envelope
+	// yields an unverifiable envelope, never a valid legacy one.
 	env := RelayAuthEnvelope{
 		NodeID:    nodeID,
 		Method:    r.Method,
 		Path:      r.URL.Path,
 		BodyHash:  sha256Hex(body),
 		Timestamp: ts,
+		Nonce:     r.Header.Get(headerRelayNonce),
 		Signature: sig,
 	}
 	if !VerifyJSONSig(sender.PubKey, env, sig) {
@@ -1324,8 +1411,11 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 		return false
 	}
 
-	// B119: Block relay to private/internal IPs to prevent SSRF
-	if !allowLocalRelayForTest && isLocalOrPrivateIP(target.Hostname()) {
+	// B119: Block relay to private/internal targets to prevent SSRF.
+	// relayTargetBlocked resolves DNS names (unlike isLocalOrPrivateIP, which
+	// is a pure IP predicate): a bare hostname such as "localhost" or an
+	// internal DNS name is NOT an IP literal and must not auto-pass.
+	if !allowLocalRelayForTest && relayTargetBlocked(target.Hostname()) {
 		slog.Warn("relay target is private IP, rejecting", "host", target.Hostname())
 		return false
 	}
@@ -1365,8 +1455,8 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	// G1 hardening (design §18.3 P1-5): sign the forward so the receiving node
 	// can cryptographically verify this forwarding node's identity. The target
 	// path (r.URL.Path) is what the receiver sees, so we sign over it.
-	sig, ts := signRelayForward(relayFrom, r.Method, r.URL.Path, bodyBytes)
-	attachRelayAuth(outReq, relayFrom, sig, ts)
+	sig, ts, nonce := signRelayForward(relayFrom, r.Method, r.URL.Path, bodyBytes)
+	attachRelayAuth(outReq, relayFrom, sig, ts, nonce)
 
 	outReq.ContentLength = int64(len(bodyBytes))
 	outReq.Host = target.Host

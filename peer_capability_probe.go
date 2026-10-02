@@ -282,8 +282,8 @@ func signProbeRequestDefault(req *http.Request, method, path string, body []byte
 	if nodeID == "" {
 		return
 	}
-	sig, ts := signRelayForward(nodeID, method, path, body)
-	attachRelayAuth(req, nodeID, sig, ts)
+	sig, ts, nonce := signRelayForward(nodeID, method, path, body)
+	attachRelayAuth(req, nodeID, sig, ts, nonce)
 }
 
 // defaultProbeTargets enumerates trust-pool nodes and their declared models.

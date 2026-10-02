@@ -92,13 +92,51 @@ var (
 // errGeoNegative is returned for IPs inside the negative-cache window.
 var errGeoNegative = fmt.Errorf("region geo: negative cache hit")
 
+// errGeoRateLimited is returned when the process-wide provider budget is
+// exhausted. Unlike lookup failures it is NOT negative-cached: the next
+// unknown peer retries in a later window instead of being suppressed.
+var errGeoRateLimited = fmt.Errorf("region geo: provider rate limit exhausted")
+
+// geoRateMaxPerMinute caps provider requests process-wide per minute window.
+// The free tier allows 45 req/min; staying under it leaves headroom for the
+// operator's own use.
+const geoRateMaxPerMinute = 40
+
+var (
+	geoRateMu     sync.Mutex
+	geoRateWindow time.Time
+	geoRateCount  int
+)
+
+// geoRateAllow consumes one unit of the process-wide provider budget.
+// Singleflight is per-IP only, so without this a mesh sweep over N unique
+// public IPs fires N concurrent provider requests and exhausts the free tier.
+func geoRateAllow() bool {
+	geoRateMu.Lock()
+	defer geoRateMu.Unlock()
+	now := time.Now()
+	if now.Sub(geoRateWindow) >= time.Minute {
+		geoRateWindow = now
+		geoRateCount = 0
+	}
+	if geoRateCount >= geoRateMaxPerMinute {
+		return false
+	}
+	geoRateCount++
+	return true
+}
+
 // geoLookupCountry resolves an IP to an ISO 3166-1 alpha-2 country code.
 // It is a var so tests can stub it; the offline suite must not touch the network.
 var geoLookupCountry = defaultGeoLookupCountry
 
-// defaultGeoLookupCountry queries ip-api.com over HTTPS and caches the result.
+// defaultGeoLookupCountry queries the GeoIP provider over HTTPS and caches
+// the result. The endpoint is a var (like geoLookupCountry) so tests can
+// point it at a local server.
 // SEC: HTTPS only — the plaintext HTTP endpoint would let a network MITM forge
 // the geo response and poison region routing (same rationale as update.go SEC-B3-5).
+var geoLookupBaseURL = "https://ip-api.com/line/"
+
 func defaultGeoLookupCountry(ip string) (string, error) {
 	now := time.Now()
 	geoCacheMu.Lock()
@@ -111,7 +149,14 @@ func defaultGeoLookupCountry(ip string) (string, error) {
 	}
 	geoCacheMu.Unlock()
 
-	url := "https://ip-api.com/line/" + ip + "?fields=countryCode"
+	// Process-wide rate limit (see geoRateAllow): cache misses from every
+	// goroutine share one budget so a burst of unknown peers cannot exhaust
+	// the provider's free tier in one mesh sweep.
+	if !geoRateAllow() {
+		return "", errGeoRateLimited
+	}
+
+	url := geoLookupBaseURL + ip + "?fields=countryCode"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
@@ -122,6 +167,13 @@ func defaultGeoLookupCountry(ip string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+	// A non-200 body is an error page/rate-limit notice, not a country code:
+	// parsing it would cache garbage (e.g. a 429 HTML page failing
+	// isCountryCode lands in the negative cache and masks the real cause).
+	if resp.StatusCode != http.StatusOK {
+		cacheGeoNegative(ip, now)
+		return "", fmt.Errorf("region geo: provider status %d", resp.StatusCode)
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 16))
 	if err != nil {
 		cacheGeoNegative(ip, now)
@@ -168,13 +220,19 @@ func isPublicRoutableIP(ip string) bool {
 }
 
 // regionGeoEnabled reports whether GeoIP-based region detection is on.
-// Config key: region_geo_enabled (default true). Nil-safe for unit tests that
-// don't initialize the global config.
+// Config key: region_geo_enabled (default FALSE — opt-in).
+//
+// Privacy default: every lookup sends a public IP (the peer's, or our own at
+// startup) to a third-party provider (ip-api.com). That must be the
+// operator's explicit choice, not a silent default: with geo off, region
+// routing uses the purely offline first-octet heuristic and zero external
+// requests are made. Nil-safe for unit tests that don't initialize config
+// (treated as disabled; tests opt in via stubCfg).
 func regionGeoEnabled() bool {
 	if cfg == nil {
-		return true
+		return false
 	}
-	return cfg.Get("region_geo_enabled", "true") != "false"
+	return cfg.Get("region_geo_enabled", "false") != "false"
 }
 
 // stripPortForGeo removes a trailing :port if present, returning the bare host.
@@ -223,6 +281,12 @@ func regionSourceRank(source string) int {
 	}
 }
 
+// geoMaxInflight caps concurrent GeoIP enrichment goroutines: without it,
+// every unique unknown public IP spawns an uncancellable goroutine, and a
+// large mesh sweep can pile up hundreds. Overflow peers simply skip
+// enrichment (the offline heuristic still applies).
+const geoMaxInflight = 32
+
 // maybeEnrichRegionAsync upgrades an unknown-region entry via GeoIP without
 // blocking the caller. It is singleflight per IP and a no-op when geo
 // detection is disabled or the entry already has a known region.
@@ -243,6 +307,10 @@ func (rm *RegionManager) maybeEnrichRegionAsync(nodeID, ip string) {
 		return
 	}
 	if e, ok := rm.nodes[nodeID]; ok && e.Region != RegionUnknown && e.Region != RegionEmpty {
+		rm.mu.Unlock()
+		return
+	}
+	if len(rm.geoInflight) >= geoMaxInflight {
 		rm.mu.Unlock()
 		return
 	}

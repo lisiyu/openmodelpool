@@ -407,9 +407,10 @@ type lanPeerInfo struct {
 	Models   []string
 	Share    bool
 	// Verified reports that the announcement carried a valid ed25519 signature
-	// from a key known in our federation trust pool. Unsigned announcements
-	// from legacy or unknown nodes have Verified=false and are still accepted
-	// under the LAN trust boundary.
+	// from a key known in our federation trust pool. Announcements with
+	// Verified=false (unsigned, or signed by an unknown key) carry no identity
+	// binding at all: lanRegisterPeer refuses to bridge them, so they never
+	// enter the route table or the trust pool.
 	Verified bool
 }
 
@@ -1252,7 +1253,19 @@ func (d *LANDiscovery) notePeer(peer lanPeerInfo) {
 // chain. netMgr.AddPeer is the single entry point: it upserts the peer,
 // updates the route table and on-disk registry, and bridges the peer into the
 // federation trust pool so gossip propagates it (bridgePeerToFederation).
+//
+// Security boundary: ONLY cryptographically verified announcements are
+// bridged. An unverified announcement cannot be bound to any identity, so
+// bridging it would let anyone on the L2 segment inject arbitrary node IDs,
+// addresses and model claims into the trust pool — and, worse, overwrite the
+// PubKey (trust anchor) of an existing node and reroute its traffic to the
+// attacker. Unverified announcements are returned as an error (not silently
+// skipped) so that notePeer releases the in-flight claim and a later
+// properly-signed announcement for the same fingerprint can still register.
 func lanRegisterPeer(peer lanPeerInfo) error {
+	if !peer.Verified {
+		return fmt.Errorf("lan discovery: refusing to bridge unverified announcement for %s", peer.NodeID)
+	}
 	if netMgr == nil {
 		return fmt.Errorf("network manager unavailable")
 	}
