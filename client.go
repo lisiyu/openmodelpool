@@ -1774,7 +1774,16 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 			return map[string]any{"success": false, "error": "Sider token not configured"}
 		}
 		h := siderBuildHeaders(testProvider.APIKey)
-		payload := siderBuildPayload("auto", []ChatMessage{{Role: "user", Content: "hi"}}, false)
+		// Use the first enabled model for the test, not "auto" (sider API
+		// rejects unknown model IDs with "invalid model" / "Too many words").
+		testModel := "gpt-5.6-luna"
+		for _, m := range testProvider.Models {
+			if m.Enabled {
+				testModel = m.ID
+				break
+			}
+		}
+		payload := siderBuildPayload(testModel, []ChatMessage{{Role: "user", Content: "hi"}}, false)
 		payload["prompt"] = "ping"
 		body, _ := json.Marshal(payload)
 		ctx3, cancel3 := context.WithTimeout(context.Background(), 30*time.Second)
