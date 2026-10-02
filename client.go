@@ -1010,11 +1010,6 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 		}
 	}
 	prompt := strings.Join(parts, "\n")
-	// Sider API rejects overly long prompts ("Too many words in the query").
-	// Truncate to ~8000 chars, keeping the tail (most recent messages).
-	if len(prompt) > 8000 {
-		prompt = "...[truncated]...\n" + prompt[len(prompt)-7900:]
-	}
 	return map[string]any{
 		"prompt":           prompt,
 		"stream":           stream,
