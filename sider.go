@@ -71,6 +71,18 @@ func (s *SiderMonitor) IsExpired() bool {
 	return s.status.TokenStatus == "expired"
 }
 
+// Reset clears a stale expired status, e.g. after the operator rotates the
+// token. The next request will re-probe and set the real status.
+func (s *SiderMonitor) Reset() {
+	s.mu.Lock()
+	s.status.TokenStatus = "ok"
+	s.status.ConsecutiveFailures = 0
+	s.status.FailureMessage = ""
+	s.status.CheckedAt = time.Now().Format(time.RFC3339)
+	s.save()
+	s.mu.Unlock()
+}
+
 // GetStatus returns the current status snapshot.
 func (s *SiderMonitor) GetStatus() SiderStatus {
 	s.mu.RLock()

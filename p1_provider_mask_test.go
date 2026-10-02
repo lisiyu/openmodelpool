@@ -164,19 +164,47 @@ func TestCreateProvider_MergeMaskedAPIKeysKeepsRealKeys(t *testing.T) {
 	}
 }
 
-// Unit coverage for the mask detector itself: both Safe() formats count as
-// masks, real keys (and empty) do not.
+// Unit coverage for the mask logic: restoreMaskedAPIKeys restores the stored
+// key only when the submitted value exactly matches Safe()'s mask of it.
+// A genuine new key — even one containing "..." — must be kept.
 func TestIsMaskedKeyValue(t *testing.T) {
-	masked := []string{"sk-r...1111", "***", "abcd...wxyz"}
-	for _, s := range masked {
-		if !isMaskedKeyValue(s) {
-			t.Errorf("isMaskedKeyValue(%q) = false, want true", s)
-		}
+	const realKey = "sk-real-secret-key-12345"
+	masked := maskKeyValue(realKey) // "sk-r...2345"
+
+	// Echoing the exact mask → restored to real key.
+	got := restoreMaskedAPIKeys(
+		[]APIKeyConfig{{ID: "k1", Key: realKey}},
+		[]APIKeyConfig{{ID: "k1", Key: masked}},
+	)
+	if got[0].Key != realKey {
+		t.Errorf("masked echo not restored: got %q, want %q", got[0].Key, realKey)
 	}
-	notMasked := []string{"", "sk-real-first-key-AAAA1111", "shortkey", "your-api-key-here"}
-	for _, s := range notMasked {
-		if isMaskedKeyValue(s) {
-			t.Errorf("isMaskedKeyValue(%q) = true, want false", s)
+
+	// "***" short-key mask → restored.
+	const shortKey = "abc123"
+	got = restoreMaskedAPIKeys(
+		[]APIKeyConfig{{ID: "k2", Key: shortKey}},
+		[]APIKeyConfig{{ID: "k2", Key: "***"}},
+	)
+	if got[0].Key != shortKey {
+		t.Errorf("*** mask not restored: got %q, want %q", got[0].Key, shortKey)
+	}
+
+	// Genuine new keys must NOT be treated as masks, even with "..." inside.
+	newKeys := []string{
+		"sk-new-key...with-dots-inside-xyz",
+		"sk-real-first-key-AAAA1111",
+		"shortkey",
+		"your-api-key-here",
+		"eyJhbGciOi...session-cookie-value",
+	}
+	for _, nk := range newKeys {
+		got := restoreMaskedAPIKeys(
+			[]APIKeyConfig{{ID: "k1", Key: realKey}},
+			[]APIKeyConfig{{ID: "k1", Key: nk}},
+		)
+		if got[0].Key != nk {
+			t.Errorf("new key %q was wrongly replaced by mask logic: got %q", nk, got[0].Key)
 		}
 	}
 }

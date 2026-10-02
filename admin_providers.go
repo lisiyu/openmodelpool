@@ -41,8 +41,13 @@ func validateProviderBaseURL(baseURL string) error {
 // key is never exactly "***" and never contains "...", so treating these as
 // masks is safe. Used by the create/update paths so that a PUT echoing a
 // Safe()-masked GET response does not permanently overwrite stored keys.
-func isMaskedKeyValue(s string) bool {
-	return s == "***" || strings.Contains(s, "...")
+func maskKeyValue(s string) string {
+	if len(s) > 8 {
+		return s[:4] + "..." + s[len(s)-4:]
+	} else if s != "" {
+		return "***"
+	}
+	return ""
 }
 
 // restoreMaskedAPIKeys returns updated with every Safe()-masked Key value
@@ -63,17 +68,21 @@ func restoreMaskedAPIKeys(existing, updated []APIKeyConfig) []APIKeyConfig {
 	out := make([]APIKeyConfig, len(updated))
 	for i, k := range updated {
 		out[i] = k
-		if !isMaskedKeyValue(k.Key) {
+		var realKey string
+		var found bool
+		if k.ID != "" {
+			realKey, found = byID[k.ID]
+		} else if i < len(existing) {
+			realKey, found = existing[i].Key, true
+		}
+		if !found {
 			continue
 		}
-		if k.ID != "" {
-			if real, ok := byID[k.ID]; ok {
-				out[i].Key = real
-				continue
-			}
-		}
-		if i < len(existing) {
-			out[i].Key = existing[i].Key
+		// Only restore the stored key when the submitted value exactly
+		// matches the mask of the stored key (i.e. the user did not change
+		// it). A genuine new key — even one containing "..." — is kept.
+		if k.Key == maskKeyValue(realKey) {
+			out[i].Key = realKey
 		}
 	}
 	return out
@@ -366,6 +375,23 @@ func handleProviderLoginStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"token_saved": saved})
 }
 
+// siderKeyChanged reports whether the sider provider's token was actually
+// rotated between the stored and the merged provider.
+func siderKeyChanged(existing, merged Provider) bool {
+	if merged.APIKey != existing.APIKey {
+		return true
+	}
+	if len(merged.APIKeys) != len(existing.APIKeys) {
+		return len(merged.APIKeys) > 0
+	}
+	for i := range merged.APIKeys {
+		if merged.APIKeys[i].Key != existing.APIKeys[i].Key {
+			return true
+		}
+	}
+	return false
+}
+
 func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	existing, ok := checkProviderWriteAccess(r, id)
@@ -379,9 +405,11 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove masked API key from updates to prevent overwriting real key
+	// Remove masked API key from updates to prevent overwriting real key.
+	// Compare against the exact mask of the stored key — a genuine new key
+	// that merely contains "..." must not be discarded.
 	if apiKey, ok := updates["api_key"]; ok {
-		if keyStr, isStr := apiKey.(string); isStr && strings.Contains(keyStr, "...") {
+		if keyStr, isStr := apiKey.(string); isStr && keyStr == maskKeyValue(existing.APIKey) {
 			delete(updates, "api_key")
 		}
 	}
@@ -469,6 +497,14 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	// non-masked entries update the stored key.
 	if len(merged.APIKeys) > 0 {
 		merged.APIKeys = restoreMaskedAPIKeys(existing.APIKeys, merged.APIKeys)
+	}
+
+	// Sider token rotation: clear a stale "expired" monitor status so the new
+	// token gets a chance to be probed. Without this, filterExpired would keep
+	// dropping sider candidates forever (deadlock: no request → no RecordSuccess).
+	if id == "sider" && siderMon != nil && siderKeyChanged(existing, merged) {
+		siderMon.Reset()
+		slog.Info("sider token rotated, monitor reset", "provider", id)
 	}
 
 	result := pm.Add(merged)
