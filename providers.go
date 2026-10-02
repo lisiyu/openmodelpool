@@ -311,6 +311,7 @@ var presetProviders = []Provider{
 			{ID: "claude-haiku-4.5-think", Name: "Claude Haiku 4.5 Think", Tier: "basic", Enabled: true},
 			{ID: "gpt-5.4-mini", Name: "GPT-5.4 Mini", Tier: "basic", Enabled: true},
 			{ID: "deepseek-v4-flash", Name: "DeepSeek-V4-Flash", Tier: "basic", Enabled: true},
+			{ID: "deepseek-v4.1-flash", Name: "DeepSeek-V4.1-Flash", Tier: "basic", Enabled: true},
 			{ID: "qwen3-max", Name: "Qwen3-Max", Tier: "basic", Enabled: true},
 			// ===== 高级模型 =====
 			{ID: "gemini-3.6-flash", Name: "Gemini 3.6 Flash", Tier: "advanced", Enabled: true},
@@ -327,6 +328,7 @@ var presetProviders = []Provider{
 			{ID: "gemini-3.5-flash", Name: "Gemini 3.5 Flash", Tier: "advanced", Enabled: true},
 			{ID: "grok-4.3", Name: "Grok 4.3", Tier: "advanced", Enabled: true},
 			{ID: "deepseek-v4-pro", Name: "DeepSeek-V4-Pro", Tier: "advanced", Enabled: true},
+			{ID: "deepseek-v4.1-pro", Name: "DeepSeek-V4.1-Pro", Tier: "advanced", Enabled: true},
 			{ID: "gemini-2.5-flash", Name: "Gemini 2.5 Flash", Tier: "advanced", Enabled: true},
 			{ID: "kimi-k2.5", Name: "Kimi K2.5", Tier: "advanced", Enabled: true},
 			{ID: "claude-sonnet-4.6", Name: "Claude Sonnet 4.6", Tier: "advanced", Enabled: true},
