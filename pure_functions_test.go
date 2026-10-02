@@ -517,15 +517,30 @@ func TestSiderBuildPayload(t *testing.T) {
 	if payload["stream"] != false {
 		t.Errorf("stream = %v, want false", payload["stream"])
 	}
-	prompt, ok := payload["prompt"].(string)
+	mc, ok := payload["multi_content"].([]any)
 	if !ok {
-		t.Fatal("prompt is not a string")
+		t.Fatal("multi_content is not an array")
 	}
-	if !strings.Contains(prompt, "[System Instructions]") {
-		t.Error("prompt should contain system instructions")
+	if len(mc) != 2 {
+		t.Fatalf("multi_content len = %d, want 2", len(mc))
 	}
-	if !strings.Contains(prompt, "hello") {
-		t.Error("prompt should contain user message")
+	// Check system message
+	sysMsg, ok := mc[0].(map[string]any)
+	if !ok {
+		t.Fatal("multi_content[0] is not a map")
+	}
+	sysText, _ := sysMsg["text"].(string)
+	if !strings.Contains(sysText, "[System Instructions]") {
+		t.Error("multi_content[0] should contain system instructions")
+	}
+	// Check user message
+	userMsg, ok := mc[1].(map[string]any)
+	if !ok {
+		t.Fatal("multi_content[1] is not a map")
+	}
+	userText, _ := userMsg["text"].(string)
+	if !strings.Contains(userText, "hello") {
+		t.Error("multi_content[1] should contain user message")
 	}
 }
 
