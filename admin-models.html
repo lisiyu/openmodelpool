@@ -435,9 +435,13 @@ function renderModelMatrix(pid) {
   thead += '</tr>';
 
   // Render a model row with per-key toggles
-  function renderModelRow(m, tagHtml) {
+  function renderModelRow(m, tagHtml, showDelete) {
     var html = '<tr>';
-    html += '<td><div class="v8-model-name">' + escapeHtml(m.name || m.id) + (tagHtml || '') + '</div></td>';
+    var delBtn = '';
+    if (showDelete) {
+      delBtn = ' <button onclick="v8DeleteCustomModel(\'' + escapeJS(pid) + '\',\'' + escapeJS(m.id) + '\')" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);font-size:10px;padding:1px 8px;border-radius:3px;cursor:pointer;margin-left:4px">删除</button>';
+    }
+    html += '<td><div class="v8-model-name">' + escapeHtml(m.name || m.id) + (tagHtml || '') + delBtn + '</div></td>';
     for (var ki = 0; ki < keyCols.length; ki++) {
       var kid = keyCols[ki].id;
       if (isModelAvailForKey(m, kid)) {
@@ -466,32 +470,32 @@ function renderModelMatrix(pid) {
     if (basicModels.length) {
       tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">基础模型（' + basicModels.length + '）</td></tr>';
       for (var bi = 0; bi < basicModels.length; bi++) {
-        tbody += renderModelRow(basicModels[bi], ' <span class="v8-model-tag system">基础</span>');
+        tbody += renderModelRow(basicModels[bi], ' <span class="v8-model-tag system">基础</span>', true);
       }
     }
     if (advancedModels.length) {
       tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">高级模型（' + advancedModels.length + '）</td></tr>';
       for (var ai2 = 0; ai2 < advancedModels.length; ai2++) {
-        tbody += renderModelRow(advancedModels[ai2], ' <span class="v8-model-tag" style="background:rgba(99,102,241,.15);color:#818cf8;font-size:10px;padding:1px 6px;border-radius:3px">高级</span>');
+        tbody += renderModelRow(advancedModels[ai2], ' <span class="v8-model-tag" style="background:rgba(99,102,241,.15);color:#818cf8;font-size:10px;padding:1px 6px;border-radius:3px">高级</span>', true);
       }
     }
     if (superModels.length) {
       tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">超级模型（' + superModels.length + '）</td></tr>';
       for (var si2 = 0; si2 < superModels.length; si2++) {
-        tbody += renderModelRow(superModels[si2], ' <span class="v8-model-tag" style="background:rgba(234,179,8,.15);color:#facc15;font-size:10px;padding:1px 6px;border-radius:3px">超级</span>');
+        tbody += renderModelRow(superModels[si2], ' <span class="v8-model-tag" style="background:rgba(234,179,8,.15);color:#facc15;font-size:10px;padding:1px 6px;border-radius:3px">超级</span>', true);
       }
     }
     if (noTierModels.length) {
       tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">系统默认模型（' + noTierModels.length + '）</td></tr>';
       for (var ni = 0; ni < noTierModels.length; ni++) {
-        tbody += renderModelRow(noTierModels[ni], ' <span class="v8-model-tag system">默认</span>');
+        tbody += renderModelRow(noTierModels[ni], ' <span class="v8-model-tag system">默认</span>', true);
       }
     }
   }
   if (syncedModels.length) {
     tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">同步模型（' + syncedModels.length + '）</td></tr>';
     for (var yi = 0; yi < syncedModels.length; yi++) {
-      tbody += renderModelRow(syncedModels[yi], ' <span class="v8-model-tag synced">同步</span>');
+      tbody += renderModelRow(syncedModels[yi], ' <span class="v8-model-tag synced">同步</span>', true);
     }
   }
   var customModels = models.filter(function(m){return m.source === 'custom' || m.source === 'user';});
@@ -499,12 +503,12 @@ function renderModelMatrix(pid) {
     tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">自定义模型（' + customModels.length + '）</td></tr>';
     for (var ci = 0; ci < customModels.length; ci++) {
       var cm = customModels[ci];
-      tbody += renderModelRow(cm, ' <span class="v8-model-tag" style="background:rgba(245,158,11,.15);color:#f59e0b;font-size:10px;padding:1px 6px;border-radius:3px">自定义</span> <button onclick="v8DeleteCustomModel(\'' + escapeJS(pid) + '\',\'' + escapeJS(cm.id) + '\')" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);font-size:10px;padding:1px 8px;border-radius:3px;cursor:pointer;margin-left:4px">删除</button>');
+      tbody += renderModelRow(cm, ' <span class="v8-model-tag" style="background:rgba(245,158,11,.15);color:#f59e0b;font-size:10px;padding:1px 6px;border-radius:3px">自定义</span>', true);
     }
   }
   if (!systemModels.length && !syncedModels.length && !customModels.length) {
     for (var ai = 0; ai < models.length; ai++) {
-      tbody += renderModelRow(models[ai], '');
+      tbody += renderModelRow(models[ai], '', true);
     }
   }
 
