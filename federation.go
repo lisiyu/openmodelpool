@@ -969,6 +969,11 @@ func (f *FederationManager) getLocalSharedProviders() ([]string, []SharedProvide
 	relayOn := f.IsRelayEnabled()
 
 	for _, p := range allProviders {
+		// Skip disabled providers: a disabled provider's models
+		// should not be broadcast even if the models are enabled.
+		if !p.Enabled {
+			continue
+		}
 		shareKey := "federation_share." + p.ID
 		shouldShare := cfg.Get(shareKey, "false") == "true" || relayOn
 		if !shouldShare {
