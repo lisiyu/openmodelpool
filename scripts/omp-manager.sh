@@ -1947,6 +1947,14 @@ show_status() {
     echo -e "  安装目录: $INSTALL_DIR"
     echo -e "  端口: $PORT"
 
+    # 运行版本（从 /api/version 获取）
+    VER=$(curl -s --max-time 3 "http://127.0.0.1:$PORT/api/version" 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+    if [ -n "$VER" ]; then
+        echo -e "  运行版本: ${GREEN}$VER${NC}"
+    else
+        echo -e "  运行版本: ${YELLOW}未知（服务未响应）${NC}"
+    fi
+
     # 版本
     if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
         echo -e "  二进制: $(ls -lh $INSTALL_DIR/$BINARY_NAME | awk '{print $5, $6, $7, $8}')"
