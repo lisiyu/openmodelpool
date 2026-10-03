@@ -1950,8 +1950,10 @@ async function refreshHealth() {
 
     let cardsHtml = '';
     for (const p of providers) {
-      const pid = p.provider_id;
-      const pname = p.provider_name || pid;
+      try {
+      const pid = p.provider_id || p.id || '';
+      if (!pid) continue;
+      const pname = p.provider_name || p.name || pid;
       const enabled = p.enabled !== false;
       const statusClass = (p.status === 'healthy') ? 'green' : (p.status === 'degraded' ? 'yellow' : 'red');
       const isShared = p.is_shared === true;
@@ -2106,6 +2108,7 @@ let row3 = '<div class="v5-quota-bar">';
       cardsHtml += row3;
       cardsHtml += '</div>';  // close separator
       cardsHtml += '</div>';  // close card
+      } catch(cardErr) { console.error('card render skip:', cardErr.message); }
     }
 
     v5List.innerHTML = cardsHtml;
