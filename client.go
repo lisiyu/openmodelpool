@@ -1803,14 +1803,28 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		client := siderHTTPClient(testProvider, 30*time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
-			return map[string]any{"success": false, "error": err.Error()}
+			errStr := err.Error()
+			// Classify network errors for user-friendly messages
+			if strings.Contains(errStr, "i/o timeout") || strings.Contains(errStr, "timeout") {
+				return map[string]any{"success": false, "error": "网络连接超时（检查代理是否运行、目标是否可达）", "error_detail": "timeout"}
+			}
+			if strings.Contains(errStr, "connection refused") {
+				return map[string]any{"success": false, "error": "连接被拒绝（代理未运行或地址错误）", "error_detail": "refused"}
+			}
+			if strings.Contains(errStr, "proxyconnect") || strings.Contains(errStr, "proxy") {
+				return map[string]any{"success": false, "error": "代理连接失败（检查代理地址和端口）", "error_detail": "proxy"}
+			}
+			if strings.Contains(errStr, "no such host") || strings.Contains(errStr, "DNS") {
+				return map[string]any{"success": false, "error": "DNS 解析失败（检查网络）", "error_detail": "dns"}
+			}
+			return map[string]any{"success": false, "error": "网络错误（检查代理/网络）", "error_detail": "network"}
 		}
 		resp.Body.Close()
 		if resp.StatusCode == 401 || resp.StatusCode == 403 {
-			return map[string]any{"success": false, "error": fmt.Sprintf("Token expired (HTTP %d)", resp.StatusCode)}
+			return map[string]any{"success": false, "error": "Token 无效或已过期（HTTP 401/403）", "error_detail": "auth"}
 		}
 		if resp.StatusCode >= 400 {
-			return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d", resp.StatusCode)}
+			return map[string]any{"success": false, "error": fmt.Sprintf("上游服务错误（HTTP %d）", resp.StatusCode), "error_detail": "upstream"}
 		}
 		return map[string]any{"success": true, "message": "Sider token valid"}
 

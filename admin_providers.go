@@ -570,10 +570,15 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result := testConnectionWithKey(p, decryptedKey)
-		// Sanitize error messages
-		if errMsg, ok := result["error"].(string); ok && errMsg != "" {
-			result["error"] = "upstream error"
+		// Sanitize error messages, but preserve pre-classified user-friendly
+		// errors (those with error_detail field from testConnection)
+		if _, hasDetail := result["error_detail"]; !hasDetail {
+			if errMsg, ok := result["error"].(string); ok && errMsg != "" {
+				result["error"] = "upstream error"
+			}
 		}
+		// Remove internal detail field before sending to client
+		delete(result, "error_detail")
 		result["key_id"] = keyID
 		result["key_alias"] = targetKey.Alias
 		writeJSON(w, 200, result)
