@@ -31,7 +31,9 @@ body{background:#0f1420;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFo
 <body>
 <div class="header">
 <h1>💬 模型聊天测试</h1>
-<select id="modelSelect"><option value="">加载模型中...</option></select>
+<input type="password" id="apiKey" placeholder="输入 API Key (sk-...)" style="background:#2d3748;color:#e2e8f0;border:1px solid #4a5568;border-radius:8px;padding:8px 12px;font-size:14px;width:280px">
+<select id="modelSelect"><option value="">先填 Key 点加载</option></select>
+<button onclick="loadModels()">🔄 加载模型</button>
 <button onclick="clearChat()">🗑 清空</button>
 <span id="status"></span>
 </div>
@@ -52,8 +54,10 @@ let sending=false;
 
 // 加载模型列表
 async function loadModels(){
+  const key=document.getElementById('apiKey').value.trim();
+  if(!key){ status.textContent='请先输入 API Key'; return; }
   try{
-    const r=await fetch('/v1/models');
+    const r=await fetch('/v1/models',{headers:{'Authorization':'Bearer '+key}});
     const d=await r.json();
     const models=(d.data||[]).map(m=>m.id).sort();
     modelSelect.innerHTML=models.map(id=>`<option value="${id}">${id}</option>`).join('')||'<option value="">无可用模型</option>';
@@ -88,7 +92,8 @@ function addHint(){
 async function send(){
   const text=input.value.trim();
   const model=modelSelect.value;
-  if(!text||!model||sending) return;
+  const key=document.getElementById('apiKey').value.trim();
+  if(!text||!model||!key||sending) return;
   sending=true; sendBtn.disabled=true;
   input.value='';
   addMsg('user',text,model);
@@ -97,7 +102,7 @@ async function send(){
   try{
     const r=await fetch('/v1/chat/completions',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
       body:JSON.stringify({model,messages:[{role:'user',content:text}],stream:false})
     });
     const dt=((Date.now()-t0)/1000).toFixed(1);
@@ -123,7 +128,7 @@ input.addEventListener('keydown',e=>{
 });
 
 addHint();
-loadModels();
+// 不自动加载，等用户填 Key 后点"加载模型"
 </script>
 </body>
 </html>
