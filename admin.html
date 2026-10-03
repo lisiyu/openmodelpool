@@ -1935,11 +1935,13 @@ async function refreshHealth() {
     statsContainer.innerHTML = statsHtml;
 
     // ============ Render V5 Provider Cards ============
+    // Filter out null/malformed entries first
+    providers = providers.filter(function(p) { return p && (p.provider_id || p.id); });
     // Sort by priority (lower number = higher priority = first)
     // 排序：启用组按优先级排前，禁用组按优先级排后
     providers.sort(function(a, b) {
-      var aEnabled = a.enabled !== false && a.status !== 'disabled';
-      var bEnabled = b.enabled !== false && b.status !== 'disabled';
+      var aEnabled = a && a.enabled !== false && a.status !== 'disabled';
+      var bEnabled = b && b.enabled !== false && b.status !== 'disabled';
       if (aEnabled && !bEnabled) return -1;
       if (!aEnabled && bEnabled) return 1;
       return (a.priority || 5) - (b.priority || 5);
