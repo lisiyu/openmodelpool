@@ -106,6 +106,14 @@ func (t *TunnelManager) start() {
 		return
 	}
 
+	// Reuse existing tunnel: if a cloudflared tunnel process is already running
+	// (e.g. independent systemd service), do not start a duplicate.
+	if out, err := exec.Command("pgrep", "-f", "cloudflared tunnel").Output(); err == nil && len(out) > 0 {
+		t.running = true
+		t.mu.Unlock()
+		slog.Info("tunnel already running (external), reusing existing")
+		return
+	}
 	var args []string
 	if t.mode == "named" && t.token != "" {
 		args = []string{"tunnel", "run", "--token", t.token}
