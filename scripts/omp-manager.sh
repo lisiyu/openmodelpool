@@ -7,6 +7,9 @@
 #  用法:
 #    交互菜单:  curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
 #    自动更新:  curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash -s -- --auto-update
+#    全新安装:  sudo bash /tmp/omp-manager.sh install [/opt/openmodelpool] [8000]
+#    指定目录:  sudo bash /tmp/omp-manager.sh --install-dir /data/omp --port 9000 install
+#    查状态:    sudo bash /tmp/omp-manager.sh status
 #    备选方式:  curl -fsSL -o /tmp/omp-manager.sh "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" && sudo bash /tmp/omp-manager.sh
 # ============================================================
 
@@ -16,6 +19,37 @@ INSTALL_DIR="/opt/openmodelpool"
 BINARY_NAME="openmodelpool"
 PORT="8000"
 AUTO_UPDATE=false
+# 用户是否显式指定了安装目录（--install-dir 或 install 子命令参数）：
+# 显式指定时 detect_deployment 不再自动改写，保证"用户说了算"
+INSTALL_DIR_EXPLICIT=false
+CMD=""
+
+print_usage() {
+    cat <<EOF
+用法: $0 [选项] [子命令]
+
+选项:
+  --install-dir DIR   指定安装目录（默认 /opt/openmodelpool）
+  --port PORT         指定服务端口（默认 8000）
+  --auto-update       无人值守自动更新（用于 cron）
+  -h, --help          显示本帮助
+
+子命令:
+  install [DIR] [PORT]  全新安装（DIR/PORT 可选，不给则用默认值或 --install-dir/--port）
+  status                查看运行状态
+  version               只显示版本号
+  logs                  查看最近100行日志
+  start                 启动服务
+  stop                  停止服务
+  restart               重启服务
+  update                升级到最新版
+
+示例:
+  sudo bash $0 install /opt/openmodelpool
+  sudo bash $0 --install-dir /data/omp --port 9000 install
+  sudo bash $0 status
+EOF
+}
 
 
 # 互斥锁：防止多个实例同时运行
@@ -40,33 +74,60 @@ validate_port() {
     return 0
 }
 
-# 解析参数
+# 解析参数（2026-10-03 重写：旧逻辑把每个位置参数都当作"安装目录+端口"，
+# 导致 `install /opt/openmodelpool` 把端口写成 /opt/openmodelpool、`--help`
+# 被当成安装目录；且解析循环吃掉全部参数，后面的子命令派发是死代码）
 while [ $# -gt 0 ]; do
     case "$1" in
-        --auto-update) AUTO_UPDATE=true ;;
+        --auto-update) AUTO_UPDATE=true; shift ;;
         --install-dir)
+            if [ -z "${2:-}" ]; then
+                echo "错误: --install-dir 需要一个目录参数" >&2; exit 1
+            fi
             if command -v realpath >/dev/null 2>&1; then
                 INSTALL_DIR=$(realpath -m "$2")
             else
                 INSTALL_DIR="$2"
             fi
-            shift ;;
+            INSTALL_DIR_EXPLICIT=true
+            shift 2 ;;
         --port)
+            if [ -z "${2:-}" ]; then
+                echo "错误: --port 需要一个端口参数" >&2; exit 1
+            fi
             if validate_port "$2"; then
                 PORT="$2"
             else
-                echo "错误: 无效端口号 (1-65535): $2"
+                echo "错误: 无效端口号 (1-65535): $2" >&2
                 exit 1
             fi
-            shift ;;
-        *) INSTALL_DIR="${1:-$INSTALL_DIR}"; PORT="${2:-$PORT}" ;;
+            shift 2 ;;
+        -h|--help) print_usage; exit 0 ;;
+        --*) echo "错误: 未知选项: $1" >&2; print_usage; exit 1 ;;
+        install|status|version|logs|start|stop|restart|update)
+            CMD="$1"; shift; break ;;
+        *) echo "错误: 未知参数: $1" >&2; print_usage; exit 1 ;;
     esac
-    shift
 done
+# install 子命令允许带可选的安装目录与端口： install [DIR] [PORT]
+if [ "$CMD" = "install" ] && [ $# -gt 0 ]; then
+    INSTALL_DIR="$1"; INSTALL_DIR_EXPLICIT=true; shift
+    if [ $# -gt 0 ]; then
+        if validate_port "$1"; then
+            PORT="$1"
+        else
+            echo "错误: 无效端口号 (1-65535): $1" >&2; exit 1
+        fi
+        shift
+    fi
+    if [ $# -gt 0 ]; then
+        echo "错误: install 参数过多" >&2; print_usage; exit 1
+    fi
+fi
 
-# 群晖默认路径
-if [ -d /volume1 ]; then
-  INSTALL_DIR="${1:-/volume1/@appstore/openmodelpool}"
+# 群晖默认路径（仅在用户未显式指定安装目录时生效）
+if [ -d /volume1 ] && [ "$INSTALL_DIR_EXPLICIT" = false ]; then
+  INSTALL_DIR="/volume1/@appstore/openmodelpool"
 fi
 
 # Colors
@@ -273,9 +334,39 @@ curl_get() {
 
 
 # ============================================================
+# 精确查找 OMP 进程（2026-10-03 新增）
+# 遍历 /proc 按 exe 基名匹配，替代 `pgrep -f "$BINARY_NAME"` 的子串匹配。
+# 旧逻辑会把 avahi-daemon（cmdline 含 openmodelpool-cc.local）、ngrok、
+# 甚至管理脚本自身（argv 里含 openmodelpool，如 sudo 的 exe 是 /usr/bin/sudo，
+# 导致"安装目录"被误报为 /usr/bin）都当成 OMP 进程。
+# 用法: find_omp_pids [name...]   (默认 openmodelpool modelmux)
+# ============================================================
+find_omp_pids() {
+    local want=" ${*:-openmodelpool modelmux} " d exe base
+    for d in /proc/[0-9]*; do
+        [ -L "$d/exe" ] || continue
+        exe=$(readlink "$d/exe" 2>/dev/null) || continue
+        base=${exe##*/}
+        case "$want" in
+            *" $base "*) echo "${d#/proc/}" ;;
+        esac
+    done
+}
+
+# OMP 是否在运行（精确匹配，不误判）
+omp_running() {
+    [ -n "$(find_omp_pids openmodelpool modelmux)" ]
+}
+
+# ============================================================
 # 自动检测已有部署
 # ============================================================
 detect_deployment() {
+    # 用户显式指定了安装目录（--install-dir 或 install 子命令参数）：
+    # 不做任何自动检测，避免检测逻辑覆盖用户的明确选择
+    if [ "$INSTALL_DIR_EXPLICIT" = true ]; then
+        return 0
+    fi
     # 1. 从 systemd 服务文件检测
     if [ -f /etc/systemd/system/openmodelpool.service ]; then
         local svc_exec=$(grep -oP 'ExecStart=\K.*' /etc/systemd/system/openmodelpool.service 2>/dev/null | head -1)
@@ -313,8 +404,10 @@ detect_deployment() {
         fi
     done
 
-    # 3. 从运行中的进程检测
-    local pid_bin=$(pgrep -f "openmodelpool|modelmux" 2>/dev/null | head -1)
+    # 3. 从运行中的进程检测：按 exe 基名精确匹配 openmodelpool/modelmux，
+    # 不再用 pgrep -f 子串匹配（会误判 avahi-daemon、ngrok 及脚本自身进程）
+    local pid_bin=""
+    pid_bin=$(find_omp_pids openmodelpool modelmux | head -1)
     if [ -n "$pid_bin" ]; then
         local exe_path=$(readlink -f /proc/$pid_bin/exe 2>/dev/null)
         if [ -n "$exe_path" ]; then
@@ -587,11 +680,14 @@ stop_omp() {
     elif [ -f /usr/local/etc/rc.d/openmodelpool.sh ]; then
         /usr/local/etc/rc.d/openmodelpool.sh stop 2>/dev/null || true
     else
-        # 用完整路径精确匹配，避免误杀含同名的其他进程
-        if [[ -n "$INSTALL_DIR" ]] && command -v pgrep >/dev/null 2>&1; then
-            pkill -f "^${INSTALL_DIR}/${BINARY_NAME}$" 2>/dev/null || true
-        else
-            pkill -x "$BINARY_NAME" 2>/dev/null || true
+        # 按 exe 基名精确查找并终止，避免 pgrep -f 子串误杀 avahi-daemon 等无关进程；
+        # 旧的 pkill -f "^${INSTALL_DIR}/${BINARY_NAME}$" 锚定完整路径，但进程
+        # 实际 cmdline 是 ./openmodelpool，永远匹配不上，导致无 systemd 时停不掉服务
+        local pids
+        pids=$(find_omp_pids openmodelpool modelmux)
+        if [ -n "$pids" ]; then
+            # shellcheck disable=SC2086
+            kill $pids 2>/dev/null || true
         fi
     fi
 }
@@ -717,7 +813,7 @@ install_omp() {
     start_omp
     sleep 3
 
-    if pgrep -f "$BINARY_NAME" >/dev/null 2>&1; then
+    if omp_running; then
         NAS_IP=$(ip addr show | grep -oP 'inet \K[0-9.]+' | grep -v '127.0.0.1' | head -1)
         echo ""
         echo -e "${GREEN}  ╔══════════════════════════════════════════╗${NC}"
@@ -825,10 +921,18 @@ EOF
 
     cat > "$INSTALL_DIR/stop.sh" << EOF
 #!/bin/bash
-DIR="\$(cd "\$(dirname "\$0")" && pwd)"
-PIDS=\$(pgrep -f "\$DIR/$BINARY_NAME")
+# 按 exe 基名精确匹配 OMP 进程（不误判 avahi-daemon 等含子串的进程）
+PIDS=""
+for d in /proc/[0-9]*; do
+  [ -L "\$d/exe" ] || continue
+  exe=\$(readlink "\$d/exe" 2>/dev/null) || continue
+  case "\$exe" in
+    */$BINARY_NAME) PIDS="\$PIDS \${d#/proc/}" ;;
+  esac
+done
 if [ -n "\$PIDS" ]; then
-  kill \$PIDS && echo "已停止 (PID: \$PIDS)"
+  # shellcheck disable=SC2086
+  kill \$PIDS && echo "已停止 (PID:\$PIDS)"
 else
   echo "服务未运行"
 fi
@@ -844,7 +948,13 @@ case "\$1" in
   start)  su root -c "$INSTALL_DIR/start.sh &" ;;
   stop)   $INSTALL_DIR/stop.sh ;;
   restart) \$0 stop; sleep 2; \$0 start ;;
-  status) pgrep -f "$BINARY_NAME" && echo "运行中" || echo "未运行" ;;
+  status)
+    found=0
+    for d in /proc/[0-9]*/exe; do
+      exe=$(readlink "$d" 2>/dev/null) || continue
+      [ "${exe##*/}" = "$BINARY_NAME" ] && { found=1; break; }
+    done
+    [ "$found" = 1 ] && echo "运行中" || echo "未运行" ;;
   *) echo "Usage: \$0 {start|stop|restart|status}"; exit 1 ;;
 esac
 exit 0
@@ -1156,7 +1266,7 @@ upgrade_omp() {
     start_omp
     sleep 3
 
-    if pgrep -f "$BINARY_NAME" > /dev/null 2>&1; then
+    if omp_running; then
         # 健康检查：验证 API 可访问且配置加载正常
         sleep 2
         local HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/health" 2>/dev/null)
@@ -1222,13 +1332,22 @@ uninstall_omp() {
     echo -e "    - 服务:   systemd / rc.d"
     echo -e "    - 隧道:   cloudflared / frpc"
     echo ""
-    write_info "${RED}数据目录 $INSTALL_DIR/data/ 默认保留${NC}（可手动删除）"
+    write_info "${RED}数据目录 $INSTALL_DIR/data/ 默认保留${NC}（如需彻底删除，见下一步提示）"
     echo ""
     read -p "  确认卸载？输入 yes 继续: " confirm < /dev/tty
     confirm_lower=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
     if [ "$confirm_lower" != "yes" ]; then
         write_info "已取消"
         return
+    fi
+    # 2026-10-03 新增：允许彻底删除数据目录（旧逻辑只删二进制/xray，
+    # /opt/openmodelpool 残留数百 MB，导致"卸载干净"后重装仍被遗留文件干扰）
+    PURGE_DATA=false
+    if [ -d "$INSTALL_DIR/data" ]; then
+        read -p "  是否同时删除数据目录 $INSTALL_DIR/data/（配置/日志/数据库，彻底清除）？[y/N] " purge < /dev/tty
+        if [ "$purge" = "y" ] || [ "$purge" = "Y" ]; then
+            PURGE_DATA=true
+        fi
     fi
 
     write_step 1 4 "停止所有服务..."
@@ -1253,7 +1372,14 @@ uninstall_omp() {
     write_step 3 4 "删除文件..."
     rm -f "$INSTALL_DIR/$BINARY_NAME"
     rm -f "$INSTALL_DIR/start.sh" "$INSTALL_DIR/stop.sh" "$INSTALL_DIR/status.sh"
+    rm -f "$INSTALL_DIR/omp-manager.sh"
     rm -rf "$INSTALL_DIR/xray"
+    # 清理升级留下的历史二进制备份，避免卸载后仍残留数百 MB
+    rm -f "$INSTALL_DIR/$BINARY_NAME".bak.* "$INSTALL_DIR/$BINARY_NAME".old 2>/dev/null || true
+    if [ "$PURGE_DATA" = true ]; then
+        rm -rf "$INSTALL_DIR"
+        write_ok "已彻底删除 $INSTALL_DIR（含数据目录）"
+    fi
     write_ok "已删除"
 
     write_step 4 4 "清理隧道配置..."
@@ -1267,8 +1393,12 @@ uninstall_omp() {
 
     echo ""
     write_ok "卸载完成"
-    echo -e "  数据目录保留: $INSTALL_DIR/data/"
-    echo -e "  如需彻底删除: rm -rf $INSTALL_DIR"
+    if [ "$PURGE_DATA" = true ]; then
+        echo -e "  已彻底删除: $INSTALL_DIR"
+    else
+        echo -e "  数据目录保留: $INSTALL_DIR/data/"
+        echo -e "  如需彻底删除: rm -rf $INSTALL_DIR"
+    fi
 }
 
 # ============================================================
@@ -1940,7 +2070,7 @@ EOF
     start_omp
     sleep 3
 
-    if pgrep -f "$BINARY_NAME" >/dev/null 2>&1; then
+    if omp_running; then
         write_ok "端口已修改为 $NEW_PORT，服务已重启"
         NAS_IP=$(ip addr show | grep -oP 'inet \K[0-9.]+' | grep -v '127.0.0.1' | head -1)
         echo -e "  管理面板: ${CYAN}http://${NAS_IP}:${NEW_PORT}/admin${NC}"
@@ -1957,11 +2087,12 @@ show_status() {
 
     echo ""
     echo -e "  ${CYAN}── OMP 服务 ──${NC}"
+    OMP_PIDS=$(find_omp_pids openmodelpool modelmux)
     if command -v systemctl > /dev/null 2>&1 && systemctl is-active --quiet openmodelpool 2>/dev/null; then
-        PID=$(pgrep -f "$BINARY_NAME" | head -1)
-        write_ok "OMP 运行中 (PID: $PID, systemd)"
-    elif pgrep -f "$BINARY_NAME" > /dev/null 2>&1; then
-        PID=$(pgrep -f "$BINARY_NAME" | head -1)
+        PID=$(echo "$OMP_PIDS" | head -1)
+        write_ok "OMP 运行中 (PID: ${PID:-未知}, systemd)"
+    elif [ -n "$OMP_PIDS" ]; then
+        PID=$(echo "$OMP_PIDS" | head -1)
         write_ok "OMP 运行中 (PID: $PID)"
     else
         write_err "OMP 未运行"
@@ -2068,7 +2199,7 @@ restart_all() {
     sleep 2
     start_omp
     sleep 3
-    if pgrep -f "$BINARY_NAME" >/dev/null 2>&1; then
+    if omp_running; then
         write_ok "OMP 已启动"
     else
         write_err "OMP 启动失败"
@@ -2232,7 +2363,7 @@ else:
     start_omp 2>/dev/null || true
     sleep 3
 
-    if pgrep -f "$BINARY_NAME" > /dev/null 2>&1; then
+    if omp_running; then
         # 健康检查：验证 API 可访问且配置加载正常
         sleep 2
         local HEALTH=$(curl -fsSL --connect-timeout 5 --max-time 10 "http://localhost:${PORT}/health" 2>/dev/null)
@@ -2306,9 +2437,11 @@ detect_system
 detect_deployment
 remap_legacy_deployment
 
-# 命令行模式：支持简单的控制指令
-if [ $# -gt 0 ]; then
-    case "$1" in
+# 命令行模式：子命令派发（2026-10-03 修复：旧代码在此处判断 [ $# -gt 0 ]，
+# 但参数解析循环已把全部参数 shift 掉，该分支永远进不来，是死代码）
+if [ -n "$CMD" ]; then
+    case "$CMD" in
+        install) install_omp; exit 0 ;;
         status) show_status; exit 0 ;;
         version)
             VER=$(curl -s --max-time 3 "http://127.0.0.1:$PORT/api/version" 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
@@ -2331,16 +2464,6 @@ if [ $# -gt 0 ]; then
             stop_omp; sleep 2; start_omp; exit 0 ;;
         update)
             upgrade_omp; exit 0 ;;
-        *)
-            echo "用法: $0 {status|version|logs|start|stop|restart|update}"
-            echo "  status  - 查看运行状态"
-            echo "  version - 只显示版本号"
-            echo "  logs    - 查看最近100行日志"
-            echo "  start   - 启动服务"
-            echo "  stop    - 停止服务"
-            echo "  restart - 重启服务"
-            echo "  update  - 升级到最新版"
-            exit 1 ;;
     esac
 fi
 
