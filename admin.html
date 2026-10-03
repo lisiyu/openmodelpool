@@ -458,6 +458,7 @@ select.form-input{appearance:none;cursor:pointer}
         <div class="form-group"><label class="form-label">Proxy API Key</label>
           <div style="display:flex;gap:8px">
             <input class="form-input" id="proxyApiKey" placeholder="留空表示不启用认证" style="flex:1">
+            <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('proxyApiKey').value)">📋 复制</button>
             <button class="btn btn-secondary btn-sm" onclick="generateApiKey()">🎲 生成</button>
           </div>
         </div>
