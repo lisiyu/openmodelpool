@@ -471,6 +471,11 @@ func isCGNAT(ip net.IP) bool {
 
 // doNonStream sends a non-streaming request and returns the OpenAI-format response.
 func doNonStream(ctx context.Context, p Provider, model string, messages []ChatMessage, extra map[string]any) (*ChatResponse, error) {
+	// Sider provider always uses the dedicated v1 adapter, regardless of
+	// legacy type values ("web", "web_session") that may exist in stored config.
+	if p.ID == "sider" {
+		return siderNonStream(ctx, p, model, messages)
+	}
 	switch p.Type {
 	case "sider":
 		return siderNonStream(ctx, p, model, messages)
@@ -488,6 +493,11 @@ func doNonStream(ctx context.Context, p Provider, model string, messages []ChatM
 }
 
 func doStream(ctx context.Context, p Provider, model string, messages []ChatMessage, extra map[string]any, w io.Writer) error {
+	// Sider provider always uses the dedicated v1 adapter, regardless of
+	// legacy type values ("web", "web_session") that may exist in stored config.
+	if p.ID == "sider" {
+		return siderStream(ctx, p, model, messages, w)
+	}
 	switch p.Type {
 	case "sider":
 		return siderStream(ctx, p, model, messages, w)
@@ -1770,6 +1780,12 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 	testProvider := p
 	if keyOverride != "" {
 		testProvider.APIKey = keyOverride
+	}
+
+	// Sider provider always uses the dedicated v1 test, regardless of
+	// legacy type values ("web", "web_session") that may exist in stored config.
+	if testProvider.ID == "sider" {
+		testProvider.Type = "sider"
 	}
 
 	switch testProvider.Type {
