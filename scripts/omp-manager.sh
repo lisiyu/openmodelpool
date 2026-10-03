@@ -1099,6 +1099,14 @@ _get_component_version() {
 # 升级单个组件：下载 install.sh 并执行指定组件安装
 upgrade_single_component() {
     local component="$1"
+
+    # 高危修复: "core" 绝不能走 install.sh 全量安装路径（会清空 data）。
+    # 强制走安全的增量 upgrade_omp()，只换二进制、不碰数据。
+    if [ "$component" = "core" ]; then
+        upgrade_omp
+        return $?
+    fi
+
     write_title "升级组件: ${component}"
 
     detect_deployment
