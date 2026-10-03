@@ -1046,7 +1046,16 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 func siderNonStream(ctx context.Context, p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
 	payload := siderBuildPayload(model, messages, false)
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(body))
+	// Defensive: siderChatURL is a var (for tests); ensure it's never empty at runtime.
+	url := siderChatURL
+	if url == "" {
+		slog.Error("siderChatURL was empty at runtime, using fallback", "provider", p.ID, "model", model)
+		url = "https://sider.ai/api/chat/v1/completions"
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sider request: %w", err)
+	}
 	// Use effective API key (handles multi-key format and decryption)
 	apiKey := p.APIKey
 	if apiKey == "" && len(p.APIKeys) > 0 {
@@ -1126,7 +1135,16 @@ func siderNonStream(ctx context.Context, p Provider, model string, messages []Ch
 func siderStream(ctx context.Context, p Provider, model string, messages []ChatMessage, w io.Writer) error {
 	payload := siderBuildPayload(model, messages, true)
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(body))
+	// Defensive: siderChatURL is a var (for tests); ensure it's never empty at runtime.
+	url := siderChatURL
+	if url == "" {
+		slog.Error("siderChatURL was empty at runtime, using fallback", "provider", p.ID, "model", model)
+		url = "https://sider.ai/api/chat/v1/completions"
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create sider stream request: %w", err)
+	}
 	// Use effective API key (handles multi-key format and decryption)
 	apiKey := p.APIKey
 	if apiKey == "" && len(p.APIKeys) > 0 {
@@ -1818,7 +1836,16 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		body, _ := json.Marshal(payload)
 		ctx3, cancel3 := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel3()
-		req, _ := http.NewRequestWithContext(ctx3, "POST", siderChatURL, bytes.NewReader(body))
+		// Defensive: siderChatURL is a var (for tests); ensure it's never empty at runtime.
+		testURL := siderChatURL
+		if testURL == "" {
+			slog.Error("siderChatURL was empty at runtime in provider test, using fallback", "provider", testProvider.ID)
+			testURL = "https://sider.ai/api/chat/v1/completions"
+		}
+		req, err := http.NewRequestWithContext(ctx3, "POST", testURL, bytes.NewReader(body))
+		if err != nil {
+			return map[string]any{"success": false, "error": fmt.Sprintf("failed to create test request: %v", err)}
+		}
 		req.Header = h
 		client := siderHTTPClient(testProvider, 30*time.Second)
 		resp, err := client.Do(req)
