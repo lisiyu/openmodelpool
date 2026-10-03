@@ -6,86 +6,120 @@
 <title>模型聊天测试 - OpenModelPool</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0f1420;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:flex;flex-direction:column}
-.header{background:#1a2233;padding:12px 20px;border-bottom:1px solid #2d3748;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.header h1{font-size:18px;font-weight:600}
-.header select,.header button{background:#2d3748;color:#e2e8f0;border:1px solid #4a5568;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer}
-.header select{max-width:300px}
+body{background:#0f1420;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.header{background:#1a2233;padding:10px 16px;border-bottom:1px solid #2d3748;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.header h1{font-size:16px;font-weight:600;white-space:nowrap}
+.header input,.header select,.header button{background:#2d3748;color:#e2e8f0;border:1px solid #4a5568;border-radius:8px;padding:7px 10px;font-size:13px}
+.header input{width:260px}
+.header select{max-width:220px}
+.header button{cursor:pointer;white-space:nowrap}
 .header button:hover{background:#4a5568}
-#status{font-size:12px;color:#a0aec0;margin-left:auto}
-.chat{flex:1;overflow-y:auto;padding:20px;max-width:900px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:12px}
-.msg{max-width:80%;padding:10px 14px;border-radius:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+#status{font-size:12px;color:#a0aec0;margin-left:auto;white-space:nowrap}
+.main{flex:1;display:flex;min-height:0}
+.left{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid #2d3748}
+.right{width:42%;min-width:320px;display:flex;flex-direction:column;background:#0b0f18}
+.right-title{background:#1a2233;padding:8px 14px;font-size:13px;font-weight:600;border-bottom:1px solid #2d3748;display:flex;justify-content:space-between;align-items:center}
+.right-title button{background:#2d3748;color:#e2e8f0;border:1px solid #4a5568;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
+#log{flex:1;overflow-y:auto;padding:12px;font-family:Consolas,Menlo,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all}
+#log .t{color:#718096}
+#log .req{color:#63b3ed}
+#log .res{color:#68d391}
+#log .err{color:#fc8181}
+#log .sep{border-top:1px dashed #2d3748;margin:10px 0}
+.chat{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:85%;padding:9px 13px;border-radius:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;font-size:14px}
 .msg.user{align-self:flex-end;background:#4c51bf;color:#fff}
 .msg.assistant{align-self:flex-start;background:#1a2233;border:1px solid #2d3748}
 .msg.error{align-self:flex-start;background:#3b1f1f;border:1px solid #9b2c2c;color:#feb2b2}
 .msg .meta{font-size:11px;color:#a0aec0;margin-bottom:4px}
-.input-area{background:#1a2233;border-top:1px solid #2d3748;padding:16px 20px}
-.input-wrap{max-width:900px;margin:0 auto;display:flex;gap:10px}
-.input-wrap textarea{flex:1;background:#0f1420;color:#e2e8f0;border:1px solid #4a5568;border-radius:10px;padding:10px 14px;font-size:14px;resize:vertical;min-height:48px;font-family:inherit}
+.input-area{background:#1a2233;border-top:1px solid #2d3748;padding:12px 16px}
+.input-wrap{display:flex;gap:8px}
+.input-wrap textarea{flex:1;background:#0f1420;color:#e2e8f0;border:1px solid #4a5568;border-radius:10px;padding:9px 12px;font-size:14px;resize:vertical;min-height:44px;font-family:inherit}
 .input-wrap textarea:focus{outline:none;border-color:#4c51bf}
-.input-wrap button{background:#4c51bf;color:#fff;border:none;border-radius:10px;padding:0 24px;font-size:15px;font-weight:600;cursor:pointer}
+.input-wrap button{background:#4c51bf;color:#fff;border:none;border-radius:10px;padding:0 20px;font-size:14px;font-weight:600;cursor:pointer}
 .input-wrap button:disabled{background:#2d3748;cursor:not-allowed}
 .hint{text-align:center;color:#718096;font-size:13px;padding:8px}
+@media(max-width:768px){.main{flex-direction:column}.right{width:100%;min-width:0;max-height:40%}}
 </style>
 </head>
 <body>
 <div class="header">
 <h1>💬 模型聊天测试</h1>
-<input type="password" id="apiKey" placeholder="输入 API Key (sk-...)" style="background:#2d3748;color:#e2e8f0;border:1px solid #4a5568;border-radius:8px;padding:8px 12px;font-size:14px;width:280px">
+<input type="password" id="apiKey" placeholder="API Key (sk-...)">
 <select id="modelSelect"><option value="">先填 Key 点加载</option></select>
-<button onclick="loadModels()">🔄 加载模型</button>
-<button onclick="clearChat()">🗑 清空</button>
+<button onclick="loadModels()">🔄 加载</button>
+<button onclick="clearAll()">🗑 清空</button>
 <span id="status"></span>
 </div>
+<div class="main">
+<div class="left">
 <div class="chat" id="chat"></div>
 <div class="input-area">
 <div class="input-wrap">
-<textarea id="input" placeholder="输入消息，按 Ctrl+Enter 发送..." rows="2"></textarea>
+<textarea id="input" placeholder="输入消息，Ctrl+Enter 发送..." rows="2"></textarea>
 <button id="sendBtn" onclick="send()">发送</button>
+</div>
+</div>
+</div>
+<div class="right">
+<div class="right-title"><span>📋 端到端日志</span><button onclick="document.getElementById('log').innerHTML=''">清空日志</button></div>
+<div id="log"></div>
 </div>
 </div>
 <script>
 const chat=document.getElementById('chat');
+const logEl=document.getElementById('log');
 const input=document.getElementById('input');
 const sendBtn=document.getElementById('sendBtn');
 const modelSelect=document.getElementById('modelSelect');
 const status=document.getElementById('status');
 let sending=false;
 
-// 加载模型列表
+function ts(){return new Date().toLocaleTimeString('zh-CN',{hour12:false})+'.'+String(Date.now()%1000).padStart(3,'0')}
+function log(html,cls){
+  const d=document.createElement('div');
+  if(cls) d.className=cls;
+  d.innerHTML=`<span class="t">[${ts()}]</span> ${html}`;
+  logEl.appendChild(d);
+  logEl.scrollTop=logEl.scrollHeight;
+}
+function logSep(){const d=document.createElement('div');d.className='sep';logEl.appendChild(d);}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
 async function loadModels(){
   const key=document.getElementById('apiKey').value.trim();
   if(!key){ status.textContent='请先输入 API Key'; return; }
+  log(`<span class="req">→ GET /v1/models</span>`);
   try{
     const r=await fetch('/v1/models',{headers:{'Authorization':'Bearer '+key}});
     const d=await r.json();
+    log(`<span class="${r.ok?'res':'err'}">← HTTP ${r.status}</span> ${esc(JSON.stringify(d).slice(0,200))}...`);
     const models=(d.data||[]).map(m=>m.id).sort();
-    modelSelect.innerHTML=models.map(id=>`<option value="${id}">${id}</option>`).join('')||'<option value="">无可用模型</option>';
-    // 默认选 sider
+    modelSelect.innerHTML=models.map(id=>`<option value="${esc(id)}">${esc(id)}</option>`).join('')||'<option value="">无可用模型</option>';
     const sider=models.find(m=>m.toLowerCase().includes('sider'));
     if(sider) modelSelect.value=sider;
     status.textContent=`共 ${models.length} 个模型`;
   }catch(e){
+    log(`<span class="err">← 请求失败: ${esc(e.message)}</span>`);
     modelSelect.innerHTML='<option value="">加载失败</option>';
-    status.textContent='模型加载失败: '+e.message;
   }
+  logSep();
 }
 
 function addMsg(role,text,meta){
   const div=document.createElement('div');
   div.className='msg '+role;
-  if(meta) div.innerHTML=`<div class="meta">${meta}</div>`;
+  if(meta){const m=document.createElement('div');m.className='meta';m.textContent=meta;div.appendChild(m);}
   div.appendChild(document.createTextNode(text));
   chat.appendChild(div);
   chat.scrollTop=chat.scrollHeight;
   return div;
 }
-
-function clearChat(){ chat.innerHTML=''; addHint(); }
+function clearAll(){ chat.innerHTML=''; logEl.innerHTML=''; addHint(); }
 function addHint(){
   const d=document.createElement('div');
   d.className='hint';
-  d.textContent='选择模型后输入消息开始测试。响应会显示耗时和 Token 信息。';
+  d.textContent='填 Key → 加载模型 → 输入消息发送。右侧显示完整请求/响应日志。';
   chat.appendChild(d);
 }
 
@@ -97,16 +131,25 @@ async function send(){
   sending=true; sendBtn.disabled=true;
   input.value='';
   addMsg('user',text,model);
+
+  const reqBody={model,messages:[{role:'user',content:text}],stream:false};
+  log(`<span class="req">→ POST /v1/chat/completions</span>`);
+  log(`请求体: ${esc(JSON.stringify(reqBody))}`);
+  log(`模型: ${esc(model)} | Key: ${esc(key.slice(0,12))}...`);
+
   const t0=Date.now();
   const assistantDiv=addMsg('assistant','思考中...',model);
   try{
     const r=await fetch('/v1/chat/completions',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-      body:JSON.stringify({model,messages:[{role:'user',content:text}],stream:false})
+      body:JSON.stringify(reqBody)
     });
     const dt=((Date.now()-t0)/1000).toFixed(1);
-    const d=await r.json();
+    const raw=await r.text();
+    log(`<span class="${r.ok?'res':'err'}">← HTTP ${r.status} (${dt}s)</span>`);
+    log(`响应体: ${esc(raw.slice(0,2000))}${raw.length>2000?'...[截断]':''}`);
+    let d; try{ d=JSON.parse(raw); }catch{ d={_raw:raw}; }
     if(!r.ok){
       assistantDiv.className='msg error';
       assistantDiv.textContent=`❌ HTTP ${r.status} (${dt}s)\n${JSON.stringify(d,null,2)}`;
@@ -116,19 +159,17 @@ async function send(){
       assistantDiv.textContent=content+usage;
     }
   }catch(e){
+    log(`<span class="err">← 请求异常: ${esc(e.message)}</span>`);
     assistantDiv.className='msg error';
     assistantDiv.textContent='❌ 请求失败: '+e.message;
   }
+  logSep();
   sending=false; sendBtn.disabled=false;
   chat.scrollTop=chat.scrollHeight;
 }
 
-input.addEventListener('keydown',e=>{
-  if(e.ctrlKey&&e.key==='Enter') send();
-});
-
+input.addEventListener('keydown',e=>{ if(e.ctrlKey&&e.key==='Enter') send(); });
 addHint();
-// 不自动加载，等用户填 Key 后点"加载模型"
 </script>
 </body>
 </html>
