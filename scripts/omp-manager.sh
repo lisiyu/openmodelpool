@@ -1062,6 +1062,12 @@ upgrade_omp() {
     write_info "当前版本: ${cur_ver}"
     write_info "目标版本: $RELEASE_TAG"
 
+    # 版本相同则跳过
+    if [ "$cur_ver" = "$RELEASE_TAG" ]; then
+        write_ok "已是最新版本 ($cur_ver)，跳过升级"
+        return 0
+    fi
+
     write_step 1 5 "停止服务..."
     # 备份关键数据文件（升级前后配置格式兼容保障）
     local BACKUP_TS=$(date +%Y%m%d_%H%M%S)
