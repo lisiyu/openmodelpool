@@ -94,11 +94,36 @@ async function loadModels(){
     const r=await fetch('/v1/models',{headers:{'Authorization':'Bearer '+key}});
     const d=await r.json();
     log(`<span class="${r.ok?'res':'err'}">← HTTP ${r.status}</span> ${esc(JSON.stringify(d).slice(0,200))}...`);
-    const models=(d.data||[]).map(m=>m.id).sort();
-    modelSelect.innerHTML=models.map(id=>`<option value="${esc(id)}">${esc(id)}</option>`).join('')||'<option value="">无可用模型</option>';
-    const sider=models.find(m=>m.toLowerCase().includes('sider'));
+    const rawModels=d.data||[];
+    // Group by node: local first, then federated peers. Within each group, sort by ID.
+    const localModels=[], fedModels={};
+    rawModels.forEach(m=>{
+      const srcs=m.mesh_sources||[];
+      const isLocal=srcs.includes('local');
+      if(isLocal && srcs.length===1){
+        localModels.push(m.id);
+      }else{
+        const label=srcs.filter(s=>s!=='local').join(',')||'未知节点';
+        if(!fedModels[label]) fedModels[label]=[];
+        fedModels[label].push(m.id);
+      }
+    });
+    localModels.sort();
+    Object.keys(fedModels).forEach(k=>fedModels[k].sort());
+    let html='';
+    if(localModels.length){
+      html+=`<optgroup label="📍 本节点 (${localModels.length})">`+
+        localModels.map(id=>`<option value="${esc(id)}">${esc(id)}</option>`).join('')+`</optgroup>`;
+    }
+    Object.keys(fedModels).sort().forEach(node=>{
+      const arr=fedModels[node];
+      html+=`<optgroup label="🌐 ${esc(node)} (${arr.length})">`+
+        arr.map(id=>`<option value="${esc(id)}">${esc(id)}</option>`).join('')+`</optgroup>`;
+    });
+    modelSelect.innerHTML=html||'<option value="">无可用模型</option>';
+    const sider=localModels.find(m=>m.toLowerCase().includes('sider'))||rawModels.map(m=>m.id).find(m=>m.toLowerCase().includes('sider'));
     if(sider) modelSelect.value=sider;
-    status.textContent=`共 ${models.length} 个模型`;
+    status.textContent=`共 ${rawModels.length} 个模型 (本节点 ${localModels.length})`;
   }catch(e){
     log(`<span class="err">← 请求失败: ${esc(e.message)}</span>`);
     modelSelect.innerHTML='<option value="">加载失败</option>';
