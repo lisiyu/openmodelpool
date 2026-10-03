@@ -609,12 +609,13 @@ start_omp() {
 
 # 停止所有隧道
 stop_all_tunnels() {
+    # NOTE: Do NOT stop the independent cloudflared.service here.
+    # The tunnel must keep running independently of OMP restarts/upgrades.
+    # OMP's built-in child tunnel dies automatically with the OMP process.
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl stop cloudflared 2>/dev/null || true
         systemctl stop frpc 2>/dev/null || true
         systemctl stop ngrok 2>/dev/null || true
     fi
-    pkill -f "cloudflared tunnel" 2>/dev/null || true
     pkill -f "frpc " 2>/dev/null || true
     pkill -f "ngrok http" 2>/dev/null || true
 }
