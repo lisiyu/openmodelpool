@@ -992,11 +992,24 @@ upgrade_single_component() {
         write_info "最新版本: ${latest_ver}"
     fi
 
-    local INSTALL_SH_URL="https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh?t=$(date +%s)"
+    local INSTALL_SH_BASE="https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/install.sh?t=$(date +%s)"
     local TMP_SCRIPT="/tmp/omp-install.sh"
 
     write_info "下载 install.sh..."
-    if curl -fSL --connect-timeout 10 --max-time 60 "$INSTALL_SH_URL" -o "$TMP_SCRIPT"; then
+    local _dl_ok=0
+    for _mirror in "${GITHUB_MIRRORS[@]}" ""; do
+        local _url
+        if [ -n "$_mirror" ]; then
+            _url="${_mirror}${INSTALL_SH_BASE}"
+        else
+            _url="$INSTALL_SH_BASE"
+        fi
+        if curl -fSL --connect-timeout 10 --max-time 60 "$_url" -o "$TMP_SCRIPT" 2>/dev/null; then
+            _dl_ok=1
+            break
+        fi
+    done
+    if [ "$_dl_ok" = "1" ]; then
         chmod +x "$TMP_SCRIPT"
         write_info "执行组件升级: ${component}"
         echo ""
