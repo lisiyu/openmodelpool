@@ -1030,10 +1030,10 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 	}
 	cid := newUUID()
 	// Sider API requires parent_message_id ≤ 32 chars; UUID with hyphens is 36.
-	// Use hex without hyphens (32 chars).
+	// Use hex without hyphens (32 chars) for both cid and parent_message_id.
 	parentID := strings.ReplaceAll(cid, "-", "")
 	return map[string]any{
-		"cid":               cid,
+		"cid":               parentID,
 		"parent_message_id": parentID,
 		"model":             model,
 		"from":              "chat",
