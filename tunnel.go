@@ -85,9 +85,10 @@ func initTunnel(port int) {
 	}
 
 	setTunnel(t) // B8-8
-	if enabled {
-		go t.start()
-	}
+	// NOTE: Do NOT auto-start tunnel on boot. The tunnel must run as an
+	// independent systemd service (e.g. cloudflared.service), not as OMP's
+	// child process. Manual start via API still works if needed.
+	_ = enabled
 }
 
 // start begins the cloudflared tunnel process.
