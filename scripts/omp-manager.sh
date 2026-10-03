@@ -932,7 +932,14 @@ _get_component_version() {
     case "$component" in
         core)
             if [ -x "$INSTALL_DIR/$BINARY_NAME" ]; then
-                "$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null || echo "unknown"
+                # 优先从运行中的服务取版本（/api/version），避免 --version 把服务拉起来 hang 住
+                local ver
+                ver=$(curl -s --max-time 3 "http://127.0.0.1:$PORT/api/version" 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+                if [ -n "$ver" ]; then
+                    echo "$ver"
+                else
+                    echo "unknown"
+                fi
             else
                 echo "未安装"
             fi
