@@ -108,6 +108,16 @@ Full detail, examples and endpoint tables: **[docs/FEATURES.md](docs/FEATURES.md
 curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
 ```
 
+**中国大陆镜像 (China Mirrors):**
+
+```bash
+# 首选
+curl -fsSL "https://ghfast.top/https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
+# 备用
+curl -fsSL "https://gh-proxy.com/https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
+curl -fsSL "https://ghproxy.net/https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
+```
+
 **Windows (PowerShell as Admin):**
 
 ```powershell
