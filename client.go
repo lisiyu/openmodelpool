@@ -1047,7 +1047,17 @@ func siderNonStream(ctx context.Context, p Provider, model string, messages []Ch
 	payload := siderBuildPayload(model, messages, false)
 	body, _ := json.Marshal(payload)
 	req, _ := http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(body))
-	req.Header = siderBuildHeaders(p.APIKey)
+	// Use effective API key (handles multi-key format and decryption)
+	apiKey := p.APIKey
+	if apiKey == "" && len(p.APIKeys) > 0 {
+		apiKey = p.GetEffectiveAPIKey()
+	}
+	if IsEncrypted(apiKey) {
+		if decrypted, err := decryptAPIKey(apiKey); err == nil {
+			apiKey = decrypted
+		}
+	}
+	req.Header = siderBuildHeaders(apiKey)
 
 	client := siderHTTPClient(p, 300*time.Second)
 	resp, err := client.Do(req)
@@ -1117,7 +1127,17 @@ func siderStream(ctx context.Context, p Provider, model string, messages []ChatM
 	payload := siderBuildPayload(model, messages, true)
 	body, _ := json.Marshal(payload)
 	req, _ := http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(body))
-	req.Header = siderBuildHeaders(p.APIKey)
+	// Use effective API key (handles multi-key format and decryption)
+	apiKey := p.APIKey
+	if apiKey == "" && len(p.APIKeys) > 0 {
+		apiKey = p.GetEffectiveAPIKey()
+	}
+	if IsEncrypted(apiKey) {
+		if decrypted, err := decryptAPIKey(apiKey); err == nil {
+			apiKey = decrypted
+		}
+	}
+	req.Header = siderBuildHeaders(apiKey)
 
 	client := siderHTTPClient(p, 300*time.Second)
 	resp, err := client.Do(req)

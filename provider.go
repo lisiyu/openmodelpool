@@ -61,6 +61,11 @@ func (m *ProviderManager) load() {
 			}
 			// Migrate legacy single APIKey to APIKeys array
 			migrated := migrateProviderKeys(&p)
+			// Migrate Sider provider to dedicated "sider" type (v1 adapter)
+			if migrateSiderType(&p) {
+				migrated = true
+				slog.Info("migrated sider provider to sider type", "provider", p.ID)
+			}
 			// Apply default access control if not set
 			p.AccessControl = normalizeAccessControl(p.AccessControl)
 			m.providers[p.ID] = p
@@ -88,6 +93,17 @@ func migrateProviderKeys(p *Provider) bool {
 			},
 		}
 		p.APIKey = "" // clear legacy field
+		return true
+	}
+	return false
+}
+
+// migrateSiderType migrates the Sider provider from legacy types ("web", "web_session")
+// to the dedicated "sider" type that uses the v1 chat completions adapter.
+// Returns true if migration occurred.
+func migrateSiderType(p *Provider) bool {
+	if p.ID == "sider" && (p.Type == "web" || p.Type == "web_session") {
+		p.Type = "sider"
 		return true
 	}
 	return false

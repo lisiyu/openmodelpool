@@ -290,7 +290,7 @@ var presetProviders = []Provider{
 		},
 	},
 	{
-		ID: "sider", Name: "Sider.ai (网页版)", Type: "web_session",
+		ID: "sider", Name: "Sider.ai (网页版)", Type: "sider",
 		BaseURL:     "https://sider.ai",
 		Priority:    2,
 		Description: "Sider.ai 网页版聚合平台。Token 填写浏览器登录后的 Session Token（F12→Network→任意请求→Authorization Header）",
@@ -370,10 +370,10 @@ var presetProviders = []Provider{
 			ModelField:    "model",
 			StreamField:   "stream",
 			MessageFormat: "prefix_role",
-			ExtraBody: map[string]any{},
-			ResponseType: "sse",
-			TextPath:     "data.text",
-			DoneMarker:   "[DONE]",
+			ExtraBody:     map[string]any{},
+			ResponseType:  "sse",
+			TextPath:      "data.text",
+			DoneMarker:    "[DONE]",
 		},
 	},
 	{
