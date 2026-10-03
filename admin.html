@@ -1806,7 +1806,7 @@ async function refreshHealth() {
   try {
     const r = await authFetch('/api/health');
     const d = await r.json();
-    const providers = d.providers || [];
+    let providers = d.providers || [];
     const ns = d.node_stats || {};
 
     // V8: Get node info from node_stats (already in /api/health response)
