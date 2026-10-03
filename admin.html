@@ -1347,6 +1347,8 @@ async function init() {
   try {
     await Promise.all([loadStatus(), loadProviders()]);
   } catch(e) { console.error(e); }
+  // V5: provider cards are rendered by refreshHealth(), call it on init
+  try { await refreshHealth(); } catch(e) { console.error('init refreshHealth:', e); }
   // Load presets in background (non-blocking)
   fetch('/api/providers/presets').then(r => r.json()).then(d => { presets = d.presets || []; }).catch(() => {});
   // Preload the most-used sub-page (add/edit platform) into the hidden iframe so the first open is instant
