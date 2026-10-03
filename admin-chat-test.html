@@ -73,6 +73,10 @@ const input=document.getElementById('input');
 const sendBtn=document.getElementById('sendBtn');
 const modelSelect=document.getElementById('modelSelect');
 const status=document.getElementById('status');
+const apiKeyInput=document.getElementById('apiKey');
+// Persist API key across refreshes
+apiKeyInput.value=localStorage.getItem('omp_test_api_key')||'';
+apiKeyInput.addEventListener('input',()=>{localStorage.setItem('omp_test_api_key',apiKeyInput.value)});
 let sending=false;
 
 function ts(){return new Date().toLocaleTimeString('zh-CN',{hour12:false})+'.'+String(Date.now()%1000).padStart(3,'0')}
