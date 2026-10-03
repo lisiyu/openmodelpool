@@ -734,6 +734,14 @@ install_omp() {
 
     rm -rf "$TMP_DIR"
 
+    # 保存管理脚本到安装目录，方便日后管理
+    SCRIPT_SRC="$(realpath "$0" 2>/dev/null || echo "$0")"
+    if [ -f "$SCRIPT_SRC" ] && [ "$SCRIPT_SRC" != "$INSTALL_DIR/omp-manager.sh" ]; then
+        cp "$SCRIPT_SRC" "$INSTALL_DIR/omp-manager.sh"
+        chmod +x "$INSTALL_DIR/omp-manager.sh"
+        write_ok "管理脚本已保存: $INSTALL_DIR/omp-manager.sh"
+    fi
+
     # 询问穿透
     echo ""
     write_info "是否配置外网穿透？"
@@ -2283,6 +2291,44 @@ fi
 detect_system
 detect_deployment
 remap_legacy_deployment
+
+# 命令行模式：支持简单的控制指令
+if [ $# -gt 0 ]; then
+    case "$1" in
+        status) show_status; exit 0 ;;
+        version)
+            VER=$(curl -s --max-time 3 "http://127.0.0.1:$PORT/api/version" 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+            echo "${VER:-未知}"
+            exit 0 ;;
+        logs)
+            LOG_FILE="$INSTALL_DIR/data/app.log"
+            if [ -f "$LOG_FILE" ]; then
+                tail -n 100 "$LOG_FILE"
+            else
+                echo "日志文件不存在: $LOG_FILE"
+                exit 1
+            fi
+            exit 0 ;;
+        start)
+            start_omp; exit 0 ;;
+        stop)
+            stop_omp; exit 0 ;;
+        restart)
+            stop_omp; sleep 2; start_omp; exit 0 ;;
+        update)
+            upgrade_omp; exit 0 ;;
+        *)
+            echo "用法: $0 {status|version|logs|start|stop|restart|update}"
+            echo "  status  - 查看运行状态"
+            echo "  version - 只显示版本号"
+            echo "  logs    - 查看最近100行日志"
+            echo "  start   - 启动服务"
+            echo "  stop    - 停止服务"
+            echo "  restart - 重启服务"
+            echo "  update  - 升级到最新版"
+            exit 1 ;;
+    esac
+fi
 
 while true; do
     echo ""
