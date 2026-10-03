@@ -150,11 +150,8 @@ mirrors_for() {
         echo "$url"   # 非 GitHub 源（如 Chrome for Testing）不做镜像代理
         return
     fi
-    if [[ "$REGION" == "cn" ]]; then
-        echo "https://ghfast.top/$url|https://gh-proxy.com/$url|https://ghproxy.net/$url|$url"
-    else
-        echo "$url|https://ghfast.top/$url|https://gh-proxy.com/$url|https://ghproxy.net/$url"
-    fi
+    # 始终优先镜像，直连 GitHub 放最后兜底（部分海外节点直连 GitHub 也不稳定）
+    echo "https://ghfast.top/$url|https://gh-proxy.com/$url|https://ghproxy.net/$url|$url"
 }
 
 download_with_retry() {
