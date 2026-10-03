@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模型聊天测试 - OpenModelPool</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f1420;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:flex;flex-direction:column}
+.header{background:#1a2233;padding:12px 20px;border-bottom:1px solid #2d3748;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.header h1{font-size:18px;font-weight:600}
+.header select,.header button{background:#2d3748;color:#e2e8f0;border:1px solid #4a5568;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer}
+.header select{max-width:300px}
+.header button:hover{background:#4a5568}
+#status{font-size:12px;color:#a0aec0;margin-left:auto}
+.chat{flex:1;overflow-y:auto;padding:20px;max-width:900px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:80%;padding:10px 14px;border-radius:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.msg.user{align-self:flex-end;background:#4c51bf;color:#fff}
+.msg.assistant{align-self:flex-start;background:#1a2233;border:1px solid #2d3748}
+.msg.error{align-self:flex-start;background:#3b1f1f;border:1px solid #9b2c2c;color:#feb2b2}
+.msg .meta{font-size:11px;color:#a0aec0;margin-bottom:4px}
+.input-area{background:#1a2233;border-top:1px solid #2d3748;padding:16px 20px}
+.input-wrap{max-width:900px;margin:0 auto;display:flex;gap:10px}
+.input-wrap textarea{flex:1;background:#0f1420;color:#e2e8f0;border:1px solid #4a5568;border-radius:10px;padding:10px 14px;font-size:14px;resize:vertical;min-height:48px;font-family:inherit}
+.input-wrap textarea:focus{outline:none;border-color:#4c51bf}
+.input-wrap button{background:#4c51bf;color:#fff;border:none;border-radius:10px;padding:0 24px;font-size:15px;font-weight:600;cursor:pointer}
+.input-wrap button:disabled{background:#2d3748;cursor:not-allowed}
+.hint{text-align:center;color:#718096;font-size:13px;padding:8px}
+</style>
+</head>
+<body>
+<div class="header">
+<h1>💬 模型聊天测试</h1>
+<select id="modelSelect"><option value="">加载模型中...</option></select>
+<button onclick="clearChat()">🗑 清空</button>
+<span id="status"></span>
+</div>
+<div class="chat" id="chat"></div>
+<div class="input-area">
+<div class="input-wrap">
+<textarea id="input" placeholder="输入消息，按 Ctrl+Enter 发送..." rows="2"></textarea>
+<button id="sendBtn" onclick="send()">发送</button>
+</div>
+</div>
+<script>
+const chat=document.getElementById('chat');
+const input=document.getElementById('input');
+const sendBtn=document.getElementById('sendBtn');
+const modelSelect=document.getElementById('modelSelect');
+const status=document.getElementById('status');
+let sending=false;
+
+// 加载模型列表
+async function loadModels(){
+  try{
+    const r=await fetch('/v1/models');
+    const d=await r.json();
+    const models=(d.data||[]).map(m=>m.id).sort();
+    modelSelect.innerHTML=models.map(id=>`<option value="${id}">${id}</option>`).join('')||'<option value="">无可用模型</option>';
+    // 默认选 sider
+    const sider=models.find(m=>m.toLowerCase().includes('sider'));
+    if(sider) modelSelect.value=sider;
+    status.textContent=`共 ${models.length} 个模型`;
+  }catch(e){
+    modelSelect.innerHTML='<option value="">加载失败</option>';
+    status.textContent='模型加载失败: '+e.message;
+  }
+}
+
+function addMsg(role,text,meta){
+  const div=document.createElement('div');
+  div.className='msg '+role;
+  if(meta) div.innerHTML=`<div class="meta">${meta}</div>`;
+  div.appendChild(document.createTextNode(text));
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+  return div;
+}
+
+function clearChat(){ chat.innerHTML=''; addHint(); }
+function addHint(){
+  const d=document.createElement('div');
+  d.className='hint';
+  d.textContent='选择模型后输入消息开始测试。响应会显示耗时和 Token 信息。';
+  chat.appendChild(d);
+}
+
+async function send(){
+  const text=input.value.trim();
+  const model=modelSelect.value;
+  if(!text||!model||sending) return;
+  sending=true; sendBtn.disabled=true;
+  input.value='';
+  addMsg('user',text,model);
+  const t0=Date.now();
+  const assistantDiv=addMsg('assistant','思考中...',model);
+  try{
+    const r=await fetch('/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model,messages:[{role:'user',content:text}],stream:false})
+    });
+    const dt=((Date.now()-t0)/1000).toFixed(1);
+    const d=await r.json();
+    if(!r.ok){
+      assistantDiv.className='msg error';
+      assistantDiv.textContent=`❌ HTTP ${r.status} (${dt}s)\n${JSON.stringify(d,null,2)}`;
+    }else{
+      const content=d.choices?.[0]?.message?.content||JSON.stringify(d);
+      const usage=d.usage?`\n\n📊 ${dt}s | prompt:${d.usage.prompt_tokens} completion:${d.usage.completion_tokens}`:`\n\n⏱ ${dt}s`;
+      assistantDiv.textContent=content+usage;
+    }
+  }catch(e){
+    assistantDiv.className='msg error';
+    assistantDiv.textContent='❌ 请求失败: '+e.message;
+  }
+  sending=false; sendBtn.disabled=false;
+  chat.scrollTop=chat.scrollHeight;
+}
+
+input.addEventListener('keydown',e=>{
+  if(e.ctrlKey&&e.key==='Enter') send();
+});
+
+addHint();
+loadModels();
+</script>
+</body>
+</html>

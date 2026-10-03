@@ -207,6 +207,8 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /admin/browser-login", handleBrowserLoginPage)
 	mux.HandleFunc("GET /admin/free-pool", handleFreePoolPage)
 	mux.HandleFunc("GET /admin/federation-health", handleFederationHealthPage)
+	mux.HandleFunc("GET /admin/chat-test", handleChatTestPage)
+	mux.HandleFunc("GET /admin-chat-test.html", handleChatTestPage)
 	mux.HandleFunc("GET /admin-common.js", handleAdminCommonJS)
 	mux.HandleFunc("GET /admin-settings.js", handleAdminSettingsJS)
 	mux.HandleFunc("GET /admin-network.js", handleAdminNetworkJS)

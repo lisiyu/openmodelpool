@@ -74,6 +74,14 @@ func handleAdminCommonJS(w http.ResponseWriter, r *http.Request) {
 	serveEmbeddedJS(w, r, "admin-common.js")
 }
 
+func handleChatTestPage(w http.ResponseWriter, r *http.Request) {
+	if !auth.Initialized() {
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
+	serveEmbeddedHTML(w, r, "admin-chat-test.html", false)
+}
+
 // ============================================================
 // Utility
 // ============================================================
