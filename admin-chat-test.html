@@ -45,7 +45,10 @@ body{background:#0f1420;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFo
 <body>
 <div class="header">
 <h1>💬 模型聊天测试</h1>
+<select id="keySelect" title="已保存的 Key"><option value="">— 选择已存 Key —</option></select>
 <input type="password" id="apiKey" placeholder="API Key (sk-...)">
+<button onclick="saveKey()" title="保存当前 Key">💾</button>
+<button onclick="deleteKey()" title="删除选中的已存 Key">🗑️</button>
 <select id="modelSelect"><option value="">先填 Key 点加载</option></select>
 <button onclick="loadModels()">🔄 加载</button>
 <button onclick="clearAll()">🗑 清空</button>
@@ -74,9 +77,69 @@ const sendBtn=document.getElementById('sendBtn');
 const modelSelect=document.getElementById('modelSelect');
 const status=document.getElementById('status');
 const apiKeyInput=document.getElementById('apiKey');
-// Persist API key across refreshes
-apiKeyInput.value=localStorage.getItem('omp_test_api_key')||'';
-apiKeyInput.addEventListener('input',()=>{localStorage.setItem('omp_test_api_key',apiKeyInput.value)});
+const keySelect=document.getElementById('keySelect');
+// Multi-key save/switch via localStorage
+function getSavedKeys(){ try{ return JSON.parse(localStorage.getItem('omp_test_keys')||'{}'); }catch(e){ return {}; } }
+function setSavedKeys(o){ localStorage.setItem('omp_test_keys', JSON.stringify(o)); }
+function refreshKeySelect(){
+  const keys=getSavedKeys();
+  const active=localStorage.getItem('omp_test_active_key')||'';
+  keySelect.innerHTML='<option value="">— 选择已存 Key —</option>';
+  Object.keys(keys).forEach(name=>{
+    const opt=document.createElement('option');
+    opt.value=name; opt.textContent=name+(name===active?' ✓':'');
+    keySelect.appendChild(opt);
+  });
+  if(active && keys[active]){ keySelect.value=active; apiKeyInput.value=keys[active]; }
+}
+keySelect.addEventListener('change',()=>{
+  const keys=getSavedKeys();
+  const name=keySelect.value;
+  if(name && keys[name]){
+    apiKeyInput.value=keys[name];
+    localStorage.setItem('omp_test_active_key', name);
+  }
+  refreshKeySelect();
+});
+apiKeyInput.addEventListener('input',()=>{
+  // manual edit: keep single-key fallback for backward compat
+  localStorage.setItem('omp_test_api_key', apiKeyInput.value);
+});
+function saveKey(){
+  const key=apiKeyInput.value.trim();
+  if(!key){ status.textContent='请先输入 API Key'; return; }
+  const name=prompt('给这个 Key 起个名字：', 'key-'+new Date().toISOString().slice(5,10));
+  if(!name) return;
+  const keys=getSavedKeys();
+  keys[name]=key;
+  setSavedKeys(keys);
+  localStorage.setItem('omp_test_active_key', name);
+  // migrate legacy single key
+  localStorage.setItem('omp_test_api_key', key);
+  refreshKeySelect();
+  status.textContent='已保存: '+name;
+}
+function deleteKey(){
+  const name=keySelect.value;
+  if(!name){ status.textContent='请先在下拉框选择要删除的 Key'; return; }
+  if(!confirm('删除已存 Key「'+name+'」？')) return;
+  const keys=getSavedKeys();
+  delete keys[name];
+  setSavedKeys(keys);
+  if(localStorage.getItem('omp_test_active_key')===name) localStorage.removeItem('omp_test_active_key');
+  refreshKeySelect();
+  status.textContent='已删除: '+name;
+}
+// init: migrate legacy single key if no multi keys yet
+(function(){
+  const keys=getSavedKeys();
+  if(Object.keys(keys).length===0){
+    const legacy=localStorage.getItem('omp_test_api_key')||'';
+    if(legacy){ keys['默认']=legacy; setSavedKeys(keys); localStorage.setItem('omp_test_active_key','默认'); }
+  }
+  refreshKeySelect();
+  if(!apiKeyInput.value) apiKeyInput.value=localStorage.getItem('omp_test_api_key')||'';
+})();
 let sending=false;
 
 function ts(){return new Date().toLocaleTimeString('zh-CN',{hour12:false})+'.'+String(Date.now()%1000).padStart(3,'0')}
