@@ -160,7 +160,7 @@ async function loadModels(){
   try{
     const r=await fetch('/v1/models',{headers:{'Authorization':'Bearer '+key}});
     const d=await r.json();
-    log(`<span class="${r.ok?'res':'err'}">← HTTP ${r.status}</span> ${esc(JSON.stringify(d).slice(0,200))}...`);
+    log(`<span class="${r.ok?'res':'err'}">← HTTP ${r.status}</span> ${esc(JSON.stringify(d))}`);
     const rawModels=d.data||[];
     // Group by node: local first, then federated peers. Within each group, sort by ID.
     const localModels=[], fedModels={};
@@ -240,7 +240,7 @@ async function send(){
     const dt=((Date.now()-t0)/1000).toFixed(1);
     const raw=await r.text();
     log(`<span class="${r.ok?'res':'err'}">← HTTP ${r.status} (${dt}s)</span>`);
-    log(`响应体: ${esc(raw.slice(0,2000))}${raw.length>2000?'...[截断]':''}`);
+    log(`响应体: ${esc(raw)}`);
     let d; try{ d=JSON.parse(raw); }catch{ d={_raw:raw}; }
     if(!r.ok){
       assistantDiv.className='msg error';

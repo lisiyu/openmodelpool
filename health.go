@@ -57,6 +57,12 @@ func (h *HealthChecker) run() {
 
 func (h *HealthChecker) checkAll() {
 	providers := pm.EnabledRaw()
+	// DEBUG: log which providers are being health-checked
+	ids := make([]string, 0, len(providers))
+	for _, p := range providers {
+		ids = append(ids, p.ID+"(type="+p.Type+",enabled="+strconv.FormatBool(p.Enabled)+")")
+	}
+	slog.Info("health check providers", "count", len(providers), "ids", strings.Join(ids, ","))
 	// Update statuses map for new providers
 	h.mu.Lock()
 	for _, p := range providers {
@@ -83,6 +89,39 @@ func (h *HealthChecker) checkAll() {
 }
 
 func (h *HealthChecker) checkProvider(p Provider) {
+	// Sider: skip probe (it hangs); token validity is checked via test-all-keys.
+	// Mark as healthy if it has any enabled key.
+	if p.Type == "sider" {
+		hasKey := false
+		for _, k := range p.APIKeys {
+			if k.Enabled && k.Key != "" {
+				hasKey = true
+				break
+			}
+		}
+		if !hasKey && p.APIKey != "" {
+			hasKey = true
+		}
+		h.mu.Lock()
+		hs := h.statuses[p.ID]
+		if hs == nil {
+			hs = &ProviderHealth{ProviderID: p.ID, ProviderName: p.Name}
+			h.statuses[p.ID] = hs
+		}
+		if hasKey {
+			hs.Status = "healthy"
+			hs.ConsecutiveFails = 0
+			hs.FailureReason = ""
+			hs.LastSuccess = time.Now().Format(time.RFC3339)
+		} else {
+			hs.Status = "down"
+			hs.FailureReason = "no API key"
+		}
+		h.mu.Unlock()
+		slog.Info("sider health check bypassed", "provider", p.ID, "healthy", hasKey)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

@@ -34,10 +34,7 @@ var defaultFreeProviders = []struct {
 		name:    "🇺🇸 Kilo Code (免费)",
 		baseURL: "https://api.kilo.ai/api/gateway",
 		models: []string{
-			"nvidia/nemotron-3-ultra-550b-a55b:free",
 			"stepfun/step-3.7-flash:free",
-			"nvidia/nemotron-3-super-120b-a12b:free",
-			"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 			"inclusionai/ling-3.0-flash:free",
 			"ai21/jamba-large-1.7",
 			"ai21/jamba-mini-1.7",

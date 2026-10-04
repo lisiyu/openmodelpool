@@ -1630,8 +1630,16 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build deduplicated list with per-model source annotation.
-	models := make([]ModelInfo, 0, len(modelSrc))
-	for id, srcs := range modelSrc {
+	// Sort by ID for deterministic output (Go map iteration is random).
+	ids := make([]string, 0, len(modelSrc))
+	for id := range modelSrc {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	models := make([]ModelInfo, 0, len(ids))
+	for _, id := range ids {
+		srcs := modelSrc[id]
 		mi := ModelInfo{
 			ID:      id,
 			Object:  "model",
@@ -1643,6 +1651,7 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 			for s := range srcs {
 				mi.MeshSources = append(mi.MeshSources, s)
 			}
+			sort.Strings(mi.MeshSources)
 		}
 		models = append(models, mi)
 	}
