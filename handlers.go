@@ -121,6 +121,11 @@ func handleVersion(w http.ResponseWriter, r *http.Request) {
 
 func handleListModels(w http.ResponseWriter, r *http.Request) {
 	keyType := RequestKeyType(r)
+	// Model list is not sensitive; treat unauthenticated as guest so the
+	// chat test page and public clients can discover available models.
+	if keyType == "unknown" {
+		keyType = "guest"
+	}
 	models := pm.AllModelsFiltered(keyType)
 	writeJSON(w, 200, ModelListResponse{Object: "list", Data: models})
 }
