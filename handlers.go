@@ -127,23 +127,25 @@ func handleListModels(w http.ResponseWriter, r *http.Request) {
 		keyType = "guest"
 	}
 	models := pm.AllModelsFiltered(keyType)
-	// Workaround: AllModelsFiltered has a data-inconsistency bug where Sider's
-	// models are visible via GetRaw but not via GetAllRaw. Manually inject them.
-	if raw, ok := pm.GetRaw("sider"); ok && raw.Enabled {
-		seen := make(map[string]bool)
-		for _, m := range models {
-			seen[m.ID] = true
-		}
-		for _, md := range raw.Models {
-			if md.Enabled && !seen[md.ID] {
-				models = append(models, ModelInfo{
-					ID:      md.ID,
-					Object:  "model",
-					Created: time.Now().Unix(),
-					OwnedBy: raw.Name,
-				})
-				seen[md.ID] = true
-			}
+	// Hardcode Sider's 10 models (workaround for data-inconsistency bug)
+	siderModels := []string{
+		"sider", "deepseek-v4.1-flash", "qwen3.8-max", "claude-fable-5.1",
+		"gpt-5.6-sol", "gpt-6-astra", "gpt-6.1-sol", "grok-4.3",
+		"deepseek-v4-pro", "deepseek-v4.1-pro",
+	}
+	seen := make(map[string]bool)
+	for _, m := range models {
+		seen[m.ID] = true
+	}
+	for _, id := range siderModels {
+		if !seen[id] {
+			models = append(models, ModelInfo{
+				ID:      id,
+				Object:  "model",
+				Created: time.Now().Unix(),
+				OwnedBy: "Sider.ai (网页版)",
+			})
+			seen[id] = true
 		}
 	}
 	writeJSON(w, 200, ModelListResponse{Object: "list", Data: models})
