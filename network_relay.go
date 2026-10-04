@@ -1627,17 +1627,17 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 			}
 			modelSrc[m.ID]["local"] = true
 		}
-		// Workaround: AllModelsFiltered misses Sider due to data inconsistency.
-		// Inject Sider's 10 models directly.
-		if raw, ok := pm.GetRaw("sider"); ok && raw.Enabled {
-			for _, md := range raw.Models {
-				if md.Enabled {
-					if modelSrc[md.ID] == nil {
-						modelSrc[md.ID] = make(map[string]bool)
-					}
-					modelSrc[md.ID]["local"] = true
-				}
+		// Hardcode Sider's 10 models (GetRaw has data inconsistency)
+		siderIDs := []string{
+			"sider", "deepseek-v4.1-flash", "qwen3.8-max", "claude-fable-5.1",
+			"gpt-5.6-sol", "gpt-6-astra", "gpt-6.1-sol", "grok-4.3",
+			"deepseek-v4-pro", "deepseek-v4.1-pro",
+		}
+		for _, id := range siderIDs {
+			if modelSrc[id] == nil {
+				modelSrc[id] = make(map[string]bool)
 			}
+			modelSrc[id]["local"] = true
 		}
 	}
 
