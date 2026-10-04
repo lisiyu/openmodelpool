@@ -1028,13 +1028,15 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 			"user_input_text": text,
 		})
 	}
-	cid := newUUID()
-	// Sider API requires parent_message_id ≤ 32 chars; UUID with hyphens is 36.
-	// Use hex without hyphens (32 chars) for both cid and parent_message_id.
-	parentID := strings.ReplaceAll(cid, "-", "")
+	// Sider web API: cid/parent_message_id are 24-char hex (12 bytes), NOT UUID.
+	// The working web client sends e.g. "6ac1126c060d883a6dab350c".
+	// Also: the payload must NOT include a "stream" field.
+	b := make([]byte, 12)
+	_, _ = rand.Read(b)
+	shortID := fmt.Sprintf("%x", b)
 	return map[string]any{
-		"cid":               parentID,
-		"parent_message_id": parentID,
+		"cid":               shortID,
+		"parent_message_id": shortID,
 		"model":             model,
 		"from":              "chat",
 		"client_prompt":     map[string]any{},
@@ -1042,7 +1044,6 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 		"prompt_templates":  []any{},
 		"tools":             map[string]any{"auto": []any{}},
 		"think_mode":        map[string]any{"enable": false},
-		"stream":            stream,
 	}
 }
 

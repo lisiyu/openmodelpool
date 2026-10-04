@@ -514,8 +514,16 @@ func TestSiderBuildPayload(t *testing.T) {
 	if payload["model"] != "gpt-4" {
 		t.Errorf("model = %v, want gpt-4", payload["model"])
 	}
-	if payload["stream"] != false {
-		t.Errorf("stream = %v, want false", payload["stream"])
+	// Sider web API payload must NOT include a "stream" field (per working curl).
+	if _, hasStream := payload["stream"]; hasStream {
+		t.Errorf("payload should not contain 'stream' field, got %v", payload["stream"])
+	}
+	// cid and parent_message_id must be 24-char hex (12 bytes).
+	for _, k := range []string{"cid", "parent_message_id"} {
+		s, ok := payload[k].(string)
+		if !ok || len(s) != 24 {
+			t.Errorf("%s = %v, want 24-char hex string", k, payload[k])
+		}
 	}
 	mc, ok := payload["multi_content"].([]any)
 	if !ok {
