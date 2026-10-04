@@ -1029,14 +1029,18 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 		})
 	}
 	// Sider web API: cid/parent_message_id are 24-char hex (12 bytes), NOT UUID.
-	// The working web client sends e.g. "6ac1126c060d883a6dab350c".
+	// The working web client uses DIFFERENT values: cid is the session ID
+	// (stable across messages), parent_message_id is unique per message.
 	// Also: the payload must NOT include a "stream" field.
-	b := make([]byte, 12)
-	_, _ = rand.Read(b)
-	shortID := fmt.Sprintf("%x", b)
+	b1 := make([]byte, 12)
+	_, _ = rand.Read(b1)
+	b2 := make([]byte, 12)
+	_, _ = rand.Read(b2)
+	cid := fmt.Sprintf("%x", b1)
+	parentID := fmt.Sprintf("%x", b2)
 	return map[string]any{
-		"cid":               shortID,
-		"parent_message_id": shortID,
+		"cid":               cid,
+		"parent_message_id": parentID,
 		"model":             model,
 		"from":              "chat",
 		"client_prompt":     map[string]any{},
