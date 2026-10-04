@@ -127,6 +127,25 @@ func handleListModels(w http.ResponseWriter, r *http.Request) {
 		keyType = "guest"
 	}
 	models := pm.AllModelsFiltered(keyType)
+	// Workaround: AllModelsFiltered has a data-inconsistency bug where Sider's
+	// models are visible via GetRaw but not via GetAllRaw. Manually inject them.
+	if raw, ok := pm.GetRaw("sider"); ok && raw.Enabled {
+		seen := make(map[string]bool)
+		for _, m := range models {
+			seen[m.ID] = true
+		}
+		for _, md := range raw.Models {
+			if md.Enabled && !seen[md.ID] {
+				models = append(models, ModelInfo{
+					ID:      md.ID,
+					Object:  "model",
+					Created: time.Now().Unix(),
+					OwnedBy: raw.Name,
+				})
+				seen[md.ID] = true
+			}
+		}
+	}
 	writeJSON(w, 200, ModelListResponse{Object: "list", Data: models})
 }
 func handleFederationStatus(w http.ResponseWriter, r *http.Request) {
