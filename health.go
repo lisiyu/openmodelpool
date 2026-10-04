@@ -260,14 +260,28 @@ func (h *HealthChecker) checkProvider(p Provider) {
 			keyOK := false
 
 			reqStart := time.Now()
-			probeBody, _ := json.Marshal(map[string]any{
-				"model":      probeModel,
-				"max_tokens": 1,
-				"messages":   []map[string]string{{"role": "user", "content": "hi"}},
-			})
-			probeReq, _ := http.NewRequestWithContext(ctx, "POST", baseURL+"/chat/completions", bytes.NewReader(probeBody))
-			probeReq.Header.Set("Authorization", "Bearer "+ke.key)
-			probeReq.Header.Set("Content-Type", "application/json")
+			var probeReq *http.Request
+			if p.Type == "sider" {
+				// Sider uses a proprietary web API, not OpenAI-compatible.
+				// Use the same payload/headers as the Sider adapter.
+				siderPayload := siderBuildPayload(probeModel, []ChatMessage{{Role: "user", Content: "hi"}}, false)
+				probeBody, _ := json.Marshal(siderPayload)
+				probeReq, _ = http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(probeBody))
+				for k, v := range siderBuildHeaders(ke.key) {
+					probeReq.Header[k] = v
+				}
+				// Use Sider-specific HTTP client with proxy support
+				client = siderHTTPClient(p, 30*time.Second)
+			} else {
+				probeBody, _ := json.Marshal(map[string]any{
+					"model":      probeModel,
+					"max_tokens": 1,
+					"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+				})
+				probeReq, _ = http.NewRequestWithContext(ctx, "POST", baseURL+"/chat/completions", bytes.NewReader(probeBody))
+				probeReq.Header.Set("Authorization", "Bearer "+ke.key)
+				probeReq.Header.Set("Content-Type", "application/json")
+			}
 			probeResp, err := client.Do(probeReq)
 			if err != nil {
 				failReason = ke.alias + ": probe request failed"
