@@ -1833,7 +1833,7 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 		h := siderBuildHeaders(testProvider.APIKey)
 		// Use the first enabled model for the test, not "auto" (sider API
 		// rejects unknown model IDs with "invalid model" / "Too many words").
-		testModel := "gpt-5.6-luna"
+		testModel := "sider"
 		for _, m := range testProvider.Models {
 			if m.Enabled {
 				testModel = m.ID
