@@ -251,7 +251,11 @@ func (h *HealthChecker) checkProvider(p Provider) {
 			}
 		}
 		if probeModel == "" {
-			probeModel = "gpt-3.5-turbo"
+			if p.Type == "sider" {
+				probeModel = "sider"
+			} else {
+				probeModel = "gpt-3.5-turbo"
+			}
 		}
 
 		// Try each key until one succeeds
