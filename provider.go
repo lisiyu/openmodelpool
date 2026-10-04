@@ -901,6 +901,9 @@ func (m *ProviderManager) AllModelsFiltered(keyType string) []ModelInfo {
 	var models []ModelInfo
 
 	for _, p := range m.GetAllRaw() {
+		if p.ID == "sider" {
+			slog.Info("AllModelsFiltered sider debug", "enabled", p.Enabled, "apikeys_len", len(p.APIKeys), "keyType", keyType, "models_total", len(p.Models))
+		}
 		if !p.Enabled {
 			continue
 		}
