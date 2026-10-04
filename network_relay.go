@@ -1627,6 +1627,18 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 			}
 			modelSrc[m.ID]["local"] = true
 		}
+		// Workaround: AllModelsFiltered misses Sider due to data inconsistency.
+		// Inject Sider's 10 models directly.
+		if raw, ok := pm.GetRaw("sider"); ok && raw.Enabled {
+			for _, md := range raw.Models {
+				if md.Enabled {
+					if modelSrc[md.ID] == nil {
+						modelSrc[md.ID] = make(map[string]bool)
+					}
+					modelSrc[md.ID]["local"] = true
+				}
+			}
+		}
 	}
 
 	// Build deduplicated list with per-model source annotation.
