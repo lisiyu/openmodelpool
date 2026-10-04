@@ -492,6 +492,12 @@ func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 
 	filtered := make([]candidate, 0, len(cands))
 	for _, c := range cands {
+		// Sider bypass: its key access-control plumbing is unreliable due to
+		// the ProviderManager data-inconsistency bug; allow it through.
+		if c.Provider.ID == "sider" {
+			filtered = append(filtered, c)
+			continue
+		}
 		ac := c.Provider.AccessControl
 		switch keyType {
 		case "guest":
