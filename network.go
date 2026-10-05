@@ -233,7 +233,7 @@ func initNodeRegistry(dataDir string) {
 // isolated whenever the GitHub registry and seed nodes are unreachable.
 // Self is excluded. No-op in personal mode (fed disabled).
 func (nm *NetworkManager) bridgeRestoredPeersToFederation() {
-	if fed == nil || !fed.IsEnabled() || len(restoredRouteEntries) == 0 {
+	if fed == nil || !fed.IsEnabled() {
 		return
 	}
 	var selfID string
@@ -261,8 +261,44 @@ func (nm *NetworkManager) bridgeRestoredPeersToFederation() {
 			Addresses: append([]string(nil), e.Addresses...),
 			LastSeen:  lastSeen,
 			JoinedAt:  now,
+			Status:    "active",
 		})
 	}
+	// v4.6.47: also bridge manually added peers from nm.config.Peers.
+	// Previously only route-table entries were bridged, so peers added via
+	// /api/network/peers would never appear in the federation trust pool,
+	// causing GetActiveNodes() to return empty and broadcasts to target 0 peers.
+	nm.mu.RLock()
+	for _, p := range nm.config.Peers {
+		if p.NodeID == "" || p.NodeID == selfID || len(p.Addresses) == 0 {
+			continue
+		}
+		// Skip if already in nodes list (dedupe by NodeID)
+		duplicate := false
+		for _, n := range nodes {
+			if n.NodeID == p.NodeID {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		lastSeen := p.LastSeen
+		if lastSeen == "" {
+			lastSeen = now
+		}
+		nodes = append(nodes, NodeInfo{
+			NodeID:    p.NodeID,
+			Endpoint:  p.Addresses[0],
+			Addresses: append([]string(nil), p.Addresses...),
+			LastSeen:  lastSeen,
+			JoinedAt:  now,
+			Status:    "active",
+			PubKey:    p.PubKey,
+		})
+	}
+	nm.mu.RUnlock()
 	if len(nodes) == 0 {
 		return
 	}
