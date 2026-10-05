@@ -2099,15 +2099,20 @@ func peerInfoFromNodeInfo(n NodeInfo) PeerInfo {
 	case "":
 		status = "online"
 	}
+	// v4.6.45: default trust to 0.5 for nodes in the trust pool.
+	// Previously TrustScore was left as 0 (Go zero value), causing the UI
+	// to show trust=0 for manually added peers even though they were online.
+	// Nodes in the trust pool are by definition trusted.
 	return PeerInfo{
-		NodeID:    n.NodeID,
-		Name:      n.GitHubUser,
-		Models:    n.SharedModels,
-		Status:    status,
-		LastSeen:  n.LastSeen,
-		JoinedAt:  n.JoinedAt,
-		Addresses: n.Addresses,
-		Unlocked:  n.Status == "active",
+		NodeID:     n.NodeID,
+		Name:       n.GitHubUser,
+		Models:     n.SharedModels,
+		Status:     status,
+		LastSeen:   n.LastSeen,
+		JoinedAt:   n.JoinedAt,
+		Addresses:  n.Addresses,
+		Unlocked:   n.Status == "active",
+		TrustScore: 0.5,
 	}
 }
 
