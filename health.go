@@ -309,7 +309,14 @@ func (h *HealthChecker) checkProvider(p Provider) {
 				// Use the same payload/headers as the Sider adapter.
 				siderPayload := siderBuildPayload(probeModel, []ChatMessage{{Role: "user", Content: "hi"}}, false)
 				probeBody, _ := json.Marshal(siderPayload)
-				probeReq, _ = http.NewRequestWithContext(ctx, "POST", siderChatURL, bytes.NewReader(probeBody))
+				// v4.6.53: defensive check for empty siderChatURL (was causing
+				// "unsupported protocol scheme" errors in health checks).
+				siderURL := siderChatURL
+				if siderURL == "" {
+					slog.Error("siderChatURL was empty in health check, using fallback", "provider", p.ID)
+					siderURL = "https://sider.ai/api/chat/v1/completions"
+				}
+				probeReq, _ = http.NewRequestWithContext(ctx, "POST", siderURL, bytes.NewReader(probeBody))
 				for k, v := range siderBuildHeaders(ke.key) {
 					probeReq.Header[k] = v
 				}
