@@ -1130,7 +1130,10 @@ func siderNonStream(ctx context.Context, p Provider, model string, messages []Ch
 
 	content := fullText.String()
 	// v4.6.49: diagnostic logging when Sider returns unparseable content.
-	// Previously this silently returned empty content, masking API format changes.
+	// v4.6.50: return an error instead of empty success. An empty completion
+	// with finish_reason=stop is misleading - it looks like the model chose
+	// to say nothing, when actually the upstream response couldn't be parsed
+	// (e.g. expired token returning 200 with empty/error body).
 	if content == "" && len(respBody) > 0 {
 		slog.Warn("sider returned unparseable response body",
 			"provider", p.ID,
@@ -1138,6 +1141,8 @@ func siderNonStream(ctx context.Context, p Provider, model string, messages []Ch
 			"body_len", len(respBody),
 			"body_preview", truncate(string(respBody), 500),
 		)
+		return nil, fmt.Errorf("sider returned unparseable response (body_len=%d, preview=%.200s)",
+			len(respBody), truncate(string(respBody), 200))
 	}
 	stop := "stop"
 	return &ChatResponse{
