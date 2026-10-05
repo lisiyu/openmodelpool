@@ -732,6 +732,35 @@ func (g *GossipManager) broadcastLocalProviders() {
 // asynchronously. Tries all available addresses per peer. The announcement is signed before broadcasting.
 func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 	peers := fed.GetActiveNodes()
+	// v4.6.46: also include manually added peers from netMgr that are not
+	// already in the federation active list. Manually added peers (via
+	// /api/network/peers) are bridged to the trust pool, but if the bridge
+	// fails or the peer is not yet active in the pool, broadcasts would
+	// target zero peers. This ensures manual peers always receive announcements.
+	if netMgr != nil {
+		seen := make(map[string]bool, len(peers))
+		for _, p := range peers {
+			seen[p.NodeID] = true
+		}
+		for _, mp := range netMgr.GetPeers() {
+			if mp.NodeID == "" || seen[mp.NodeID] {
+				continue
+			}
+			if mp.Status != "online" && mp.Status != "" {
+				continue
+			}
+			// Convert PeerInfo to NodeInfo for broadcast targeting
+			peers = append(peers, NodeInfo{
+				NodeID:    mp.NodeID,
+				Addresses: mp.Addresses,
+				Endpoint:  firstAddress(mp.Addresses),
+				Status:    "active",
+				LastSeen:  mp.LastSeen,
+				PubKey:    mp.PubKey,
+			})
+			seen[mp.NodeID] = true
+		}
+	}
 	if len(peers) == 0 {
 		slog.Debug("no peers to broadcast announcement to")
 		return
