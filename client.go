@@ -999,6 +999,11 @@ func siderBuildHeaders(token string) http.Header {
 	h.Set("Authorization", "Bearer "+token)
 	h.Set("Cookie", "token=Bearer%20"+token+"; refresh_token=discard")
 	h.Set("X-Trace-Id", newUUID())
+	// v4.6.52: headers observed in real Sider web client (DevTools 2026-10-05).
+	// The web UI sends these on every chat API request.
+	h.Set("X-App-Name", "ChitChat_Web")
+	h.Set("X-App-Version", "1.0.0")
+	h.Set("X-Time-Zone", "Asia/Shanghai")
 	return h
 }
 
@@ -1028,19 +1033,14 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 			"user_input_text": text,
 		})
 	}
-	// Sider web API: cid/parent_message_id are 24-char hex (12 bytes), NOT UUID.
-	// The working web client uses DIFFERENT values: cid is the session ID
-	// (stable across messages), parent_message_id is unique per message.
+	// v4.6.52: Sider web client sends EMPTY cid/parent_message_id for new
+	// conversations (verified via browser DevTools 2026-10-05). Previously we
+	// generated random 24-char hex, which caused Sider to return empty
+	// responses (looking up a non-existent conversation).
 	// Also: the payload must NOT include a "stream" field.
-	b1 := make([]byte, 12)
-	_, _ = rand.Read(b1)
-	b2 := make([]byte, 12)
-	_, _ = rand.Read(b2)
-	cid := fmt.Sprintf("%x", b1)
-	parentID := fmt.Sprintf("%x", b2)
 	return map[string]any{
-		"cid":               cid,
-		"parent_message_id": parentID,
+		"cid":               "",
+		"parent_message_id": "",
 		"model":             model,
 		"from":              "chat",
 		"client_prompt":     map[string]any{},
