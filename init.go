@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -114,18 +115,38 @@ func initCore() {
 
 // initAllFederation initializes all federation-related components (v3.0).
 func initAllFederation() {
-	initNode("data")
-	LoadGenesisConfig("data")
-	initFederation("data")
+	// v4.6.51: use absolute data dir path. The updater writes temp files to
+	// dataDir, and relative paths break if the working directory changes
+	// during the update process (causing "no such file" errors on read-back).
+	dataDir := absDataDir("data")
+	initNode(dataDir)
+	LoadGenesisConfig(dataDir)
+	initFederation(dataDir)
 	initGossip()
-	initReputation("data")
-	initAllocationManager("data")
-	initMessages("data")
-	initNodeWeightManager("data")
-	initInviteManager("data")
-	initUpdateManager("data")
-	initContributionLedger("data")
+	initReputation(dataDir)
+	initAllocationManager(dataDir)
+	initMessages(dataDir)
+	initNodeWeightManager(dataDir)
+	initInviteManager(dataDir)
+	initUpdateManager(dataDir)
+	initContributionLedger(dataDir)
 	initNATManager()
+}
+
+// absDataDir converts a relative data directory to absolute based on the
+// executable's location. Falls back to the given path if absolute already
+// or if the conversion fails.
+func absDataDir(dir string) string {
+	if filepath.IsAbs(dir) {
+		return dir
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return dir
+	}
+	base := filepath.Dir(exe)
+	abs := filepath.Join(base, dir)
+	return abs
 }
 
 // initAllNetwork initializes P2P networking, event bus, metrics, rate limiting, and load balancing.
