@@ -655,6 +655,28 @@ func handleFederationAnnounce(w http.ResponseWriter, r *http.Request) {
 	// Look up the announcing node
 	sender, ok := fed.GetNode(ann.NodeID)
 	if !ok {
+		// v4.6.48: also accept announcements from manually added peers
+		// (via /api/network/peers) that are not yet in the federation trust
+		// pool. This allows manual peering to work without waiting for the
+		// trust pool bridge.
+		if netMgr != nil {
+			for _, mp := range netMgr.GetPeers() {
+				if mp.NodeID == ann.NodeID && mp.PubKey != "" {
+					sender = &NodeInfo{
+						NodeID:    mp.NodeID,
+						PubKey:    mp.PubKey,
+						Addresses: mp.Addresses,
+						Status:    "active",
+					}
+					ok = true
+					// Bridge this peer into the trust pool for future lookups
+					fed.AddKnownNode(*sender)
+					break
+				}
+			}
+		}
+	}
+	if !ok {
 		slog.Warn("announcement from unknown node", "node_id", ann.NodeID)
 		writeError(w, http.StatusForbidden, "unknown announcing node")
 		return
