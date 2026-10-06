@@ -798,11 +798,12 @@ type IPUsageTracker struct {
 }
 
 // initPublicKeyQuota initializes the four-layer quota system.
+// Defaults are 0 (unlimited) — user requested "public quota unlimited" 2026-10-06.
 func initPublicKeyQuota() {
 	publicQuota = &PublicKeyQuota{
-		GlobalDailyLimit:  parseQuotaConfig("public_key_global_daily_limit", 100000),
-		IPDailyLimit:      parseQuotaConfig("public_key_ip_daily_limit", 10000),
-		HourlyWindowLimit: parseQuotaConfig("public_key_hourly_limit", 1000),
+		GlobalDailyLimit:  parseQuotaConfig("public_key_global_daily_limit", 0),
+		IPDailyLimit:      parseQuotaConfig("public_key_ip_daily_limit", 0),
+		HourlyWindowLimit: parseQuotaConfig("public_key_hourly_limit", 0),
 		ModelLimits:       loadModelLimits(),
 		ipUsage:           make(map[string]*IPUsageTracker),
 		hourlyUsage:       make(map[string]int64),
@@ -850,6 +851,8 @@ func loadModelLimits() map[string]int64 {
 }
 
 // parseQuotaConfig reads a config key as int64, falling back to default.
+// A config value of "0" means unlimited (disables the limit). Empty or
+// invalid values fall back to default.
 func parseQuotaConfig(key string, defaultVal int64) int64 {
 	if cfg == nil {
 		return defaultVal
@@ -859,9 +862,10 @@ func parseQuotaConfig(key string, defaultVal int64) int64 {
 		return defaultVal
 	}
 	parsed, err := strconv.ParseInt(v, 10, 64)
-	if err != nil || parsed <= 0 {
+	if err != nil || parsed < 0 {
 		return defaultVal
 	}
+	// 0 means unlimited
 	return parsed
 }
 
@@ -898,27 +902,30 @@ func (g *GlobalPoolManager) AdjustQuota(ip string, model string, reserved, actua
 }
 
 // CheckQuota performs the actual four-layer check.
+// A limit of 0 means unlimited (skips that layer).
 func (q *PublicKeyQuota) CheckQuota(ip string, model string, estimatedTokens int64) (bool, string, int64) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	q.resetIfNeededLocked()
 
-	// Layer 1: Global daily limit
-	remaining := q.GlobalDailyLimit - q.globalUsedToday
-	if remaining <= 0 {
-		slog.Warn("public key quota: global daily limit exhausted",
-			"used", q.globalUsedToday,
-			"limit", q.GlobalDailyLimit,
-		)
-		return false, "global daily quota exhausted", 0
-	}
-	if q.globalUsedToday+estimatedTokens > q.GlobalDailyLimit {
-		return false, "global daily quota would be exceeded", remaining
+	// Layer 1: Global daily limit (0 = unlimited)
+	if q.GlobalDailyLimit > 0 {
+		remaining := q.GlobalDailyLimit - q.globalUsedToday
+		if remaining <= 0 {
+			slog.Warn("public key quota: global daily limit exhausted",
+				"used", q.globalUsedToday,
+				"limit", q.GlobalDailyLimit,
+			)
+			return false, "global daily quota exhausted", 0
+		}
+		if q.globalUsedToday+estimatedTokens > q.GlobalDailyLimit {
+			return false, "global daily quota would be exceeded", remaining
+		}
 	}
 
-	// Layer 2: Per-IP daily limit
-	if ip != "" {
+	// Layer 2: Per-IP daily limit (0 = unlimited)
+	if q.IPDailyLimit > 0 && ip != "" {
 		tracker, ok := q.ipUsage[ip]
 		if !ok {
 			tracker = &IPUsageTracker{LastReset: time.Now()}
@@ -938,20 +945,25 @@ func (q *PublicKeyQuota) CheckQuota(ip string, model string, estimatedTokens int
 		}
 	}
 
-	// Layer 3: Hourly window limit
-	hourKey := time.Now().Format("2006-01-02-15")
-	hourlyUsed := q.hourlyUsage[hourKey]
-	if hourlyUsed+estimatedTokens > q.HourlyWindowLimit {
-		hourlyRemaining := q.HourlyWindowLimit - hourlyUsed
-		if hourlyRemaining < 0 {
-			hourlyRemaining = 0
+	// Layer 3: Hourly window limit (0 = unlimited)
+	if q.HourlyWindowLimit > 0 {
+		hourKey := time.Now().Format("2006-01-02-15")
+		hourlyUsed := q.hourlyUsage[hourKey]
+		if hourlyUsed+estimatedTokens > q.HourlyWindowLimit {
+			hourlyRemaining := q.HourlyWindowLimit - hourlyUsed
+			if hourlyRemaining < 0 {
+				hourlyRemaining = 0
+			}
+			slog.Warn("public key quota: hourly limit exhausted",
+				"hour", hourKey,
+				"used", hourlyUsed,
+				"limit", q.HourlyWindowLimit,
+			)
+			return false, "hourly quota exceeded", hourlyRemaining
 		}
-		slog.Warn("public key quota: hourly limit exhausted",
-			"hour", hourKey,
-			"used", hourlyUsed,
-			"limit", q.HourlyWindowLimit,
-		)
-		return false, "hourly quota exceeded", hourlyRemaining
+	} else {
+		// Unlimited: still need hourlyUsed for minRemaining calc below
+		// (but we skip it since unlimited)
 	}
 
 	// Layer 4: Per-model daily limit
@@ -973,9 +985,15 @@ func (q *PublicKeyQuota) CheckQuota(ip string, model string, estimatedTokens int
 		}
 	}
 
-	// All layers passed — compute minimum remaining
-	minRemaining := remaining
-	if ip != "" {
+	// All layers passed — compute minimum remaining (ignore unlimited layers)
+	minRemaining := int64(1 << 62) // large number for unlimited
+	if q.GlobalDailyLimit > 0 {
+		remaining := q.GlobalDailyLimit - q.globalUsedToday
+		if remaining < minRemaining {
+			minRemaining = remaining
+		}
+	}
+	if q.IPDailyLimit > 0 && ip != "" {
 		if tracker, ok := q.ipUsage[ip]; ok {
 			ipRem := q.IPDailyLimit - tracker.DailyUsed
 			if ipRem < minRemaining {
@@ -983,9 +1001,13 @@ func (q *PublicKeyQuota) CheckQuota(ip string, model string, estimatedTokens int
 			}
 		}
 	}
-	hourlyRem := q.HourlyWindowLimit - hourlyUsed
-	if hourlyRem < minRemaining {
-		minRemaining = hourlyRem
+	if q.HourlyWindowLimit > 0 {
+		hourKey := time.Now().Format("2006-01-02-15")
+		hourlyUsed := q.hourlyUsage[hourKey]
+		hourlyRem := q.HourlyWindowLimit - hourlyUsed
+		if hourlyRem < minRemaining {
+			minRemaining = hourlyRem
+		}
 	}
 	if model != "" {
 		if modelLimit, ok := q.ModelLimits[model]; ok {
@@ -1008,21 +1030,23 @@ func (q *PublicKeyQuota) ReserveQuota(ip string, model string, estimatedTokens i
 
 	q.resetIfNeededLocked()
 
-	// Layer 1: Global daily limit
-	remaining := q.GlobalDailyLimit - q.globalUsedToday
-	if remaining <= 0 {
-		slog.Warn("public key quota: global daily limit exhausted",
-			"used", q.globalUsedToday,
-			"limit", q.GlobalDailyLimit,
-		)
-		return false, "global daily quota exhausted", 0
-	}
-	if q.globalUsedToday+estimatedTokens > q.GlobalDailyLimit {
-		return false, "global daily quota would be exceeded", remaining
+	// Layer 1: Global daily limit (0 = unlimited)
+	if q.GlobalDailyLimit > 0 {
+		remaining := q.GlobalDailyLimit - q.globalUsedToday
+		if remaining <= 0 {
+			slog.Warn("public key quota: global daily limit exhausted",
+				"used", q.globalUsedToday,
+				"limit", q.GlobalDailyLimit,
+			)
+			return false, "global daily quota exhausted", 0
+		}
+		if q.globalUsedToday+estimatedTokens > q.GlobalDailyLimit {
+			return false, "global daily quota would be exceeded", remaining
+		}
 	}
 
-	// Layer 2: Per-IP daily limit
-	if ip != "" {
+	// Layer 2: Per-IP daily limit (0 = unlimited)
+	if q.IPDailyLimit > 0 && ip != "" {
 		tracker, ok := q.ipUsage[ip]
 		if !ok {
 			tracker = &IPUsageTracker{LastReset: time.Now()}
@@ -1037,15 +1061,17 @@ func (q *PublicKeyQuota) ReserveQuota(ip string, model string, estimatedTokens i
 		}
 	}
 
-	// Layer 3: Hourly window limit
-	hourKey := time.Now().Format("2006-01-02-15")
-	hourlyUsed := q.hourlyUsage[hourKey]
-	if hourlyUsed+estimatedTokens > q.HourlyWindowLimit {
-		hourlyRemaining := q.HourlyWindowLimit - hourlyUsed
-		if hourlyRemaining < 0 {
-			hourlyRemaining = 0
+	// Layer 3: Hourly window limit (0 = unlimited)
+	if q.HourlyWindowLimit > 0 {
+		hourKey := time.Now().Format("2006-01-02-15")
+		hourlyUsed := q.hourlyUsage[hourKey]
+		if hourlyUsed+estimatedTokens > q.HourlyWindowLimit {
+			hourlyRemaining := q.HourlyWindowLimit - hourlyUsed
+			if hourlyRemaining < 0 {
+				hourlyRemaining = 0
+			}
+			return false, "hourly quota exceeded", hourlyRemaining
 		}
-		return false, "hourly quota exceeded", hourlyRemaining
 	}
 
 	// Layer 4: Per-model daily limit
@@ -1071,15 +1097,23 @@ func (q *PublicKeyQuota) ReserveQuota(ip string, model string, estimatedTokens i
 		tracker.HourlyUsed += estimatedTokens
 	}
 
+	// Always track hourly usage (for stats), even if unlimited
+	hourKey := time.Now().Format("2006-01-02-15")
 	q.hourlyUsage[hourKey] += estimatedTokens
 
 	if model != "" {
 		q.modelUsage[model] += estimatedTokens
 	}
 
-	// Compute minimum remaining after reservation
-	minRemaining := q.GlobalDailyLimit - q.globalUsedToday
-	if ip != "" {
+	// Compute minimum remaining after reservation (ignore unlimited layers)
+	minRemaining := int64(1 << 62)
+	if q.GlobalDailyLimit > 0 {
+		rem := q.GlobalDailyLimit - q.globalUsedToday
+		if rem < minRemaining {
+			minRemaining = rem
+		}
+	}
+	if q.IPDailyLimit > 0 && ip != "" {
 		if tracker, ok := q.ipUsage[ip]; ok {
 			ipRem := q.IPDailyLimit - tracker.DailyUsed
 			if ipRem < minRemaining {
@@ -1087,9 +1121,11 @@ func (q *PublicKeyQuota) ReserveQuota(ip string, model string, estimatedTokens i
 			}
 		}
 	}
-	hourlyRem := q.HourlyWindowLimit - q.hourlyUsage[hourKey]
-	if hourlyRem < minRemaining {
-		minRemaining = hourlyRem
+	if q.HourlyWindowLimit > 0 {
+		hourlyRem := q.HourlyWindowLimit - q.hourlyUsage[hourKey]
+		if hourlyRem < minRemaining {
+			minRemaining = hourlyRem
+		}
 	}
 	if model != "" {
 		if modelLimit, ok := q.ModelLimits[model]; ok {
