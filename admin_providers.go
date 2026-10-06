@@ -769,3 +769,39 @@ func handleGetProviderModels(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, 200, map[string]any{"models": models, "count": len(models)})
 }
+
+// handleReloadProviders hot-reloads provider config from disk (no restart).
+// POST /api/admin/providers/reload (admin only via withAuth wrapper).
+// Use case: user adds a new custom model to providers.json via SSH or file
+// edit, then calls this API to make it take effect immediately. The new
+// model will be included in the next federation broadcast, so it auto-syncs
+// to peers without restart.
+func handleReloadProviders(w http.ResponseWriter, r *http.Request) {
+	if pm == nil {
+		writeError(w, 500, "provider manager not initialized")
+		return
+	}
+	if err := pm.Reload(); err != nil {
+		slog.Error("provider hot-reload failed", "error", err)
+		writeError(w, 500, fmt.Sprintf("reload failed: %v", err))
+		return
+	}
+	// Count total enabled models for response
+	count := 0
+	for _, p := range pm.GetAllRaw() {
+		if !p.Enabled {
+			continue
+		}
+		for _, m := range p.Models {
+			if m.Enabled {
+				count++
+			}
+		}
+	}
+	slog.Info("provider hot-reload completed via API")
+	writeJSON(w, 200, map[string]any{
+		"ok":             true,
+		"message":        "providers reloaded, new models will sync via federation",
+		"enabled_models": count,
+	})
+}

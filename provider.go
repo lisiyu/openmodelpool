@@ -77,6 +77,50 @@ func (m *ProviderManager) load() {
 	}
 }
 
+// Reload re-reads providers from disk (hot-reload for new custom models).
+// Thread-safe: takes write lock, clears in-memory state, reloads from file.
+// Called by POST /api/admin/providers/reload (admin only).
+// After reload, the federation will broadcast the updated model list on
+// the next gossip interval, so new models auto-sync to peers.
+func (m *ProviderManager) Reload() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	b, err := os.ReadFile(m.dataPath)
+	if err != nil {
+		return err
+	}
+	var list []Provider
+	if err := json.Unmarshal(b, &list); err != nil {
+		return err
+	}
+
+	// Clear existing and reload (same logic as load(), but with lock held)
+	m.providers = make(map[string]Provider)
+	m.cacheValid = false
+	m.cachedAll = nil
+
+	for _, p := range list {
+		if p.APIKey != "" && IsEncrypted(p.APIKey) {
+			p.APIKey = decryptField(p.APIKey)
+		}
+		for i := range p.APIKeys {
+			if p.APIKeys[i].Key != "" && IsEncrypted(p.APIKeys[i].Key) {
+				p.APIKeys[i].Key = decryptField(p.APIKeys[i].Key)
+			}
+		}
+		if p.Proxy != "" && IsEncrypted(p.Proxy) {
+			p.Proxy = decryptField(p.Proxy)
+		}
+		migrateProviderKeys(&p)
+		migrateSiderType(&p)
+		p.AccessControl = normalizeAccessControl(p.AccessControl)
+		m.providers[p.ID] = p
+	}
+	slog.Info("providers reloaded (hot-reload)", "count", len(m.providers))
+	return nil
+}
+
 // migrateProviderKeys migrates a legacy single APIKey to the APIKeys array.
 // Returns true if migration occurred.
 func migrateProviderKeys(p *Provider) bool {

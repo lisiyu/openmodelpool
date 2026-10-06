@@ -68,6 +68,8 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/diagnostics", rateLimitByIP(10, "diagnostics")(withAuth(handleDiagnostics)))
 	mux.HandleFunc("GET /api/admin/security/check", rateLimitByIP(10, "security_check")(withAuth(handleSecurityCheck)))
 	mux.HandleFunc("GET /api/admin/goroutines", rateLimitByIP(5, "goroutines")(withAuth(handleGoroutineDump)))
+	// Provider hot-reload (no restart needed for new custom models)
+	mux.HandleFunc("POST /api/admin/providers/reload", withAuth(handleReloadProviders))
 	// Ledger transparency (P2-2): where contributed compute came from + integrity
 	mux.HandleFunc("GET /api/admin/ledger/transparency", rateLimitByIP(10, "ledger_transparency")(withAuth(handleAdminLedgerTransparency)))
 	mux.HandleFunc("GET /api/admin/ledger/contributors", rateLimitByIP(10, "ledger_contributors")(withAuth(handleAdminLedgerContributors)))
