@@ -1489,10 +1489,13 @@ func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *Route
 	defer resp.Body.Close()
 
 	// P2P-G1：远端明确表示无法服务（502/503/504）时视为可重试，换下一个
-	// 候选节点；其他状态码（含 4xx 与成功）直接回传给客户端。
+	// 候选节点；404（模型在远端不存在）也视为可重试，因为本地或其他候选
+	// 可能有该模型——直接回传 404 会导致本地可用模型被误判为不可用。
+	// 其他 4xx 与成功直接回传给客户端。
 	if resp.StatusCode == http.StatusBadGateway ||
 		resp.StatusCode == http.StatusServiceUnavailable ||
-		resp.StatusCode == http.StatusGatewayTimeout {
+		resp.StatusCode == http.StatusGatewayTimeout ||
+		resp.StatusCode == http.StatusNotFound {
 		slog.Warn("gateway: remote cannot serve, trying next candidate",
 			"node_id", entry.NodeID, "status", resp.StatusCode)
 		if netMgr != nil {
@@ -1627,18 +1630,33 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 			}
 			modelSrc[m.ID]["local"] = true
 		}
-		// Hardcode Sider's 10 models (GetRaw has data inconsistency)
-		siderIDs := []string{
-			"sider", "deepseek-v4.1-flash", "qwen3.8-max", "claude-fable-5.1",
-			"gpt-5.6-sol", "gpt-6-astra", "gpt-6.1-sol", "grok-4.3",
-			"deepseek-v4-pro", "deepseek-v4.1-pro",
-		}
-		for _, id := range siderIDs {
-			if modelSrc[id] == nil {
-				modelSrc[id] = make(map[string]bool)
+		// v4.6.54: Ensure all enabled Sider models are marked as local.
+		// Workaround for in-memory ProviderManager data inconsistency where
+		// AllModelsFiltered returns only 11 of 14 Sider models for certain
+		// key types. Reads directly from provider config to get the full list.
+		// TODO: Fix the root cause in ProviderManager data loading.
+		if raw, ok := pm.GetRaw("sider"); ok && raw.Enabled {
+			for _, mdl := range raw.Models {
+				if !mdl.Enabled {
+					continue
+				}
+				if modelSrc[mdl.ID] == nil {
+					modelSrc[mdl.ID] = make(map[string]bool)
+				}
+				modelSrc[mdl.ID]["local"] = true
+				// Remove mesh sources for local Sider models to prevent
+				// federation re-announcement loop from showing them as remote.
+				for src := range modelSrc[mdl.ID] {
+					if src != "local" {
+						delete(modelSrc[mdl.ID], src)
+					}
+				}
 			}
-			modelSrc[id]["local"] = true
 		}
+		// NOTE: Removed hardcoded Sider model list (v4.6.42 workaround for
+		// "GetRaw has data inconsistency"). AllModelsFiltered now correctly
+		// returns all enabled Sider models via the provider bypass.
+		// Hardcoding stale IDs caused 11-vs-14 discrepancy (2026-10-06).
 	}
 
 	// Build deduplicated list with per-model source annotation.

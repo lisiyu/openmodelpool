@@ -911,12 +911,13 @@ func (m *ProviderManager) AllModelsFiltered(keyType string) []ModelInfo {
 			continue
 		}
 		// Skip providers without API keys — models can't be served
-		if p.APIKey == "" && len(p.APIKeys) == 0 {
+		// (Sider bypasses: its key validity is verified via test-all-keys,
+		// and the health checker marks it healthy; the access-control plumbing
+		// for its multi-key array has proven unreliable)
+		if p.ID != "sider" && p.APIKey == "" && len(p.APIKeys) == 0 {
 			continue
 		}
-		// Check access control (Sider bypasses: its key validity is verified via test-all-keys,
-		// and the health checker marks it healthy; the access-control plumbing for its
-		// multi-key array has proven unreliable)
+		// Check access control (Sider bypasses for same reason as above)
 		if p.ID != "sider" && !providerAllowsKeyType(p, keyType) {
 			continue
 		}

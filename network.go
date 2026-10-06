@@ -440,7 +440,10 @@ func (rt *RouteTable) Count() int {
 }
 
 // GetByModel returns all non-expired entries that can serve the specified model.
-// If an entry has no Models list, it's considered able to serve any model.
+// An entry with an empty/nil Models list is skipped (fail-closed): we cannot
+// assume it serves the model. Previously empty meant "any model", which caused
+// stale route entries (created via Put without Models) to hijack requests for
+// models they don't have, leading to 404s instead of local fallback.
 func (rt *RouteTable) GetByModel(model string) []RouteEntry {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
@@ -450,10 +453,9 @@ func (rt *RouteTable) GetByModel(model string) []RouteEntry {
 		if now.Sub(e.UpdatedAt) > routeTTL {
 			continue
 		}
-		// If Models is empty/nil, the node can serve any model
+		// Fail-closed: empty Models list means we don't know what it serves,
+		// so don't return it as a candidate. (Previously this meant "any".)
 		if len(e.Models) == 0 {
-			cp := *e
-			result = append(result, cp)
 			continue
 		}
 		// Check if model is in the list
@@ -526,6 +528,12 @@ func (rt *RouteTable) SelectRankedNodes(model string, limit int) []RouteEntry {
 		score float64
 	}
 	ranked := make([]scored, 0, len(candidates))
+	// Prefer local node: if we have the model locally, avoid an unnecessary
+	// network hop. Get selfID for the local-preference bonus.
+	selfID := ""
+	if netMgr != nil {
+		selfID = netMgr.GetNodeID()
+	}
 	for _, e := range candidates {
 		if e.FailCount >= gatewayFailoverMaxFails {
 			continue
@@ -537,6 +545,12 @@ func (rt *RouteTable) SelectRankedNodes(model string, limit int) []RouteEntry {
 		// Score: lower is better（与 SelectBestNode 同公式，另加失败惩罚）
 		score := e.LatencyMS*0.4 + e.LoadScore*1000*0.3 + (1.0/contribRatio)*500*0.3 +
 			float64(e.FailCount)*gatewayFailoverScorePenalty
+		// Local preference: if this is our own node, give it a large bonus
+		// (lower score) so local handling is preferred over remote forwarding.
+		// This avoids routing loops and unnecessary hops for locally-available models.
+		if selfID != "" && e.NodeID == selfID {
+			score -= 100000 // large bonus ensures local ranks first
+		}
 		ranked = append(ranked, scored{entry: e, score: score})
 	}
 
