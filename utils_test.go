@@ -3098,11 +3098,14 @@ func TestRouteTable_Remove(t *testing.T) {
 }
 
 func TestRouteTable_GetByModel_AnyModel(t *testing.T) {
+	// v4.6.54: Changed to fail-closed. Entries with empty/nil Models are
+	// skipped (previously they matched any model, which allowed stale route
+	// entries to hijack requests and cause 404s).
 	rt := newTestRT()
 	rt.UpsertEntry(&RouteEntry{NodeID: "n1", UpdatedAt: time.Now()})
 	result := rt.GetByModel("gpt-4")
-	if len(result) != 1 {
-		t.Errorf("entries with no Models should match any model, got %d", len(result))
+	if len(result) != 0 {
+		t.Errorf("entries with no Models should be skipped (fail-closed), got %d", len(result))
 	}
 }
 
