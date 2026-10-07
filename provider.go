@@ -246,8 +246,8 @@ func (m *ProviderManager) GetAll() []Provider {
 	seen := make(map[string]bool)
 	var result []Provider
 
-	// Configured first
-	for _, p := range m.providers {
+	// Configured first (deterministic ID order)
+	for _, p := range m.sortedConfiguredLocked() {
 		result = append(result, p.Safe())
 		seen[p.ID] = true
 	}
@@ -275,6 +275,26 @@ func (m *ProviderManager) GetConfigured() []Provider {
 	return result
 }
 
+// sortedConfiguredLocked returns configured providers in deterministic
+// ID-sorted order. Caller must hold at least m.mu.RLock().
+//
+// Iterating m.providers directly leaks Go's randomized map order into model
+// listing order, model->provider attribution on shared model IDs, and (via
+// the stable sorts in sortCandidates) routing tie-breaks — identical
+// requests could flip between providers from call to call.
+func (m *ProviderManager) sortedConfiguredLocked() []Provider {
+	ids := make([]string, 0, len(m.providers))
+	for id := range m.providers {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]Provider, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, m.providers[id])
+	}
+	return out
+}
+
 // GetAllRaw returns all providers with full API keys (internal use, for routing).
 func (m *ProviderManager) GetAllRaw() []Provider {
 	m.mu.RLock()
@@ -283,7 +303,7 @@ func (m *ProviderManager) GetAllRaw() []Provider {
 	seen := make(map[string]bool)
 	var result []Provider
 
-	for _, p := range m.providers {
+	for _, p := range m.sortedConfiguredLocked() {
 		result = append(result, p)
 		seen[p.ID] = true
 	}
@@ -309,8 +329,8 @@ func (m *ProviderManager) GetVisible(owner string) []Provider {
 	seen := make(map[string]bool)
 	var result []Provider
 
-	// Own providers
-	for _, p := range m.providers {
+	// Own providers (deterministic ID order)
+	for _, p := range m.sortedConfiguredLocked() {
 		if p.Owner == owner {
 			result = append(result, p.Safe())
 			seen[p.ID] = true
