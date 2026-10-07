@@ -110,6 +110,22 @@ func proxyHTTPClient(p Provider, timeout time.Duration) *http.Client {
 	return proxyHTTPClientForURL(p, p.BaseURL, timeout)
 }
 
+// socks5ProxyAuth extracts SOCKS5 username/password credentials from a proxy URL.
+// Returns nil when the URL carries no userinfo, preserving the previous
+// no-authentication behavior.
+//
+// Previously the userinfo was silently dropped (a nil *proxy.Auth was passed to
+// proxy.SOCKS5), so a credential-bearing proxy URL such as
+// socks5://user:pass@host:1080 always failed at the SOCKS handshake, and the
+// failure surfaced misleadingly as a provider key/auth error.
+func socks5ProxyAuth(proxyURL *url.URL) *socksproxy.Auth {
+	if proxyURL == nil || proxyURL.User == nil {
+		return nil
+	}
+	pw, _ := proxyURL.User.Password()
+	return &socksproxy.Auth{User: proxyURL.User.Username(), Password: pw}
+}
+
 // proxyHTTPClientForURL returns an HTTP client configured with the provider's proxy.
 // targetURL is the URL that will actually be requested. SEC-SSRF-1: the SSRF
 // guard must inspect this final URL — not just p.BaseURL — because some
@@ -164,7 +180,7 @@ func proxyHTTPClientForURL(p Provider, targetURL string, timeout time.Duration) 
 			if err != nil {
 				return nil, err
 			}
-			socksDialer, err := socksproxy.SOCKS5("tcp", proxyURL.Host, nil, socksproxy.Direct)
+			socksDialer, err := socksproxy.SOCKS5("tcp", proxyURL.Host, socks5ProxyAuth(proxyURL), socksproxy.Direct)
 			if err != nil {
 				return nil, err
 			}
