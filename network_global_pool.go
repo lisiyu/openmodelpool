@@ -1092,7 +1092,15 @@ func (q *PublicKeyQuota) ReserveQuota(ip string, model string, estimatedTokens i
 	q.globalUsedToday += estimatedTokens
 
 	if ip != "" {
-		tracker := q.ipUsage[ip]
+		tracker, ok := q.ipUsage[ip]
+		if !ok {
+			// v4.6.56 fix: Layer 2 above only creates the tracker when
+			// IPDailyLimit > 0. With the v4.6.54 default of 0 (unlimited),
+			// the tracker was never created, causing a nil-pointer panic
+			// here on the first request from a new IP.
+			tracker = &IPUsageTracker{LastReset: time.Now()}
+			q.ipUsage[ip] = tracker
+		}
 		tracker.DailyUsed += estimatedTokens
 		tracker.HourlyUsed += estimatedTokens
 	}
