@@ -82,6 +82,13 @@ func handleSiderTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "Sider not configured")
 		return
 	}
+	// v4.6.56 fix: also check the multi-key APIKeys array, not just the
+	// legacy APIKey field. handleTestProvider/testConnection already does
+	// this via GetEffectiveAPIKey, but handleSiderTest rejected providers
+	// that only have keys in the array with "Sider token not configured".
+	if p.APIKey == "" && len(p.APIKeys) > 0 {
+		p.APIKey = p.GetEffectiveAPIKey()
+	}
 	if p.APIKey == "" {
 		writeJSON(w, 200, map[string]any{"valid": false, "message": "Sider token not configured"})
 		return
