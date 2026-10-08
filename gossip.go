@@ -728,6 +728,101 @@ func handleFederationAnnounce(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 }
 
+// pruneSharedProviders returns the subset of providers whose IDs are in
+// keepIDs. A nil keepIDs means the sender does not support pruning (old
+// version) and nothing is removed; an empty (non-nil) list prunes everything.
+// Pure function so the pruning rule is unit-testable without HTTP scaffolding.
+func pruneSharedProviders(providers []SharedProvider, keepIDs []string) []SharedProvider {
+	if keepIDs == nil {
+		return providers
+	}
+	keep := make(map[string]bool, len(keepIDs))
+	for _, id := range keepIDs {
+		keep[id] = true
+	}
+	pruned := make([]SharedProvider, 0, len(providers))
+	for _, sp := range providers {
+		if keep[sp.ProviderID] {
+			pruned = append(pruned, sp)
+		}
+	}
+	return pruned
+}
+
+// handleProviderSync is the HTTP handler for POST /federation/providers-sync.
+// It processes a sender's complete list of currently-shared provider IDs and
+// prunes the sender's stored providers to that set, so providers that were
+// unshared stop being listed ("取消共享后要剔除"). Auth, sender lookup and
+// signature verification mirror handleFederationAnnounce.
+func handleProviderSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if fed == nil || !fed.IsEnabled() {
+		writeError(w, http.StatusServiceUnavailable, "federation is not enabled")
+		return
+	}
+
+	// Parse the sync message
+	var msg ProviderSyncMessage
+	if err := readJSON(w, r, &msg); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid sync message")
+		return
+	}
+
+	// Look up the announcing node (same bridging as handleFederationAnnounce)
+	sender, ok := fed.GetNode(msg.NodeID)
+	if !ok {
+		if netMgr != nil {
+			for _, mp := range netMgr.GetPeers() {
+				if mp.NodeID == msg.NodeID && mp.PubKey != "" {
+					sender = &NodeInfo{
+						NodeID:    mp.NodeID,
+						PubKey:    mp.PubKey,
+						Addresses: mp.Addresses,
+						Status:    "active",
+					}
+					ok = true
+					fed.AddKnownNode(*sender)
+					break
+				}
+			}
+		}
+	}
+	if !ok {
+		slog.Warn("provider sync from unknown node", "node_id", msg.NodeID)
+		writeError(w, http.StatusForbidden, "unknown announcing node")
+		return
+	}
+
+	// Verify signature
+	if !VerifyJSONSig(sender.PubKey, msg, msg.Signature) {
+		slog.Warn("provider sync signature verification failed",
+			"node_id", msg.NodeID)
+		writeError(w, http.StatusForbidden, "invalid signature")
+		return
+	}
+
+	// Prune the sender's shared providers to the announced set. Providers in
+	// the sync list but missing locally arrive via the regular per-provider
+	// announcements; pruning here is delete-only and never invents entries.
+	updated := *sender
+	before := len(updated.SharedProviders)
+	updated.SharedProviders = pruneSharedProviders(updated.SharedProviders, msg.ProviderIDs)
+	updated.LastSeen = time.Now().UTC().Format(time.RFC3339)
+	fed.UpdateNodeInfo(updated)
+	fed.save()
+
+	slog.Info("processed provider sync",
+		"from", msg.NodeID,
+		"kept", len(updated.SharedProviders),
+		"pruned", before-len(updated.SharedProviders))
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+}
+
 // broadcastLocalProviders signs and sends a provider announcement for every
 // provider this node currently shares (via getLocalSharedProviders) to all
 // active federation peers. The receiver's handleFederationAnnounce stores the
@@ -748,11 +843,73 @@ func (g *GossipManager) broadcastLocalProviders() {
 			Capacity:   sp.Capacity,
 		})
 	}
+	// After the per-provider announcements, broadcast the full provider ID
+	// list so receivers prune providers that were unshared.
+	g.broadcastProviderSync()
 }
 
 // broadcastAnnouncement sends a ProviderAnnouncement to all known active peers
 // asynchronously. Tries all available addresses per peer. The announcement is signed before broadcasting.
 func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
+	peers := collectBroadcastPeers()
+	if len(peers) == 0 {
+		slog.Debug("no peers to broadcast announcement to")
+		return
+	}
+
+	// Sign the announcement with our node identity
+	ann.NodeID = node.NodeID()
+	ann.Timestamp = time.Now().UTC().Format(time.RFC3339)
+	ann.Signature = node.SignJSON(ann)
+
+	body, err := json.Marshal(ann)
+	if err != nil {
+		slog.Error("failed to marshal announcement for broadcast", "error", err)
+		return
+	}
+
+	postJSONToPeers(peers, "/api/federation/announce", body, "announcement")
+}
+
+// broadcastProviderSync sends this node's complete list of currently-shared
+// provider IDs to all known active peers, so receivers can prune providers
+// that were unshared. Called after the per-provider announcements in
+// broadcastLocalProviders.
+func (g *GossipManager) broadcastProviderSync() {
+	if fed == nil || !fed.IsEnabled() || node == nil || !node.IsInitialized() {
+		return
+	}
+	peers := collectBroadcastPeers()
+	if len(peers) == 0 {
+		slog.Debug("no peers to broadcast provider sync to")
+		return
+	}
+
+	_, providers := fed.getLocalSharedProviders()
+	ids := make([]string, 0, len(providers))
+	for _, sp := range providers {
+		ids = append(ids, sp.ProviderID)
+	}
+
+	msg := ProviderSyncMessage{
+		NodeID:      node.NodeID(),
+		ProviderIDs: ids,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+	}
+	msg.Signature = node.SignJSON(msg)
+
+	body, err := json.Marshal(msg)
+	if err != nil {
+		slog.Error("failed to marshal provider sync for broadcast", "error", err)
+		return
+	}
+
+	postJSONToPeers(peers, "/api/federation/providers-sync", body, "provider sync")
+}
+
+// collectBroadcastPeers returns the active federation peers plus manually
+// added netMgr peers (v4.6.46 bridging), the target set for broadcasts.
+func collectBroadcastPeers() []NodeInfo {
 	peers := fed.GetActiveNodes()
 	// v4.6.46: also include manually added peers from netMgr that are not
 	// already in the federation active list. Manually added peers (via
@@ -783,22 +940,12 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 			seen[mp.NodeID] = true
 		}
 	}
-	if len(peers) == 0 {
-		slog.Debug("no peers to broadcast announcement to")
-		return
-	}
+	return peers
+}
 
-	// Sign the announcement with our node identity
-	ann.NodeID = node.NodeID()
-	ann.Timestamp = time.Now().UTC().Format(time.RFC3339)
-	ann.Signature = node.SignJSON(ann)
-
-	body, err := json.Marshal(ann)
-	if err != nil {
-		slog.Error("failed to marshal announcement for broadcast", "error", err)
-		return
-	}
-
+// postJSONToPeers POSTs body to path on every peer's endpoints, trying all
+// available addresses per peer. label names the payload in log messages.
+func postJSONToPeers(peers []NodeInfo, path string, body []byte, label string) {
 	var wg sync.WaitGroup
 	client := GetSharedHTTPClient()
 
@@ -815,10 +962,10 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 			for _, addr := range endpoints {
 				// P1 fix: wrap loop body so defer runs per-iteration
 				delivered := func() bool {
-					announceURL := fmt.Sprintf("%s/api/federation/announce", addr)
+					url := fmt.Sprintf("%s%s", addr, path)
 					aCtx, aCancel := context.WithTimeout(context.Background(), 15*time.Second)
 					defer aCancel()
-					req, err := http.NewRequestWithContext(aCtx, http.MethodPost, announceURL, bytes.NewReader(body))
+					req, err := http.NewRequestWithContext(aCtx, http.MethodPost, url, bytes.NewReader(body))
 					if err != nil {
 						return false
 					}
@@ -837,20 +984,21 @@ func (g *GossipManager) broadcastAnnouncement(ann ProviderAnnouncement) {
 						return false
 					}
 
-					slog.Debug("announcement delivered to peer", "peer_id", p.NodeID, "addr", addr)
+					slog.Debug(label+" delivered to peer", "peer_id", p.NodeID, "addr", addr)
 					return true
 				}()
 				if delivered {
 					return
 				}
 			}
-			slog.Debug("failed to deliver announcement to peer on all addresses",
+			slog.Debug("failed to deliver "+label+" to peer on all addresses",
 				"peer_id", p.NodeID)
 		}(peer)
 	}
 
 	wg.Wait()
-	slog.Info("announcement broadcast complete", "peers_targeted", len(peers)-1)
+
+	slog.Info(label+" broadcast complete", "peers_targeted", len(peers)-1)
 }
 
 // stop halts the gossip manager's background loops.

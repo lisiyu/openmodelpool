@@ -654,6 +654,19 @@ type ProviderAnnouncement struct {
 	Signature  string   `json:"signature"`
 }
 
+// ProviderSyncMessage carries a node's complete list of currently-shared
+// provider IDs. It is broadcast after the per-provider announcements so
+// receivers can prune providers that were unshared ("取消共享后要剔除").
+// A separate message type (instead of a field on ProviderAnnouncement) keeps
+// the signed announcement struct unchanged, so old nodes keep verifying
+// announcements from new nodes.
+type ProviderSyncMessage struct {
+	NodeID      string   `json:"node_id"`
+	ProviderIDs []string `json:"provider_ids"`
+	Timestamp   string   `json:"timestamp"`
+	Signature   string   `json:"signature"`
+}
+
 // RelayRequest is sent to a remote node for provider relay.
 type RelayRequest struct {
 	Model    string         `json:"model"`

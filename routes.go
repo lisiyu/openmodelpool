@@ -224,6 +224,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/federation/pool", withFederationAuth(handleFederationPool))
 	mux.HandleFunc("POST /api/federation/gossip", withFederationAuth(handleFederationGossip))
 	mux.HandleFunc("POST /api/federation/announce", withFederationAuth(handleFederationAnnounce))
+	mux.HandleFunc("POST /api/federation/providers-sync", withFederationAuth(handleProviderSync))
 	mux.HandleFunc("POST /api/federation/relay", rateLimitByIP(60, "federation_relay")(withProxyAuth(handleRelayRequest)))
 	mux.HandleFunc("GET /api/federation/reputations", withAuth(handleGetReputations))
 	mux.HandleFunc("POST /api/federation/score", withAuth(handlePostScore))
