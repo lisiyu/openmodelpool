@@ -515,6 +515,8 @@ func TestCapabilityProbeGate(t *testing.T) {
 	netMgr = newTestNetworkManager(t)
 	netMgr.config.NetworkEnabled = true
 
+	// Default is now OFF; explicitly enable for the open-gate case.
+	cfg.Set(cfgCapabilityProbeEnabled, "true")
 	if !capabilityProbeGateOpen() {
 		t.Fatal("gate should be open with network mode + federation + repMgr")
 	}
