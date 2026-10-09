@@ -1635,6 +1635,16 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 		// AllModelsFiltered returns only 11 of 14 Sider models for certain
 		// key types. Reads directly from provider config to get the full list.
 		// TODO: Fix the root cause in ProviderManager data loading.
+		// NOTE (v4.6.62): No longer strips mesh sources for Sider models.
+		// The old stripping was a workaround for the "re-announcement loop",
+		// but line-by-line analysis (2026-10-09) confirmed the loop cannot
+		// happen: broadcastLocalProviders only announces local providers
+		// (pm.GetAllRaw never includes remote announcements), and
+		// handleFederationAnnounce writes only to trust-pool NodeInfo,
+		// never to pm.providers. Stale announcements (the actual cause of
+		// the 37/14 count mismatch) are now pruned by providers-sync
+		// (v4.6.58). If both nodes genuinely share Sider, both sources
+		// are shown.
 		if raw, ok := pm.GetRaw("sider"); ok && raw.Enabled {
 			for _, mdl := range raw.Models {
 				if !mdl.Enabled {
@@ -1644,13 +1654,6 @@ func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 					modelSrc[mdl.ID] = make(map[string]bool)
 				}
 				modelSrc[mdl.ID]["local"] = true
-				// Remove mesh sources for local Sider models to prevent
-				// federation re-announcement loop from showing them as remote.
-				for src := range modelSrc[mdl.ID] {
-					if src != "local" {
-						delete(modelSrc[mdl.ID], src)
-					}
-				}
 			}
 		}
 		// NOTE: Removed hardcoded Sider model list (v4.6.42 workaround for
