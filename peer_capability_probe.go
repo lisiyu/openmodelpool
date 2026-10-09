@@ -71,7 +71,7 @@ import (
 // conservative defaults; e.g. CAPABILITY_PROBE_ENABLED env also works via
 // the cfg env fallback.
 const (
-	cfgCapabilityProbeEnabled   = "capability_probe_enabled"     // "true"/"false", default "true"
+	cfgCapabilityProbeEnabled   = "capability_probe_enabled"     // "true"/"false", default "false"
 	cfgCapabilityProbeTick      = "capability_probe_tick"        // loop tick duration, default "1m"
 	cfgCapabilityProbeMaxModels = "capability_probe_max_models"  // models probed per node per cycle, default "5"
 	cfgCapabilityProbeMaxConc   = "capability_probe_concurrency" // max concurrent probe HTTP requests, default "4"
@@ -146,7 +146,7 @@ func startPeerCapabilityProber() {
 	peerCapabilityProber = newPeerCapabilityProber()
 	goSafe("peer-capability-prober", peerCapabilityProber.loop)
 	slog.Info("peer capability prober initialized",
-		"enabled", probeCfgGet(cfgCapabilityProbeEnabled, "true"),
+		"enabled", probeCfgGet(cfgCapabilityProbeEnabled, "false"),
 		"tick", capabilityProbeTickInterval(),
 		"max_models_per_node", capabilityProbeMaxModels(),
 		"max_concurrency", capabilityProbeMaxConcurrency())
@@ -186,7 +186,7 @@ func capabilityProbeMaxConcurrency() int {
 // config toggle, network mode (network_enabled), federation enabled, and a
 // reputation manager to record into must all be present.
 func capabilityProbeGateOpen() bool {
-	if probeCfgGet(cfgCapabilityProbeEnabled, "true") != "true" {
+	if probeCfgGet(cfgCapabilityProbeEnabled, "false") != "true" {
 		return false
 	}
 	if netMgr == nil || !netMgr.IsNetworkEnabled() {

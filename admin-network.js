@@ -81,6 +81,89 @@ function refreshFederation() {
   toast('已刷新', 'info');
 }
 
+// 节点能力探测开关
+async function saveCapProbeToggle() {
+  const enabled = document.getElementById('capProbeToggle').checked;
+  updateToggleSlider('capProbeToggle', 'capProbeToggleSlider', enabled);
+  try {
+    const r = await authFetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({capability_probe_enabled: enabled ? 'true' : 'false'})
+    });
+    if (r.ok) {
+      toast(enabled ? '节点能力探测已开启' : '节点能力探测已关闭', 'success');
+    } else {
+      toast('保存失败', 'error');
+      document.getElementById('capProbeToggle').checked = !enabled;
+      updateToggleSlider('capProbeToggle', 'capProbeToggleSlider', !enabled);
+    }
+  } catch(e) {
+    toast('操作失败: ' + e.message, 'error');
+    document.getElementById('capProbeToggle').checked = !enabled;
+    updateToggleSlider('capProbeToggle', 'capProbeToggleSlider', !enabled);
+  }
+}
+
+async function saveCapProbeTick() {
+  const tick = document.getElementById('capProbeTick').value;
+  try {
+    const r = await authFetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({capability_probe_tick: tick})
+    });
+    if (r.ok) {
+      toast('探测间隔已保存: ' + tick, 'success');
+    } else {
+      toast('保存失败', 'error');
+    }
+  } catch(e) {
+    toast('操作失败: ' + e.message, 'error');
+  }
+}
+
+async function saveCapProbeMaxModels() {
+  const n = document.getElementById('capProbeMaxModels').value;
+  try {
+    const r = await authFetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({capability_probe_max_models: n})
+    });
+    if (r.ok) {
+      toast('每轮模型数已保存: ' + n, 'success');
+    } else {
+      toast('保存失败', 'error');
+    }
+  } catch(e) {
+    toast('操作失败: ' + e.message, 'error');
+  }
+}
+
+// 加载时回填探测器配置
+async function loadCapProbeConfig() {
+  try {
+    const r = await authFetch('/api/config');
+    if (!r.ok) return;
+    const cfg = await r.json();
+    const enabled = (cfg['capability_probe_enabled'] || 'false') === 'true';
+    const tick = cfg['capability_probe_tick'] || '1m';
+    const maxModels = cfg['capability_probe_max_models'] || '5';
+    const tgl = document.getElementById('capProbeToggle');
+    if (tgl) {
+      tgl.checked = enabled;
+      updateToggleSlider('capProbeToggle', 'capProbeToggleSlider', enabled);
+    }
+    const tickSel = document.getElementById('capProbeTick');
+    if (tickSel) tickSel.value = tick;
+    const mmSel = document.getElementById('capProbeMaxModels');
+    if (mmSel) mmSel.value = maxModels;
+  } catch(e) {
+    // 静默失败，不干扰页面加载
+  }
+}
+
 // Invite management
 async function createInvite() {
   const target = document.getElementById('inviteTarget').value.trim();
@@ -1331,3 +1414,5 @@ async function saveShareBoundary() {
   }
 }
 
+
+document.addEventListener('DOMContentLoaded', function() { try { loadCapProbeConfig(); } catch(e) {} });

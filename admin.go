@@ -176,7 +176,9 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Allow generic keys to be set (public_url, service_port, etc.)
-	genericKeys := []string{"public_url", "service_port", "node_name", "region"}
+	genericKeys := []string{"public_url", "service_port", "node_name", "region",
+		"capability_probe_enabled", "capability_probe_tick",
+		"capability_probe_max_models", "capability_probe_concurrency"}
 	for _, k := range genericKeys {
 		if v, ok := body[k]; ok {
 			// B60: Validate service_port is a valid port number
