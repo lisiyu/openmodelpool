@@ -415,6 +415,9 @@ func (um *UpdateManager) fetchLatestVersionLocked() VersionInfo {
 // ---------------------------------------------------------------------------
 
 // Load restores local + peer state from the integrity-protected snapshot.
+// Any in-flight phases (downloading/replacing/restarting) are reset to idle:
+// if the process restarted, the update is definitively not still running.
+// This prevents a stuck "更新进行中…" button after a crash or manual restart.
 func (um *UpdateManager) Load() {
 	path := filepath.Join(um.dataDir, updateStatusFile)
 	var snap updateStatusSnapshot
@@ -429,6 +432,27 @@ func (um *UpdateManager) Load() {
 	}
 	if snap.Local.Env != "" {
 		um.local = snap.Local
+	}
+	// Clear stale in-flight phases on startup.
+	inFlight := map[UpdatePhase]bool{
+		PhaseDownloading: true,
+		PhaseReplacing:   true,
+		PhaseRestarting:  true,
+	}
+	if inFlight[um.local.Phase] {
+		slog.Warn("update status: clearing stale in-flight local phase on startup",
+			"phase", um.local.Phase, "target", um.local.TargetVersion)
+		um.local.Phase = PhaseIdle
+		um.local.Progress = 0
+	}
+	for id, ps := range um.peers {
+		if inFlight[ps.Phase] {
+			slog.Warn("update status: clearing stale in-flight peer phase on startup",
+				"peer", id, "phase", ps.Phase, "target", ps.TargetVersion)
+			ps.Phase = PhaseIdle
+			ps.Progress = 0
+			um.peers[id] = ps
+		}
 	}
 }
 
