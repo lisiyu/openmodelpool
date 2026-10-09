@@ -162,17 +162,23 @@ async function loadModels(){
     const d=await r.json();
     log(`<span class="${r.ok?'res':'err'}">← HTTP ${r.status}</span> ${esc(JSON.stringify(d))}`);
     const rawModels=d.data||[];
-    // Group by node: local first, then federated peers. Within each group, sort by ID.
+    // Group by node: a model available from multiple sources appears under EACH source group.
     const localModels=[], fedModels={};
     rawModels.forEach(m=>{
       const srcs=m.mesh_sources||[];
       const isLocal=srcs.includes('local');
-      if(isLocal && srcs.length===1){
+      if(isLocal){
         localModels.push(m.id);
-      }else{
-        const label=srcs.filter(s=>s!=='local').join(',')||'未知节点';
-        if(!fedModels[label]) fedModels[label]=[];
-        fedModels[label].push(m.id);
+      }
+      srcs.filter(s=>s!=='local').forEach(src=>{
+        if(!fedModels[src]) fedModels[src]=[];
+        // Avoid duplicate if the same model appears twice from one node (shouldn't happen, but safe).
+        if(!fedModels[src].includes(m.id)) fedModels[src].push(m.id);
+      });
+      // No sources at all: put under unknown so it's not lost.
+      if(srcs.length===0){
+        if(!fedModels['未知节点']) fedModels['未知节点']=[];
+        fedModels['未知节点'].push(m.id);
       }
     });
     localModels.sort();
