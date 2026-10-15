@@ -93,9 +93,13 @@ func handleGeminiGenerateContent(w http.ResponseWriter, r *http.Request) {
 	}
 	stream := strings.HasSuffix(suffix, "streamGenerateContent")
 
-	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxGatewayBodySize+1))
+	bodyBytes, err := readRequestBody(w, r, maxGatewayBodySize)
 	if err != nil {
-		writeGeminiError(w, 400, "failed to read request body")
+		if isBodyReadTimeout(err) {
+			writeGeminiError(w, 408, "request body read timeout, please retry")
+		} else {
+			writeGeminiError(w, 400, "failed to read request body")
+		}
 		return
 	}
 	if len(bodyBytes) > maxGatewayBodySize {

@@ -40,9 +40,13 @@ func handleAzureChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxGatewayBodySize+1))
+	bodyBytes, err := readRequestBody(w, r, maxGatewayBodySize)
 	if err != nil {
-		writeError(w, 400, "failed to read request body")
+		if isBodyReadTimeout(err) {
+			writeError(w, 408, "request body read timeout, please retry")
+		} else {
+			writeError(w, 400, "failed to read request body")
+		}
 		return
 	}
 	if len(bodyBytes) > maxGatewayBodySize {

@@ -654,9 +654,15 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 	// G1 hardening (design §18.3 P1-5): buffer the request body once so we can
 	// sign the forward. The reverse proxy would otherwise consume the stream; we
 	// restore it after signing so the proxy forwards the original payload.
-	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxGatewayBodySize+1))
+	bodyBytes, err := readRequestBody(w, r, maxGatewayBodySize)
 	if err != nil {
-		writeError(w, 400, "failed to read request body")
+		if isBodyReadTimeout(err) {
+			slog.Warn("relay: request body read timeout",
+				"remote", r.RemoteAddr, "ua", r.UserAgent(), "path", r.URL.Path)
+			writeError(w, 408, "request body read timeout, please retry")
+		} else {
+			writeError(w, 400, "failed to read request body")
+		}
 		return
 	}
 	if len(bodyBytes) > maxGatewayBodySize {
@@ -1182,9 +1188,20 @@ var handleGatewayRequest = func(w http.ResponseWriter, r *http.Request) {
 
 	// Read and buffer the body so we can parse model and re-send.
 	// 10MB limit for AI model requests (large conversations + images).
-	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxGatewayBodySize+1))
+	// Uses the hardened reader: eager 100-continue, 15s bound, 408 on
+	// timeout so SDKs retry instead of treating it as a permanent 400.
+	bodyBytes, err := readRequestBody(w, r, maxGatewayBodySize)
 	if err != nil {
-		writeError(w, 400, "failed to read request body")
+		if isBodyReadTimeout(err) {
+			slog.Warn("gateway: request body read timeout",
+				"remote", r.RemoteAddr, "ua", r.UserAgent(),
+				"content_length", r.ContentLength, "path", r.URL.Path)
+			writeError(w, 408, "request body read timeout, please retry")
+		} else {
+			slog.Warn("gateway: failed to read request body",
+				"remote", r.RemoteAddr, "ua", r.UserAgent(), "err", err)
+			writeError(w, 400, "failed to read request body")
+		}
 		return
 	}
 	if len(bodyBytes) > maxGatewayBodySize {

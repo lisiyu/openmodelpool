@@ -50,10 +50,14 @@ type anthropicMessage struct {
 
 // handleAnthropicMessages handles POST /v1/messages in Anthropic API format.
 func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
-	// Read and parse the Anthropic request body
-	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	// Read and parse the Anthropic request body (hardened: 15s bound, 408 on timeout).
+	bodyBytes, err := readRequestBody(w, r, 1<<20)
 	if err != nil {
-		writeAnthropicError(w, 400, "failed to read request body")
+		if isBodyReadTimeout(err) {
+			writeAnthropicError(w, 408, "request body read timeout, please retry")
+		} else {
+			writeAnthropicError(w, 400, "failed to read request body")
+		}
 		return
 	}
 	r.Body.Close()

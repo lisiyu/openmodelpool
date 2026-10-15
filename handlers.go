@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -54,6 +56,53 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	defer limited.Close()
 	decoder := json.NewDecoder(limited)
 	return decoder.Decode(v)
+}
+
+// errBodyReadTimeout signals the request body stalled beyond bodyReadTimeout.
+var errBodyReadTimeout = errors.New("request body read timeout")
+
+// bodyReadTimeout bounds request-body reads. Deliberately shorter than the
+// server's ReadTimeout (30s): a stalled client fails fast with a retryable
+// 408 instead of hanging the full 30s and receiving a 400 that SDKs treat
+// as a permanent client error (no retry).
+const bodyReadTimeout = 15 * time.Second
+
+// readRequestBody reads and buffers the request body for maximum robustness:
+//  1. Eager 100-continue: if the client sent "Expect: 100-continue", emit the
+//     interim response immediately instead of letting middleware delay it,
+//     so the client never stalls waiting for permission to send the body.
+//  2. Bounded read: a stalled body fails fast with errBodyReadTimeout instead
+//     of blocking until the server's 30s ReadTimeout.
+//  3. The caller maps timeouts to 408 (retryable by SDKs) and other errors
+//     to 400, and logs the underlying cause with request context.
+func readRequestBody(w http.ResponseWriter, r *http.Request, maxBytes int64) ([]byte, error) {
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("Expect")), "100-continue") {
+		w.WriteHeader(http.StatusContinue)
+	}
+	type res struct {
+		b   []byte
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() {
+		b, err := io.ReadAll(io.LimitReader(r.Body, maxBytes+1))
+		ch <- res{b, err}
+	}()
+	select {
+	case v := <-ch:
+		return v.b, v.err
+	case <-r.Context().Done():
+		return nil, r.Context().Err()
+	case <-time.After(bodyReadTimeout):
+		// Unblock the reader goroutine; the connection is unusable anyway.
+		r.Body.Close()
+		return nil, errBodyReadTimeout
+	}
+}
+
+// isBodyReadTimeout reports whether err is a body-read timeout (retryable).
+func isBodyReadTimeout(err error) bool {
+	return errors.Is(err, errBodyReadTimeout) || os.IsTimeout(err)
 }
 
 // ============================================================
