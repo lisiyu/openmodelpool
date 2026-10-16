@@ -20,7 +20,11 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # v4.6.64: pin exact patch release. go.mod says "go 1.26" which
+          # setup-go resolves against its own version list; that list lagged
+          # 1.26.9 (released 2026-10-08) so v4.6.63 was built with 1.26.8,
+          # missing the 15 CVE fixes. Pinning forces a go.dev download.
+          go-version: '1.26.9'
           cache: true
 
       - name: Set VERSION
