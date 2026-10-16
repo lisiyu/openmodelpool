@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # v4.6.64: pin exact patch release. go.mod says "go 1.26" which
           # setup-go resolves against its own version list; that list lagged
