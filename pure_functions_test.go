@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -518,11 +519,13 @@ func TestSiderBuildPayload(t *testing.T) {
 	if _, hasStream := payload["stream"]; hasStream {
 		t.Errorf("payload should not contain 'stream' field, got %v", payload["stream"])
 	}
-	// cid and parent_message_id must be 24-char hex (12 bytes).
+	// cid and parent_message_id must be EMPTY (v4.6.52: Sider web client
+	// sends empty values for new conversations; random hex caused Sider
+	// to return empty responses looking up a non-existent conversation).
 	for _, k := range []string{"cid", "parent_message_id"} {
 		s, ok := payload[k].(string)
-		if !ok || len(s) != 24 {
-			t.Errorf("%s = %v, want 24-char hex string", k, payload[k])
+		if !ok || s != "" {
+			t.Errorf("%s = %v, want empty string", k, payload[k])
 		}
 	}
 	mc, ok := payload["multi_content"].([]any)
@@ -551,6 +554,36 @@ func TestSiderBuildPayload(t *testing.T) {
 		t.Error("multi_content[1] should contain user message")
 	}
 }
+
+// Sider hard limit: multi_content must contain at most 32 items
+// (error 1000 "ReqMultiContent must contain at maximum 32 items").
+// Agentic clients accumulate long histories; the payload builder must
+// truncate to 32, keeping the system message + most recent messages.
+func TestSiderBuildPayload_TruncatesTo32(t *testing.T) {
+	msgs := []ChatMessage{{Role: "system", Content: "sys"}}
+	for i := 0; i < 50; i++ {
+	msgs = append(msgs, ChatMessage{Role: "user", Content: "msg-" + strconv.Itoa(i)})
+	}
+	payload := siderBuildPayload("sider", msgs, false)
+	mc, ok := payload["multi_content"].([]any)
+	if !ok {
+		t.Fatal("multi_content is not an array")
+	}
+	if len(mc) != 32 {
+		t.Fatalf("multi_content len = %d, want 32", len(mc))
+	}
+	// First item must be the system message.
+	sysMsg := mc[0].(map[string]any)
+	if sysText, _ := sysMsg["text"].(string); !strings.Contains(sysText, "sys") {
+		t.Error("multi_content[0] should be the system message")
+	}
+	// Last item must be the most recent user message (msg-49).
+	lastMsg := mc[31].(map[string]any)
+	if lastText, _ := lastMsg["text"].(string); !strings.Contains(lastText, "msg-49") {
+		t.Errorf("multi_content[31] = %q, want msg-49", lastText)
+	}
+}
+
 
 // ============================================================
 // client.go: anthropicBuildMessages

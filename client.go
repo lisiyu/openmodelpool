@@ -1035,6 +1035,29 @@ func newUUID() string {
 func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[string]any {
 	// New web API format (sider.ai/api/chat/v1/completions):
 	// uses multi_content array instead of prompt string.
+	//
+	// Sider hard limit: multi_content must contain at most 32 items
+	// (error 1000 "ReqMultiContent must contain at maximum 32 items").
+	// Agentic clients (opencode etc.) accumulate long histories with tool
+	// turns, so cap at 32: keep the leading system message (if any) plus
+	// the most recent messages, dropping the middle.
+	const maxMultiContent = 32
+	if len(messages) > maxMultiContent {
+		keep := make([]ChatMessage, 0, maxMultiContent)
+		start := 0
+		if len(messages) > 0 && messages[0].Role == "system" {
+			keep = append(keep, messages[0])
+			start = 1
+		}
+		tail := messages[start:]
+		if len(tail) > maxMultiContent-len(keep) {
+			tail = tail[len(tail)-(maxMultiContent-len(keep)):]
+		}
+		keep = append(keep, tail...)
+		slog.Warn("sider multi_content truncated to 32 items",
+			"model", model, "original", len(messages), "kept", len(keep))
+		messages = keep
+	}
 	var multiContent []any
 	for _, m := range messages {
 		text := m.Content
