@@ -511,7 +511,9 @@ func TestSiderBuildPayload(t *testing.T) {
 		{Role: "system", Content: "You are helpful"},
 		{Role: "user", Content: "hello"},
 	}
-	payload := siderBuildPayload("gpt-4", msgs, false)
+	// v4.6.64: siderBuildPayload now takes a cid parameter for session affinity.
+	// Empty cid = new conversation; non-empty cid = continue existing topic.
+	payload := siderBuildPayload("gpt-4", msgs, false, "")
 	if payload["model"] != "gpt-4" {
 		t.Errorf("model = %v, want gpt-4", payload["model"])
 	}
@@ -519,14 +521,18 @@ func TestSiderBuildPayload(t *testing.T) {
 	if _, hasStream := payload["stream"]; hasStream {
 		t.Errorf("payload should not contain 'stream' field, got %v", payload["stream"])
 	}
-	// cid and parent_message_id must be EMPTY (v4.6.52: Sider web client
-	// sends empty values for new conversations; random hex caused Sider
-	// to return empty responses looking up a non-existent conversation).
-	for _, k := range []string{"cid", "parent_message_id"} {
-		s, ok := payload[k].(string)
-		if !ok || s != "" {
-			t.Errorf("%s = %v, want empty string", k, payload[k])
-		}
+	// Empty cid for new conversations (v4.6.52 behavior).
+	if s, ok := payload["cid"].(string); !ok || s != "" {
+		t.Errorf("cid = %v, want empty string for new conversation", payload["cid"])
+	}
+	if s, ok := payload["parent_message_id"].(string); !ok || s != "" {
+		t.Errorf("parent_message_id = %v, want empty string", payload["parent_message_id"])
+	}
+	// Non-empty cid is passed through for continuing conversations.
+	payload2 := siderBuildPayload("gpt-4", msgs, false, "abc123")
+	if s, ok := payload2["cid"].(string); !ok || s != "abc123" {
+		t.Errorf("cid = %v, want abc123 for continuing conversation", payload2["cid"])
+	}
 	}
 	mc, ok := payload["multi_content"].([]any)
 	if !ok {
@@ -994,5 +1000,83 @@ func TestValidMsgType_InvalidType(t *testing.T) {
 func TestValidMsgType_Empty(t *testing.T) {
 	if validMsgType("") {
 		t.Error("validMsgType should return false for empty string")
+	}
+}
+
+func TestSiderSessionAffinity(t *testing.T) {
+	// Use a fresh store to avoid interference.
+	store := &siderSessionStore{entries: make(map[string]siderSessionEntry)}
+	apiKey := "test-key-123"
+
+	// Turn 1: new conversation, no match.
+	msgs1 := []ChatMessage{{Role: "user", Content: "hello"}}
+	if cid := store.lookup(apiKey, msgs1); cid != "" {
+		t.Errorf("turn 1 lookup = %q, want empty (new conversation)", cid)
+	}
+	// Simulate Sider returning a cid.
+	store.store(apiKey, msgs1, "cid-aaa")
+
+	// Turn 2: [user:hello, assistant:hi, user:follow-up] should match turn 1's prefix.
+	msgs2 := []ChatMessage{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi there"},
+		{Role: "user", Content: "follow-up"},
+	}
+	if cid := store.lookup(apiKey, msgs2); cid != "cid-aaa" {
+		t.Errorf("turn 2 lookup = %q, want cid-aaa", cid)
+	}
+	store.store(apiKey, msgs2, "cid-aaa")
+
+	// Turn 3: should still match.
+	msgs3 := append(append([]ChatMessage{}, msgs2...),
+		ChatMessage{Role: "assistant", Content: "sure"},
+		ChatMessage{Role: "user", Content: "third question"},
+	)
+	if cid := store.lookup(apiKey, msgs3); cid != "cid-aaa" {
+		t.Errorf("turn 3 lookup = %q, want cid-aaa", cid)
+	}
+
+	// Different API key = isolated.
+	if cid := store.lookup("other-key", msgs2); cid != "" {
+		t.Errorf("different key lookup = %q, want empty", cid)
+	}
+
+	// Unrelated conversation = new.
+	msgsNew := []ChatMessage{{Role: "user", Content: "completely different"}}
+	if cid := store.lookup(apiKey, msgsNew); cid != "" {
+		t.Errorf("new conversation lookup = %q, want empty", cid)
+	}
+}
+
+func TestSiderExtractCid(t *testing.T) {
+	// cid inside data object.
+	body := []byte(`{"data":{"text":"hello","cid":"cid-xyz"}}`)
+	if cid := siderExtractCid(body); cid != "cid-xyz" {
+		t.Errorf("extract = %q, want cid-xyz", cid)
+	}
+	// No cid.
+	body2 := []byte(`{"data":{"text":"hello"}}`)
+	if cid := siderExtractCid(body2); cid != "" {
+		t.Errorf("extract = %q, want empty", cid)
+	}
+	// Invalid JSON.
+	if cid := siderExtractCid([]byte("not json")); cid != "" {
+		t.Errorf("extract = %q, want empty", cid)
+	}
+}
+
+func TestSiderHistoryHash(t *testing.T) {
+	msgs := []ChatMessage{{Role: "user", Content: "hello"}}
+	h1 := siderHistoryHash("key1", msgs)
+	h2 := siderHistoryHash("key1", msgs)
+	if h1 != h2 {
+		t.Error("same input should produce same hash")
+	}
+	h3 := siderHistoryHash("key2", msgs)
+	if h1 == h3 {
+		t.Error("different API keys should produce different hashes")
+	}
+	if len(h1) != 64 {
+		t.Errorf("hash length = %d, want 64 (SHA256 hex)", len(h1))
 	}
 }

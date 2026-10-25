@@ -307,7 +307,7 @@ func (h *HealthChecker) checkProvider(p Provider) {
 			if p.Type == "sider" {
 				// Sider uses a proprietary web API, not OpenAI-compatible.
 				// Use the same payload/headers as the Sider adapter.
-				siderPayload := siderBuildPayload(probeModel, []ChatMessage{{Role: "user", Content: "hi"}}, false)
+				siderPayload := siderBuildPayload(probeModel, []ChatMessage{{Role: "user", Content: "hi"}}, false, "")
 				probeBody, _ := json.Marshal(siderPayload)
 				// v4.6.53: defensive check for empty siderChatURL (was causing
 				// "unsupported protocol scheme" errors in health checks).

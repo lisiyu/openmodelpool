@@ -1032,7 +1032,7 @@ func newUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[string]any {
+func siderBuildPayload(model string, messages []ChatMessage, stream bool, cid string) map[string]any {
 	// New web API format (sider.ai/api/chat/v1/completions):
 	// uses multi_content array instead of prompt string.
 	//
@@ -1076,9 +1076,11 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 	// conversations (verified via browser DevTools 2026-10-05). Previously we
 	// generated random 24-char hex, which caused Sider to return empty
 	// responses (looking up a non-existent conversation).
+	// v4.6.64: when cid is non-empty (a continuing conversation, resolved via
+	// history-chain session affinity), send it so Sider keeps the same topic.
 	// Also: the payload must NOT include a "stream" field.
 	return map[string]any{
-		"cid":               "",
+		"cid":               cid,
 		"parent_message_id": "",
 		"model":             model,
 		"from":              "chat",
@@ -1091,7 +1093,23 @@ func siderBuildPayload(model string, messages []ChatMessage, stream bool) map[st
 }
 
 func siderNonStream(ctx context.Context, p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
-	payload := siderBuildPayload(model, messages, false)
+	// Use effective API key (handles multi-key format and decryption)
+	apiKey := p.APIKey
+	if apiKey == "" && len(p.APIKeys) > 0 {
+		apiKey = p.GetEffectiveAPIKey()
+	}
+	if IsEncrypted(apiKey) {
+		if decrypted, err := decryptAPIKey(apiKey); err == nil {
+			apiKey = decrypted
+		}
+	}
+
+	// v4.6.64: history-chain session affinity. If this request continues a
+	// previous conversation (longest matching history prefix), reuse its Sider
+	// cid so Sider keeps the same topic.
+	cid := siderSessions.lookup(apiKey, messages)
+
+	payload := siderBuildPayload(model, messages, false, cid)
 	body, _ := json.Marshal(payload)
 	// Defensive: siderChatURL is a var (for tests); ensure it's never empty at runtime.
 	url := siderChatURL
@@ -1102,16 +1120,6 @@ func siderNonStream(ctx context.Context, p Provider, model string, messages []Ch
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sider request: %w", err)
-	}
-	// Use effective API key (handles multi-key format and decryption)
-	apiKey := p.APIKey
-	if apiKey == "" && len(p.APIKeys) > 0 {
-		apiKey = p.GetEffectiveAPIKey()
-	}
-	if IsEncrypted(apiKey) {
-		if decrypted, err := decryptAPIKey(apiKey); err == nil {
-			apiKey = decrypted
-		}
 	}
 	req.Header = siderBuildHeaders(apiKey)
 
@@ -1168,6 +1176,11 @@ func siderNonStream(ctx context.Context, p Provider, model string, messages []Ch
 	}
 
 	content := fullText.String()
+	// v4.6.64: capture the Sider conversation id for history-chain session
+	// affinity, so the next request in this conversation reuses the same topic.
+	if respCid := siderExtractCid(respBody); respCid != "" {
+		siderSessions.store(apiKey, messages, respCid)
+	}
 	// v4.6.49: diagnostic logging when Sider returns unparseable content.
 	// v4.6.51: reverted v4.6.50's error return - it broke health checks causing
 	// "no provider available" 404s. Keep the warning log but return empty
@@ -1193,7 +1206,21 @@ func siderNonStream(ctx context.Context, p Provider, model string, messages []Ch
 }
 
 func siderStream(ctx context.Context, p Provider, model string, messages []ChatMessage, w io.Writer) error {
-	payload := siderBuildPayload(model, messages, true)
+	// Use effective API key (handles multi-key format and decryption)
+	apiKey := p.APIKey
+	if apiKey == "" && len(p.APIKeys) > 0 {
+		apiKey = p.GetEffectiveAPIKey()
+	}
+	if IsEncrypted(apiKey) {
+		if decrypted, err := decryptAPIKey(apiKey); err == nil {
+			apiKey = decrypted
+		}
+	}
+
+	// v4.6.64: history-chain session affinity (see siderNonStream).
+	cid := siderSessions.lookup(apiKey, messages)
+
+	payload := siderBuildPayload(model, messages, true, cid)
 	body, _ := json.Marshal(payload)
 	// Defensive: siderChatURL is a var (for tests); ensure it's never empty at runtime.
 	url := siderChatURL
@@ -1204,16 +1231,6 @@ func siderStream(ctx context.Context, p Provider, model string, messages []ChatM
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create sider stream request: %w", err)
-	}
-	// Use effective API key (handles multi-key format and decryption)
-	apiKey := p.APIKey
-	if apiKey == "" && len(p.APIKeys) > 0 {
-		apiKey = p.GetEffectiveAPIKey()
-	}
-	if IsEncrypted(apiKey) {
-		if decrypted, err := decryptAPIKey(apiKey); err == nil {
-			apiKey = decrypted
-		}
 	}
 	req.Header = siderBuildHeaders(apiKey)
 
@@ -1238,6 +1255,8 @@ func siderStream(ctx context.Context, p Provider, model string, messages []ChatM
 	created := time.Now().Unix()
 	flusher, hasFlusher := w.(interface{ Flush() })
 
+	// v4.6.64: captured Sider conversation id for session affinity.
+	var streamCid string
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -1254,6 +1273,13 @@ func siderStream(ctx context.Context, p Provider, model string, messages []ChatM
 			continue
 		}
 		if d, ok := data["data"].(map[string]any); ok {
+			// v4.6.64: capture the Sider conversation id from the first chunk
+			// for history-chain session affinity.
+			if streamCid == "" {
+				if c, ok := d["cid"].(string); ok && c != "" {
+					streamCid = c
+				}
+			}
 			if text, ok := d["text"].(string); ok && text != "" {
 				chunk := ChatChunk{
 					ID: cmplID, Object: "chat.completion.chunk",
@@ -1269,6 +1295,11 @@ func siderStream(ctx context.Context, p Provider, model string, messages []ChatM
 	}
 
 	siderMon.RecordSuccess()
+
+	// v4.6.64: store the captured cid for history-chain session affinity.
+	if streamCid != "" {
+		siderSessions.store(apiKey, messages, streamCid)
+	}
 
 	// Final chunk
 	stop := "stop"
@@ -1892,7 +1923,7 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 				break
 			}
 		}
-		payload := siderBuildPayload(testModel, []ChatMessage{{Role: "user", Content: "hi"}}, false)
+		payload := siderBuildPayload(testModel, []ChatMessage{{Role: "user", Content: "hi"}}, false, "")
 		body, _ := json.Marshal(payload)
 		ctx3, cancel3 := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel3()
