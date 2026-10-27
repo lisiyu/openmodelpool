@@ -1041,7 +1041,7 @@ select.form-input{appearance:none;cursor:pointer}
           <li>配置 Ingress，将流量指向本机服务：管理页 <code>http://localhost:8000</code>、网关 <code>http://localhost:8001</code>。</li>
           <li>添加 DNS：<code>cloudflared tunnel route dns &lt;隧道名&gt; &lt;你的域名&gt;</code>（自动生成 CNAME 指向 <code>*.cfargotunnel.com</code>）。</li>
           <li>用连接器 token 启动：<code>cloudflared tunnel run --token &lt;token&gt;</code>。</li>
-          <li>若由 supervisor 托管，重启 <code>run-omp.sh</code> 使隧道随实例自启。</li>
+          <li>重启生效：请按实际部署脚本核对（注：原 .io 节点的重启步骤已随主机摧毁而不再适用）。</li>
         </ol>
         <p style="margin:0 0 8px"><b>② 反向代理（Nginx / Caddy）→ :8000</b></p>
         <p style="margin:0 0 10px">将你的域名通过 Nginx / Caddy 反代到本机 <code>127.0.0.1:8000</code>（管理页）/ <code>:8001</code>（网关），并配置 SSL 证书即可。</p>
@@ -1065,16 +1065,47 @@ select.form-input{appearance:none;cursor:pointer}
     return '<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;background:' + s.bg + ';color:' + s.color + ';border:1px solid ' + s.color + '33">' + escapeHtml(text) + '</span>';
   }
 
+  // 管理页/网关地址展示（PRD P0-1）：用当前页协议 + hostname 拼 :8000/:8001
+  function domainBindingAddr(port) {
+    var hn = window.location.hostname || '';
+    if (!hn) return ':' + port;
+    return window.location.protocol + '//' + hn + ':' + port;
+  }
+
+  // 去端口/去括号比较 host，避免 host:8000 误报与 domain 不一致（PRD B2/B3）
+  function domainBindingStripPort(h) {
+    return (h || '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
+  }
+
   async function loadDomainBinding() {
     var el = document.getElementById('domainBindingBody');
     if (!el) return;
+    var timer = null;
     try {
-      var r = await authFetch('/api/domain/binding-status');
+      // PRD §3.5：5 秒超时走降级态，不让卡片一直转圈
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      if (ctrl) timer = setTimeout(function() { ctrl.abort(); }, 5000);
+      var r = await authFetch('/api/domain/binding-status', ctrl ? { signal: ctrl.signal } : {});
+      if (timer) clearTimeout(timer);
       var d = await r.json();
       renderDomainBinding(el, d);
     } catch (e) {
-      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px">状态加载失败：' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+      if (timer) clearTimeout(timer);
+      renderDomainBindingDegraded(el);
     }
+  }
+
+  // PRD P0-1 降级态：接口不可用时只展示当前访问信息，不渲染后端字段
+  function renderDomainBindingDegraded(el) {
+    var host = window.location.host || '';
+    var html = '';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">当前访问域</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + escapeHtml(host || '未知') + '</div></div>';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">管理页</div><div style="font-size:13px;margin-top:2px">' + escapeHtml(domainBindingAddr(8000)) + '</div></div>';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">网关</div><div style="font-size:13px;margin-top:2px">' + escapeHtml(domainBindingAddr(8001)) + '</div></div>';
+    html += '</div>';
+    html += '<div style="margin-top:10px;font-size:12px;color:var(--text-muted)">⚪ 无法获取绑定状态（接口不可用），以上仅为当前访问信息</div>';
+    el.innerHTML = html;
   }
 
   function refreshDomainBinding() {
@@ -1122,12 +1153,38 @@ select.form-input{appearance:none;cursor:pointer}
       healthBadge = renderDomainBadge('不可达 ❌', 'error');
     }
 
+    // PRD P0-3 状态甲：当前访问域，只说明从哪来，不代表已绑定
+    var accessHost = window.location.host || '';
+    var accessHostText = accessHost ? escapeHtml(accessHost) : '未知';
+
+    // PRD P0-3 状态乙 bound 语义：仅显式 bound_domain 为已显式绑定，其余为推导来源
+    var boundBadge = '';
+    if (domain) {
+      boundBadge = (d.bound === true)
+        ? renderDomainBadge('✅ 已显式绑定', 'ok')
+        : renderDomainBadge('推导来源', 'neutral');
+    }
+
     var html = '';
+    // 访问地址行：当前访问域 + 管理页 :8000 + 网关 :8001（PRD P0-1）
     html += '<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">';
-    html += '  <div><div style="font-size:11px;color:var(--text-muted)">当前域名</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + domainText + '</div>' + (srcLabel ? '<div style="font-size:11px;color:var(--text-muted);margin-top:1px">（来源：' + srcLabel + '）</div>' : '') + '</div>';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">当前访问域</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + accessHostText + '</div></div>';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">管理页</div><div style="font-size:13px;margin-top:2px">' + escapeHtml(domainBindingAddr(8000)) + '</div></div>';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">网关</div><div style="font-size:13px;margin-top:2px">' + escapeHtml(domainBindingAddr(8001)) + '</div></div>';
+    html += '</div>';
+
+    // 已绑定域名行：域名 + bound 徽章 + 来源 + 隧道 + 健康
+    html += '<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-top:12px">';
+    html += '  <div><div style="font-size:11px;color:var(--text-muted)">已绑定域名</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + domainText + '</div>' + (srcLabel ? '<div style="font-size:11px;color:var(--text-muted);margin-top:1px">（来源：' + srcLabel + '）</div>' : '') + '</div>';
+    if (boundBadge) html += '  <div><div style="font-size:11px;color:var(--text-muted)">绑定状态</div><div style="margin-top:4px">' + boundBadge + '</div></div>';
     html += '  <div><div style="font-size:11px;color:var(--text-muted)">隧道状态</div><div style="margin-top:4px">' + tunnelBadge + '</div></div>';
     html += '  <div><div style="font-size:11px;color:var(--text-muted)">健康检查</div><div style="margin-top:4px">' + healthBadge + '</div></div>';
     html += '</div>';
+
+    // PRD P0-3 甲≠乙提示：当前访问 host（去端口）与后端 domain 不一致时提示
+    if (domain && accessHost && domainBindingStripPort(accessHost) !== domainBindingStripPort(domain)) {
+      html += '<div style="margin-top:10px;font-size:12px;color:#eab308">⚠ 你当前通过 ' + escapeHtml(accessHost) + ' 访问，系统认定绑定域名为 ' + escapeHtml(domain) + '，请确认两者关系</div>';
+    }
 
     if (domain && d.http_reachable === false && d.reach_error) {
       html += '<div style="margin-top:10px;font-size:12px;color:#ef4444">探测失败：' + escapeHtml(d.reach_error) + '</div>';
@@ -1135,9 +1192,9 @@ select.form-input{appearance:none;cursor:pointer}
 
     html += '<div style="margin-top:10px;font-size:12px;color:var(--text-muted)">版本 ' + escapeHtml(d.version || '-') + (d.public_url ? ' · 公网地址 ' + escapeHtml(d.public_url) : '') + '</div>';
 
-    if (domain) {
-      html += '<div style="margin-top:8px;font-size:12px;color:#22c55e">✅ 您正通过自定义域名 ' + escapeHtml(domain) + ' 访问</div>';
-    } else {
+    if (domain && d.bound === true) {
+      html += '<div style="margin-top:8px;font-size:12px;color:#22c55e">✅ 已显式绑定域名 ' + escapeHtml(domain) + '</div>';
+    } else if (!domain) {
       html += '<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">⚪ 尚未绑定自定义域名，按下方步骤绑定</div>';
     }
 
